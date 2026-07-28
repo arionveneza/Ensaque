@@ -1,19 +1,44 @@
+import { useState } from 'react'
 import { AuthProvider, useAuth } from '@/auth/AuthProvider'
 import Login from '@/telas/Login'
 import Execucao from '@/telas/Execucao'
+import Programacao from '@/telas/Programacao'
+import Lotes from '@/telas/Lotes'
+import Ordens from '@/telas/Ordens'
+import Qualidade from '@/telas/Qualidade'
+import Indicadores from '@/telas/Indicadores'
+import Cadastros from '@/telas/Cadastros'
+import type { Perfil } from '@/dominio/tipos'
 
-const TELAS = [
-  { id: 'ordens', nome: 'Ordens', pronta: false },
-  { id: 'programacao', nome: 'Programação & Ocupação', pronta: false },
-  { id: 'lotes', nome: 'Lotes a baixar', pronta: false },
-  { id: 'execucao', nome: 'Execução', pronta: true },
-  { id: 'qualidade', nome: 'Qualidade', pronta: false },
-  { id: 'indicadores', nome: 'Indicadores', pronta: false },
-  { id: 'cadastros', nome: 'Cadastros', pronta: false },
+type TelaId =
+  | 'ordens' | 'programacao' | 'lotes' | 'execucao'
+  | 'qualidade' | 'indicadores' | 'cadastros'
+
+const TELAS: { id: TelaId; nome: string }[] = [
+  { id: 'ordens', nome: 'Ordens' },
+  { id: 'programacao', nome: 'Programação' },
+  { id: 'lotes', nome: 'Lotes a baixar' },
+  { id: 'execucao', nome: 'Execução' },
+  { id: 'qualidade', nome: 'Qualidade' },
+  { id: 'indicadores', nome: 'Indicadores' },
+  { id: 'cadastros', nome: 'Cadastros' },
 ]
+
+/**
+ * Telas visíveis por perfil — espelha a matriz da especificação. O RLS no
+ * banco é a defesa real; isto aqui é só a navegação.
+ */
+const ACESSO: Record<Perfil, TelaId[]> = {
+  PCP: ['ordens', 'programacao', 'lotes', 'execucao', 'qualidade', 'indicadores', 'cadastros'],
+  Logistica: ['programacao', 'lotes', 'indicadores'],
+  Producao: ['programacao', 'execucao', 'indicadores'],
+  Qualidade: ['execucao', 'qualidade', 'indicadores'],
+  Gestor: ['ordens', 'programacao', 'lotes', 'execucao', 'qualidade', 'indicadores', 'cadastros'],
+}
 
 function Shell() {
   const { session, usuario, carregando, semCadastro, sair } = useAuth()
+  const [tela, setTela] = useState<TelaId>('execucao')
 
   if (carregando) {
     return (
@@ -35,13 +60,14 @@ function Shell() {
             login. O RLS bloqueia todo o acesso enquanto o perfil não for criado — peça ao
             gestor para cadastrá-lo.
           </p>
-          <button onClick={sair} className="mt-4 text-sm underline">
-            Sair
-          </button>
+          <button onClick={sair} className="mt-4 text-sm underline">Sair</button>
         </div>
       </div>
     )
   }
+
+  const permitidas = ACESSO[usuario.perfil] ?? []
+  const atual = permitidas.includes(tela) ? tela : permitidas[0]
 
   return (
     <div className="min-h-svh bg-stone-50 text-stone-800 dark:bg-stone-950 dark:text-stone-200">
@@ -60,18 +86,18 @@ function Shell() {
         </div>
         <nav className="mx-auto max-w-6xl px-6 pb-3">
           <ul className="flex flex-wrap gap-2">
-            {TELAS.map((t) => (
+            {TELAS.filter((t) => permitidas.includes(t.id)).map((t) => (
               <li key={t.id}>
-                <span
-                  className={`inline-block rounded-md border px-3 py-1.5 text-sm ${
-                    t.pronta
+                <button
+                  onClick={() => setTela(t.id)}
+                  className={`rounded-md border px-3 py-1.5 text-sm ${
+                    atual === t.id
                       ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                      : 'cursor-not-allowed border-stone-200 text-stone-400 dark:border-stone-700 dark:text-stone-500'
+                      : 'border-stone-200 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
                   }`}
-                  title={t.pronta ? undefined : 'ainda não implementada'}
                 >
                   {t.nome}
-                </span>
+                </button>
               </li>
             ))}
           </ul>
@@ -79,7 +105,13 @@ function Shell() {
       </header>
 
       <main>
-        <Execucao />
+        {atual === 'ordens' && <Ordens />}
+        {atual === 'programacao' && <Programacao />}
+        {atual === 'lotes' && <Lotes />}
+        {atual === 'execucao' && <Execucao />}
+        {atual === 'qualidade' && <Qualidade />}
+        {atual === 'indicadores' && <Indicadores />}
+        {atual === 'cadastros' && <Cadastros />}
       </main>
     </div>
   )

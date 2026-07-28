@@ -4,7 +4,8 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client", "vitest/globals"],
+    // "node" é necessário para os testes que leem as planilhas reais do disco
+    "types": ["vite/client", "vitest/globals", "node"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
