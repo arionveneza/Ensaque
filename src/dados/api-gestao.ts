@@ -84,6 +84,36 @@ export async function criarOrdem(o: NovaOrdem): Promise<void> {
   }
 }
 
+export interface ResultadoLote {
+  criadas: number
+  jaExistiam: { numero: string; motivo: string }[]
+}
+
+/**
+ * Cria ordens vindas de planilha. Insere uma a uma de propósito: em lote,
+ * uma única duplicata derrubaria o insert inteiro e o operador não saberia
+ * qual linha causou o problema.
+ */
+export async function criarOrdensEmLote(lista: NovaOrdem[]): Promise<ResultadoLote> {
+  let criadas = 0
+  const jaExistiam: { numero: string; motivo: string }[] = []
+  for (const o of lista) {
+    const { error } = await supabase.from('ordens').insert({ ...o, origem: 'importacao' })
+    if (!error) {
+      criadas++
+      continue
+    }
+    jaExistiam.push({
+      numero: o.numero,
+      motivo:
+        error.code === '23505'
+          ? 'já existe ordem com este número, cultivar, tratamento e embalagem'
+          : error.message,
+    })
+  }
+  return { criadas, jaExistiam }
+}
+
 export async function atualizarOrdem(id: string, campos: Partial<NovaOrdem>): Promise<void> {
   const { error } = await supabase.from('ordens').update(campos).eq('id', id)
   erro('atualizar ordem', error)

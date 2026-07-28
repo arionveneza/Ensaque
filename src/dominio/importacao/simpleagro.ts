@@ -6,7 +6,8 @@
  * os números conferidos sem depender de arquivo.
  */
 
-export type Linha = (string | number | null | undefined)[]
+/** Uma linha da planilha. O leitor de xlsx devolve datas como Date, não texto. */
+export type Linha = (string | number | Date | boolean | null | undefined)[]
 
 const txt = (v: unknown): string => (v == null ? '' : String(v).trim())
 

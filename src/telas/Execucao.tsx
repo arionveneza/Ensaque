@@ -10,6 +10,7 @@ import {
 import { diaDeProducao, formataHms, tempoPlanejadoS, temposOrdem } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
+import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import ModalOrdem from './ModalOrdem'
 
@@ -65,6 +66,9 @@ export default function Execucao() {
       vivo = false
     }
   }, [dia])
+
+  // o PCP e a produção olham a mesma ordem ao mesmo tempo: sem isto, uma tela mente
+  useRealtime(['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques'], recarregar)
 
   // relógio dos cronômetros: só corre quando há ordem em andamento
   const temAndamento = ordens.some((o) => o.status === 'Em producao' || o.status === 'Parada')

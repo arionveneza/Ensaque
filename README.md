@@ -48,15 +48,38 @@ VITE_SUPABASE_URL=https://xxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 ```
 
-## Ordem sugerida de implementação
+### 5. Rodar localmente
+```bash
+npm install
+```
+Depois `npm run dev` (aplicação), `npm test` (153 testes) e `npm run build` (produção).
 
-1. **Execução** — é o coração e o mais usado no chão de fábrica
-2. **Programação & Ocupação** — quadro do dia, drag-and-drop, auto-programar
-3. **Lotes a baixar** — fluxo da logística
-4. **Ordens** — digitação, importação de Excel, painel de demanda
-5. **Qualidade** e **encerramento AGROTIS**
-6. **Indicadores** e exportações
-7. **Cadastros** e tela de administração de permissões
+### 6. Publicar na Vercel
+1. https://vercel.com → **Add New → Project** → importe `arionveneza/Ensaque`
+2. O `vercel.json` do repositório já define build, saída e cabeçalhos — não mexa nas
+   configurações detectadas
+3. **Environment Variables**: cadastre `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
+   com os mesmos valores do `.env.local`, nos três ambientes (Production, Preview, Development)
+4. **Deploy**. A cada `git push` na `main` sai uma nova versão
+
+> A chave anônima vai no bundle do front-end — é pública por natureza. Quem protege os dados
+> é o RLS no banco, não o segredo da chave. **Nunca** cadastre a `service_role` aqui.
+
+## Situação das telas
+
+| Tela | Situação |
+|---|---|
+| Execução | ✔ completa, com o fluxo de apontamento em duas etapas |
+| Programação & Ocupação | ✔ plano semanal, quadro do dia, auto-programar, encaixar, rebalancear, otimizar |
+| Lotes a baixar | ✔ cards, lotes críticos, devolução e relatório |
+| Ordens | ✔ digitação, importação (3 formatos), painel de demanda, .xlsx e impressão |
+| Qualidade | ✔ visual, amostra e encerramento no AGROTIS |
+| Indicadores | ✔ por máquina e turno, Pareto de paradas, planejado × realizado |
+| Cadastros | ✔ edição de químicos, receitas, máquinas, turnos, embalagens e motivos |
+| Administração | ✔ usuários e matriz de permissões (só Gestor) |
+
+**Pendente:** integração com o SAP (bloqueada por infraestrutura — ver `docs/integracao-sap.md`)
+e as decisões de §7 do `CLAUDE.md`.
 
 ## Estrutura
 
@@ -64,12 +87,22 @@ VITE_SUPABASE_ANON_KEY=eyJ...
 tsi-app/
 ├── CLAUDE.md                        # especificação completa (o Claude Code lê sozinho)
 ├── README.md
-├── .gitignore
+├── vercel.json                      # build, rewrites e cabeçalhos do deploy
 ├── docs/
-│   ├── prototipo-referencia.html    # protótipo funcional — especificação executável
-│   └── dados-exemplo/               # planilhas reais de referência (colocar aqui)
-└── supabase/
-    └── schema.sql                   # tabelas, views, triggers, RLS e seed
+│   ├── prototipo-referencia.html    # protótipo original — especificação executável
+│   ├── integracao-sap.md            # Service Layer: endpoints, diagnóstico e checklist
+│   └── dados-exemplo/               # planilhas reais (fora do git)
+├── supabase/
+│   ├── schema.sql                   # schema `tsi`: tabelas, views, triggers, RLS e seed
+│   └── seed-exemplo.sql             # dados de demonstração (densidades fictícias)
+└── src/
+    ├── dominio/                     # regras e cálculos, cobertos por testes
+    │   └── importacao/              # conversões da SimpleAgro e de ordens
+    ├── dados/                       # acesso ao Supabase e realtime
+    ├── telas/                       # as oito telas
+    ├── componentes/                 # peças visuais compartilhadas
+    ├── auth/                        # sessão e perfil
+    └── lib/                         # cliente do Supabase, exportação e impressão
 ```
 
 ## Fontes de dados (hoje upload, amanhã API)

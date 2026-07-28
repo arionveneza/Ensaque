@@ -7,13 +7,18 @@ import {
   converterPedidos, converterSaldos, ehRelatorioPedidos, ehRelatorioSaldos,
   type Linha, type ResultadoPedidos, type ResultadoSaldos,
 } from '@/dominio/importacao/simpleagro'
+import {
+  converterOrdens, ehPlanilhaDeOrdens, type ResultadoOrdens,
+} from '@/dominio/importacao/ordens'
+import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
+import { useRealtime } from '@/dados/useRealtime'
 import { analisaDemanda, podeCriarOrdem } from '@/dominio/balanco'
 import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
-  corDoStatus, diaCurto, exportarCsv, inteiro, n,
+  corDoStatus, diaCurto, inteiro, n,
 } from '@/componentes/ui'
 
 const SA_BASE = 'https://sementesveneza.painel.simpleagro.com.br:3333'
@@ -40,6 +45,7 @@ export default function Ordens() {
 
   const [previaPedidos, setPreviaPedidos] = useState<ResultadoPedidos | null>(null)
   const [previaSaldos, setPreviaSaldos] = useState<ResultadoSaldos | null>(null)
+  const [previaOrdens, setPreviaOrdens] = useState<ResultadoOrdens | null>(null)
 
   const recarregar = useCallback(async () => {
     const [o, b] = await Promise.all([g.listarOrdens(), g.listarBalanco()])
@@ -64,6 +70,8 @@ export default function Ordens() {
     return () => { vivo = false }
   }, [])
 
+  useRealtime(['ordens', 'lotes_semente', 'pedidos_venda', 'estoque_pa'], recarregar)
+
   async function comErro(fn: () => Promise<void>) {
     try {
       setErro(null); setMsg(null)
@@ -78,7 +86,8 @@ export default function Ordens() {
   async function lerArquivo(ev: ChangeEvent<HTMLInputElement>) {
     const arquivo = ev.target.files?.[0]
     if (!arquivo) return
-    setErro(null); setMsg(null); setPreviaPedidos(null); setPreviaSaldos(null)
+    setErro(null); setMsg(null)
+    setPreviaPedidos(null); setPreviaSaldos(null); setPreviaOrdens(null)
     try {
       const bruto = (await readXlsxFile(arquivo)) as unknown
       const arr = bruto as { data?: Linha[] }[]
@@ -91,9 +100,20 @@ export default function Ordens() {
         setPreviaPedidos(converterPedidos(rows, receitas.map((r) => r.nome)))
       } else if (ehRelatorioSaldos(rows)) {
         setPreviaSaldos(converterSaldos(rows))
+      } else if (ehPlanilhaDeOrdens(rows)) {
+        setPreviaOrdens(
+          converterOrdens(rows, {
+            lotesConhecidos: new Set(lotes.map((l) => l.id)),
+            receitasConhecidas: new Set(receitas.map((r) => r.nome.toUpperCase())),
+            embalagensConhecidas: new Set(embalagens.map((e) => e.codigo)),
+            maquinasConhecidas: new Set(maquinas.map((m) => m.id)),
+          }),
+        )
       } else {
         setErro(
-          'Planilha não reconhecida. Esperado o "Pedidos Analítico Resumido" ou a exportação de "Saldos" da SimpleAgro.',
+          'Planilha não reconhecida. Esperado o "Pedidos Analítico Resumido", a exportação de ' +
+            '"Saldos" da SimpleAgro, ou uma planilha de ordens com as colunas Ordem, Lote, ' +
+            'Tratamento, Embalagem e Bags.',
         )
       }
     } catch (e) {
@@ -150,18 +170,49 @@ export default function Ordens() {
           <Botao
             disabled={filtradas.length === 0}
             onClick={() =>
-              exportarCsv('ordens', [
-                ['Dia', 'Máquina', 'Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Embalagem',
-                  'Lote', 'Bags', 'Peso (t)', 'Cliente', 'Status'],
-                ...filtradas.map((o) => [
-                  o.data_prog ?? '', o.maquina_id ?? '', o.seq ?? '', o.numero, o.cultivar,
+              exportarXlsx(
+                'ordens',
+                [
+                  { titulo: 'Dia', largura: 12 }, { titulo: 'Máquina', largura: 10 },
+                  { titulo: 'Seq', largura: 6, tipo: 'numero', casas: 0 },
+                  { titulo: 'Ordem', largura: 14 }, { titulo: 'Cultivar', largura: 18 },
+                  { titulo: 'Tratamento', largura: 20 }, { titulo: 'Embalagem', largura: 12 },
+                  { titulo: 'Lote', largura: 18 },
+                  { titulo: 'Bags', largura: 8, tipo: 'numero', casas: 0 },
+                  { titulo: 'Peso (t)', largura: 10, tipo: 'numero', casas: 2 },
+                  { titulo: 'Cliente', largura: 28 }, { titulo: 'Status', largura: 20 },
+                ],
+                filtradas.map((o) => [
+                  o.data_prog ?? '', o.maquina_id ?? '', o.seq, o.numero, o.cultivar,
                   o.receita_nome, o.embalagem, o.lote_id, o.bags, o.peso_t,
                   o.cliente ?? '', o.status_efetivo,
                 ]),
-              ])
+              ).catch((e) => setErro(`exportar: ${e instanceof Error ? e.message : String(e)}`))
             }
           >
-            Exportar
+            Exportar .xlsx
+          </Botao>
+          <Botao
+            disabled={filtradas.length === 0}
+            titulo="Gera uma folha para pregar no quadro do chão de fábrica"
+            onClick={() =>
+              imprimirTabela(
+                'Ordens de tratamento',
+                `${filtradas.length} ordem(ns)` +
+                  (filtroStatus ? ` · status ${filtroStatus}` : '') +
+                  (filtroMaquina ? ` · ${filtroMaquina}` : '') +
+                  (busca.trim() ? ` · busca "${busca.trim()}"` : ''),
+                ['Dia', 'Máq.', 'Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.',
+                  'Lote', 'Bags', 'Peso (t)', 'Status'],
+                filtradas.map((o) => [
+                  diaCurto(o.data_prog), o.maquina_id ?? '—', o.seq ?? '—', o.numero,
+                  o.cultivar, o.receita_nome, o.embalagem, o.lote_id, o.bags,
+                  n(o.peso_t, 1), o.status_efetivo,
+                ]),
+              )
+            }
+          >
+            Imprimir
           </Botao>
         </>
       }
@@ -283,6 +334,84 @@ export default function Ordens() {
                   }
                 >
                   Importar estoque
+                </Botao>
+              </div>
+            </div>
+          )}
+
+          {previaOrdens && (
+            <div className="mt-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
+              <h4 className="text-sm font-semibold">Planilha de ordens</h4>
+              <p className="mt-2 text-sm text-stone-600 dark:text-stone-300">
+                <b>{previaOrdens.ordens.length} ordem(ns)</b> prontas para importar
+                {previaOrdens.problemas.length > 0 &&
+                  ` · ${previaOrdens.problemas.length} linha(s) com problema`}
+              </p>
+
+              {previaOrdens.problemas.length > 0 && (
+                <div className="mt-3">
+                  <Aviso gravidade="bloqueio">
+                    <b>Linhas que não serão importadas:</b>
+                    <ul className="mt-1 max-h-40 list-inside list-disc overflow-y-auto">
+                      {previaOrdens.problemas.slice(0, 30).map((p) => (
+                        <li key={p.linha}>Linha {p.linha}: {p.motivo}</li>
+                      ))}
+                    </ul>
+                    {previaOrdens.problemas.length > 30 && (
+                      <p className="mt-1">…e mais {previaOrdens.problemas.length - 30}.</p>
+                    )}
+                  </Aviso>
+                </div>
+              )}
+
+              {previaOrdens.duplicadasNoArquivo.length > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Repetidas dentro do próprio arquivo</b> (só a primeira entra):{' '}
+                    {previaOrdens.duplicadasNoArquivo.join(', ')}
+                  </Aviso>
+                </div>
+              )}
+
+              <div className="mt-3">
+                <Botao
+                  variante="primario"
+                  disabled={previaOrdens.ordens.length === 0}
+                  onClick={() =>
+                    comErro(async () => {
+                      const novas: g.NovaOrdem[] = previaOrdens.ordens.map((o) => {
+                        const lote = lotes.find((l) => l.id === o.loteId)!
+                        const receita = receitas.find(
+                          (r) => r.nome.toUpperCase() === o.tratamento.toUpperCase(),
+                        )!
+                        return {
+                          numero: o.numero,
+                          cultivar: lote.cultivar,
+                          receita_id: receita.id,
+                          embalagem: o.embalagem,
+                          bags: o.bags,
+                          lote_id: o.loteId,
+                          cliente: o.cliente,
+                          observacao: o.observacao,
+                          maquina_id: o.maquinaId,
+                          data_prog: o.dataProg,
+                        }
+                      })
+                      const r = await g.criarOrdensEmLote(novas)
+                      setPreviaOrdens(null)
+                      setMsg(
+                        `${r.criadas} ordem(ns) criada(s).` +
+                          (r.jaExistiam.length > 0
+                            ? ` ${r.jaExistiam.length} não entraram: ${r.jaExistiam
+                                .slice(0, 5)
+                                .map((x) => x.numero)
+                                .join(', ')}${r.jaExistiam.length > 5 ? '…' : ''}`
+                            : ''),
+                      )
+                    })
+                  }
+                >
+                  Importar {previaOrdens.ordens.length} ordem(ns)
                 </Botao>
               </div>
             </div>

@@ -6,10 +6,12 @@ import { capacidadeDiaT, diaDeProducao } from '@/dominio/calculos'
 import {
   autoProgramar,
   checklistDoDia,
+  melhorSlot,
   otimizarSequencia,
   rebalancearDia,
   type OrdemProgramavel,
 } from '@/dominio/programacao'
+import { useRealtime } from '@/dados/useRealtime'
 import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -68,6 +70,8 @@ export default function Programacao() {
       vivo = false
     }
   }, [dias])
+
+  useRealtime(['ordens', 'lotes_semente'], recarregar)
 
   const capacidades = useMemo(
     () =>
@@ -389,6 +393,31 @@ export default function Programacao() {
                 <p className="text-xs text-stone-500">
                   {o.receita_nome} · {n(o.peso_t, 1)} t
                 </p>
+                {podeProgramar && (
+                  <div className="mt-1.5">
+                    <Botao
+                      titulo="Coloca só esta ordem no primeiro slot que couber, preferindo máquina com a mesma receita"
+                      onClick={() =>
+                        comErro(async () => {
+                          const alvo = programaveis.find((p) => p.id === o.id)
+                          if (!alvo) return
+                          const slot = melhorSlot(alvo, programaveis, capacidades, dias)
+                          if (!slot) {
+                            setErro(
+                              `A ordem ${o.numero} (${n(o.peso_t, 1)} t) não cabe em nenhum dia do horizonte de 7 dias.`,
+                            )
+                            return
+                          }
+                          const jaNoSlot = celula(slot.maquinaId, slot.dia).length
+                          await g.reprogramar(o.id, slot.maquinaId, slot.dia, jaNoSlot + 1)
+                          setDiaSel(slot.dia)
+                        })
+                      }
+                    >
+                      Encaixar
+                    </Botao>
+                  </div>
+                )}
               </div>
             ))}
           </div>
