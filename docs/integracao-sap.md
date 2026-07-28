@@ -154,6 +154,34 @@ retornou `code 100000027 — Error while connecting to database server SK1@sapha
 **Conclusão:** falha de infraestrutura no ambiente hospedado (Agrotis/AutoSky) — nó `node3`
 defeituoso e base de homologação sem conexão com o banco. Chamado aberto.
 
+### 6.1 Reteste — mesma data, após a orientação da Agrotis
+
+A Agrotis confirmou por mensagem que o endpoint é **um só** e que a escolha entre produção e
+homologação é feita no `CompanyDB` do payload de login — exatamente o que já estava documentado
+aqui. Isso **não** altera o quadro: o reteste mostra que o problema continua e é anterior à
+escolha de base.
+
+| Verificação | Resultado |
+|---|---|
+| DNS | ✔ `134.65.247.214` |
+| TCP 50000 | ✔ aberta |
+| Balanceador | ✔ vivo — `Apache/2.4.54`, responde `401` na raiz |
+| `POST /Login` com `SBOVENPRD` | ✖ **HTTP 500, corpo vazio** |
+| `POST /Login` com `SBOVENHOM2` | ✖ **HTTP 500, corpo vazio** |
+| Forçando `ROUTEID` em `.node1`, `.node2`, `.node3`, `.node4` | ✖ **500 em todos** |
+
+**Duas evidências para o chamado:**
+
+1. O login foi feito com senha **deliberadamente inválida**. O esperado seria `-1116 Invalid
+   user/password`. Vir `500` significa que o nó estoura **antes** de avaliar a credencial — logo,
+   não é problema de usuário, senha ou permissão.
+2. O balanceador responde normalmente e sempre atribui `ROUTEID=.node3`, mas forçar os outros nós
+   dá o mesmo `500`. Portanto **não é um nó isolado**: a camada de aplicação do Service Layer está
+   fora como um todo, enquanto o Apache à frente dela segue no ar.
+
+**Impacto no projeto: continua nenhum.** O app está completo e operando pelo upload de planilhas,
+com as conversões validadas contra os arquivos reais. A integração com o SAP é otimização.
+
 **Impacto no projeto: nenhum bloqueio.** O fluxo de upload de planilhas está pronto e validado
 (1.018 bags aprovados · 753 lotes / 16.865 bags). A integração SAP é otimização, não pré-requisito.
 
