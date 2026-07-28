@@ -1,0 +1,2860 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSI 2025 — Controle de Tratamento de Sementes</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+:root{
+  --verde:#0e8a4f; --verde-esc:#0a6b3d; --verde-900:#07341f; --verde-cl:#e7f6ee;
+  --fundo:#f2f5f7; --superficie:#ffffff; --borda:#e4e9ee; --borda-forte:#d3dae2;
+  --txt:#17222b; --txt2:#64748b;
+  --vermelho:#dc3d2f; --verm-cl:#fdeceb;
+  --amarelo:#b7791f; --amar-cl:#fdf3e0;
+  --azul:#1f6fd6; --azul-cl:#e9f1fc;
+  --roxo:#6a3d9a;
+  --sombra:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+  --sombra-2:0 4px 12px rgba(16,24,40,.08),0 2px 4px rgba(16,24,40,.05);
+  --raio:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font:14px/1.5 'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+  color:var(--txt);background:var(--fundo);-webkit-font-smoothing:antialiased}
+
+/* ---------- header ---------- */
+header{background:linear-gradient(135deg,var(--verde-900) 0%,var(--verde-esc) 55%,var(--verde) 100%);
+  color:#fff;padding:14px 24px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  box-shadow:0 2px 10px rgba(7,52,31,.25)}
+header .logo{font-weight:800;font-size:17px;letter-spacing:-.2px;display:flex;align-items:center;gap:9px}
+header .logo::before{content:'';width:30px;height:30px;border-radius:8px;flex-shrink:0;
+  background:rgba(255,255,255,.16) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M12 2C7 6 4 10 4 14a8 8 0 0 0 16 0c0-4-3-8-8-12zm0 18a6 6 0 0 1-6-6c0-2.8 2-6 6-9.7 4 3.7 6 6.9 6 9.7a6 6 0 0 1-6 6z"/><path d="M12 7c-2.7 2.6-4 4.9-4 7a4 4 0 0 0 8 0c0-2.1-1.3-4.4-4-7z"/></svg>') center/18px no-repeat;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+header .sub{font-size:11px;opacity:.75;font-weight:500;margin-top:1px}
+header .spacer{flex:1}
+header .dia{background:rgba(255,255,255,.13);padding:7px 14px;border-radius:9px;font-size:12px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+header label{font-size:11px;opacity:.9;display:flex;align-items:center;gap:7px;font-weight:600}
+header select{padding:7px 10px;border-radius:8px;border:0;font-size:12px;font-weight:700;
+  color:var(--verde-900);background:#fff;cursor:pointer;box-shadow:var(--sombra)}
+
+/* ---------- nav ---------- */
+nav{background:var(--superficie);border-bottom:1px solid var(--borda);display:flex;gap:4px;
+  padding:8px 16px 0;overflow-x:auto;position:sticky;top:0;z-index:30;box-shadow:var(--sombra)}
+nav button{background:none;border:0;padding:10px 16px 13px;font:600 13px/1 'Inter',sans-serif;
+  color:var(--txt2);cursor:pointer;border-radius:9px 9px 0 0;white-space:nowrap;position:relative;
+  transition:color .15s,background .15s}
+nav button:hover{color:var(--txt);background:var(--fundo)}
+nav button.on{color:var(--verde-esc)}
+nav button.on::after{content:'';position:absolute;left:12px;right:12px;bottom:0;height:3px;
+  border-radius:3px 3px 0 0;background:var(--verde)}
+nav button .badge{background:var(--vermelho);color:#fff;border-radius:10px;padding:2px 7px;
+  font-size:10px;margin-left:6px;font-weight:700}
+
+main{padding:22px;max-width:1520px;margin:0 auto}
+h2{font-size:20px;font-weight:800;letter-spacing:-.3px;margin-bottom:4px}
+h3{font-size:14px;font-weight:700;margin-bottom:10px}
+.hint{color:var(--txt2);font-size:12.5px;margin-bottom:18px;max-width:1000px}
+.mut{color:var(--txt2)}
+.right{text-align:right}
+.nowrap{white-space:nowrap}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ---------- cards ---------- */
+.card{background:var(--superficie);border:1px solid var(--borda);border-radius:var(--raio);
+  padding:18px;margin-bottom:18px;box-shadow:var(--sombra)}
+.grid{display:grid;gap:14px}
+
+/* ---------- tabelas ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);
+  font-weight:700;padding:9px 10px;border-bottom:2px solid var(--borda-forte);white-space:nowrap;
+  background:var(--superficie)}
+td{padding:10px;border-bottom:1px solid #f0f3f6;vertical-align:middle}
+tbody tr{transition:background .12s}
+tbody tr:hover td{background:#f8fafb}
+tr.crit td{background:var(--verm-cl)}
+tr.crit:hover td{background:#fbdedb}
+
+/* ---------- tags ---------- */
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
+  font-size:11px;font-weight:600;white-space:nowrap;line-height:1.5}
+.t-estoque{background:#eef1f4;color:var(--txt2)}
+.t-baixado{background:var(--azul-cl);color:var(--azul)}
+.t-pronto{background:var(--verde-cl);color:var(--verde-esc)}
+.t-aguard{background:var(--amar-cl);color:var(--amarelo)}
+.t-prod{background:#dcebfd;color:#144e9c}
+.t-parada{background:var(--verm-cl);color:var(--vermelho)}
+.t-fim{background:#ede7f6;color:var(--roxo)}
+.t-enc{background:#e2e8f0;color:#475569}
+.t-urg{background:var(--vermelho);color:#fff}
+.t-plan{background:var(--azul-cl);color:var(--azul)}
+.t-nplan{background:var(--verm-cl);color:var(--vermelho)}
+.t-ap{background:var(--verde-cl);color:var(--verde-esc)}
+.t-apo{background:var(--amar-cl);color:var(--amarelo)}
+.t-rep{background:var(--verm-cl);color:var(--vermelho)}
+
+/* ---------- botões ---------- */
+button.b{border:1px solid var(--borda-forte);background:var(--superficie);padding:8px 14px;
+  border-radius:9px;font:600 12.5px/1 'Inter',sans-serif;cursor:pointer;color:var(--txt);
+  transition:all .15s;box-shadow:var(--sombra)}
+button.b:hover{background:var(--fundo);border-color:#b9c3cd;transform:translateY(-1px)}
+button.b:active{transform:translateY(0)}
+button.b.pri{background:var(--verde);border-color:var(--verde);color:#fff}
+button.b.pri:hover{background:var(--verde-esc);border-color:var(--verde-esc)}
+button.b.dng{background:var(--vermelho);border-color:var(--vermelho);color:#fff}
+button.b.dng:hover{filter:brightness(.92)}
+button.b.warn{background:var(--amarelo);border-color:var(--amarelo);color:#fff}
+button.b.warn:hover{filter:brightness(.92)}
+button.b:disabled{opacity:.4;cursor:not-allowed;transform:none}
+button.b.sm{padding:5px 10px;font-size:11.5px;border-radius:7px}
+
+/* ---------- inputs ---------- */
+input,select,textarea{padding:8px 10px;border:1px solid var(--borda-forte);border-radius:8px;
+  font:500 13px/1.4 'Inter',sans-serif;color:var(--txt);background:#fff;transition:border .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--verde);
+  box-shadow:0 0 0 3px rgba(14,138,79,.13)}
+input:disabled{background:var(--fundo);color:var(--txt2)}
+input.w70{width:70px} input.w90{width:92px} input.w110{width:116px}
+
+/* ---------- quadro de programação ---------- */
+.board{display:grid;grid-template-columns:96px 1fr 1fr;gap:12px}
+.board .hd{font-size:12.5px;font-weight:700;text-align:center;padding:10px;
+  background:var(--verde-cl);border:1px solid #cdeadb;border-radius:10px;color:var(--verde-900)}
+.board .rot{font-size:12px;font-weight:700;display:flex;flex-direction:column;justify-content:center;
+  align-items:center;text-align:center;background:var(--superficie);border:1px solid var(--borda);
+  border-radius:10px;padding:8px;gap:2px}
+.board .rot small{font-weight:500;color:var(--txt2);font-size:10px}
+.cell{background:var(--superficie);border:1px solid var(--borda);border-radius:10px;padding:12px;
+  min-height:150px;transition:outline .12s}
+.cell.over{outline:2px dashed var(--verde);outline-offset:-3px;background:#fbfefc}
+.cell.cheio{border-color:#f3b7b1}
+.bar{height:8px;background:#edf1f4;border-radius:5px;overflow:hidden;margin:6px 0 4px}
+.bar i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,var(--verde),#27ae6b);
+  transition:width .3s}
+.bar i.warn{background:linear-gradient(90deg,#d69e2e,var(--amarelo))}
+.bar i.dng{background:linear-gradient(90deg,#e15347,var(--vermelho))}
+.cap{font-size:11.5px;color:var(--txt2);display:flex;justify-content:space-between;margin-bottom:7px;gap:8px}
+.cap b{color:var(--txt);font-size:12.5px}
+
+/* cartões de ordem */
+.ord{border:1px solid var(--borda);border-left:4px solid var(--verde);border-radius:9px;
+  padding:9px 11px;margin-bottom:8px;cursor:grab;background:var(--superficie);
+  transition:box-shadow .15s,transform .12s;box-shadow:var(--sombra)}
+.ord:hover{box-shadow:var(--sombra-2);transform:translateY(-1px)}
+.ord:active{cursor:grabbing}
+.ord.urg{border-left-color:var(--vermelho);background:#fffbfb}
+.ord .l1{display:flex;justify-content:space-between;gap:6px;font-weight:700;font-size:12.5px}
+.ord .l2{font-size:11.5px;color:var(--txt2);margin-top:3px}
+.ord .l3{margin-top:7px;display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+
+/* ---------- KPIs ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:13px;margin-bottom:18px}
+.kpi{background:var(--superficie);border:1px solid var(--borda);border-radius:var(--raio);
+  padding:15px 16px;box-shadow:var(--sombra);position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--borda-forte)}
+.kpi.ok::before{background:var(--verde)}
+.kpi.bad::before{background:var(--vermelho)}
+.kpi.mid::before{background:var(--amarelo)}
+.kpi .lb{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);font-weight:700}
+.kpi .vl{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-top:5px}
+.kpi .fo{font-size:11.5px;color:var(--txt2);margin-top:3px}
+.kpi.ok .vl{color:var(--verde-esc)} .kpi.bad .vl{color:var(--vermelho)} .kpi.mid .vl{color:var(--amarelo)}
+
+/* ---------- modal ---------- */
+.ov{position:fixed;inset:0;background:rgba(13,20,26,.55);backdrop-filter:blur(3px);display:none;
+  align-items:flex-start;justify-content:center;padding:28px 20px;overflow-y:auto;z-index:50}
+.ov.on{display:flex}
+.mod{background:var(--superficie);border-radius:16px;max-width:1020px;width:100%;overflow:hidden;
+  box-shadow:0 24px 60px rgba(7,20,13,.35)}
+.mod .mh{background:linear-gradient(135deg,var(--verde-900),var(--verde-esc));color:#fff;
+  padding:15px 22px;display:flex;justify-content:space-between;align-items:center}
+.mod .mh b{font-size:15px;font-weight:700;letter-spacing:-.2px}
+.mod .mh button{background:rgba(255,255,255,.18);border:0;color:#fff;width:30px;height:30px;
+  border-radius:8px;cursor:pointer;font-size:16px;transition:background .15s}
+.mod .mh button:hover{background:rgba(255,255,255,.32)}
+.mod .mb{padding:20px 22px;max-height:calc(100vh - 150px);overflow-y:auto}
+
+/* ---------- seções do modal ---------- */
+.sec{border:1px solid var(--borda);border-radius:11px;margin-bottom:16px;overflow:hidden}
+.sec>.sh{background:linear-gradient(180deg,#f8fafb,#f1f5f7);padding:10px 14px;font-size:11px;
+  font-weight:800;text-transform:uppercase;letter-spacing:.7px;border-bottom:1px solid var(--borda);
+  color:#3d4c5c}
+.sec>.sb{padding:14px}
+
+.fl{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:11px;font-weight:600;color:var(--txt2)}
+.info{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.info div span{display:block;font-size:10.5px;color:var(--txt2);text-transform:uppercase;
+  letter-spacing:.4px;font-weight:600;margin-bottom:2px}
+.info div b{font-size:13.5px;font-weight:700}
+
+/* ---------- alertas ---------- */
+.alert{background:var(--amar-cl);border:1px solid #ecd9ae;border-left:4px solid var(--amarelo);
+  padding:11px 14px;border-radius:9px;font-size:12.5px;margin-bottom:12px}
+.alert.r{background:var(--verm-cl);border-color:#f3c6c1;border-left-color:var(--vermelho)}
+.rolebox{background:var(--azul-cl);border:1px solid #c5dcf5;border-radius:9px;padding:11px 14px;
+  font-size:12.5px;margin-bottom:18px}
+.legend{font-size:11.5px;color:var(--txt2);margin-top:10px;line-height:1.6}
+
+.dv-ok{color:var(--verde-esc);font-weight:700} .dv-w{color:var(--amarelo);font-weight:700}
+.dv-b{color:var(--vermelho);font-weight:800}
+.timer{font-variant-numeric:tabular-nums;font-weight:700}
+
+/* ---------- pareto ---------- */
+.pareto{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12.5px}
+.pareto .nm{width:200px;flex-shrink:0}
+.pareto .pb{flex:1;height:18px;background:#edf1f4;border-radius:5px;overflow:hidden}
+.pareto .pb i{display:block;height:100%;border-radius:5px}
+.pareto .vv{width:74px;text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- scrollbar ---------- */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c9d3dc;border-radius:6px;border:2px solid var(--fundo)}
+::-webkit-scrollbar-thumb:hover{background:#aeb9c4}
+
+/* ---------- responsivo: tablet e celular ---------- */
+@media(max-width:1024px){ main{padding:16px} }
+@media(max-width:860px){
+  .board{grid-template-columns:1fr}
+  .board .hd{display:none}
+  .card{overflow-x:auto}
+  header{padding:10px 14px;gap:10px}
+  header .dia{order:5;flex-basis:100%;text-align:center}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(128px,1fr))}
+  h2{font-size:17px}
+  .mod .mb{max-height:calc(100vh - 120px)}
+}
+@media(max-width:540px){
+  main{padding:10px}
+  header .logo{font-size:14px}
+  header .sub{display:none}
+  header select{padding:6px 8px;font-size:11px}
+  nav{padding:6px 8px 0}
+  nav button{padding:9px 11px 12px;font-size:12px}
+  .ov{padding:8px}
+  .mod{border-radius:12px}
+  .mod .mh{padding:12px 14px}
+  .mod .mb{padding:12px}
+  .kpi{padding:12px}
+  .kpi .vl{font-size:20px}
+  .fl .fld{flex:1 1 46%;min-width:0}
+  .fl .fld input,.fl .fld select{width:100%}
+  button.b{padding:8px 12px}
+  .pareto .nm{width:120px}
+  td,th{padding:8px 7px}
+}
+/* relatório de impressão */
+#printArea{display:none}
+@media print{
+  header,nav,main,.ov{display:none!important}
+  #printArea{display:block!important;font:11px/1.4 Arial,sans-serif;color:#000}
+  #printArea table{width:100%;border-collapse:collapse;margin-top:6px}
+  #printArea th,#printArea td{border:1px solid #888;padding:3px 5px;text-align:left;font-size:10.5px}
+  #printArea th{background:#eee}
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">TSI · Controle de Tratamento de Sementes</div>
+    <div class="sub">Sementes Veneza — protótipo de validação</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="dia">Dia de produção: <b id="hDia">27/07/2026</b> <span style="opacity:.7">(07:30 → 03:00)</span></div>
+  <label style="font-size:11px;opacity:.85">Perfil:
+    <select id="selRole"></select>
+  </label>
+</header>
+
+<nav id="nav"></nav>
+<main id="main"></main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<div id="printArea"></div>
+<div class="ov" id="ov"><div class="mod">
+  <div class="mh"><b id="modT">Ordem</b><button onclick="fecha()">&times;</button></div>
+  <div class="mb" id="modB"></div>
+</div></div>
+
+<script>
+/* ============================================================
+   ESTADO  (protótipo — dados em memória, sem servidor)
+   ============================================================ */
+// telas de origem dos dados (SimpleAgro) — atalhos na aba Ordens
+const SA_BASE    = 'https://sementesveneza.painel.simpleagro.com.br:3333';
+const SA_PEDIDOS = SA_BASE+'/sales/relatorios/pedidos-analitico-resumido';
+const SA_SALDOS  = SA_BASE+'/work/saldos';
+
+const CAP_TH = 12;               // toneladas/hora por máquina (configurável)
+const LIM_DESVIO = 5;            // % de alerta de desvio de consumo
+
+const S = {
+  role: 'PCP',
+  dia: '2026-07-27',
+  maquinas: [
+    {id:'TSI1', nome:'TSI 1', cap:CAP_TH, tanques:5},
+    {id:'TSI2', nome:'TSI 2', cap:CAP_TH, tanques:5}
+  ],
+  turnos: [
+    {id:1, nome:'Turno 1', ini:'07:30', fim:'17:30', horas:10.0},
+    {id:2, nome:'Turno 2', ini:'17:30', fim:'03:00', horas:9.5}
+  ],
+  embalagens: [
+    {cod:'BG5M',    desc:'Bag 5 milhões de sementes',   sem:5000000},
+    {cod:'BG2,5M',  desc:'Bag 2,5 milhões de sementes', sem:2500000},
+    {cod:'MEIOBAG', desc:'Meio bag',                    sem:2500000}
+  ],
+  // dens = densidade (g/ml): converte a dose em ml/kg para PESO de balança.
+  // A receita continua por dose; a produção afere a balança pelo peso (dose × densidade).
+  quimicos: [
+    {id:'FTZ', nome:'Fortenza Duo',      un:'ml/kg', dens:1.08},
+    {id:'CRU', nome:'Cruiser 350 FS',    un:'ml/kg', dens:1.10},
+    {id:'MXA', nome:'Maxim Advanced',    un:'ml/kg', dens:1.05},
+    {id:'DER', nome:'Dermacor',          un:'ml/kg', dens:1.15},
+    {id:'RAN', nome:'Rancona',           un:'ml/kg', dens:1.12},
+    {id:'POL', nome:'Polímero Verde',    un:'ml/kg', dens:1.20},
+    {id:'GRF', nome:'Grafite',           un:'g/kg',  dens:null},
+    {id:'EKM', nome:'Inoculante EKM',    un:'ml/kg', dens:1.02}
+  ],
+  baixas: [],   // log de baixas/estornos de lotes (relatório da logística)
+  /* FOTO DIÁRIA (upload de planilha, até integrar com SAP):
+     pedidos de venda e estoque de produto acabado, por cultivar+tratamento+embalagem */
+  // demanda é indexada pelo CÓDIGO do tratamento (recNome) — aceita código ainda sem receita cadastrada.
+  // aprov=false: pedido Integrado mas aguardando aprovação financeira — fica FORA do balanço
+  pedidosVenda: [
+    {cult:'761 I2X',     recNome:'FTZ60',            emb:'BG5M', bags:150, aprov:true},
+    {cult:'761 I2X',     recNome:'FTZ60',            emb:'BG5M', bags:35,  aprov:false},
+    {cult:'NEO680 IPRO', recNome:'FTZ60',            emb:'BG5M', bags:40,  aprov:true},
+    {cult:'O760 CE',     recNome:'CORTEVA ESPECIAL', emb:'BG5M', bags:200, aprov:true},
+    {cult:'O790 IPRO',   recNome:'V&P',              emb:'BG5M', bags:30,  aprov:true},
+    {cult:'NEO700 I2X',  recNome:'V&P',              emb:'BG5M', bags:50,  aprov:true},
+    {cult:'NEO750 IPRO', recNome:'CORTEVA ESPECIAL', emb:'BG5M', bags:22,  aprov:true}
+  ],
+  estoquePA: [
+    {cult:'761 I2X',     recNome:'FTZ60',            emb:'BG5M',   bags:20},
+    {cult:'761 I2X',     recNome:'FTZ60',            emb:'BG2,5M', bags:40},  // estoque parado: sem pedido nesta embalagem
+    {cult:'O760 CE',     recNome:'CORTEVA ESPECIAL', emb:'BG5M',   bags:10},
+    {cult:'NEO750 IPRO', recNome:'CORTEVA ESPECIAL', emb:'BG5M',   bags:25},  // estoque cobre o pedido de 22
+    {cult:'O820 IPRO',   recNome:'V&P',              emb:'BG5M',   bags:15}   // sem pedido algum
+  ],
+  demandaEm: 'carga de exemplo — 27/07/2026 07:00',
+  lotesQ: [
+    {id:'FTZ-2291', q:'FTZ'},{id:'FTZ-2304', q:'FTZ'},
+    {id:'CRU-8813', q:'CRU'},{id:'MXA-4420', q:'MXA'},
+    {id:'DER-7701', q:'DER'},{id:'RAN-3312', q:'RAN'},
+    {id:'POL-9004', q:'POL'},{id:'GRF-1180', q:'GRF'},
+    {id:'EKM-5521', q:'EKM'}
+  ],
+  // nomes das receitas = CÓDIGOS do comercial (SimpleAgro) — língua única.
+  // Produtos/doses/densidades são dados de EXEMPLO; substituir pelas receitas reais.
+  receitas: [
+    {id:'R1', nome:'FTZ60', itens:[
+      {q:'FTZ', dose:0.60, tq:1},{q:'MXA', dose:0.25, tq:2},
+      {q:'POL', dose:0.30, tq:3},{q:'GRF', dose:0.50, tq:4}]},
+    {id:'R2', nome:'V&P', itens:[
+      {q:'CRU', dose:0.45, tq:1},{q:'MXA', dose:0.25, tq:2},
+      {q:'POL', dose:0.30, tq:3}]},
+    {id:'R3', nome:'CORTEVA ESPECIAL', itens:[
+      {q:'DER', dose:0.50, tq:1},{q:'RAN', dose:0.35, tq:2},
+      {q:'POL', dose:0.30, tq:3},{q:'GRF', dose:0.50, tq:4}]},
+    {id:'R4', nome:'DER + LMT', itens:[
+      {q:'DER', dose:0.55, tq:1},{q:'MXA', dose:0.20, tq:2},
+      {q:'POL', dose:0.30, tq:3}]},
+    {id:'R5', nome:'FTZ60 + EKM', itens:[
+      {q:'FTZ', dose:0.60, tq:1},{q:'MXA', dose:0.25, tq:2},
+      {q:'POL', dose:0.30, tq:3},{q:'EKM', dose:0.40, tq:5}]},
+    // 6 produtos em 5 tanques: MXA e POL são MISTURADOS no tanque 3
+    {id:'R6', nome:'CORTEVA COMPLETO', itens:[
+      {q:'DER', dose:0.50, tq:1},{q:'RAN', dose:0.35, tq:2},
+      {q:'MXA', dose:0.20, tq:3},{q:'POL', dose:0.30, tq:3},
+      {q:'GRF', dose:0.50, tq:4},{q:'EKM', dose:0.40, tq:5}]},
+    {id:'R7', nome:'FTZ ELITE', itens:[
+      {q:'FTZ', dose:0.80, tq:1},{q:'MXA', dose:0.25, tq:2},
+      {q:'POL', dose:0.30, tq:3},{q:'GRF', dose:0.50, tq:4}]}
+  ],
+  motivos: [
+    {id:'P1', desc:'Setup / troca de receita',   tipo:'Planejada'},
+    {id:'P2', desc:'Limpeza de máquina',          tipo:'Planejada'},
+    {id:'P3', desc:'Refeição / troca de turno',   tipo:'Planejada'},
+    {id:'P4', desc:'Manutenção preventiva',       tipo:'Planejada'},
+    {id:'N1', desc:'Quebra de equipamento',       tipo:'Não planejada'},
+    {id:'N2', desc:'Falta de lote de semente',    tipo:'Não planejada'},
+    {id:'N3', desc:'Falta de produto químico',    tipo:'Não planejada'},
+    {id:'N4', desc:'Falta de embalagem / lacre',  tipo:'Não planejada'},
+    {id:'N5', desc:'Entupimento / obstrução',     tipo:'Não planejada'},
+    {id:'N6', desc:'Queda de energia',            tipo:'Não planejada'}
+  ],
+  // importados da planilha de lotes -> peso por bag resolvido por busca (PROCV)
+  lotes: [
+    {id:'L-4412', cult:'761 I2X',     pesoBag:905, status:'Em estoque'},
+    {id:'L-4418', cult:'O790 IPRO',   pesoBag:890, status:'Em estoque'},
+    {id:'L-4423', cult:'NEO680 IPRO', pesoBag:912, status:'Baixado'},
+    {id:'L-4431', cult:'NEO700 I2X',  pesoBag:880, status:'Em estoque'},
+    {id:'L-4437', cult:'O760 CE',     pesoBag:934, status:'Em estoque'},
+    {id:'L-4440', cult:'NEO750 IPRO', pesoBag:898, status:'Baixado'}
+  ],
+  ordens: []
+};
+
+/* ---------- ordens (replicadas do outro sistema) ---------- */
+const addD = (iso,k)=>{ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+k); return d.toISOString().slice(0,10); };
+const fmtDia = iso => iso.slice(8,10)+'/'+iso.slice(5,7);
+const DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
+const dow = iso => DOW[new Date(iso+'T12:00:00').getDay()];
+S.diaSel = S.dia;                                     // dia selecionado no quadro
+// horizonte navegável: 7 dias visíveis por vez, sem limite para frente/trás
+let DIAS = [];
+function setHorizonte(ini){ S.horizonte = ini; DIAS = [...Array(7)].map((_,i)=>addD(ini,i)); }
+setHorizonte(S.dia);
+function moveHorizonte(k){
+  setHorizonte(addD(S.horizonte, k*7));
+  if(S.diaSel<DIAS[0] || S.diaSel>DIAS[6]) S.diaSel = DIAS[0];
+  render();
+}
+let _seq = 0;
+function O(o){
+  _seq++;
+  return Object.assign({
+    id:_seq, prioridade:'Normal', maq:null, turno:null, seq:_seq, data:S.dia,
+    status:'Programada', obs:'', cliente:'', origem:'replicada',
+    eventos:[], paradas:[], tanques:[], qual:null
+  }, o);
+}
+S.ordens = [
+  O({num:'79500-1', cult:'761 I2X',     rec:'R1', emb:'BG5M',   bags:45, lote:'L-4412', maq:'TSI1'}),
+  O({num:'79500-2', cult:'761 I2X',     rec:'R2', emb:'BG5M',   bags:40, lote:'L-4412', maq:'TSI1'}),
+  O({num:'82335-1', cult:'761 I2X',     rec:'R5', emb:'BG5M',   bags:35, lote:'L-4412', maq:'TSI1',
+     prioridade:'Urgente'}),
+  O({num:'79485-1', cult:'NEO680 IPRO', rec:'R1', emb:'BG5M',   bags:30, lote:'L-4423', maq:'TSI1'}),
+  O({num:'79485-2', cult:'NEO680 IPRO', rec:'R4', emb:'BG2,5M', bags:25, lote:'L-4423', maq:'TSI1'}),
+  O({num:'91516-1', cult:'O760 CE',     rec:'R3', emb:'BG5M',   bags:60, lote:'L-4437', maq:'TSI2',
+     cliente:'GIOVANI BATISTA PALUDO'}),
+  O({num:'79464-1', cult:'O790 IPRO',   rec:'R1', emb:'BG5M',   bags:50, lote:'L-4418', maq:'TSI2'}),
+  O({num:'90347-1', cult:'O790 IPRO',   rec:'R2', emb:'BG5M',   bags:30, lote:'L-4418', maq:'TSI2',
+     cliente:'MARCIO BARBOSA DE BARROS', obs:'SEM GRAFITE — exigência do cliente',
+     prioridade:'Urgente'}),
+  O({num:'79469-1', cult:'NEO700 I2X',  rec:'R2', emb:'BG5M',   bags:20, lote:'L-4431', maq:'TSI2'}),
+  O({num:'90339-1', cult:'NEO750 IPRO', rec:'R3', emb:'BG5M',   bags:22, lote:'L-4440', maq:'TSI2',
+     cliente:'Valdemar Osvaldo', obs:'SEM GRAFITE'}),
+  O({num:'79492-1', cult:'NEO700 I2X',  rec:'R4', emb:'BG5M',   bags:28, lote:'L-4431'}),
+  O({num:'80074-1', cult:'O760 CE',     rec:'R6', emb:'MEIOBAG',bags:18, lote:'L-4437'})
+];
+// ordens já programadas para os próximos dias (visão semanal)
+S.ordens.push(
+  O({num:'91530-1', cult:'O760 CE',     rec:'R3', emb:'BG5M',   bags:55, lote:'L-4437', maq:'TSI1', data:addD(S.dia,1)}),
+  O({num:'91530-2', cult:'O760 CE',     rec:'R3', emb:'BG5M',   bags:48, lote:'L-4437', maq:'TSI1', data:addD(S.dia,1)}),
+  O({num:'79470-1', cult:'NEO700 I2X',  rec:'R2', emb:'BG5M',   bags:70, lote:'L-4431', maq:'TSI2', data:addD(S.dia,1)}),
+  O({num:'79471-1', cult:'NEO750 IPRO', rec:'R4', emb:'BG5M',   bags:60, lote:'L-4440', maq:'TSI1', data:addD(S.dia,2)}),
+  O({num:'79472-1', cult:'761 I2X',     rec:'R1', emb:'BG5M',   bags:65, lote:'L-4412', maq:'TSI2', data:addD(S.dia,2)}),
+  O({num:'79473-1', cult:'O790 IPRO',   rec:'R2', emb:'BG5M',   bags:40, lote:'L-4418', maq:'TSI2', data:addD(S.dia,3)})
+);
+
+/* ============================================================
+   HELPERS / REGRAS DE CÁLCULO
+   ============================================================ */
+const lote   = id => S.lotes.find(l=>l.id===id);
+const rec    = id => S.receitas.find(r=>r.id===id);
+const quim   = id => S.quimicos.find(q=>q.id===id);
+const motivo = id => S.motivos.find(m=>m.id===id);
+const maq    = id => S.maquinas.find(m=>m.id===id);
+const turno  = id => S.turnos.find(t=>t.id===id);
+
+const pesoKg = o => o.bags * (lote(o.lote)?.pesoBag || 0);
+const pesoT  = o => pesoKg(o)/1000;
+const n = (v,d=1) => (v==null||isNaN(v)) ? '—' : Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+
+// capacidade do DIA por máquina (07:30 → 03:00 = 19,5h) — turno saiu da programação
+const capDia = m => maq(m).cap * S.turnos.reduce((a,t)=>a+t.horas,0);
+
+// turno é DERIVADO do horário real do apontamento: início até 17:30 = Turno 1
+const turnoAgora = ts => { const d=new Date(ts||Date.now()); const hm=d.getHours()*60+d.getMinutes();
+  return (hm>=450 && hm<=1050) ? 1 : 2; };
+
+// ordens de uma célula do quadro (máquina × dia)
+const cel = (m,d) => S.ordens.filter(o=>o.maq===m && o.data===(d||S.diaSel))
+                             .sort((a,b)=> (a.prioridade==='Urgente'?0:1)-(b.prioridade==='Urgente'?0:1) || a.seq-b.seq);
+
+// nº de trocas de receita numa sequência (proxy de setups)
+const trocas = l => l.reduce((a,o,i)=> a + (i && l[i-1].rec!==o.rec ? 1 : 0), 0);
+
+// tonelagem programada numa máquina num dia (2 turnos)
+const tonDia = (m,d) => S.ordens.filter(o=>o.maq===m && o.data===d).reduce((a,o)=>a+pesoT(o),0);
+
+// ocupação de uma célula (máquina × dia)
+const ocup = (m,d) => { const c=capDia(m); const ton=cel(m,d).reduce((a,o)=>a+pesoT(o),0);
+  return {ton, c, pc: c?ton/c*100:0}; };
+
+// primeiro encaixe com capacidade livre para um peso (t), varrendo dias → máquinas
+function sugestao(pT){
+  for(const d of DIAS) for(const m of S.maquinas){
+    const x = ocup(m.id,d);
+    if(x.ton + pT <= x.c) return {d, m:m.id, livre:x.c-x.ton};
+  }
+  return null;
+}
+
+/* melhor slot para uma ordem: dia mais cedo primeiro; dentro do dia,
+   máquina que já tem a MESMA RECEITA+CULTIVAR (0), depois mesma receita (1),
+   depois a menos carregada (2) — é o agrupamento que reduz setup */
+function melhorSlot(o){
+  for(const d of DIAS){
+    const cand = S.maquinas
+      .map(m=>({m:m.id, x:ocup(m.id,d)}))
+      .filter(c=>c.x.ton + pesoT(o) <= c.x.c)
+      .map(c=>{
+        const os = cel(c.m,d);
+        const afim = os.some(x=>x.rec===o.rec && x.cult===o.cult) ? 0
+                   : os.some(x=>x.rec===o.rec) ? 1 : 2;
+        return {...c, afim};
+      })
+      .sort((a,b)=> a.afim-b.afim || a.x.ton-b.x.ton);
+    if(cand.length) return {m:cand[0].m, d, afim:cand[0].afim};
+  }
+  return null;
+}
+
+/* ============================================================
+   MATRIZ CENTRAL: o que cada STATUS permite
+   Regra de ouro: antes de iniciar, tudo é editável; depois que a
+   produção toca a ordem, nada que afete medição pode mudar.
+   ============================================================ */
+const REGRAS = {
+  //                        editar  excluir iniciar priorizar qualidade
+  'Não programada':        {edit:true,  del:true,  ini:false, pri:true,  qual:false},
+  'Programada':            {edit:true,  del:true,  ini:false, pri:true,  qual:false},
+  'Aguardando lote':       {edit:true,  del:true,  ini:false, pri:true,  qual:false},
+  'Pronto para produzir':  {edit:true,  del:true,  ini:true,  pri:true,  qual:false},
+  'Em produção':           {edit:false, del:false, ini:false, pri:false, qual:false},
+  'Parada':                {edit:false, del:false, ini:false, pri:false, qual:false},
+  'Finalizada':            {edit:false, del:false, ini:false, pri:false, qual:true},
+  'Qualidade apontada':    {edit:false, del:false, ini:false, pri:false, qual:true},
+  'Apontada':             {edit:false, del:false, ini:false, pri:false, qual:false}
+};
+const regra = (o,k) => (REGRAS[statusOrd(o)]||{})[k]===true;
+
+// status que significam "a produção já tocou esta ordem"
+const INICIADAS = ['Em produção','Parada','Finalizada','Qualidade apontada','Apontada'];
+
+const EDITAVEIS = Object.keys(REGRAS).filter(s=>REGRAS[s].edit);
+const podeEditar = o => regra(o,'edit');
+const motivoBloqueio = o => ['Em produção','Parada'].includes(statusOrd(o))
+  ? 'a ordem está em andamento — os tempos e consumos já estão sendo medidos'
+  : 'a ordem já foi finalizada — alterar agora distorceria tempos, consumos e relatórios';
+
+// estorno de lote: bloqueado se QUALQUER ordem dependente já foi iniciada
+const ordensIniciadasDoLote = id =>
+  S.ordens.filter(o=>o.lote===id && INICIADAS.includes(statusOrd(o)));
+
+/* ============================================================
+   BALANÇO DE DEMANDA (por cultivar + tratamento + embalagem)
+   Necessidade líquida = Pedidos de venda − Estoque PA − Ordens abertas
+   Ordem "aberta" = qualquer status antes de Apontada (lançada no AGROTIS,
+   quando passa a refletir no estoque do próximo upload).
+   ============================================================ */
+// resolve id de receita OU código direto para o nome/código canônico
+const nomeRec = r => { const x = rec(r); return x ? x.nome : String(r); };
+const somaBags = (arr,cult,rn,emb) =>
+  arr.filter(x=>x.cult===cult && x.recNome===rn && x.emb===emb).reduce((a,x)=>a+x.bags,0);
+
+function balancoDemanda(cult, recOuNome, emb, ignoreId, extraConsumo){
+  const rn = nomeRec(recOuNome);
+  // regra SimpleAgro: só pedido APROVADO (financeiro) entra no balanço;
+  // Integrado + não aprovado fica visível como "aguardando aprovação"
+  const pv = S.pedidosVenda.filter(p=>p.cult===cult && p.recNome===rn && p.emb===emb);
+  const ped     = pv.filter(p=>p.aprov!==false).reduce((a,p)=>a+p.bags,0);
+  const pedPend = pv.filter(p=>p.aprov===false).reduce((a,p)=>a+p.bags,0);
+  const est = somaBags(S.estoquePA, cult, rn, emb);
+  const abertas = S.ordens
+    .filter(o=>o.id!==ignoreId && o.cult===cult && nomeRec(o.rec)===rn && o.emb===emb
+            && statusOrd(o)!=='Apontada')
+    .reduce((a,o)=>a+o.bags,0) + (extraConsumo||0);
+  return {ped, pedPend, est, abertas, saldo: ped - est - abertas};
+}
+
+/* ---- conversão do relatório SimpleAgro (pedidos analítico resumido) ---- */
+const EMB_DEPARA = {'BB5M':'BG5M', 'BMB':'MEIOBAG'};
+const ehSimpleAgro = rows => (rows[0]||[]).includes('Status Pedido') && (rows[0]||[]).includes('Saldo a Faturar');
+
+function convertSimpleAgro(rows){
+  const h = rows[0], ix = n => h.indexOf(n);
+  const iE=ix('Status Pedido'), iH=ix('Status Financeiro'), iAL=ix('Produto'),
+        iAT=ix('Tratamento'), iAU=ix('Embalagem'), iBW=ix('Saldo a Faturar');
+  const agg = {};
+  const resumo = {total:rows.length-1, foraStatus:0, semTsi:0, saldoZero:0, ok:0,
+                  semReceita:{}, embDesc:{}};
+  rows.slice(1).forEach(r=>{
+    if((r[iE]||'').trim()!=='Integrado'){ resumo.foraStatus++; return; }          // regra: coluna E
+    const trat = String(r[iAT]||'').trim();
+    if(!trat || trat.toUpperCase()==='SEM TSI'){ resumo.semTsi++; return; }       // sem TSI: fora da programação
+    const bags = parseFloat(String(r[iBW]).replace(',','.')) || 0;                // regra: coluna BW
+    if(bags<=0){ resumo.saldoZero++; return; }                                    // já faturado: sem demanda
+    const emb = EMB_DEPARA[String(r[iAU]||'').trim()];
+    if(!emb){ const e=String(r[iAU]||'?'); resumo.embDesc[e]=(resumo.embDesc[e]||0)+bags; return; }
+    // código = nome da receita. Código SEM receita cadastrada NÃO é descartado:
+    // o pedido existe — entra na demanda e o painel marca "receita não cadastrada"
+    const rc = S.receitas.find(x=>x.nome.toUpperCase()===trat.toUpperCase());
+    const rn = rc ? rc.nome : trat;
+    if(!rc) resumo.semReceita[trat]=(resumo.semReceita[trat]||0)+bags;
+    const cult = String(r[iAL]||'').split(' - ')[0].trim();
+    const aprov = (r[iH]||'').trim()==='Aprovado';                                // regra: coluna H
+    const k = [cult, rn, emb, aprov?'A':'P'].join('|');
+    agg[k] = (agg[k]||0) + bags;
+    resumo.ok++;
+  });
+  const linhas = Object.keys(agg).sort().map(k=>{
+    const [c,rn,e,f] = k.split('|'); return [c,rn,e,agg[k],f].join(';');
+  });
+  return {linhas, resumo};
+}
+
+// avisos "fortes" (não bloqueiam — decisão do PCP) + estoque parado do mesmo cultivar+tratamento
+function analiseDemanda(cult, recId, emb, bagsNovos, ignoreId, extraConsumo){
+  const rn = nomeRec(recId);
+  const b = balancoDemanda(cult, rn, emb, ignoreId, extraConsumo);
+  const avisos = [];
+  if(b.ped===0) avisos.push('SEM PEDIDO DE VENDA para '+cult+' + '+rn+' + '+emb);
+  else{
+    if(b.est>=b.ped) avisos.push('ESTOQUE JÁ COBRE o pedido: '+b.est+' bg em estoque para '+b.ped+' bg pedidos');
+    else if(b.saldo<=0 && b.abertas>0)
+      avisos.push('JÁ PLANEJADO: '+b.abertas+' bg em ordens abertas (pedido '+b.ped+' − estoque '+b.est+' já atendido)');
+    else if(bagsNovos>b.saldo)
+      avisos.push('EXCEDE a necessidade: saldo descoberto é '+Math.max(0,b.saldo)+' bg e a ordem tem '+bagsNovos+' bg');
+  }
+  // estoque parado: mesma cultivar+tratamento, em embalagem SEM pedido de venda
+  const parado = S.estoquePA.filter(e=>e.cult===cult && e.recNome===rn && e.bags>0
+    && somaBags(S.pedidosVenda, cult, rn, e.emb)===0);
+  return {b, avisos, parado};
+}
+
+// status derivado: lote baixado libera a ordem
+function statusOrd(o){
+  if(['Em produção','Parada','Finalizada','Qualidade apontada','Apontada'].includes(o.status)) return o.status;
+  if(!o.maq) return 'Não programada';
+  return lote(o.lote)?.status === 'Em estoque' ? 'Aguardando lote' : 'Pronto para produzir';
+}
+
+/* ---- tempos ---- */
+function tempos(o){
+  const ini = o.eventos.find(e=>e.t==='inicio');
+  const fim = o.eventos.find(e=>e.t==='fim');
+  if(!ini) return {bruto:0, pPlan:0, pNao:0, par:0, liq:0, lead:0};
+  const fimTs = fim ? fim.ts : Date.now();
+  const bruto = (fimTs - ini.ts)/1000;
+  let pPlan=0, pNao=0;
+  o.paradas.forEach(p=>{
+    const d = ((p.fim||Date.now()) - p.ini)/1000;
+    if(motivo(p.motivo).tipo==='Planejada') pPlan+=d; else pNao+=d;
+  });
+  const par = pPlan+pNao;
+  return {bruto, pPlan, pNao, par, liq:Math.max(0,bruto-par),
+          lead: bruto /* protótipo: liberação = início da 1ª ordem */};
+}
+function hms(s){
+  s=Math.max(0,Math.floor(s));
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), g=s%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(g).padStart(2,'0');
+}
+
+/* ---- pesos de balança (densidade) e consumo Real vs Planejado por TANQUE ---- */
+// peso de balança planejado de um item da receita (kg):
+//   ml/kg -> dose × peso semente × densidade / 1000
+//   g/kg  -> dose × peso semente / 1000
+const pesoItemKg = (it, kg) => { const q = quim(it.q);
+  return q.un==='ml/kg' ? it.dose*kg*(q.dens||1)/1000 : it.dose*kg/1000; };
+
+// peso total de químico da ordem (kg) e peso de ensaque por bag
+const pesoQuimKg = o => rec(o.rec).itens.reduce((a,it)=>a+pesoItemKg(it, pesoKg(o)), 0);
+const ensaqueBag = o => (lote(o.lote)?.pesoBag||0) + (o.bags? pesoQuimKg(o)/o.bags : 0);
+
+// monta os tanques da ordem agrupando itens da receita por tanque —
+// receita com mais de 5 produtos = MISTURA de produtos no mesmo tanque
+function montaTanques(o){
+  const g = {};
+  rec(o.rec).itens.forEach(it=>{ (g[it.tq]=g[it.tq]||[]).push(it); });
+  return Object.keys(g).sort((a,b)=>a-b)
+    .map(tq=>({tq:+tq, itens:g[tq], lotesQ:[], pi:null, pf:null}));
+}
+
+// Real vs Planejado por tanque: planejado = Σ pesos de balança dos produtos do tanque;
+// real = peso inicial − peso final (balança)
+function consumosTq(o){
+  const kg = pesoKg(o);
+  return (o.tanques||[]).map(t=>{
+    const plan = t.itens.reduce((a,it)=>a+pesoItemKg(it,kg),0);
+    // volume planejado (L) — só produtos dosados em ml/kg
+    const vol = t.itens.reduce((a,it)=>quim(it.q).un==='ml/kg' ? a+it.dose*kg/1000 : a, 0);
+    const real = (t.pi!=null && t.pf!=null) ? Math.max(0, t.pi-t.pf) : null;
+    return {...t, plan, vol, real, dv: (real==null||!plan) ? null : (real-plan)/plan*100};
+  });
+}
+function clsDv(v){ if(v==null) return 'mut'; const a=Math.abs(v);
+  return a<=LIM_DESVIO?'dv-ok':(a<=LIM_DESVIO*2?'dv-w':'dv-b'); }
+const fmtDv = v => v==null ? '—' : (v>0?'+':'')+n(v,1)+'%';
+
+/* ---- permissões ---- */
+const PERM = {
+  'PCP':          ['ordens','prog','lotes','exec','qual','ind','cad'],
+  'Logística':    ['prog','lotes','ind'],
+  'Produção':     ['prog','exec','ind'],
+  'Qualidade':    ['exec','qual','ind'],
+  'Gestor':       ['ordens','prog','lotes','exec','qual','ind','cad']
+};
+const ACOES = {
+  priorizar:  r=>['PCP','Gestor'].includes(r),
+  criarOrdem: r=>['PCP','Gestor'].includes(r),
+  agrotis:    r=>['PCP','Gestor'].includes(r),   // encerramento: lançamento no AGROTIS
+  programar:  r=>['PCP','Gestor'].includes(r),
+  baixarLote: r=>['Logística','Gestor'].includes(r),
+  apontar:    r=>['Produção','Gestor'].includes(r),
+  qualidade:  r=>['Qualidade','Gestor'].includes(r)
+};
+
+/* ============================================================
+   NAVEGAÇÃO
+   ============================================================ */
+const VIEWS = [
+  {id:'ordens',nome:'Ordens'},
+  {id:'prog',  nome:'Programação & Ocupação'},
+  {id:'lotes', nome:'Lotes a baixar'},
+  {id:'exec',  nome:'Execução'},
+  {id:'qual',  nome:'Qualidade'},
+  {id:'ind',   nome:'Indicadores'},
+  {id:'cad',   nome:'Cadastros'}
+];
+let view = 'prog';
+
+function renderNav(){
+  const perm = PERM[S.role];
+  document.getElementById('nav').innerHTML = VIEWS.filter(v=>perm.includes(v.id)).map(v=>{
+    let bd='';
+    if(v.id==='lotes'){ const c=lotesCriticos().length; if(c) bd=`<span class="badge">${c}</span>`; }
+    return `<button class="${view===v.id?'on':''}" onclick="go('${v.id}')">${v.nome}${bd}</button>`;
+  }).join('');
+  if(!perm.includes(view)) view = perm[0];
+}
+function go(v){ view=v; render(); }
+
+document.getElementById('selRole').innerHTML =
+  Object.keys(PERM).map(r=>`<option ${r===S.role?'selected':''}>${r}</option>`).join('');
+document.getElementById('selRole').onchange = e => { S.role=e.target.value; render(); };
+
+function render(){
+  renderNav();
+  const m = document.getElementById('main');
+  m.innerHTML = ({ordens:vOrdens, prog:vProg, lotes:vLotes, exec:vExec, qual:vQual, ind:vInd, cad:vCad})[view]();
+  if(view==='prog') dragInit();
+}
+
+/* ============================================================
+   0. ORDENS — inclusão por digitação e importação de planilha
+   ============================================================ */
+// chave anti-duplicidade: pedido + cultivar + tratamento + embalagem
+const chaveOrd = x => [x.num, x.cult, x.rec, x.emb].join('|').toUpperCase();
+const jaExiste = x => S.ordens.some(o => chaveOrd(o) === chaveOrd(x));
+
+let _prev = null;   // pré-visualização da importação
+let _csv  = null;   // conteúdo digitado na área de importação (preservado entre renders)
+
+const CSV_EX = `79512;R1;BG5M;38;L-4412;;
+79512;R2;BG2,5M;12;L-4412;;
+91520;R3;BG5M;44;L-4437;COOPERATIVA AGRO SUL;
+90355;R2;BG5M;16;L-4418;MARCIO BARBOSA DE BARROS;SEM GRAFITE
+79500-1;R1;BG5M;45;L-4412;;
+80090;R9;BG5M;20;L-4412;;
+79530;R1;BG5M;25;L-9999;;`;
+
+function vOrdens(){
+  const pode = ACOES.criarOrdem(S.role);
+  const prog = S.ordens.filter(o=>o.maq).length;
+  let h = `<h2>Ordens de produção</h2>
+    <div class="hint">As ordens são geradas em outro sistema e replicadas aqui — por digitação ou importação de planilha.
+    Não há integração automática. A chave <b>nº da ordem + cultivar + tratamento + embalagem</b> impede duplicidade ao reimportar o mesmo arquivo.</div>`;
+
+  h += `<div class="kpis">
+    <div class="kpi"><div class="lb">Total de ordens</div><div class="vl">${S.ordens.length}</div></div>
+    <div class="kpi"><div class="lb">Programadas</div><div class="vl">${prog}</div></div>
+    <div class="kpi"><div class="lb">No backlog</div><div class="vl">${S.ordens.length-prog}</div><div class="fo">sem máquina/turno</div></div>
+    <div class="kpi"><div class="lb">Peso total</div><div class="vl">${n(S.ordens.reduce((a,o)=>a+pesoT(o),0),1)} t</div></div>
+  </div>`;
+
+  h += planoSemana('Ocupação das máquinas');
+  h += painelDemanda();
+
+  if(!pode) return h + `<div class="rolebox">Perfil <b>${S.role}</b>: leitura. A inclusão de ordens é feita
+    pelos perfis <b>PCP</b> e <b>Gestor</b>.</div>` + tabOrdens();
+
+  /* ---- digitação ---- */
+  h += `<div class="card"><h3>Incluir ordem (digitação)</h3>
+    <div class="fl">
+      <div class="fld"><label>Nº da ordem *</label><input class="w110" id="fNum" placeholder="ex. 79512"></div>
+      <div class="fld"><label>Lote de semente *</label>
+        <select id="fLote" onchange="ecoLote()"><option value="">— selecione —</option>
+        ${S.lotes.map(l=>`<option value="${l.id}">${l.id} · ${l.cult}</option>`).join('')}</select></div>
+      <div class="fld"><label>Cultivar</label><input class="w110" id="fCult" readonly placeholder="do lote" style="background:var(--cinza)"></div>
+      <div class="fld"><label>Tratamento / receita *</label>
+        <select id="fRec" onchange="ecoDem()">${S.receitas.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('')}</select></div>
+      <div class="fld"><label>Embalagem *</label>
+        <select id="fEmb" onchange="ecoDem()">${S.embalagens.map(e=>`<option value="${e.cod}">${e.cod}</option>`).join('')}</select></div>
+      <div class="fld"><label>Bags *</label><input class="w70 num" type="number" id="fBags" value="20" onchange="ecoLote()"></div>
+      <div class="fld"><label>Peso calculado</label><input class="w110" id="fPeso" readonly style="background:var(--cinza)"></div>
+    </div>
+    <div class="fl" style="margin-top:10px">
+      <div class="fld" style="flex:1;min-width:200px"><label>Cliente (texto livre — sem cadastro)</label><input id="fCli" placeholder="opcional"></div>
+      <div class="fld" style="flex:1;min-width:200px"><label>Observação de processo</label><input id="fObs" placeholder="ex. SEM GRAFITE"></div>
+      <div class="fld"><label>Prioridade</label><select id="fPri"><option>Normal</option><option>Urgente</option></select></div>
+      <div class="fld"><label>Máquina</label><select id="fMaq" onchange="ecoCap()"><option value="">— pool —</option>
+        ${S.maquinas.map(m=>`<option value="${m.id}">${m.nome}</option>`).join('')}</select></div>
+      <div class="fld"><label>Data programada</label><input type="date" id="fData" value="${S.diaSel}" onchange="ecoCap()"></div>
+      <button class="b pri" onclick="novaOrdem()">+ Incluir ordem</button>
+    </div>
+    <div class="legend" id="fDemHint" style="min-height:16px"></div>
+    <div class="legend" id="fCapHint" style="min-height:16px"></div>
+    <div class="legend">O peso vem do lote (peso/bag × bags) — é o mesmo PROCV que hoje é feito na planilha.</div>
+  </div>`;
+
+  /* ---- importação ---- */
+  h += `<div class="card"><h3>Importar planilha de ordens</h3>
+    <div class="hint" style="margin-bottom:9px">Cole as linhas da planilha no formato
+    <code>nº ordem ; receita ; embalagem ; bags ; lote ; cliente ; observação</code> (separador ponto-e-vírgula).
+    O exemplo abaixo já inclui, de propósito, uma linha <b>duplicada</b>, uma com <b>receita inexistente</b> e
+    uma com <b>lote inexistente</b> — para você ver a validação funcionando.</div>
+    <textarea id="fCsv" oninput="_csv=this.value" style="width:100%;height:120px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">${_csv ?? CSV_EX}</textarea>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      ${btnExcel('excelOrdens')}
+      <button class="b" onclick="preverImport()">Analisar planilha</button>
+      ${_prev? `<button class="b pri" onclick="confirmaImport()">Confirmar importação (${_prev.filter(l=>l.ok).length} válida(s))</button>
+                 <button class="b" onclick="_prev=null;render()">Cancelar</button>`:''}
+    </div>`;
+
+  if(_prev){
+    const okN=_prev.filter(l=>l.ok).length, dupN=_prev.filter(l=>l.st==='Duplicada').length;
+    h += `<div class="alert ${okN?'':'r'}" style="margin-top:12px">
+      <b>${okN}</b> linha(s) pronta(s) para importar · <b>${dupN}</b> duplicada(s) ignorada(s) ·
+      <b>${_prev.length-okN-dupN}</b> com erro.</div>
+      <table><thead><tr><th>#</th><th>Nº ordem</th><th>Cultivar</th><th>Receita</th><th>Emb.</th>
+      <th class="num">Bags</th><th>Lote</th><th class="num">Peso</th><th>Situação</th><th>Demanda</th></tr></thead><tbody>`;
+    _prev.forEach((l,i)=>{
+      h += `<tr class="${l.ok?'':'crit'}"><td>${i+1}</td><td><b>${l.num||'—'}</b></td><td>${l.cult||'—'}</td>
+        <td>${l.recNome||l.recRaw||'—'}</td><td>${l.emb||'—'}</td><td class="num">${l.bags||'—'}</td>
+        <td>${l.lote||'—'}</td><td class="num">${l.peso!=null?n(l.peso,1)+' t':'—'}</td>
+        <td><span class="tag ${l.ok?'t-pronto':(l.st==='Duplicada'?'t-aguard':'t-parada')}">${l.st}</span>
+          ${l.msg?`<br><span class="mut" style="font-size:11px">${l.msg}</span>`:''}</td>
+        <td>${l.ok?`<span class="${l.demOk?'dv-ok':'dv-w'}" style="font-size:11px">${l.demOk?'✔ ':'⚠ '}${l.dem}</span>`
+          :'<span class="mut">—</span>'}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+  }
+  h += `</div>`;
+
+  /* ---- atalhos para as telas de origem (SimpleAgro) ---- */
+  h += `<div class="card" style="border-left:4px solid var(--azul)">
+    <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Buscar dados na SimpleAgro
+      <span class="mut" style="font-weight:400;font-size:12px">— abre a tela de origem em nova aba</span>
+      <span style="flex:1"></span>
+      <a class="b pri" style="text-decoration:none" target="_blank"
+         href="${SA_PEDIDOS}">↗ Abrir Pedidos</a>
+      <a class="b pri" style="text-decoration:none" target="_blank"
+         href="${SA_SALDOS}">↗ Abrir Saldos</a></h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:12.5px">
+      <div><b>Pedidos de venda</b> — relatório Pedidos Analítico Resumido
+        <ol style="margin:6px 0 0 18px;color:var(--txt2);line-height:1.7">
+          <li>Selecione a <b>safra</b> no topo e clique em <b>Ir</b></li>
+          <li>Clique em <b>Exportar para Excel</b> e aguarde o download</li>
+          <li>Volte aqui e use <b>📄 Carregar Excel</b> na caixa de Pedidos</li>
+        </ol></div>
+      <div><b>Saldos</b> — estoque e lotes (alimenta os dois de uma vez)
+        <ol style="margin:6px 0 0 18px;color:var(--txt2);line-height:1.7">
+          <li>Selecione a <b>safra</b> e clique em <b>Ir</b> (recarrega o relatório)</li>
+          <li>Clique em <b>Exportar</b></li>
+          <li>Use <b>📄 Carregar Excel</b> em Estoque <i>ou</i> em Lotes — o mesmo arquivo preenche as duas caixas</li>
+        </ol></div>
+    </div>
+    <div class="legend">Por segurança, o navegador não permite que esta página baixe arquivos de outro sistema
+    automaticamente. No sistema definitivo (com servidor) essa busca roda sozinha, sem download manual.</div>
+  </div>`;
+
+  /* ---- upload diário: pedidos de venda & estoque PA ---- */
+  h += `<div class="card"><h3>Upload diário — Pedidos de venda & Estoque PA
+    <span class="mut" style="font-weight:400;font-size:12px">· foto do dia, SUBSTITUI a carga anterior
+    (até integrar com SAP) · última carga: <b>${S.demandaEm}</b></span></h3>
+    <div class="hint" style="margin-bottom:9px">Pedidos: <code>cultivar ; código do tratamento ; embalagem ; bags ; A|P</code>
+    (A = aprovado · P = aguardando aprovação — só A entra no balanço). Estoque: <code>cultivar ; código ; embalagem ; bags</code>.
+    O botão "Carregar Excel" dos pedidos reconhece o <b>relatório SimpleAgro</b> automaticamente:
+    filtra Integrado (col. E), usa Saldo a Faturar (col. BW), marca A/P pelo financeiro (col. H),
+    exclui SEM TSI e converte BB5M→BG5M, BMB→MEIOBAG.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div>
+        <div class="fld" style="margin-bottom:6px"><label>Pedidos de venda</label></div>
+        <textarea id="fPed" style="width:100%;height:110px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">${S.pedidosVenda.map(p=>[p.cult,p.recNome,p.emb,p.bags,p.aprov===false?'P':'A'].join(';')).join('\n')}</textarea>
+        <div style="margin-top:8px;display:flex;gap:8px">${btnExcel('excelPed')}
+          <button class="b" onclick="importPedidos()">Importar pedidos (substitui)</button></div>
+      </div>
+      <div>
+        <div class="fld" style="margin-bottom:6px"><label>Estoque de produto acabado</label></div>
+        <textarea id="fEst" style="width:100%;height:110px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">${S.estoquePA.map(e=>[e.cult,e.recNome,e.emb,e.bags].join(';')).join('\n')}</textarea>
+        <div style="margin-top:8px;display:flex;gap:8px">${btnExcel('excelEst')}
+          <button class="b" onclick="importEstoque()">Importar estoque (substitui)</button></div>
+      </div>
+    </div></div>`;
+
+  /* ---- importação de lotes ---- */
+  h += `<div class="card"><h3>Importar planilha de lotes <span class="mut" style="font-weight:400;font-size:12px">
+    — é daqui que sai o peso de cada ordem</span></h3>
+    <div class="hint" style="margin-bottom:9px">Formato <code>lote ; cultivar ; peso por bag (kg)</code>.</div>
+    <textarea id="fCsvL" style="width:100%;height:70px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">L-4455;O820 IPRO;921
+L-4460;NEO802 I2X;887</textarea>
+    <div style="margin-top:10px;display:flex;gap:8px">${btnExcel('excelLotes')}
+      <button class="b" onclick="importLotes()">Importar lotes</button></div>
+  </div>`;
+
+  return h + tabOrdens();
+}
+
+let _fDia='todos', _fSt='todos', _fMq='todos', _fCult='todos', _fRec='todos', _fLote='todos', _fBusca='';
+function setFiltro(k,v){
+  if(k==='dia')_fDia=v; if(k==='st')_fSt=v; if(k==='mq')_fMq=v;
+  if(k==='cult')_fCult=v; if(k==='rec')_fRec=v; if(k==='lote')_fLote=v;
+  if(k==='busca')_fBusca=v.trim().toUpperCase();
+  render();
+}
+function limpaFiltros(){ _fDia=_fSt=_fMq=_fCult=_fRec=_fLote='todos'; _fBusca=''; render(); }
+
+/* ---- painel Demanda × Estoque × Planejado (visão do PCP) ---- */
+function painelDemanda(){
+  const keys = {};
+  const add = (cult,rn,emb) => keys[[cult,rn,emb].join('|')] = true;
+  S.pedidosVenda.forEach(p=>add(p.cult,p.recNome,p.emb));
+  S.estoquePA.forEach(e=>add(e.cult,e.recNome,e.emb));
+  S.ordens.filter(o=>statusOrd(o)!=='Apontada').forEach(o=>add(o.cult,nomeRec(o.rec),o.emb));
+  const rows = Object.keys(keys).map(k=>{
+    const [cult,recNome,emb] = k.split('|');
+    const b = balancoDemanda(cult,recNome,emb);
+    let st, cls;
+    if(b.ped===0 && b.est>0){ st='ESTOQUE SEM PEDIDO'; cls='t-apo'; }
+    else if(b.ped===0){ st='planejado sem pedido'; cls='t-estoque'; }
+    else if(b.est>=b.ped){ st='estoque cobre'; cls='t-baixado'; }
+    else if(b.saldo>0){ st='DESCOBERTO: '+b.saldo+' bg'; cls='t-parada'; }
+    else if(b.saldo<0){ st='excesso planejado: '+(-b.saldo)+' bg'; cls='t-aguard'; }
+    else { st='coberto'; cls='t-pronto'; }
+    return {cult,recNome,emb,b,st,cls, cadastrada: S.receitas.some(x=>x.nome===recNome)};
+  }).sort((a,c)=>c.b.saldo-a.b.saldo);
+  const desc = rows.filter(r=>r.b.ped>0 && r.b.est<r.b.ped && r.b.saldo>0);
+  return `<div class="card"><h3>Demanda × Estoque × Planejado
+      <span class="mut" style="font-weight:400;font-size:12px">— por cultivar + tratamento + embalagem ·
+      carga: ${S.demandaEm}</span></h3>
+    ${desc.length?`<div class="alert"><b>${desc.length} combinação(ões) com pedido descoberto</b> —
+      falta programar ${desc.reduce((a,r)=>a+r.b.saldo,0)} bg no total.</div>`:''}
+    <table><thead><tr><th>Cultivar</th><th>Tratamento</th><th>Emb.</th>
+      <th class="num">Pedido aprov.</th><th class="num" title="Integrado, aguardando aprovação financeira — fora do balanço">Aguard. aprov.</th>
+      <th class="num">Estoque PA</th><th class="num">Ordens abertas</th>
+      <th class="num">Saldo</th><th>Situação</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr>
+      <td>${r.cult}</td>
+      <td>${r.recNome}${r.cadastrada?'':' <span class="tag t-apo" title="cadastre a receita com este código para poder criar ordens">receita não cadastrada</span>'}</td>
+      <td>${r.emb}</td>
+      <td class="num">${r.b.ped||'—'}</td>
+      <td class="num ${r.b.pedPend?'dv-w':''}">${r.b.pedPend||'—'}</td>
+      <td class="num">${r.b.est||'—'}</td>
+      <td class="num">${r.b.abertas||'—'}</td>
+      <td class="num"><b class="${r.b.saldo>0?'dv-b':(r.b.saldo<0?'dv-w':'dv-ok')}">${r.b.saldo}</b></td>
+      <td><span class="tag ${r.cls}">${r.st}</span></td></tr>`).join('')}
+    </tbody></table>
+    <div class="legend"><b>Saldo</b> = pedido − estoque − ordens abertas (tudo antes de "Apontada").
+    Saldo positivo = falta produzir · negativo = produção além do pedido · ordens Apontadas passam a
+    contar no estoque do próximo upload.</div></div>`;
+}
+
+/* ---- exportação de relatórios para Excel ---- */
+function baixaXlsx(nome, abas){
+  if(typeof XLSX==='undefined'){ alert('O gerador de Excel não carregou (sem internet?).'); return; }
+  const wb = XLSX.utils.book_new();
+  abas.forEach(a=>XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a.dados), a.nome));
+  XLSX.writeFile(wb, nome+'_'+S.dia+'.xlsx');
+}
+const hrs = s => +(s/3600).toFixed(2);
+
+function linhasOrdens(){
+  const d=[['Seq','Nº ordem','Prioridade','Cultivar','Tratamento','Emb.','Bags','Lote semente',
+    'Peso (t)','Ensaque/bag (kg)','Máquina','Data','Turno','Status','Cliente','Observação','Lotes de químico']];
+  filtraOrdens().forEach(o=>{
+    const pos = o.maq ? cel(o.maq,o.data).indexOf(o)+1 : '';
+    d.push([pos, o.num, o.prioridade, o.cult, rec(o.rec).nome, o.emb, o.bags, o.lote,
+      +pesoT(o).toFixed(2), +ensaqueBag(o).toFixed(1),
+      o.maq?maq(o.maq).nome:'pool', o.maq?o.data:'', o.turno?'T'+o.turno:'', statusOrd(o),
+      o.cliente||'', o.obs||'', [...new Set((o.tanques||[]).flatMap(t=>t.lotesQ))].join(', ')]);
+  });
+  return d;
+}
+function linhasProducaoOrdem(){
+  const d=[['Ordem','Máquina','Turno','Data','Peso (t)','Início','Fim','Planejado (h)',
+    'Bruto (h)','Bruto vs plan (%)','Líquido (h)','Líq vs plan (%)','Parado (h)',
+    'Parada planejada (h)','Parada não plan. (h)','Prod. bruta (t/h)','Prod. líquida (t/h)','Qualidade']];
+  S.ordens.filter(o=>tempos(o).bruto>0).forEach(o=>{
+    const T=tempos(o);
+    const ini=o.eventos.find(e=>e.t==='inicio'), fim=o.eventos.find(e=>e.t==='fim');
+    const plan=pesoT(o)/maq(o.maq).cap*3600;
+    d.push([o.num, maq(o.maq).nome, o.turno?'T'+o.turno:'', o.data, +pesoT(o).toFixed(2),
+      ini?new Date(ini.ts).toLocaleString('pt-BR'):'', fim?new Date(fim.ts).toLocaleString('pt-BR'):'',
+      hrs(plan), hrs(T.bruto), +(T.bruto/plan*100).toFixed(0), hrs(T.liq), +(T.liq/plan*100).toFixed(0),
+      hrs(T.par), hrs(T.pPlan), hrs(T.pNao),
+      T.bruto?+(pesoT(o)/(T.bruto/3600)).toFixed(2):'', T.liq?+(pesoT(o)/(T.liq/3600)).toFixed(2):'',
+      o.qual?o.qual.visual:'']);
+  });
+  return d;
+}
+function linhasProducaoPeriodo(){
+  const fin=S.ordens.filter(o=>['Finalizada','Qualidade apontada','Apontada'].includes(o.status));
+  const porDia={};
+  fin.forEach(o=>{ const T=tempos(o);
+    const g=porDia[o.data]=porDia[o.data]||{ton:0,n:0,b:0,p:0,l:0};
+    g.ton+=pesoT(o); g.n++; g.b+=T.bruto; g.p+=T.par; g.l+=T.liq; });
+  const dias=Object.keys(porDia).sort();
+  const soma=iso=>dias.filter(x=>x>=iso).reduce((a,x)=>({ton:a.ton+porDia[x].ton,n:a.n+porDia[x].n,
+    b:a.b+porDia[x].b,p:a.p+porDia[x].p,l:a.l+porDia[x].l}),{ton:0,n:0,b:0,p:0,l:0});
+  const linha=(nome,g)=>[nome,g.n,+g.ton.toFixed(2),hrs(g.b),hrs(g.p),hrs(g.l),
+    g.l?+(g.ton/(g.l/3600)).toFixed(2):''];
+  const d=[['Período','Ordens','Produzido (t)','Bruto (h)','Parado (h)','Líquido (h)','Prod. líquida (t/h)']];
+  dias.forEach(x=>d.push(linha(x,porDia[x])));
+  d.push(linha('Semana (últimos 7 dias)',soma(addD(S.dia,-6))));
+  d.push(linha('Mês corrente',soma(S.dia.slice(0,8)+'01')));
+  d.push(linha('Geral',soma('0000-00-00')));
+  return d;
+}
+function linhasLogistica(){
+  const d=[['Data/hora','Lote','Bags','Peso (t)','Por','Tipo']];
+  S.baixas.forEach(b=>d.push([new Date(b.ts).toLocaleString('pt-BR'), b.lote, b.bags,
+    +b.peso.toFixed(2), b.por, b.estorno?'estorno':'baixa']));
+  return d;
+}
+function expOrdens(){ baixaXlsx('ordens_tsi', [{nome:'Ordens', dados:linhasOrdens()}]); }
+function expProducao(){ baixaXlsx('producao_tsi',
+  [{nome:'Por ordem', dados:linhasProducaoOrdem()},{nome:'Por período', dados:linhasProducaoPeriodo()}]); }
+function expLogistica(){ baixaXlsx('logistica_tsi', [{nome:'Baixas', dados:linhasLogistica()}]); }
+
+/* ============================================================
+   RELATÓRIO DE SALDOS (SimpleAgro Work) — uma fonte, dois destinos:
+   · linhas COM embalagem e tratamento "SEM TSI"  → LOTES DE SEMENTE (entrada do TSI)
+   · linhas COM embalagem e tratamento real       → ESTOQUE PA (produto acabado)
+   · PRÉ-LOTE / granel (sem embalagem)            → ignorado (matéria-prima)
+   Peso do bag = PMS × 5 (BB5M) ou × 2,5 (BMB)
+   ============================================================ */
+const EMB_SALDOS = {'BB5M':{cod:'BG5M', fator:5}, 'BMB':{cod:'MEIOBAG', fator:2.5}};
+const ehSaldosSA = rows => { const h=(rows[0]||[]).map(x=>String(x||'').toUpperCase());
+  return h.includes('LOTE TRATAMENTO') && h.includes('SALDO') && h.includes('CULTIVAR'); };
+
+function convertSaldos(rows){
+  const h = rows[0].map(x=>String(x||'').trim().toUpperCase());
+  const ix = n => h.indexOf(n);
+  const iN=ix('NOME PRODUTO'), iC=ix('CULTIVAR'), iL=ix('LOTE'),
+        iT=ix('LOTE TRATAMENTO'), iS=ix('SALDO');
+  const iP = h.findIndex(x=>x.includes('PME')||x.includes('PMS'));
+  const num = v => { const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?0:n; };
+  const lotes = {}, est = {};
+  const resumo = {total:rows.length-1, granel:0, semSaldo:0, negativos:[], lotes:0, estoque:0, semPms:0};
+  rows.slice(1).forEach(r=>{
+    const toks = String(r[iN]||'').trim().split(/\s+/);
+    const embRaw = toks[toks.length-1];
+    const cfg = EMB_SALDOS[embRaw];
+    if(!cfg){ resumo.granel++; return; }                       // pré-lote/granel: fora
+    const bags = num(r[iS]);
+    if(bags<0) resumo.negativos.push(String(r[iL]||'?')+' ('+bags+')');
+    if(bags<=0){ resumo.semSaldo++; return; }   // saldo zero/negativo não vira lote nem estoque
+    const cult = String(r[iC]||'').trim();
+    const trat = String(r[iT]||'').trim();
+    const pms  = iP>=0 ? num(r[iP]) : 0;
+    if(trat.toUpperCase()==='SEM TSI'){                        // entrada do TSI → lote de semente
+      const id = String(r[iL]||'').trim(); if(!id) return;
+      if(!pms) resumo.semPms++;
+      const a = lotes[id] || (lotes[id]={cult, emb:cfg.cod, peso:+(pms*cfg.fator).toFixed(0), bags:0});
+      a.bags += bags;
+    } else {                                                   // já tratado → estoque PA
+      const k = [cult, trat, cfg.cod].join('|');
+      est[k] = (est[k]||0) + bags;
+    }
+  });
+  resumo.lotes = Object.keys(lotes).length;
+  resumo.estoque = Object.keys(est).length;
+  return {
+    linhasLotes: Object.keys(lotes).sort().map(id=>{ const l=lotes[id];
+      return [id, l.cult, l.peso, l.bags].join(';'); }),
+    linhasEstoque: Object.keys(est).sort().map(k=>{ const [c,t,e]=k.split('|');
+      return [c,t,e,est[k]].join(';'); }),
+    resumo,
+    totalBagsLotes: Object.values(lotes).reduce((a,l)=>a+l.bags,0),
+    totalBagsEst: Object.values(est).reduce((a,b)=>a+b,0)
+  };
+}
+
+/* ---- leitura de arquivos Excel (.xlsx/.xls/.csv) via SheetJS ---- */
+function lerExcel(inp, cb){
+  const f = inp.files && inp.files[0]; if(!f) return;
+  if(typeof XLSX==='undefined'){
+    alert('O leitor de Excel não carregou (sem internet?). Use a caixa de colar ao lado.');
+    inp.value=''; return;
+  }
+  const rd = new FileReader();
+  rd.onload = e=>{
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''})
+        .map(r=>r.map(c=>String(c).trim()))
+        .filter(r=>r.some(c=>c!==''));
+      cb(rows);
+    }catch(err){ alert('Não consegui ler o arquivo: '+err.message); }
+    inp.value='';
+  };
+  rd.readAsArrayBuffer(f);
+}
+// junta as células com ';' e descarta a 1ª linha se for cabeçalho (coluna numérica sem número)
+function rowsParaTexto(rows, colNum){
+  if(rows.length && isNaN(parseFloat(String(rows[0][colNum]??'').replace(',','.')))) rows = rows.slice(1);
+  return rows.map(r=>r.join(';')).join('\n');
+}
+function excelOrdens(inp){ lerExcel(inp, rows=>{ _csv = rowsParaTexto(rows,3); render(); preverImport(); }); }
+// resumo compartilhado do relatório de saldos
+function msgSaldos(c){
+  return 'Relatório de SALDOS (SimpleAgro) detectado.\n\n'
+    +'✔ LOTES DE SEMENTE (SEM TSI, embalados): '+c.resumo.lotes+' lote(s) · '+c.totalBagsLotes+' bags\n'
+    +'   peso/bag = PMS × 5 (BB5M) ou × 2,5 (BMB)\n'
+    +'✔ ESTOQUE PA (já tratado): '+c.resumo.estoque+' combinação(ões) · '+c.totalBagsEst+' bags'
+    +(c.resumo.estoque===0?'  ← nenhum produto tratado em estoque hoje':'')+'\n\n'
+    +'Fora: '+c.resumo.granel+' linha(s) de pré-lote/granel · '+c.resumo.semSaldo+' com saldo zero ou negativo'
+    +(c.resumo.negativos.length?'\n\n⚠ SALDO NEGATIVO na origem (ignorado — verificar no SimpleAgro):\n   '
+      +c.resumo.negativos.join('\n   '):'')
+    +(c.resumo.semPms?'\n⚠ '+c.resumo.semPms+' lote(s) sem PMS (peso ficará 0 — corrigir na origem)':'')
+    +'\n\nO mesmo arquivo alimenta as duas caixas. Confira e clique nos botões Importar.';
+}
+function excelLotes(inp){ lerExcel(inp, rows=>{
+  if(ehSaldosSA(rows)){
+    const c = convertSaldos(rows);
+    document.getElementById('fCsvL').value = c.linhasLotes.join('\n');
+    const fe = document.getElementById('fEst'); if(fe) fe.value = c.linhasEstoque.join('\n');
+    alert(msgSaldos(c));
+  } else {
+    document.getElementById('fCsvL').value = rowsParaTexto(rows,2);
+    alert('Planilha de lotes carregada — confira e clique em "Importar lotes".');
+  }
+}); }
+function excelPed(inp){ lerExcel(inp, rows=>{
+  if(ehSimpleAgro(rows)){
+    const {linhas, resumo} = convertSimpleAgro(rows);
+    document.getElementById('fPed').value = linhas.join('\n');
+    const sr = Object.entries(resumo.semReceita);
+    const ed = Object.entries(resumo.embDesc);
+    alert('Relatório SimpleAgro detectado (pedidos analítico resumido).\n\n'
+      +'✔ '+resumo.ok+' linha(s) aproveitadas → '+linhas.length+' combinação(ões) agregadas.\n'
+      +'Fora: '+resumo.foraStatus+' não-Integrado · '+resumo.semTsi+' SEM TSI · '
+      +resumo.saldoZero+' com saldo zerado.\n'
+      +(sr.length?'\n⚠ CÓDIGOS SEM RECEITA cadastrada (IMPORTADOS na demanda — cadastre a receita para produzir):\n'
+        +sr.map(([c,b])=>'   '+c+' ('+b+' bg)').join('\n')+'\n':'')
+      +(ed.length?'\n⚠ Embalagens sem de-para: '+ed.map(([e,b])=>e+' ('+b+' bg)').join(', ')+'\n':'')
+      +'\nConfira e clique em "Importar pedidos (substitui)".');
+  } else {
+    document.getElementById('fPed').value = rowsParaTexto(rows,3);
+    alert('Planilha carregada — confira e clique em "Importar pedidos".');
+  }
+}); }
+function excelEst(inp){ lerExcel(inp, rows=>{
+  if(ehSaldosSA(rows)){
+    const c = convertSaldos(rows);
+    document.getElementById('fEst').value = c.linhasEstoque.join('\n');
+    const fl = document.getElementById('fCsvL'); if(fl) fl.value = c.linhasLotes.join('\n');
+    alert(msgSaldos(c));
+  } else {
+    document.getElementById('fEst').value = rowsParaTexto(rows,3);
+    alert('Planilha de estoque carregada — confira e clique em "Importar estoque".');
+  }
+}); }
+const btnExcel = fn => `<label class="b sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+  📄 Carregar Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="${fn}(this)"></label>`;
+
+/* ---- upload diário (substituição total) ---- */
+function parseDemanda(txt){
+  const out=[], err=[];
+  txt.split('\n').map(s=>s.trim()).filter(Boolean).forEach(ln=>{
+    // 5ª coluna opcional: A = aprovado (padrão) · P = aguardando aprovação financeira.
+    // Código de tratamento sem receita cadastrada é ACEITO (demanda existe mesmo assim).
+    const [cult,recRaw,emb,bags,fl] = ln.split(';').map(x=>x.trim());
+    if(!cult || !recRaw || !S.embalagens.some(e=>e.cod===emb) || !(+bags>0)){ err.push(ln); return; }
+    const rc = rec(recRaw) || S.receitas.find(r=>r.nome.toUpperCase()===recRaw.toUpperCase());
+    out.push({cult, recNome: rc ? rc.nome : recRaw, emb, bags:+bags,
+              aprov: !(fl && fl.toUpperCase().startsWith('P'))});
+  });
+  return {out, err};
+}
+function importPedidos(){
+  const {out,err} = parseDemanda(document.getElementById('fPed').value);
+  S.pedidosVenda = out; S.demandaEm = new Date().toLocaleString('pt-BR');
+  render();
+  alert(out.length+' pedido(s) de venda carregados — SUBSTITUIÇÃO TOTAL da carga anterior.'
+    +(err.length?'\n'+err.length+' linha(s) inválida(s) ignorada(s).':''));
+}
+function importEstoque(){
+  const {out,err} = parseDemanda(document.getElementById('fEst').value);
+  S.estoquePA = out; S.demandaEm = new Date().toLocaleString('pt-BR');
+  render();
+  alert(out.length+' posição(ões) de estoque carregadas — SUBSTITUIÇÃO TOTAL da carga anterior.'
+    +(err.length?'\n'+err.length+' linha(s) inválida(s) ignorada(s).':''));
+}
+
+// aviso de demanda em tempo real no formulário de inclusão
+function ecoDem(){
+  const el = document.getElementById('fDemHint'); if(!el) return;
+  const l = lote(document.getElementById('fLote').value);
+  const recId = document.getElementById('fRec').value;
+  const emb = document.getElementById('fEmb').value;
+  const bags = +document.getElementById('fBags').value || 0;
+  if(!l){ el.innerHTML=''; return; }
+  const an = analiseDemanda(l.cult, recId, emb, bags, null);
+  let msg = 'Demanda: pedido aprovado <b>'+an.b.ped+'</b>'
+          +(an.b.pedPend?' (+'+an.b.pedPend+' aguard. aprovação)':'')
+          +' · estoque <b>'+an.b.est+'</b> · já planejado <b>'
+          +an.b.abertas+'</b> · saldo <b>'+an.b.saldo+'</b> bg';
+  if(an.avisos.length) msg = '<span class="dv-w">⚠ '+an.avisos[0]+'.</span> '+msg;
+  else if(an.b.ped>0) msg = '<span class="dv-ok">✔ Saldo descoberto atende.</span> '+msg;
+  if(an.parado.length) msg += ' · <span class="dv-w">estoque parado sem pedido: '
+    +an.parado.map(p=>p.emb+' '+p.bags+' bg').join(', ')+'</span>';
+  el.innerHTML = msg;
+}
+
+function filtraOrdens(){
+  return S.ordens.filter(o=>{
+    if(_fDia==='pool' && o.maq) return false;
+    if(_fDia!=='todos' && _fDia!=='pool' && (!o.maq || o.data!==_fDia)) return false;
+    if(_fSt!=='todos' && statusOrd(o)!==_fSt) return false;
+    if(_fMq!=='todos' && o.maq!==_fMq) return false;
+    if(_fCult!=='todos' && o.cult!==_fCult) return false;
+    if(_fRec!=='todos' && o.rec!==_fRec) return false;
+    if(_fLote!=='todos' && o.lote!==_fLote) return false;
+    if(_fBusca && ![o.num,o.cult,rec(o.rec).nome,o.lote,o.cliente,o.emb].join(' ').toUpperCase().includes(_fBusca)) return false;
+    return true;
+  }).sort((a,b)=> ((a.maq?0:1)-(b.maq?0:1)) || (a.data<b.data?-1:a.data>b.data?1:0)
+     || (a.maq||'').localeCompare(b.maq||'')
+     || ((a.prioridade==='Urgente'?0:1)-(b.prioridade==='Urgente'?0:1)) || a.seq-b.seq);
+}
+
+/* Relatório de ordens para impressão (PCP) — respeita os filtros da tela */
+function imprimeOrdens(){
+  const list = filtraOrdens();
+  const filtros = [
+    _fDia!=='todos'?'dia: '+(_fDia==='pool'?'pool':fmtDia(_fDia)):null,
+    _fSt!=='todos'?'status: '+_fSt:null, _fMq!=='todos'?'máquina: '+maq(_fMq).nome:null,
+    _fCult!=='todos'?'cultivar: '+_fCult:null, _fRec!=='todos'?'tratamento: '+rec(_fRec).nome:null,
+    _fLote!=='todos'?'lote: '+_fLote:null, _fBusca?'busca: "'+_fBusca+'"':null
+  ].filter(Boolean).join(' · ') || 'nenhum (todas as ordens)';
+  const totT = list.reduce((a,o)=>a+pesoT(o),0);
+  const totB = list.reduce((a,o)=>a+o.bags,0);
+  document.getElementById('printArea').innerHTML = `
+    <h2 style="margin-bottom:2px">Relatório de Ordens — TSI · Sementes Veneza</h2>
+    <div style="margin-bottom:10px">Gerado em ${new Date().toLocaleString('pt-BR')} ·
+      ${list.length} ordem(ns) · ${totB} bags · ${totT.toFixed(1).replace('.',',')} t · Filtros: ${filtros}</div>
+    <table><thead><tr><th>Seq</th><th>Nº ordem</th><th>Prior.</th><th>Cultivar</th><th>Tratamento</th>
+      <th>Emb.</th><th>Bags</th><th>Lote sem.</th><th>Peso (t)</th><th>Ensaque/bag (kg)</th>
+      <th>Máquina</th><th>Data</th><th>Turno</th><th>Status</th><th>Lotes químico</th></tr></thead><tbody>
+    ${list.map(o=>{
+      const pos = o.maq ? cel(o.maq,o.data).indexOf(o)+1 : '';
+      const lq = [...new Set((o.tanques||[]).flatMap(t=>t.lotesQ))].join(', ');
+      return `<tr><td>${pos||'—'}</td><td><b>${o.num}</b></td>
+      <td>${o.prioridade==='Urgente'?'URGENTE':''}</td>
+      <td>${o.cult}</td><td>${rec(o.rec).nome}</td><td>${o.emb}</td><td>${o.bags}</td>
+      <td>${o.lote}</td><td>${pesoT(o).toFixed(1).replace('.',',')}</td>
+      <td>${ensaqueBag(o).toFixed(1).replace('.',',')}</td>
+      <td>${o.maq?maq(o.maq).nome:'pool'}</td><td>${o.maq?fmtDia(o.data):'—'}</td>
+      <td>${o.turno?'T'+o.turno:'—'}</td><td>${statusOrd(o)}</td><td>${lq||'—'}</td></tr>`;}).join('')}
+    </tbody></table>
+    <div style="margin-top:14px">Assinatura PCP: ______________________________ &nbsp;&nbsp;
+      Assinatura Produção: ______________________________</div>`;
+  window.print();
+}
+
+function tabOrdens(){
+  const pode = ACOES.criarOrdem(S.role);
+  const sts = [...new Set(S.ordens.map(statusOrd))];
+  const cults = [...new Set(S.ordens.map(o=>o.cult))].sort();
+  const recs  = [...new Set(S.ordens.map(o=>o.rec))].sort((a,b)=>rec(a).nome.localeCompare(rec(b).nome));
+  const lotesU= [...new Set(S.ordens.map(o=>o.lote))].sort();
+  const list = filtraOrdens();
+
+  let h = `<div class="card"><h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Ordens cadastradas
+    <span class="mut" style="font-weight:400;font-size:12px">— ${list.length} de ${S.ordens.length}, agrupadas por dia</span>
+    <span style="flex:1"></span>
+    <button class="b" onclick="expOrdens()">⬇ Exportar Excel</button>
+    <button class="b" onclick="imprimeOrdens()">🖨 Imprimir relatório de ordens</button></h3>
+    <div class="fl" style="margin-bottom:11px">
+      <div class="fld"><label>Buscar (nº, cultivar, receita, lote, cliente)</label>
+        <input class="w110" style="width:200px" value="${_fBusca}" placeholder="digite e Enter"
+          onchange="setFiltro('busca',this.value)"></div>
+      <div class="fld"><label>Dia</label><select onchange="setFiltro('dia',this.value)">
+        <option value="todos">todos</option>
+        <option value="pool" ${_fDia==='pool'?'selected':''}>pool (sem dia)</option>
+        ${DIAS.map(d=>`<option value="${d}" ${_fDia===d?'selected':''}>${dow(d)} ${fmtDia(d)}</option>`).join('')}</select></div>
+      <div class="fld"><label>Status</label><select onchange="setFiltro('st',this.value)">
+        <option value="todos">todos</option>
+        ${sts.map(s=>`<option ${_fSt===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="fld"><label>Máquina</label><select onchange="setFiltro('mq',this.value)">
+        <option value="todos">todas</option>
+        ${S.maquinas.map(m=>`<option value="${m.id}" ${_fMq===m.id?'selected':''}>${m.nome}</option>`).join('')}</select></div>
+      <div class="fld"><label>Cultivar</label><select onchange="setFiltro('cult',this.value)">
+        <option value="todos">todos</option>
+        ${cults.map(c=>`<option ${_fCult===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="fld"><label>Tratamento</label><select onchange="setFiltro('rec',this.value)">
+        <option value="todos">todos</option>
+        ${recs.map(r=>`<option value="${r}" ${_fRec===r?'selected':''}>${rec(r).nome}</option>`).join('')}</select></div>
+      <div class="fld"><label>Lote</label><select onchange="setFiltro('lote',this.value)">
+        <option value="todos">todos</option>
+        ${lotesU.map(l=>`<option ${_fLote===l?'selected':''}>${l}</option>`).join('')}</select></div>
+      <button class="b sm" onclick="limpaFiltros()">limpar filtros</button>
+    </div>
+    <table><thead><tr><th class="num" title="posição na fila da máquina — a mesma da tela Programação">Seq</th>
+    <th>Nº ordem</th><th>Cultivar</th><th>Receita</th><th>Emb.</th>
+    <th class="num">Bags</th><th>Lote</th><th class="num">Peso</th><th>Máq/T</th><th>Status</th>
+    <th>Origem</th><th></th></tr></thead><tbody>`;
+
+  let grupo = undefined, grupoM = undefined;
+  list.forEach(o=>{
+    const g = o.maq ? o.data : 'pool';
+    if(g!==grupo){ grupo=g; grupoM=undefined;
+      const os = list.filter(x=>(x.maq?x.data:'pool')===g);
+      const tG = os.reduce((a,x)=>a+pesoT(x),0);
+      const capG = S.maquinas.length * S.turnos.reduce((a,t)=>a+t.horas,0) * CAP_TH;
+      h += `<tr><td colspan="12" style="background:var(--cinza);font-weight:700;font-size:12px;padding:6px 9px">
+        ${g==='pool' ? 'POOL — sem dia definido' : dow(g).toUpperCase()+' '+fmtDia(g)}
+        <span style="font-weight:400;color:var(--txt2)"> · ${os.length} ordem(ns) · ${n(tG,1)} t${g!=='pool'?' de '+n(capG,0)+' t ('+n(tG/capG*100,0)+'%)':''}</span></td></tr>`;
+    }
+    if(o.maq && o.maq!==grupoM){ grupoM=o.maq;
+      const osM = list.filter(x=>x.maq===o.maq && x.data===o.data);
+      const tM = osM.reduce((a,x)=>a+pesoT(x),0);
+      const capM = maq(o.maq).cap * S.turnos.reduce((a,t)=>a+t.horas,0);
+      const pcM = tM/capM*100;
+      h += `<tr><td colspan="12" style="background:var(--verde-cl);font-weight:700;font-size:11.5px;padding:5px 9px 5px 22px">
+        ${maq(o.maq).nome}
+        <span style="font-weight:400;color:var(--txt2)"> · ${osM.length} ordem(ns) · ${n(tM,1)} t de ${n(capM,0)} t
+        (<span class="${pcM>100?'dv-b':(pcM>85?'dv-w':'')}">${n(pcM,0)}%</span>)</span></td></tr>`;
+    }
+    const st = statusOrd(o);
+    const pos = o.maq ? cel(o.maq,o.data).indexOf(o)+1 : null;   // mesma fonte da tela Programação
+    h += `<tr><td class="num">${pos?'<b style="color:var(--verde)">#'+pos+'</b>':'<span class="mut">—</span>'}</td>
+      <td><b>${o.num}</b>${o.prioridade==='Urgente'?' <span class="tag t-urg">URG</span>':''}</td>
+      <td>${o.cult}</td><td>${rec(o.rec).nome}</td><td>${o.emb}</td>
+      <td class="num">${o.bags}</td><td>${o.lote}</td><td class="num">${n(pesoT(o),1)} t</td>
+      <td>${o.maq?maq(o.maq).nome+(o.turno?' · T'+o.turno:''):'<span class="mut">pool</span>'}</td>
+      <td><span class="tag ${tagSt(st)}">${st}</span></td>
+      <td class="mut" style="font-size:11.5px">${o.origem||'seed'}</td>
+      <td class="right nowrap"><button class="b sm" onclick="abreOrd(${o.id})">${podeEditar(o)&&ACOES.programar(S.role)?'Abrir / editar':'Abrir'}</button>
+        ${pode&&regra(o,'del')?`<button class="b sm" onclick="delOrdem(${o.id})">excluir</button>`:''}</td></tr>`;
+  });
+  if(!list.length) h += `<tr><td colspan="12" class="mut" style="text-align:center;padding:16px">nenhuma ordem com esses filtros</td></tr>`;
+  return h + `</tbody></table></div>`;
+}
+
+function ecoLote(){
+  const l = lote(document.getElementById('fLote').value);
+  const b = +document.getElementById('fBags').value || 0;
+  document.getElementById('fCult').value = l ? l.cult : '';
+  document.getElementById('fPeso').value = l ? n(l.pesoBag*b/1000,2)+' t' : '';
+  ecoCap(); ecoDem();
+}
+
+// aviso de capacidade em tempo real na inclusão de ordem
+function ecoCap(){
+  const el = document.getElementById('fCapHint'); if(!el) return;
+  const m = document.getElementById('fMaq').value;
+  const d = document.getElementById('fData').value || S.diaSel;
+  const l = lote(document.getElementById('fLote').value);
+  const b = +document.getElementById('fBags').value || 0;
+  const pT = l ? l.pesoBag*b/1000 : 0;
+  if(!m){ el.innerHTML = pT ? 'Sem máquina: a ordem vai para o pool ('+n(pT,1)+' t).' : ''; return; }
+  const x = ocup(m,d), novo = x.ton+pT, pc = novo/x.c*100;
+  let msg = maq(m).nome+' · '+dow(d)+' '+fmtDia(d)+': ocupação atual <b>'+n(x.pc,0)+'%</b>'
+          + (pT?' → com esta ordem <b>'+n(pc,0)+'%</b>':'');
+  if(pc>100){
+    const s = sugestao(pT);
+    msg = '<span class="dv-b">'+msg+' — o dia está CHEIO.</span>'
+        + (s?' Primeiro encaixe livre: <b>'+dow(s.d)+' '+fmtDia(s.d)+' · '+maq(s.m).nome+'</b> ('+n(s.livre,0)+' t livres).'
+            :' Sem espaço nos próximos 7 dias.');
+  }
+  else if(pc>85) msg = '<span class="dv-w">'+msg+' — quase cheio.</span>';
+  else msg = '<span class="dv-ok">'+msg+' — cabe com folga ('+n(x.c-novo,0)+' t restantes).</span>';
+  el.innerHTML = msg;
+}
+
+function novaOrdem(){
+  const g = id => document.getElementById(id).value.trim();
+  const num=g('fNum'), loteId=g('fLote'), recId=g('fRec'), emb=g('fEmb'), bags=+g('fBags');
+  if(!num)   return alert('Informe o número do pedido/ordem.');
+  if(!loteId)return alert('Selecione o lote de semente — é dele que vem o peso.');
+  if(!(bags>0)) return alert('Quantidade de bags deve ser maior que zero.');
+  const cult = lote(loteId).cult;
+  if(jaExiste({num,cult,rec:recId,emb}))
+    return alert('Ordem já existe.\n\nChave: '+num+' + '+cult+' + '+rec(recId).nome+' + '+emb);
+  // AVISO FORTE de demanda (não bloqueia — decisão do PCP)
+  const an = analiseDemanda(cult, recId, emb, bags, null);
+  if(an.avisos.length || an.parado.length){
+    if(!confirm('⚠ AVISO DE DEMANDA — ordem '+num+':\n\n'
+      + an.avisos.map(a=>'· '+a).join('\n')
+      + (an.parado.length?'\n· ESTOQUE PARADO sem pedido (mesmo cultivar+tratamento): '
+          +an.parado.map(p=>p.emb+' → '+p.bags+' bg').join(' · '):'')
+      + '\n\nBalanço da combinação: pedido '+an.b.ped+' · estoque '+an.b.est
+      + ' · já planejado '+an.b.abertas+' · saldo '+an.b.saldo+' bg'
+      + '\n\nIncluir mesmo assim?')) return;
+  }
+  const mq = g('fMaq');
+  if(mq){
+    const d = g('fData')||S.diaSel;
+    const x = ocup(mq,d), pT = lote(loteId).pesoBag*bags/1000;
+    if(x.ton+pT > x.c){
+      const s = sugestao(pT);
+      if(!confirm('O dia escolhido está CHEIO: '+maq(mq).nome+' em '+fmtDia(d)
+        +' ficaria com '+Math.round((x.ton+pT)/x.c*100)+'% de ocupação.'
+        +(s?'\n\nPrimeiro encaixe livre: '+dow(s.d)+' '+fmtDia(s.d)+' · '+maq(s.m).nome+' ('+Math.round(s.livre)+' t livres).':'')
+        +'\n\nIncluir mesmo assim?')) return;
+    }
+  }
+  S.ordens.push(O({num, cult, rec:recId, emb, bags, lote:loteId,
+    cliente:g('fCli'), obs:g('fObs'), prioridade:g('fPri'),
+    maq: mq||null,
+    data: g('fData') || S.diaSel, origem:'digitação'}));
+  render();
+  alert('Ordem '+num+' incluída'+(mq?' e programada em '+maq(mq).nome+'.':' no backlog.'));
+}
+
+function preverImport(){
+  _csv = document.getElementById('fCsv').value;
+  const linhas = _csv.split('\n').map(s=>s.trim()).filter(Boolean);
+  const vistas = [];
+  _prev = linhas.map(ln=>{
+    const c = ln.split(';').map(s=>s.trim());
+    const [num, recRaw, emb, bagsRaw, loteId, cli, obs] = c;
+    const r = {num, recRaw, emb, bags:+bagsRaw, lote:loteId, cli, obs, ok:false, st:'Erro', msg:''};
+    const l = lote(loteId), rc = rec(recRaw) || S.receitas.find(x=>x.nome.toUpperCase()===(recRaw||'').toUpperCase());
+    if(c.length < 5)                 { r.msg='linha incompleta (mín. 5 campos)'; return r; }
+    if(!num)                         { r.msg='pedido vazio'; return r; }
+    if(!rc)                          { r.msg='receita não encontrada no cadastro'; return r; }
+    if(!l)                           { r.msg='lote não encontrado na planilha de lotes'; return r; }
+    if(!S.embalagens.some(e=>e.cod===emb)) { r.msg='embalagem não cadastrada'; return r; }
+    if(!(r.bags>0))                  { r.msg='bags inválido'; return r; }
+    r.rec=rc.id; r.recNome=rc.nome; r.cult=l.cult; r.peso=l.pesoBag*r.bags/1000;
+    const k = chaveOrd(r);
+    if(vistas.includes(k)) { r.st='Duplicada'; r.msg='repetida dentro do próprio arquivo'; return r; }
+    if(jaExiste(r)) { r.st='Duplicada';
+      r.msg='já cadastrada NO SISTEMA — mesma chave nº ordem + cultivar + tratamento + embalagem'; return r; }
+    vistas.push(k); r.ok=true; r.st='Nova';
+    return r;
+  });
+  // avaliação de demanda por linha válida, com consumo cumulativo do próprio arquivo
+  const consumo = {};
+  _prev.forEach(r=>{
+    if(!r.ok) return;
+    const k2 = [r.cult,r.rec,r.emb].join('|');
+    const an = analiseDemanda(r.cult, r.rec, r.emb, r.bags, null, consumo[k2]||0);
+    r.demOk = !an.avisos.length;
+    r.dem = an.avisos.length ? an.avisos[0] : 'saldo '+an.b.saldo+' bg';
+    consumo[k2] = (consumo[k2]||0) + r.bags;
+  });
+  render();
+}
+
+function confirmaImport(){
+  const novas = _prev.filter(l=>l.ok);
+  novas.forEach(l => S.ordens.push(O({num:l.num, cult:l.cult, rec:l.rec, emb:l.emb, bags:l.bags,
+    lote:l.lote, cliente:l.cli||'', obs:l.obs||'', origem:'importação'})));
+  const q = novas.length; _prev = null; render();
+  alert(q+' ordem(ns) importada(s) para o backlog.\n\nUse a aba Programação para alocar em máquina e turno.');
+}
+
+function importLotes(){
+  const ls = document.getElementById('fCsvL').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  let novos=0, atual=0, err=0;
+  ls.forEach(ln=>{
+    // lote ; cultivar ; peso/bag ; bags disponíveis (opcional)
+    const [id,cult,peso,bagsD] = ln.split(';').map(s=>s.trim());
+    if(!id||!cult||!(+peso>0)){ err++; return; }
+    const ex = lote(id);
+    if(ex){ ex.cult=cult; ex.pesoBag=+peso; if(+bagsD>0) ex.bagsDisp=+bagsD; atual++; return; }
+    S.lotes.push({id, cult, pesoBag:+peso, status:'Em estoque',
+                  bagsDisp: +bagsD>0 ? +bagsD : undefined}); novos++;
+  });
+  render();
+  alert(novos+' lote(s) novo(s) · '+atual+' atualizado(s) · '+err+' com erro.');
+}
+
+function delOrdem(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!regra(o,'del')){
+    alert('Exclusão bloqueada: a ordem '+o.num+' está "'+statusOrd(o)+'".\n'
+      +'Ordens iniciadas ou finalizadas são registro histórico — não podem ser excluídas.');
+    return;
+  }
+  const l = lote(o.lote);
+  let msg = 'Excluir a ordem '+o.num+'?';
+  if(l && l.status==='Baixado')
+    msg += '\n\nATENÇÃO: o lote '+l.id+' já foi BAIXADO pela logística para atender esta ordem.';
+  if(!confirm(msg)) return;
+  S.ordens = S.ordens.filter(x=>x.id!==id);
+  // lote baixado que ficou sem nenhuma ordem: sinaliza devolução ao estoque
+  if(l && l.status==='Baixado' && !S.ordens.some(x=>x.lote===l.id)){
+    l.devolver = true;
+    alert('O lote '+l.id+' ficou BAIXADO SEM NENHUMA ORDEM.\n\n'
+      +'Ele foi sinalizado na tela "Lotes a baixar" para a logística devolvê-lo ao estoque (estorno).');
+  }
+  render();
+}
+
+/* ============================================================
+   1. PROGRAMAÇÃO & OCUPAÇÃO
+   ============================================================ */
+function vProg(){
+  const naoProg = S.ordens.filter(o=>!o.maq);
+  let h = `<h2>Programação e ocupação das máquinas</h2>
+    <div class="hint">Programação por <b>dia e máquina</b> — o turno é atribuído automaticamente pelo horário
+    real do Início (até 17:30 = Turno 1). Capacidade: ${CAP_TH} t/h × 19,5h = ${n(CAP_TH*19.5,0)} t/dia por máquina.
+    Use <b>Programar automaticamente</b> para distribuir o pool, ou arraste manualmente.</div>`;
+
+  /* ---- plano semanal (função compartilhada) ---- */
+  h += planoSemana('Plano da semana');
+
+  /* ---- seletor de dia + otimizar o dia inteiro ---- */
+  const trocasDia = S.maquinas.reduce((a,m)=>a+trocas(cel(m.id)),0);
+  h += `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <button class="b sm" onclick="moveHorizonte(-1)">‹</button>
+    ${DIAS.map(d=>`<button class="b ${d===S.diaSel?'pri':''}" onclick="selDia('${d}')">${dow(d)} ${fmtDia(d)}</button>`).join('')}
+    <button class="b sm" onclick="moveHorizonte(1)">›</button>
+    ${ACOES.programar(S.role)&&trocasDia>0?`<span style="flex:1"></span>
+      <button class="b pri" onclick="otimizaDia()">⚙ Otimizar sequências do dia (${trocasDia} troca(s))</button>`:''}
+  </div>`;
+
+  // checklist do dia selecionado
+  h += checklistDia(S.diaSel);
+
+  // KPIs do dia
+  let progT=0, capTot=0;
+  S.maquinas.forEach(m=>{ capTot+=capDia(m.id);
+    progT += cel(m.id).reduce((a,o)=>a+pesoT(o),0); });
+  const urg = S.ordens.filter(o=>o.prioridade==='Urgente').length;
+  const aguard = S.ordens.filter(o=>statusOrd(o)==='Aguardando lote').length;
+  h += `<div class="kpis">
+    <div class="kpi"><div class="lb">Capacidade · ${dow(S.diaSel)} ${fmtDia(S.diaSel)}</div><div class="vl">${n(capTot,0)} t</div><div class="fo">2 máquinas × 2 turnos</div></div>
+    <div class="kpi"><div class="lb">Programado no dia</div><div class="vl">${n(progT,1)} t</div><div class="fo">${n(progT/capTot*100,0)}% da capacidade</div></div>
+    <div class="kpi ${aguard?'bad':'ok'}"><div class="lb">Aguardando lote</div><div class="vl">${aguard}</div><div class="fo">ordens travadas no estoque</div></div>
+    <div class="kpi ${urg?'mid':''}"><div class="lb">Ordens urgentes</div><div class="vl">${urg}</div><div class="fo">marcadas pelo PCP</div></div>
+    <div class="kpi"><div class="lb">Não programadas</div><div class="vl">${naoProg.length}</div><div class="fo">backlog</div></div>
+  </div>`;
+
+  // quadro: 1 célula por máquina (dia inteiro)
+  h += `<div class="card"><div class="board">
+    <div></div>${S.maquinas.map(m=>`<div class="hd">${m.nome} <span class="mut">· ${m.cap} t/h · ${m.tanques} tanques</span></div>`).join('')}`;
+  h += `<div class="rot">${dow(S.diaSel)} ${fmtDia(S.diaSel)}<small>07:30 → 03:00</small><small>19,5h · ${n(CAP_TH*19.5,0)} t</small></div>`;
+  S.maquinas.forEach(m=>{
+    const os = cel(m.id);
+    const ton = os.reduce((a,o)=>a+pesoT(o),0);
+    const cp = capDia(m.id), pc = ton/cp*100;
+    const cl = pc>100?'dng':(pc>85?'warn':'');
+    h += `<div class="cell ${pc>100?'cheio':''}" data-m="${m.id}">
+      <div class="cap"><span>Ocupação <b>${n(pc,0)}%</b></span>
+        <span>${n(ton,1)} / ${n(cp,0)} t</span></div>
+      <div class="bar"><i class="${cl}" style="width:${Math.min(100,pc)}%"></i></div>
+      <div class="cap"><span>${os.length} ordem(ns) · ${os.reduce((a,o)=>a+o.bags,0)} bags</span>
+        <span>${n(ton/maq(m.id).cap,1)} h nec.</span></div>
+      ${os.length>1?`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;
+          background:${trocas(os)>1?'var(--amar-cl)':'var(--verde-cl)'};border-radius:5px;padding:6px 9px;margin-bottom:8px">
+        <span style="font-size:12px"><b>${trocas(os)}</b> troca(s) de receita na sequência</span>
+        ${ACOES.programar(S.role)?`<button class="b ${trocas(os)>1?'pri':''} sm" onclick="otimiza('${m.id}')">⚙ Otimizar sequência</button>`:''}</div>`:''}
+      ${pc>100?`<div class="alert r" style="margin-bottom:8px;padding:6px 9px">Capacidade excedida em ${n(ton-cp,1)} t
+        ${ACOES.programar(S.role)?`<button class="b sm dng" style="margin-left:6px" onclick="rebalancear('${m.id}','${S.diaSel}')">Rebalancear</button>`:''}</div>`:''}
+      ${os.map((o,i)=>cardOrd(o,i+1)).join('') || '<div class="mut" style="font-size:12px;text-align:center;padding:14px 0">vazio</div>'}
+    </div>`;
+  });
+  h += `</div></div>`;
+
+  // backlog (pool)
+  h += `<div class="card"><h3>Backlog — pool de ordens
+    <span class="mut" style="font-weight:400;font-size:12px">· ${naoProg.length} ordem(ns) · ${n(naoProg.reduce((a,o)=>a+pesoT(o),0),1)} t
+    — arraste para o quadro, use Encaixar em cada ordem, ou programe tudo de uma vez</span>
+    ${naoProg.length&&ACOES.programar(S.role)?`<button class="b pri" style="margin-left:10px"
+      onclick="autoProgramar()">⚡ Programar automaticamente</button>`:''}</h3>
+    <div class="board" style="grid-template-columns:1fr"><div class="cell" data-m="">
+    ${naoProg.map(o=>cardOrd(o)).join('') || '<div class="mut" style="font-size:12px">nenhuma</div>'}
+    </div></div></div>`;
+  return h;
+}
+
+function cardOrd(o,pos){
+  const st = statusOrd(o);
+  const podeSeq = pos && ACOES.programar(S.role) && !['Em produção','Parada'].includes(o.status);
+  return `<div class="ord ${o.prioridade==='Urgente'?'urg':''}" draggable="true" data-id="${o.id}"
+            onclick="abreOrd(${o.id})">
+    <div class="l1"><span>${pos?`<span style="color:var(--verde)">#${pos}</span> `:''}${o.num}</span>
+      <span class="nowrap">${o.bags} bg · ${n(pesoT(o),1)} t</span></div>
+    <div class="l2">${o.cult} · ${rec(o.rec).nome}</div>
+    <div class="l2">Lote ${o.lote} · ${o.emb}${o.cliente?' · '+o.cliente:''}</div>
+    <div class="l3">
+      ${o.prioridade==='Urgente'?'<span class="tag t-urg">URGENTE</span>':''}
+      <span class="tag ${tagSt(st)}">${st}</span>
+      ${o.obs?'<span class="tag t-apo" title="'+o.obs+'">⚠ obs</span>':''}
+      ${podeSeq?`<span style="margin-left:auto" class="nowrap">
+        <button class="b sm" title="subir na sequência" onclick="event.stopPropagation();moveOrd(${o.id},-1)">▲</button>
+        <button class="b sm" title="descer na sequência" onclick="event.stopPropagation();moveOrd(${o.id},1)">▼</button></span>`:''}
+      ${!o.maq&&ACOES.programar(S.role)?`<span style="margin-left:auto" class="nowrap">
+        <button class="b pri sm" title="coloca no primeiro espaço livre, agrupando com receitas iguais"
+          onclick="event.stopPropagation();encaixar(${o.id})">Encaixar</button></span>`:''}
+    </div></div>`;
+}
+
+function selDia(d){ S.diaSel=d; render(); }
+
+/* quadro de ocupação máquina × dia — usado na Programação e na aba Ordens */
+function planoSemana(titulo){
+  const capDiaM = m => m.cap * S.turnos.reduce((a,t)=>a+t.horas,0); // 234 t
+  const naoProg = S.ordens.filter(o=>!o.maq);
+  let semTot=0, semCap=0;
+  let h = `<div class="card"><h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${titulo}
+    <span class="mut" style="font-weight:400;font-size:12px">— ocupação por máquina e dia · clique no dia para abri-lo</span>
+    <span style="flex:1"></span>
+    <button class="b sm" onclick="moveHorizonte(-1)">‹ semana anterior</button>
+    <span class="mut" style="font-size:12px">${fmtDia(DIAS[0])} – ${fmtDia(DIAS[6])}</span>
+    <button class="b sm" onclick="moveHorizonte(1)">próxima semana ›</button></h3>
+    <table><thead><tr><th>Máquina</th>
+    ${DIAS.map(d=>`<th class="num" style="cursor:pointer;${d===S.diaSel?'color:var(--verde)':''}"
+      onclick="selDia('${d}')">${dow(d)} ${fmtDia(d)}${d===S.diaSel?' ▾':''}</th>`).join('')}
+    <th class="num">Semana</th></tr></thead><tbody>`;
+  S.maquinas.forEach(m=>{
+    let tot=0;
+    h += `<tr><td><b>${m.nome}</b> <span class="mut">cap. ${n(capDiaM(m),0)} t/dia</span></td>`;
+    DIAS.forEach(d=>{
+      const t = tonDia(m.id,d); tot+=t;
+      const pc = t/capDiaM(m)*100;
+      h += `<td class="num" style="cursor:pointer" onclick="selDia('${d}')">
+        ${t?`<b class="${pc>100?'dv-b':(pc>85?'dv-w':'')}">${n(pc,0)}%</b><br><span class="mut" style="font-size:10.5px">${n(t,0)} t</span>`:'<span class="mut">—</span>'}</td>`;
+    });
+    semTot+=tot; semCap+=capDiaM(m)*7;
+    h += `<td class="num"><b>${n(tot/(capDiaM(m)*7)*100,0)}%</b><br><span class="mut" style="font-size:10.5px">${n(tot,0)} t</span></td></tr>`;
+  });
+  h += `<tr><td><b>Total</b></td>
+    ${DIAS.map(d=>{const t=S.maquinas.reduce((a,m)=>a+tonDia(m.id,d),0);
+      const c=S.maquinas.reduce((a,m)=>a+capDiaM(m),0);
+      return `<td class="num">${t?`<b class="${t/c>1?'dv-b':''}">${n(t/c*100,0)}%</b><br><span class="mut" style="font-size:10.5px">${n(t,0)} t</span>`:'<span class="mut">—</span>'}</td>`;}).join('')}
+    <td class="num"><b>${n(semTot/semCap*100,0)}%</b><br><span class="mut" style="font-size:10.5px">${n(semTot,0)} / ${n(semCap,0)} t</span></td></tr>
+    </tbody></table>
+    <div class="legend">Backlog (pool, sem dia definido): <b>${naoProg.length} ordem(ns) · ${n(naoProg.reduce((a,o)=>a+pesoT(o),0),1)} t</b>
+    — não entram nos totais acima até serem programadas.</div></div>`;
+  return h;
+}
+
+/* ---- reprogramação (modal) ---- */
+function capLinha(o, d, mSel){
+  d = d || o.data; mSel = mSel!==undefined ? mSel : o.maq;
+  const linhas = S.maquinas.map(m=>{
+    const x = ocup(m.id,d);
+    const alvo = (m.id===mSel);
+    const cls = x.pc>100?'dv-b':(x.pc>85?'dv-w':'');
+    return (alvo?'<b>':'')+m.nome+' <span class="'+cls+'">'+n(x.pc,0)+'%</span> ('+n(x.ton,0)+'/'+n(x.c,0)+' t)'+(alvo?'</b>':'');
+  }).join(' · ');
+  return 'Ocupação em '+dow(d)+' '+fmtDia(d)+': '+linhas;
+}
+function reabreCap(id){
+  const o = S.ordens.find(x=>x.id===id);
+  const el = document.getElementById('rpCap'); if(!el) return;
+  const d = document.getElementById('rpData').value;
+  const m = document.getElementById('rpMaq').value || null;
+  let extra = '';
+  if(m){
+    const x = ocup(m,d);
+    const mesmo = (o.maq===m && o.data===d);
+    const novo = mesmo ? x.ton : x.ton + pesoT(o);
+    const pc = novo/x.c*100;
+    if(pc>100){
+      const s = sugestao(pesoT(o));
+      extra = '<br><span class="dv-b">Com esta ordem: '+n(pc,0)+'% — EXCEDE a capacidade.</span>'+
+        (s?' Primeiro encaixe livre: <b>'+dow(s.d)+' '+fmtDia(s.d)+' · '+maq(s.m).nome+'</b> ('+n(s.livre,0)+' t livres).':' Sem espaço livre nos próximos 7 dias.');
+    } else if(pc>85) extra = '<br><span class="dv-w">Com esta ordem: '+n(pc,0)+'% — dia quase cheio.</span>';
+    else extra = '<br><span class="dv-ok">Com esta ordem: '+n(pc,0)+'% — cabe com folga.</span>';
+  }
+  el.innerHTML = capLinha(o, d, m) + extra;
+}
+function reprogramar(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!podeEditar(o)){ alert('O status atual não permite mais edição.'); return; }
+  const g = i => document.getElementById(i).value;
+  const b = +g('rpBags');
+  if(!(b>0)) return alert('Bags deve ser maior que zero.');
+  // campos da ordem: lote (=> cultivar/peso), receita, embalagem
+  // campo vazio/ausente mantém o valor atual (robustez)
+  const lt = g('rpLote')||o.lote, rc = g('rpRec')||o.rec, eb = g('rpEmb')||o.emb;
+  if(!lote(lt)) return alert('Lote de semente inválido.');
+  const novaCult = lote(lt).cult;
+  const cand = {num:o.num, cult:novaCult, rec:rc, emb:eb};
+  if(S.ordens.some(x => x!==o && chaveOrd(x)===chaveOrd(cand)))
+    return alert('Já existe outra ordem com a mesma chave:\n'
+      + o.num+' + '+novaCult+' + '+rec(rc).nome+' + '+eb);
+  // AVISO FORTE de demanda também na edição (combinação/quantidade podem ter mudado)
+  const anR = analiseDemanda(novaCult, rc, eb, b, o.id);
+  if(anR.avisos.length){
+    if(!confirm('⚠ AVISO DE DEMANDA — edição da ordem '+o.num+':\n\n'
+      + anR.avisos.map(a=>'· '+a).join('\n')
+      + '\n\nBalanço: pedido '+anR.b.ped+' · estoque '+anR.b.est
+      + ' · planejado (outras) '+anR.b.abertas+' · saldo '+anR.b.saldo+' bg'
+      + '\n\nSalvar mesmo assim?')) return;
+  }
+  const recMudou = (o.rec !== rc);
+  o.lote = lt; o.cult = novaCult; o.rec = rc; o.emb = eb;
+  o.bags = b; o.obs = g('rpObs').trim();
+  // tanques preparados (mas não iniciados) são remontados se a receita mudou
+  if(recMudou && !o.eventos.length && o.tanques.length) o.tanques = montaTanques(o);
+  const m = g('rpMaq'), d = g('rpData') || o.data;
+  if(!m){
+    o.maq=null; o.status='Não programada';
+  } else {
+    const x = ocup(m,d);
+    const mesmo = (o.maq===m && o.data===d);
+    const novo = mesmo ? x.ton : x.ton + pesoT(o);
+    if(novo > x.c){
+      const s = sugestao(pesoT(o));
+      if(!confirm('Atenção: '+maq(m).nome+' em '+fmtDia(d)+' ficaria com '+Math.round(novo/x.c*100)+'% de ocupação.'
+        +(s?'\n\nPrimeiro encaixe livre: '+dow(s.d)+' '+fmtDia(s.d)+' · '+maq(s.m).nome+' ('+Math.round(s.livre)+' t livres).':'')
+        +'\n\nProgramar mesmo assim?')) return;
+    }
+    o.maq=m; o.data=d;
+    if(o.status==='Não programada') o.status='Programada';
+  }
+  reabre(id); render();
+}
+
+/* arrastar uma ordem para CIMA de outra: entra na posição dela (empurra para baixo) */
+function dropOrdemSobre(dragId, alvoId){
+  const o = S.ordens.find(x=>x.id===dragId), t = S.ordens.find(x=>x.id===alvoId);
+  if(!o || !t || o===t) return;
+  if(['Em produção','Parada'].includes(o.status)){ alert('Ordem em andamento não pode ser reprogramada.'); return; }
+  o.maq = t.maq; o.data = t.data;
+  if(o.maq && o.status==='Não programada') o.status='Programada';
+  if(!o.maq){ render(); return; }               // soltou sobre ordem do pool: volta ao pool
+  // ordem desejada: fila atual sem o arrastado, inserindo-o na posição do alvo
+  const l = cel(t.maq, t.data).filter(x=>x!==o);
+  l.splice(l.indexOf(t), 0, o);
+  const seqs = l.map(x=>x.seq).sort((a,b)=>a-b);
+  l.forEach((x,i)=>x.seq=seqs[i]);
+  // obs.: urgentes continuam agrupadas no topo — soltar uma normal acima de
+  // uma urgente reordena apenas dentro do bloco das normais
+  render();
+}
+
+function moveOrd(id,dir){
+  const o = S.ordens.find(x=>x.id===id);
+  const l = cel(o.maq,o.data);
+  const i = l.indexOf(o), j = i+dir;
+  if(j<0 || j>=l.length) return;
+  if(l[j].prioridade!==o.prioridade){
+    alert('As urgentes ficam agrupadas no topo. Para cruzar o bloco, mude a prioridade da ordem.'); return;
+  }
+  [o.seq, l[j].seq] = [l[j].seq, o.seq];
+  render();
+}
+
+// agrupa por prioridade → receita → cultivar, preservando os slots de sequência da célula
+function otimiza(m, d, silencioso){
+  const l = cel(m, d||S.diaSel);
+  if(l.length<2) return;
+  const antes = trocas(l);
+  const sorted = [...l].sort((a,b)=>
+    ((a.prioridade==='Urgente'?0:1)-(b.prioridade==='Urgente'?0:1)) ||
+    rec(a.rec).nome.localeCompare(rec(b.rec).nome) ||
+    a.cult.localeCompare(b.cult));
+  const seqs = l.map(o=>o.seq).sort((a,b)=>a-b);
+  sorted.forEach((o,i)=>o.seq=seqs[i]);
+  if(!silencioso){
+    render();
+    alert('Sequência otimizada: '+antes+' → '+trocas(cel(m, d||S.diaSel))+' troca(s) de receita.');
+  }
+}
+
+/* Otimiza as duas máquinas do dia selecionado de uma vez */
+function otimizaDia(){
+  const antes = S.maquinas.reduce((a,m)=>a+trocas(cel(m.id)),0);
+  S.maquinas.forEach(m=>otimiza(m.id, S.diaSel, true));
+  render();
+  const depois = S.maquinas.reduce((a,m)=>a+trocas(cel(m.id)),0);
+  alert('Sequências do dia otimizadas: '+antes+' → '+depois+' troca(s) de receita.');
+}
+
+/* Encaixar (1 clique): melhor slot da semana para esta ordem */
+function encaixar(id){
+  const o = S.ordens.find(x=>x.id===id);
+  const s = melhorSlot(o);
+  if(!s){ alert('Sem espaço livre nos próximos 7 dias para '+n(pesoT(o),1)+' t.'); return; }
+  o.maq=s.m; o.data=s.d;
+  if(o.status==='Não programada') o.status='Programada';
+  otimiza(s.m, s.d, true);
+  render();
+  alert('Ordem '+o.num+' encaixada em '+maq(s.m).nome+' · '+dow(s.d)+' '+fmtDia(s.d)
+    +(s.afim===0?' (junto de ordens do mesmo cultivar e tratamento).':s.afim===1?' (junto de ordens do mesmo tratamento).':'.'));
+}
+
+/* Programação automática do pool.
+   Ordem de alocação: urgentes → lote já baixado → agrupadas por receita+cultivar.
+   Alocação: dia mais cedo com espaço; dentro do dia, máquina com afinidade de receita. */
+function autoProgramar(){
+  const pool = S.ordens.filter(o=>!o.maq);
+  if(!pool.length){ alert('Pool vazio — nada a programar.'); return; }
+  pool.sort((a,b)=>
+    ((a.prioridade==='Urgente'?0:1)-(b.prioridade==='Urgente'?0:1)) ||
+    ((lote(a.lote).status==='Baixado'?0:1)-(lote(b.lote).status==='Baixado'?0:1)) ||
+    rec(a.rec).nome.localeCompare(rec(b.rec).nome) ||
+    a.cult.localeCompare(b.cult) || a.seq-b.seq);
+  let okN=0; const sem=[];
+  pool.forEach(o=>{
+    const s = melhorSlot(o);
+    if(s){ o.maq=s.m; o.data=s.d; if(o.status==='Não programada') o.status='Programada'; okN++; }
+    else sem.push(o.num);
+  });
+  DIAS.forEach(d=>S.maquinas.forEach(m=>otimiza(m.id, d, true)));
+  render();
+  alert(okN+' ordem(ns) programada(s) automaticamente.\n\nCritérios: urgentes primeiro, depois lotes já baixados, '
+    +'agrupando cultivar+tratamento na mesma máquina para reduzir setup.'
+    +(sem.length?'\n\nSem espaço na semana: '+sem.join(', '):''));
+}
+
+/* Rebalancear célula estourada: move as últimas da fila (nunca urgentes,
+   nunca iniciadas) para o melhor slot livre */
+function rebalancear(m,d){
+  const mov=[];
+  for(let guard=0; guard<50; guard++){
+    const x = ocup(m,d);
+    if(x.ton<=x.c) break;
+    const l = cel(m,d).filter(o=>podeEditar(o) && o.prioridade!=='Urgente');
+    if(!l.length) break;
+    const o = l[l.length-1];              // última da fila
+    const maqOrig=o.maq; o.maq=null;      // remove para procurar slot
+    const s = melhorSlot(o);
+    if(!s || (s.m===m && s.d===d)){ o.maq=maqOrig; break; }
+    o.maq=s.m; o.data=s.d;
+    otimiza(s.m, s.d, true);
+    mov.push(o.num+' → '+maq(s.m).nome+' '+dow(s.d)+' '+fmtDia(s.d));
+  }
+  render();
+  alert(mov.length ? 'Rebalanceado — '+mov.length+' ordem(ns) movida(s):\n'+mov.join('\n')
+    : 'Não foi possível rebalancear: a célula só tem ordens urgentes/iniciadas, ou não há espaço na semana.');
+}
+
+/* Checklist do dia: o que falta para o dia selecionado rodar limpo */
+function checklistDia(d){
+  const os = S.ordens.filter(o=>o.maq && o.data===d);
+  const itens = [];
+  const lotesPend = [...new Set(os.filter(o=>lote(o.lote).status==='Em estoque').map(o=>o.lote))];
+  if(lotesPend.length){
+    const ordsPend = os.filter(o=>lote(o.lote).status==='Em estoque');
+    itens.push({grave:true, txt:`<b>${lotesPend.length} lote(s) não baixado(s)</b> — travam ${ordsPend.length} ordem(ns) do dia:
+      ${lotesPend.join(', ')}. Acione a logística na aba "Lotes a baixar".`});
+  }
+  S.maquinas.forEach(m=>{
+    const x = ocup(m.id,d);
+    if(x.ton>x.c) itens.push({grave:true, txt:`<b>${m.nome} estourada</b>: ${n(x.ton,1)} t programadas para ${n(x.c,0)} t
+      de capacidade (${n(x.pc,0)}%). Use o botão Rebalancear na célula.`});
+  });
+  const pool = S.ordens.filter(o=>!o.maq);
+  if(pool.length) itens.push({grave:false, txt:`${pool.length} ordem(ns) no pool (${n(pool.reduce((a,o)=>a+pesoT(o),0),1)} t)
+    aguardando programação — Encaixar ou Programar automaticamente.`});
+  const urgSemSeq = S.maquinas.some(m=>{ const l=cel(m.id,d); return l.length>1 && trocas(l)>2; });
+  if(urgSemSeq) itens.push({grave:false, txt:`Há células com muitas trocas de receita na sequência — vale rodar Otimizar.`});
+  if(!itens.length)
+    return `<div class="card" style="border-left:4px solid var(--verde)"><h3>Checklist — ${dow(d)} ${fmtDia(d)}</h3>
+      <div class="dv-ok" style="font-size:13px">✔ Tudo pronto: lotes baixados, capacidade ok, nada pendente no pool.</div></div>`;
+  return `<div class="card" style="border-left:4px solid ${itens.some(i=>i.grave)?'var(--vermelho)':'var(--amarelo)'}">
+    <h3>Checklist — o que falta para ${dow(d)} ${fmtDia(d)} rodar</h3>
+    ${itens.map(i=>`<div class="alert ${i.grave?'r':''}" style="margin-bottom:7px">${i.txt}</div>`).join('')}</div>`;
+}
+function tagSt(s){ return {'Aguardando lote':'t-aguard','Pronto para produzir':'t-pronto',
+  'Em produção':'t-prod','Parada':'t-parada','Finalizada':'t-fim',
+  'Qualidade apontada':'t-fim','Apontada':'t-enc','Não programada':'t-estoque','Programada':'t-estoque'}[s]||'t-estoque'; }
+
+/* drag & drop */
+function dragInit(){
+  if(!ACOES.programar(S.role)) return;
+  let drag=null;
+  document.querySelectorAll('.ord').forEach(el=>{
+    el.addEventListener('dragstart',e=>{ drag=+el.dataset.id; e.stopPropagation(); });
+    // soltar SOBRE outra ordem = assumir a posição dela na sequência
+    el.addEventListener('dragover',e=>{ e.preventDefault(); e.stopPropagation(); el.style.borderTop='3px solid var(--verde)'; });
+    el.addEventListener('dragleave',()=>{ el.style.borderTop=''; });
+    el.addEventListener('drop',e=>{
+      e.preventDefault(); e.stopPropagation(); el.style.borderTop='';
+      dropOrdemSobre(drag, +el.dataset.id);
+    });
+  });
+  document.querySelectorAll('.cell').forEach(c=>{
+    c.addEventListener('dragover',e=>{e.preventDefault(); c.classList.add('over');});
+    c.addEventListener('dragleave',()=>c.classList.remove('over'));
+    c.addEventListener('drop',e=>{
+      e.preventDefault(); c.classList.remove('over');
+      const o = S.ordens.find(x=>x.id===drag); if(!o) return;
+      if(['Em produção','Parada'].includes(o.status)){ alert('Ordem em andamento não pode ser reprogramada.'); return; }
+      o.maq = c.dataset.m || null;
+      if(o.maq){ o.data = S.diaSel; if(o.status==='Não programada') o.status='Programada'; }
+      render();
+    });
+  });
+}
+
+/* ============================================================
+   2. LOTES A BAIXAR  (Logística / Estoque)
+   ============================================================ */
+function agregaLotes(){
+  return S.lotes.map(l=>{
+    const os = S.ordens.filter(o=>o.lote===l.id);
+    const prog = os.filter(o=>o.maq);
+    return {
+      ...l,
+      ordens: os, nOrd: os.length,
+      pesoT: os.reduce((a,o)=>a+pesoT(o),0),
+      bags: os.reduce((a,o)=>a+o.bags,0),
+      critico: l.status==='Em estoque' && os.some(o=>o.prioridade==='Urgente'),
+      minDia: prog.length ? prog.map(o=>o.data).sort()[0] : '9999-99-99'
+    };
+  }).sort((a,b)=> (b.critico-a.critico) || a.minDia.localeCompare(b.minDia) || (b.nOrd-a.nOrd));
+}
+const lotesCriticos = () => agregaLotes().filter(l=>l.critico);
+
+function vLotes(){
+  const todos = agregaLotes();
+  const ls = todos.filter(l=>l.nOrd>0);          // só lotes com ordens vinculadas pedem ação aqui
+  const semOrd = todos.filter(l=>!l.nOrd);
+  const crit = ls.filter(l=>l.critico);
+  const pend = ls.filter(l=>l.status==='Em estoque');
+  let h = `<h2>Lotes a baixar</h2>
+    <div class="hint">Visão por lote — como o estoque realmente opera. Baixar um lote libera de uma vez
+    todas as ordens que dependem dele. Lotes sem ordem vinculada não aparecem aqui.</div>`;
+
+  if(!ACOES.baixarLote(S.role))
+    h += `<div class="rolebox">Você está no perfil <b>${S.role}</b>: esta tela é somente leitura.
+      A baixa de lote é feita pelo perfil <b>Logística</b>.</div>`;
+
+  h += `<div class="kpis">
+    <div class="kpi ${crit.length?'bad':'ok'}"><div class="lb">Lotes críticos</div><div class="vl">${crit.length}</div><div class="fo">travam ordem urgente</div></div>
+    <div class="kpi"><div class="lb">Lotes pendentes</div><div class="vl">${pend.length}</div><div class="fo">de ${ls.length} no total</div></div>
+    <div class="kpi"><div class="lb">Peso pendente</div><div class="vl">${n(pend.reduce((a,l)=>a+l.pesoT,0),1)} t</div><div class="fo">a baixar</div></div>
+    <div class="kpi"><div class="lb">Ordens travadas</div><div class="vl">${pend.reduce((a,l)=>a+l.nOrd,0)}</div><div class="fo">aguardando lote</div></div>
+  </div>`;
+
+  if(crit.length) h += `<div class="alert r"><b>Atenção:</b> ${crit.length} lote(s) crítico(s) —
+    ${crit.map(l=>l.id).join(', ')} — estão travando ordens marcadas como urgentes pelo PCP.</div>`;
+
+  ls.forEach(l=>{
+    const emUso = ordensIniciadasDoLote(l.id).length>0;
+    const borda = l.status==='Baixado' ? 'var(--azul)' : (l.critico ? 'var(--vermelho)' : 'var(--borda)');
+    const acao = l.status==='Em estoque'
+      ? `<button class="b ${l.critico?'dng':'pri'}" ${ACOES.baixarLote(S.role)?'':'disabled'}
+           onclick="baixar('${l.id}')">Baixar lote</button>`
+      : ( emUso
+          ? `<span class="tag t-prod" title="lote já consumido por ordem iniciada — estorno bloqueado">em uso — sem estorno</span>`
+          : `<button class="b" ${ACOES.baixarLote(S.role)?'':'disabled'} onclick="estornar('${l.id}')">Estornar</button>` );
+    const ords = [...l.ordens].sort((a,b)=>
+      ((a.prioridade==='Urgente'?0:1)-(b.prioridade==='Urgente'?0:1)) ||
+      ((a.maq?0:1)-(b.maq?0:1)) || (a.data<b.data?-1:1));
+    h += `<div class="card" style="border-left:4px solid ${borda}">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:16px;font-weight:700">${l.id}</span>
+        ${l.critico?'<span class="tag t-urg">CRÍTICO — trava ordem urgente</span>':''}
+        <span class="tag ${l.status==='Em estoque'?'t-estoque':'t-baixado'}">${l.status}</span>
+        <span class="mut">${l.cult} · ${n(l.pesoBag,0)} kg/bag</span>
+        <span style="flex:1"></span>
+        <span style="font-size:13px;background:var(--verde-cl);border-radius:5px;padding:4px 10px">
+          Baixar <b style="font-size:15px">${l.bags} bags</b></span>
+        <span class="mut" style="font-size:12px"><b style="color:var(--txt);font-size:14px">${n(l.pesoT,1)} t</b>
+          · ${l.nOrd} ordem(ns)${l.minDia!=='9999-99-99'?' · próxima produção: <b>'+dow(l.minDia)+' '+fmtDia(l.minDia)+'</b>':''}</span>
+        ${acao}
+      </div>
+      ${l.nOrd?`<table style="margin-top:10px"><thead><tr>
+        <th>Ordem</th><th>Receita</th><th class="num">Bags</th><th class="num">Peso</th>
+        <th>Programada para</th><th>Status</th></tr></thead><tbody>
+        ${ords.map(o=>{const st=statusOrd(o);
+          return `<tr class="${o.prioridade==='Urgente'&&st==='Aguardando lote'?'crit':''}">
+          <td><b>${o.num}</b>${o.prioridade==='Urgente'?' <span class="tag t-urg">URG</span>':''}</td>
+          <td>${rec(o.rec).nome}</td>
+          <td class="num">${o.bags}</td><td class="num">${n(pesoT(o),1)} t</td>
+          <td>${o.maq?maq(o.maq).nome+' · '+dow(o.data)+' '+fmtDia(o.data):'<span class="mut">pool</span>'}</td>
+          <td><span class="tag ${tagSt(st)}">${st}</span></td></tr>`;}).join('')}
+        </tbody></table>`:'<div class="mut" style="margin-top:8px;font-size:12px">nenhuma ordem usa este lote</div>'}
+    </div>`;
+  });
+  if(!ls.length) h += `<div class="card mut">Nenhum lote com ordens vinculadas no momento.</div>`;
+
+  // lotes BAIXADOS que ficaram sem nenhuma ordem (ex.: ordens canceladas/excluídas) → devolver ao estoque
+  const devolver = semOrd.filter(l=>l.status==='Baixado');
+  if(devolver.length){
+    h += `<div class="card" style="border-left:4px solid var(--amarelo)">
+      <h3>Baixados sem nenhuma ordem — devolver ao estoque</h3>
+      <div class="hint" style="margin-bottom:9px">Estes lotes foram baixados, mas as ordens que os usavam
+      foram excluídas/canceladas. Estorne para o estoque voltar a bater com a produção.</div>
+      <table><thead><tr><th>Lote</th><th>Cultivar</th><th class="num">Peso/bag</th><th></th></tr></thead><tbody>
+      ${devolver.map(l=>`<tr><td><b>${l.id}</b></td><td>${l.cult}</td>
+        <td class="num">${n(l.pesoBag,0)} kg</td>
+        <td class="right"><button class="b warn sm" ${ACOES.baixarLote(S.role)?'':'disabled'}
+          onclick="estornar('${l.id}')">Estornar (devolver ao estoque)</button></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  h += relLogistica();
+
+  const soEstoque = semOrd.filter(l=>l.status!=='Baixado');
+  h += `<div class="legend"><b>Lote crítico</b> = lote não baixado que trava ao menos uma ordem urgente.
+    Ordenação: críticos → dia de produção mais próximo → nº de ordens impactadas.
+    ${soEstoque.length?`<br>Em estoque sem ordens vinculadas (fora desta tela): ${soEstoque.map(l=>l.id+' ('+l.cult+')').join(', ')}.`:''}</div>`;
+  return h;
+}
+function baixar(id){
+  const l = lote(id);
+  l.status='Baixado'; l.baixaPor=S.role; l.baixaEm=new Date();
+  const ords = S.ordens.filter(o=>o.lote===id);
+  const bags = ords.reduce((a,o)=>a+o.bags,0);
+  S.baixas.push({lote:id, bags, peso: bags*l.pesoBag/1000, ts:Date.now(), por:S.role});
+  const libs = ords.filter(o=>o.maq).map(o=>o.num);
+  render();
+  if(libs.length) alert('Lote '+id+' baixado ('+bags+' bags).\n\n'+libs.length+' ordem(ns) liberada(s) para produção:\n'+libs.join(', '));
+}
+function estornar(id){
+  const ini = ordensIniciadasDoLote(id);
+  if(ini.length){
+    alert('Estorno bloqueado.\n\nO lote '+id+' já foi consumido por ordem(ns) iniciada(s):\n'
+      + ini.map(o=>o.num+' — '+statusOrd(o)).join('\n')
+      + '\n\nEstornar agora deixaria o estoque inconsistente com a produção.');
+    return;
+  }
+  const l = lote(id);
+  const b = [...S.baixas].reverse().find(x=>x.lote===id && x.bags>0);
+  if(b) S.baixas.push({lote:id, bags:-b.bags, peso:-b.peso, ts:Date.now(), por:S.role, estorno:true});
+  l.status='Em estoque'; delete l.devolver;
+  render();
+}
+
+/* Relatório da logística: bags baixados no dia, na semana e no mês */
+function relLogistica(){
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const d0 = hoje.getTime();
+  const seg = 24*3600*1000;
+  const soma = (ini) => S.baixas.filter(b=>b.ts>=ini)
+    .reduce((a,b)=>({bags:a.bags+b.bags, peso:a.peso+b.peso}), {bags:0,peso:0});
+  const dia = soma(d0), sem = soma(d0-6*seg);
+  const mes = soma(new Date(hoje.getFullYear(),hoje.getMonth(),1).getTime());
+  let h = `<div class="card"><h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    Relatório da logística — bags baixados
+    <span style="flex:1"></span>
+    <button class="b sm" onclick="expLogistica()">⬇ Exportar (.xlsx)</button></h3>
+    <div class="kpis" style="margin-bottom:10px">
+      <div class="kpi"><div class="lb">Hoje</div><div class="vl">${dia.bags}</div><div class="fo">${n(dia.peso,1)} t</div></div>
+      <div class="kpi"><div class="lb">Semana (últimos 7 dias)</div><div class="vl">${sem.bags}</div><div class="fo">${n(sem.peso,1)} t</div></div>
+      <div class="kpi"><div class="lb">Mês corrente</div><div class="vl">${mes.bags}</div><div class="fo">${n(mes.peso,1)} t</div></div>
+    </div>`;
+  if(S.baixas.length){
+    h += `<table><thead><tr><th>Data/hora</th><th>Lote</th><th class="num">Bags</th>
+      <th class="num">Peso</th><th>Por</th><th></th></tr></thead><tbody>
+      ${[...S.baixas].reverse().slice(0,15).map(b=>`<tr>
+        <td>${new Date(b.ts).toLocaleString('pt-BR')}</td><td><b>${b.lote}</b></td>
+        <td class="num ${b.bags<0?'dv-b':''}">${b.bags}</td>
+        <td class="num">${n(b.peso,1)} t</td><td>${b.por}</td>
+        <td>${b.estorno?'<span class="tag t-parada">estorno</span>':'<span class="tag t-baixado">baixa</span>'}</td></tr>`).join('')}
+      </tbody></table>`;
+  } else h += `<div class="mut" style="font-size:12.5px">Nenhuma baixa registrada ainda.</div>`;
+  return h + `</div>`;
+}
+
+/* ============================================================
+   3. EXECUÇÃO  (Produção)
+   ============================================================ */
+/* card de status de cada máquina (topo da Execução) */
+function cardMaq(m){
+  const o = ordemNaMaquina(m.id);
+  if(!o) return `<div class="kpi">
+    <div class="lb">${m.nome}</div>
+    <div class="vl" style="font-size:19px;color:var(--verde)">Livre</div>
+    <div class="fo">nenhuma ordem em execução · ${m.cap} t/h</div></div>`;
+  const T = tempos(o);
+  const planS = pesoT(o)/m.cap*3600;                 // tempo total planejado da ordem (s)
+  const pAt = o.paradas.find(p=>!p.fim);             // parada em aberto
+  const pc = Math.min(100, planS? T.bruto/planS*100 : 0);
+  const atrasado = T.bruto > planS;
+  return `<div class="kpi" style="border-left:4px solid ${o.status==='Parada'?'var(--vermelho)':'var(--verde)'}">
+    <div class="lb">${m.nome} — <span class="tag ${o.status==='Parada'?'t-parada':'t-prod'}">${o.status}</span></div>
+    <div style="font-size:15px;font-weight:700;margin-top:5px">${o.num}
+      <span class="mut" style="font-size:12px;font-weight:400">· ${o.cult} · ${rec(o.rec).nome} · ${n(pesoT(o),1)} t</span></div>
+    <div class="bar" style="margin-top:8px"><i class="${atrasado?'dng':''}" style="width:${n(pc,0)}%"></i></div>
+    <div class="info" style="margin-top:9px;grid-template-columns:repeat(2,1fr)">
+      <div><span>Tempo planejado (${m.cap} t/h)</span><b class="timer">${hms(planS)}</b></div>
+      <div><span>Decorrido</span><b class="timer" ${atrasado?'style="color:var(--vermelho)"':''}>${hms(T.bruto)}</b></div>
+      <div><span>Paradas (total)</span><b class="timer">${hms(T.par)}</b></div>
+      <div><span>Parada atual</span><b class="timer" style="color:${pAt?'var(--vermelho)':'inherit'}">${pAt?hms((Date.now()-pAt.ini)/1000):'—'}</b></div>
+    </div>
+    ${pAt?`<div class="fo" style="margin-top:5px">motivo: <b>${motivo(pAt.motivo).desc}</b>
+      (${motivo(pAt.motivo).tipo.toLowerCase()})</div>`:''}
+  </div>`;
+}
+
+function vExec(){
+  const os = S.ordens.filter(o=>o.maq).sort((a,b)=>
+    (a.data<b.data?-1:a.data>b.data?1:0) || a.maq.localeCompare(b.maq)
+    || (a.prioridade==='Urgente'?0:1)-(b.prioridade==='Urgente'?0:1) || a.seq-b.seq);
+  let h = `<h2>Execução de ordens</h2>
+    <div class="hint">Apontamento por botão. Cada máquina é <b>recurso único</b>: roda uma ordem por vez —
+    finalize a atual para iniciar a próxima. Só é possível iniciar ordem com lote baixado.</div>`;
+  if(!ACOES.apontar(S.role))
+    h += `<div class="rolebox">Perfil <b>${S.role}</b>: leitura. O apontamento de produção é feito pelo perfil <b>Produção</b>.</div>`;
+
+  // cards de status por máquina
+  h += `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(330px,1fr));margin-bottom:16px">
+    ${S.maquinas.map(m=>cardMaq(m)).join('')}</div>`;
+
+  if(!os.length) return h + `<div class="card mut">Nenhuma ordem programada. Verifique a Programação.</div>`;
+
+  h += `<div class="card"><table><thead><tr>
+    <th>Ordem</th><th>Turno</th><th>Cultivar / receita</th><th>Lote</th><th class="num">Peso</th>
+    <th>Status</th><th class="num">Bruto</th><th class="num">Paradas</th><th class="num">Líquido</th>
+    <th>Apontamento</th><th></th></tr></thead><tbody>`;
+  let grpDia=null, grpMaq=null;
+  os.forEach(o=>{
+    if(o.data!==grpDia){ grpDia=o.data; grpMaq=null;
+      const doD = os.filter(x=>x.data===grpDia);
+      h += `<tr><td colspan="11" style="background:var(--cinza);font-weight:700;font-size:12.5px;padding:7px 9px">
+        ${dow(grpDia).toUpperCase()} ${fmtDia(grpDia)}
+        <span style="font-weight:400;color:var(--txt2)"> · ${doD.length} ordem(ns) · ${n(doD.reduce((a,x)=>a+pesoT(x),0),1)} t</span></td></tr>`;
+    }
+    if(o.maq!==grpMaq){ grpMaq=o.maq;
+      const doM = os.filter(x=>x.data===grpDia && x.maq===grpMaq);
+      const finM = doM.filter(x=>['Finalizada','Qualidade apontada','Apontada'].includes(x.status));
+      h += `<tr><td colspan="11" style="background:var(--verde-cl);font-weight:700;font-size:12px;padding:6px 9px 6px 22px">
+        ${maq(o.maq).nome}
+        <span style="font-weight:400;color:var(--txt2)"> · ${doM.length} ordem(ns) · ${n(doM.reduce((a,x)=>a+pesoT(x),0),1)} t
+        · ${finM.length} finalizada(s)</span></td></tr>`;
+    }
+    const st = statusOrd(o), T = tempos(o);
+    const pode = ACOES.apontar(S.role);
+    let btns='';
+    if(st==='Aguardando lote') btns = `<span class="mut" style="font-size:11.5px">lote ${o.lote} em estoque</span>`;
+    else if(st==='Pronto para produzir') btns = `<button class="b pri sm" ${pode?'':'disabled'} onclick="ev(${o.id},'inicio')">▶ Iniciar</button>`;
+    else if(st==='Em produção') btns = `<button class="b warn sm" ${pode?'':'disabled'} onclick="abreParada(${o.id})">⏸ Parar</button>
+      <button class="b sm" ${pode?'':'disabled'} onclick="ev(${o.id},'fim')">■ Finalizar</button>
+      <button class="b sm" ${pode?'':'disabled'} title="começou a ordem errada? descarta os apontamentos e libera a máquina"
+        onclick="cancelarInicio(${o.id})">✖ Cancelar início</button>`;
+    else if(st==='Parada') btns = `<button class="b pri sm" ${pode?'':'disabled'} onclick="retoma(${o.id})">▶ Retomar</button>
+      <button class="b sm" ${pode?'':'disabled'} title="começou a ordem errada? descarta os apontamentos e libera a máquina"
+        onclick="cancelarInicio(${o.id})">✖ Cancelar início</button>
+      <span class="mut" style="font-size:11.5px">${motivo(o.paradas.find(p=>!p.fim).motivo).desc}</span>`;
+    else btns = `<span class="mut" style="font-size:11.5px">encerrado</span>`;
+    h += `<tr>
+      <td><b>${o.num}</b>${o.prioridade==='Urgente'?' <span class="tag t-urg">URG</span>':''}
+        ${o.obs?'<br><span class="tag t-apo" style="font-size:10px">'+o.obs+'</span>':''}</td>
+      <td>${o.turno?`<b>T${o.turno}</b><br><span class="mut" style="font-size:11px">${turno(o.turno).ini}–${turno(o.turno).fim}</span>`
+        :'<span class="mut" title="atribuído pelo horário do Início">—</span>'}</td>
+      <td>${o.cult}<br><span class="mut" style="font-size:12px">${rec(o.rec).nome}</span></td>
+      <td><b>${o.lote}</b><br><span class="tag ${lote(o.lote).status==='Baixado'?'t-baixado':'t-estoque'}"
+        style="font-size:10px">${lote(o.lote).status}</span></td>
+      <td class="num">${o.bags} bg<br><b>${n(pesoT(o),1)} t</b></td>
+      <td><span class="tag ${tagSt(st)}">${st}</span></td>
+      <td class="num timer">${T.bruto?hms(T.bruto):'—'}</td>
+      <td class="num timer">${T.par?hms(T.par):'—'}</td>
+      <td class="num timer">${T.liq?hms(T.liq):'—'}</td>
+      <td class="nowrap">${btns}</td>
+      <td class="right"><button class="b sm" onclick="abreOrd(${o.id})">Abrir</button></td>
+    </tr>`;
+  });
+  h += `</tbody></table></div>`;
+  return h;
+}
+
+// máquina é recurso único: ordem em execução (ou parada) na máquina
+const ordemNaMaquina = m => S.ordens.find(x=>x.maq===m && ['Em produção','Parada'].includes(x.status));
+
+function ev(id,tipo){
+  const o = S.ordens.find(x=>x.id===id);
+  if(tipo==='inicio'){
+    if(!regra(o,'ini')){ alert('Não é possível iniciar: a ordem está "'+statusOrd(o)+'".'); return; }
+    if(lote(o.lote).status==='Em estoque'){ alert('Lote não baixado pelo estoque.'); return; }
+    const ocupada = ordemNaMaquina(o.maq);
+    if(ocupada){
+      alert('Máquina ocupada.\n\n'+maq(o.maq).nome+' já está executando a ordem '+ocupada.num
+        +' ('+ocupada.status+').\nCada máquina roda uma ordem por vez — finalize a atual antes de iniciar outra.');
+      return;
+    }
+    // NÃO inicia ainda: prepara os tanques e abre a ordem — o cronômetro só
+    // dispara no "Confirmar início", depois dos pesos iniciais preenchidos
+    if(!o.tanques.length) o.tanques = montaTanques(o);
+    render();
+    abreOrd(o.id);
+    return;
+  }
+  if(tipo==='confirma'){ confirmaInicio(id); return; }
+  if(tipo==='fim'){
+    if(!['Em produção','Parada'].includes(o.status)){
+      alert('Só é possível finalizar uma ordem em andamento (status atual: "'+statusOrd(o)+'").');
+      return;
+    }
+    // 1º clique em Finalizar: LIBERA a pesagem final e abre a ordem — não finaliza ainda
+    o.fimPend = true;
+    render();
+    abreOrd(o.id);
+    return;
+  }
+  render();
+}
+
+/* Confirma a finalização: pesos finais preenchidos (a pesagem final só é
+   liberada depois do clique em Finalizar) */
+function confirmaFim(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!['Em produção','Parada'].includes(o.status)){ alert('A ordem não está em andamento.'); return; }
+  const semPi = (o.tanques||[]).filter(t=>t.pi==null);
+  const semPf = (o.tanques||[]).filter(t=>t.pf==null);
+  if(semPi.length || semPf.length){
+    alert('Para confirmar a finalização da ordem '+o.num+':\n\n'
+      +(semPi.length?'· Peso INICIAL pendente: T'+semPi.map(t=>t.tq).join(', T')+'\n':'')
+      +(semPf.length?'· Peso FINAL pendente: T'+semPf.map(t=>t.tq).join(', T')+'\n':''));
+    return;
+  }
+  const ab = o.paradas.find(p=>!p.fim); if(ab) ab.fim=Date.now();
+  o.eventos.push({t:'fim', ts:Date.now(), por:S.role});
+  o.status='Finalizada'; delete o.fimPend;
+  reabre(id); render();
+}
+/* Cancelar início: o operador começou a ordem errada.
+   Descarta os apontamentos de execução (tempos, paradas, tanques, consumos),
+   devolve a ordem para "Pronto para produzir" e libera a máquina.
+   Fica registrado no histórico da ordem quem cancelou, quando e o que foi descartado. */
+function cancelarInicio(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!['Em produção','Parada'].includes(o.status)){
+    alert('Só é possível cancelar o início de uma ordem em andamento (status atual: "'+statusOrd(o)+'").');
+    return;
+  }
+  const T = tempos(o);
+  if(!confirm('CANCELAR O INÍCIO da ordem '+o.num+'?\n\nSerão descartados:\n'
+    +'· '+hms(T.bruto)+' de tempo apontado\n'
+    +'· '+o.paradas.length+' parada(s) registrada(s)\n'
+    +'· pesos de tanque e lotes de químico lançados\n'
+    +'\nA ordem volta para "Pronto para produzir" e a máquina fica livre.\nEsta ação fica registrada no histórico.')) return;
+  (o.audit = o.audit || []).push({
+    acao:'cancelou o início', por:S.role, em:new Date().toLocaleString('pt-BR'),
+    desc:hms(T.bruto)+' e '+o.paradas.length+' parada(s) descartados'
+  });
+  o.eventos=[]; o.paradas=[]; o.tanques=[]; o.turno=null; delete o.fimPend;
+  o.status='Programada';   // statusOrd re-deriva: lote baixado => Pronto para produzir
+  render();
+}
+
+/* Confirma o início da ordem: pesos iniciais preenchidos + máquina livre + lote baixado */
+function confirmaInicio(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!regra(o,'ini')){ alert('Não é possível iniciar: a ordem está "'+statusOrd(o)+'".'); return; }
+  if(lote(o.lote).status==='Em estoque'){ alert('Lote não baixado pelo estoque.'); return; }
+  const ocupada = ordemNaMaquina(o.maq);
+  if(ocupada){
+    alert('Máquina ocupada.\n\n'+maq(o.maq).nome+' já está executando a ordem '+ocupada.num
+      +' ('+ocupada.status+').'); return;
+  }
+  const semPi = (o.tanques||[]).filter(t=>t.pi==null);
+  // cada PRODUTO de cada tanque precisa ter ao menos um lote de químico informado
+  const semLote = [];
+  (o.tanques||[]).forEach(t=>t.itens.forEach(it=>{
+    const tem = t.lotesQ.some(lq=>{ const x=S.lotesQ.find(y=>y.id===lq); return x && x.q===it.q; });
+    if(!tem) semLote.push('T'+t.tq+' — '+quim(it.q).nome);
+  }));
+  if(semPi.length || semLote.length){
+    alert('Para confirmar o início da ordem '+o.num+':\n\n'
+      +(semPi.length?'· Peso INICIAL pendente: T'+semPi.map(t=>t.tq).join(', T')+'\n':'')
+      +(semLote.length?'· LOTE DE QUÍMICO pendente:\n   '+semLote.join('\n   ')+'\n':'')
+      +'\nSem o lote de cada produto não há rastreabilidade do tratamento.');
+    return;
+  }
+  o.eventos.push({t:'inicio', ts:Date.now(), por:S.role});
+  o.turno = turnoAgora();
+  o.status = 'Em produção';
+  reabre(id); render();
+}
+
+function abreParada(id){
+  const o = S.ordens.find(x=>x.id===id);
+  document.getElementById('modT').textContent = 'Registrar parada — ordem '+o.num;
+  document.getElementById('modB').innerHTML = `
+    <div class="hint">Cada motivo é classificado como <b>planejada</b> ou <b>não planejada</b> — é isso que separa
+    tempo normal de processo (setup, limpeza) de perda real no indicador de disponibilidade.</div>
+    <div class="sec"><div class="sh">Motivo da parada</div><div class="sb">
+      ${['Planejada','Não planejada'].map(tp=>`
+        <h3 style="margin-top:6px">${tp} <span class="tag ${tp==='Planejada'?'t-plan':'t-nplan'}">${tp}</span></h3>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+        ${S.motivos.filter(m=>m.tipo===tp).map(m=>
+          `<button class="b" onclick="para(${o.id},'${m.id}')">${m.desc}</button>`).join('')}
+        </div>`).join('')}
+    </div></div>`;
+  document.getElementById('ov').classList.add('on');
+}
+function para(id,mot){
+  const o = S.ordens.find(x=>x.id===id);
+  o.paradas.push({motivo:mot, ini:Date.now(), fim:null, por:S.role});
+  o.status='Parada'; fecha(); render();
+}
+function retoma(id){
+  const o = S.ordens.find(x=>x.id===id);
+  const p = o.paradas.find(p=>!p.fim); if(p) p.fim=Date.now();
+  o.status='Em produção'; render();
+}
+
+/* ---------- modal da ordem: tanques, 3 consumos, lacres ---------- */
+function abreOrd(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!o) return;
+  document.getElementById('modT').textContent = 'Ordem '+o.num+' — '+o.cult;
+  document.getElementById('modB').innerHTML = ordHTML(o);
+  document.getElementById('ov').classList.add('on');
+}
+function reabre(id){ document.getElementById('modB').innerHTML = ordHTML(S.ordens.find(x=>x.id===id)); }
+function fecha(){ document.getElementById('ov').classList.remove('on'); }
+
+function ordHTML(o){
+  const T = tempos(o), st = statusOrd(o), l = lote(o.lote);
+  const pode = ACOES.apontar(S.role);
+  let h = '';
+  if(o.obs) h += `<div class="alert"><b>Observação de processo:</b> ${o.obs}</div>`;
+
+  // cabeçalho
+  h += `<div class="sec"><div class="sh">Dados da ordem <span class="mut" style="text-transform:none">(replicados do sistema de origem — leitura)</span></div>
+    <div class="sb"><div class="info">
+      <div><span>Ordem</span><b>${o.num}</b></div>
+      <div><span>Status</span><b><span class="tag ${tagSt(st)}">${st}</span></b></div>
+      <div><span>Prioridade</span><b>${o.prioridade==='Urgente'?'<span class="tag t-urg">URGENTE</span>':'Normal'}</b></div>
+      <div><span>Cultivar</span><b>${o.cult}</b></div>
+      <div><span>Receita</span><b>${rec(o.rec).nome}</b></div>
+      <div><span>Embalagem</span><b>${o.emb}</b></div>
+      <div><span>Bags</span><b>${o.bags}</b></div>
+      <div><span>Lote de semente</span><b>${o.lote} <span class="tag ${l.status==='Baixado'?'t-baixado':'t-estoque'}">${l.status}</span></b></div>
+      <div><span>Peso/bag (PROCV lote)</span><b>${n(l.pesoBag,0)} kg</b></div>
+      <div><span>Peso total semente</span><b>${n(pesoKg(o),0)} kg · ${n(pesoT(o),2)} t</b></div>
+      <div><span>Peso químico total</span><b>${n(pesoQuimKg(o),1)} kg</b></div>
+      <div><span>Peso de ensaque por bag</span><b style="color:var(--verde)">${n(ensaqueBag(o),1)} kg</b></div>
+      <div><span>Máquina</span><b>${o.maq?maq(o.maq).nome:'—'}</b></div>
+      <div><span>Turno (real, do início)</span><b>${o.turno?'T'+o.turno:'—'}</b></div>
+      <div><span>Data programada</span><b>${o.maq?dow(o.data)+' '+fmtDia(o.data):'— (pool)'}</b></div>
+      <div><span>Cliente</span><b>${o.cliente||'—'}</b></div>
+    </div>
+    ${ACOES.priorizar(S.role)?`<div style="margin-top:11px">
+      <button class="b sm ${o.prioridade==='Urgente'?'':'dng'}" onclick="togglePri(${o.id})">
+        ${o.prioridade==='Urgente'?'Remover prioridade':'Marcar como URGENTE'}</button>
+      <span class="mut" style="font-size:11.5px;margin-left:7px">ação do PCP — fica registrado quem marcou e quando</span>
+    </div>`:''}
+    ${o.audit&&o.audit.length?`<div class="alert" style="margin-top:11px;margin-bottom:0">
+      <b>Histórico de ações:</b> ${o.audit.map(a=>a.em+' — '+a.por+' '+a.acao+' ('+a.desc+')').join(' · ')}</div>`:''}
+    </div></div>`;
+
+  // reprogramação / edição — controlada pelo status
+  if(ACOES.programar(S.role)){
+    if(podeEditar(o)){
+      h += `<div class="sec"><div class="sh">Editar ordem e programação
+        <span class="mut" style="text-transform:none">— permitido: a ordem ainda não iniciou</span></div><div class="sb">
+        <div class="fl" style="margin-bottom:10px">
+          <div class="fld"><label>Lote de semente (define cultivar e peso)</label><select id="rpLote">
+            ${S.lotes.map(l=>`<option value="${l.id}" ${o.lote===l.id?'selected':''}>${l.id} · ${l.cult} · ${n(l.pesoBag,0)} kg/bag</option>`).join('')}</select></div>
+          <div class="fld"><label>Tratamento / receita</label><select id="rpRec">
+            ${S.receitas.map(r=>`<option value="${r.id}" ${o.rec===r.id?'selected':''}>${r.nome}</option>`).join('')}</select></div>
+          <div class="fld"><label>Embalagem</label><select id="rpEmb">
+            ${S.embalagens.map(e=>`<option value="${e.cod}" ${o.emb===e.cod?'selected':''}>${e.cod}</option>`).join('')}</select></div>
+          <div class="fld"><label>Bags</label><input class="w70 num" type="number" id="rpBags" value="${o.bags}"></div>
+        </div>
+        <div class="fl">
+          <div class="fld"><label>Data (qualquer dia)</label>
+            <input type="date" id="rpData" value="${o.data}" onchange="reabreCap(${o.id})"></div>
+          <div class="fld"><label>Máquina</label><select id="rpMaq" onchange="reabreCap(${o.id})">
+            <option value="">— devolver ao pool —</option>
+            ${S.maquinas.map(m=>`<option value="${m.id}" ${o.maq===m.id?'selected':''}>${m.nome}</option>`).join('')}</select></div>
+          <div class="fld" style="flex:1;min-width:180px"><label>Observação de processo</label><input id="rpObs" value="${o.obs||''}"></div>
+          <button class="b pri" onclick="reprogramar(${o.id})">Salvar alterações</button>
+        </div>
+        <div class="legend">Trocar o lote muda cultivar e peso da ordem. Trocar o lote também re-verifica a baixa do estoque.</div>
+        <div class="legend" id="rpCap">${capLinha(o)}</div>
+      </div></div>`;
+    } else {
+      h += `<div class="sec"><div class="sh">Edição bloqueada</div><div class="sb">
+        <div class="alert" style="margin-bottom:8px"><b>Esta ordem não pode mais ser editada:</b> ${motivoBloqueio(o)}.</div>
+        <table><thead><tr><th>Ação</th><th>Neste status ("${statusOrd(o)}")</th></tr></thead><tbody>
+          <tr><td>Editar dados / reprogramar</td><td>${regra(o,'edit')?'permitido':'<span class="dv-b">bloqueado</span>'}</td></tr>
+          <tr><td>Excluir ordem</td><td>${regra(o,'del')?'permitido':'<span class="dv-b">bloqueado — registro histórico</span>'}</td></tr>
+          <tr><td>Alterar prioridade</td><td>${regra(o,'pri')?'permitido':'<span class="dv-b">bloqueado — sem efeito</span>'}</td></tr>
+          <tr><td>Estorno do lote pela logística</td><td><span class="dv-b">bloqueado — lote já consumido por esta ordem</span></td></tr>
+          <tr><td>Apontar qualidade</td><td>${regra(o,'qual')?'<span class="dv-ok">permitido</span>':'bloqueado'}</td></tr>
+        </tbody></table>
+        <div class="legend">Edição é permitida apenas nos status: ${EDITAVEIS.join(' · ')}.</div>
+      </div></div>`;
+    }
+  }
+
+  // tempos
+  h += `<div class="sec"><div class="sh">Tempos e lead time</div><div class="sb">
+    <div class="info">
+      <div><span>Tempo bruto (fim − início)</span><b class="timer">${hms(T.bruto)}</b></div>
+      <div><span>Paradas planejadas</span><b class="timer">${hms(T.pPlan)}</b></div>
+      <div><span>Paradas não planejadas</span><b class="timer">${hms(T.pNao)}</b></div>
+      <div><span>Tempo líquido</span><b class="timer" style="color:var(--verde)">${hms(T.liq)}</b></div>
+      <div><span>Disponib. bruta</span><b>${T.bruto?n(T.liq/T.bruto*100,0)+'%':'—'}</b></div>
+      <div><span>Disponib. operacional</span><b>${T.bruto?n(T.liq/Math.max(1,T.bruto-T.pPlan)*100,0)+'%':'—'}</b></div>
+      <div><span>Rendimento</span><b>${T.liq?n(pesoT(o)/(T.liq/3600),1)+' t/h':'—'}</b></div>
+      <div><span>Lead time</span><b class="timer">${hms(T.lead)}</b></div>
+    </div>
+    <div class="legend" style="margin-top:9px">
+      <b>Disponib. bruta</b> = tempo líquido ÷ tempo bruto — % do tempo em que a máquina realmente produziu,
+      contando TODA parada como perda (inclusive setup e refeição).
+      <b>Disponib. operacional</b> = tempo líquido ÷ (tempo bruto − paradas planejadas) — desconta as paradas
+      que são parte normal do processo (setup, limpeza, refeição) e mostra só a perda real (quebras, faltas).
+      Ex.: 1h de ordem com 10min de setup e 20min de quebra → bruta 50%, operacional 60%.</div>`;
+  if(o.paradas.length){
+    h += `<h3 style="margin-top:13px">Paradas registradas</h3><table><thead><tr>
+      <th>Motivo</th><th>Tipo</th><th>Início</th><th>Fim</th><th class="num">Duração</th></tr></thead><tbody>`;
+    o.paradas.forEach(p=>{ const m=motivo(p.motivo);
+      h += `<tr><td>${m.desc}</td><td><span class="tag ${m.tipo==='Planejada'?'t-plan':'t-nplan'}">${m.tipo}</span></td>
+        <td>${new Date(p.ini).toLocaleTimeString('pt-BR')}</td>
+        <td>${p.fim?new Date(p.fim).toLocaleTimeString('pt-BR'):'<i>em curso</i>'}</td>
+        <td class="num timer">${hms(((p.fim||Date.now())-p.ini)/1000)}</td></tr>`; });
+    h += `</tbody></table>`;
+  }
+  h += `</div></div>`;
+
+  // tanques: receita executada, mistura, lotes de químico (N por tanque), Real vs Planejado
+  h += `<div class="sec"><div class="sh">Receita executada — pesos de balança por tanque (Real vs Planejado)</div><div class="sb">`;
+  if(!o.tanques.length){
+    h += `<div class="mut" style="font-size:12.5px">Os tanques são carregados ao iniciar a ordem.
+      Receita ${rec(o.rec).nome}: ${rec(o.rec).itens.length} produto(s) em ${new Set(rec(o.rec).itens.map(i=>i.tq)).size} tanque(s).</div>`;
+  } else {
+    const cts = consumosTq(o);
+    const pre = st==='Pronto para produzir';                       // pesos iniciais ANTES do início
+    const rodando = ['Em produção','Parada'].includes(o.status);
+    if(pre)
+      h += `<div class="alert r"><b>A ordem ainda NÃO foi iniciada.</b> Informe o peso INICIAL de cada tanque
+        e o <b>lote de químico de cada produto</b>, depois clique em <b>Confirmar início</b>.
+        Fechar esta janela não inicia a ordem.</div>`;
+    else if(rodando && o.fimPend)
+      h += `<div class="alert r"><b>Finalização em andamento.</b> Informe o peso FINAL de cada tanque
+        e clique em <b>Confirmar finalização</b>. Fechar esta janela não finaliza a ordem.</div>`;
+    else if(rodando)
+      h += `<div class="alert"><b>Peso final travado:</b> ele é liberado ao clicar em <b>Finalizar</b> —
+        a pesagem final acontece no fim da produção, não durante.</div>`;
+    h += `<table><thead><tr><th>Tq</th><th>Produto(s) — dose · densidade</th><th style="min-width:200px">Lote(s) do químico</th>
+      <th class="num">Planejado (kg)</th><th class="num">Peso inicial (kg)</th><th class="num">Peso final (kg)</th>
+      <th class="num">Real (kg)</th><th class="num">Desvio</th></tr></thead><tbody>`;
+    cts.forEach((t,i)=>{
+      const mistura = t.itens.length>1;
+      // lotes organizados POR PRODUTO: cada linha mostra o produto, seus lotes e um seletor próprio
+      const celLotes = t.itens.map(it=>{
+        const q = quim(it.q);
+        const meus = t.lotesQ.filter(lq=>{ const x=S.lotesQ.find(y=>y.id===lq); return x && x.q===it.q; });
+        const disp = S.lotesQ.filter(x=>x.q===it.q && !t.lotesQ.includes(x.id));
+        return `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:3px 0;
+            ${mistura?'border-bottom:1px dashed var(--borda)':''}">
+          <span class="mut" style="font-size:11px;white-space:nowrap">${q.nome}:</span>
+          ${meus.map(lq=>`<span class="tag t-baixado">${lq}${pode?` <a style="cursor:pointer;font-weight:700"
+            title="remover" onclick="delLoteTq(${o.id},${i},'${lq}')">✕</a>`:''}</span>`).join('')}
+          ${meus.length?'':'<span class="tag t-aguard" style="font-size:10px">sem lote</span>'}
+          ${pode&&disp.length?`<select style="font-size:11px;padding:2px 4px;max-width:130px"
+            onchange="addLoteTq(${o.id},${i},this.value)">
+            <option value="">+ lote…</option>
+            ${disp.map(x=>`<option value="${x.id}">${x.id}</option>`).join('')}</select>`:''}
+        </div>`;
+      }).join('');
+      h += `<tr class="${t.dv!=null&&Math.abs(t.dv)>LIM_DESVIO?'crit':''}">
+        <td><b>T${t.tq}</b>${mistura?'<br><span class="tag t-apo" style="font-size:10px">MISTURA</span>':''}</td>
+        <td>${t.itens.map(it=>{const q=quim(it.q);
+          return q.nome+' <span class="mut">'+n(it.dose,2)+' '+q.un+(q.dens?' · d='+n(q.dens,2)+' g/ml':'')+'</span>';}).join('<br>')}</td>
+        <td>${celLotes}</td>
+        <td class="num"><b>${n(t.plan,1)}</b>${t.vol?`<br><span class="mut" style="font-size:11px">${n(t.vol,1)} L</span>`:''}</td>
+        <td class="num"><input class="w90 num" type="number" step="0.1" value="${t.pi??''}"
+          ${pode&&(pre||rodando)?'':'disabled'} onchange="setTq(${o.id},${i},'pi',this.value)"></td>
+        <td class="num"><input class="w90 num" type="number" step="0.1" value="${t.pf??''}"
+          ${pode&&rodando&&o.fimPend?'':'disabled'}
+          ${!o.fimPend?'placeholder="no Finalizar"':''}
+          onchange="setTq(${o.id},${i},'pf',this.value)"></td>
+        <td class="num"><b>${t.real!=null?n(t.real,1):'—'}</b></td>
+        <td class="num ${clsDv(t.dv)}">${fmtDv(t.dv)}</td></tr>`;
+    });
+    const totPlan = cts.reduce((a,t)=>a+t.plan,0);
+    const totReal = cts.every(t=>t.real!=null) ? cts.reduce((a,t)=>a+t.real,0) : null;
+    h += `<tr><td colspan="3"><b>Total químico da ordem</b></td>
+      <td class="num"><b>${n(totPlan,1)}</b></td><td></td><td></td>
+      <td class="num"><b>${totReal!=null?n(totReal,1):'—'}</b></td>
+      <td class="num ${clsDv(totReal!=null?(totReal-totPlan)/totPlan*100:null)}">${totReal!=null?fmtDv((totReal-totPlan)/totPlan*100):'—'}</td></tr>
+      </tbody></table>
+      <div class="legend"><b>Planejado (balança)</b> = dose × peso da semente × densidade (ml/kg) ou dose × peso (g/kg) ·
+      <b>Real</b> = peso inicial − peso final do tanque · alerta acima de ±${LIM_DESVIO}% ·
+      tanque com MISTURA compara contra a soma dos produtos · use "+ lote…" para registrar mais de um lote de químico.</div>
+      ${pre&&pode?`<div style="margin-top:12px;text-align:right">
+        <button class="b pri" style="font-size:14px;padding:9px 18px" onclick="confirmaInicio(${o.id})">
+        ▶ Confirmar início da ordem</button></div>`:''}
+      ${rodando&&o.fimPend&&pode?`<div style="margin-top:12px;text-align:right">
+        <button class="b dng" style="font-size:14px;padding:9px 18px" onclick="confirmaFim(${o.id})">
+        ■ Confirmar finalização da ordem</button></div>`:''}`;
+  }
+  h += `</div></div>`;
+
+  // qualidade
+  h += `<div class="sec"><div class="sh">Qualidade</div><div class="sb">${qualForm(o)}</div></div>`;
+
+  // encerramento: lançamento no AGROTIS (ação do PCP, após a qualidade)
+  if(st==='Qualidade apontada' || st==='Apontada'){
+    h += `<div class="sec"><div class="sh">Encerramento — lançamento no AGROTIS</div><div class="sb">`;
+    if(st==='Apontada'){
+      h += `<div class="info">
+        <div><span>Status</span><b><span class="tag t-enc">APONTADA</span></b></div>
+        <div><span>Nº do lançamento AGROTIS</span><b>${o.agrotis.num}</b></div>
+        <div><span>Apontada por</span><b>${o.agrotis.por}</b></div>
+        <div><span>Em</span><b>${o.agrotis.em}</b></div></div>`;
+    } else if(ACOES.agrotis(S.role)){
+      h += `<div class="hint" style="margin-bottom:9px">A ordem passou pela qualidade. Lance-a no AGROTIS e
+        registre aqui o número do lançamento — isso ENCERRA a ordem (nenhuma edição depois).</div>
+        <div class="fl">
+          <div class="fld"><label>Nº do lançamento no AGROTIS *</label>
+            <input class="w110" style="width:180px" id="agN" placeholder="ex. AG-2026-0157"></div>
+          <button class="b pri" onclick="apontarAgrotis(${o.id})">✔ Confirmar APONTADA</button>
+        </div>`;
+    } else {
+      h += `<div class="mut" style="font-size:12.5px">Aguardando o PCP lançar no AGROTIS e apontar aqui
+        (perfis PCP/Gestor).</div>`;
+    }
+    h += `</div></div>`;
+  }
+  return h;
+}
+
+/* Encerramento: PCP lançou no AGROTIS e registra o apontamento — status final */
+function apontarAgrotis(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!ACOES.agrotis(S.role)){ alert('Apenas PCP/Gestor apontam o lançamento no AGROTIS.'); return; }
+  if(statusOrd(o)!=='Qualidade apontada'){
+    alert('Só é possível apontar após a qualidade (status atual: "'+statusOrd(o)+'").'); return;
+  }
+  const nl = document.getElementById('agN').value.trim();
+  if(!nl){ alert('Informe o número do lançamento no AGROTIS.'); return; }
+  o.agrotis = {num:nl, por:S.role, em:new Date().toLocaleString('pt-BR')};
+  (o.audit=o.audit||[]).push({acao:'apontou no AGROTIS', por:S.role,
+    em:o.agrotis.em, desc:'lançamento '+nl});
+  o.status = 'Apontada';
+  reabre(id); render();
+}
+
+/* pesos de balança e lotes de químico por tanque
+   (controle de lacres foi descontinuado — não é mais utilizado) */
+function setTq(id,i,k,v){ const o=S.ordens.find(x=>x.id===id);
+  o.tanques[i][k] = (v===''?null:+v); reabre(id); }
+function addLoteTq(id,i,v){ if(!v) return;
+  const o=S.ordens.find(x=>x.id===id);
+  if(!o.tanques[i].lotesQ.includes(v)) o.tanques[i].lotesQ.push(v);
+  reabre(id); }
+function delLoteTq(id,i,val){ const o=S.ordens.find(x=>x.id===id);
+  o.tanques[i].lotesQ = o.tanques[i].lotesQ.filter(x=>x!==val); reabre(id); }
+function togglePri(id){ const o=S.ordens.find(x=>x.id===id);
+  if(!regra(o,'pri')){
+    alert('Prioridade bloqueada: a ordem está "'+statusOrd(o)+'" — priorizar não tem mais efeito.');
+    return;
+  }
+  o.prioridade = o.prioridade==='Urgente'?'Normal':'Urgente';
+  o.priPor=S.role; o.priEm=new Date(); reabre(id); render(); }
+
+/* ============================================================
+   4. QUALIDADE
+   ============================================================ */
+function qualForm(o){
+  const pode = ACOES.qualidade(S.role), q = o.qual;
+  if(!['Finalizada','Qualidade apontada','Apontada'].includes(o.status) && !q)
+    return `<div class="mut" style="font-size:12.5px">O apontamento de qualidade é liberado após a ordem ser finalizada.</div>`;
+  if(q && !pode)
+    return `<div class="info"><div><span>Qualidade visual</span><b><span class="tag ${tagQ(q.visual)}">${q.visual}</span></b></div>
+      <div><span>Retirada de amostra</span><b>${q.amostra?'Sim':'Não'}</b></div>
+      <div><span>Inspetor</span><b>${q.por}</b></div>
+      <div><span>Observação</span><b>${q.obs||'—'}</b></div></div>`;
+  return `<div class="fl">
+    <div class="fld"><label>Qualidade visual do tratamento</label>
+      <select id="qV"><option ${q&&q.visual==='Aprovado'?'selected':''}>Aprovado</option>
+        <option ${q&&q.visual==='Aprovado com observação'?'selected':''}>Aprovado com observação</option>
+        <option ${q&&q.visual==='Reprovado'?'selected':''}>Reprovado</option></select></div>
+    <div class="fld"><label>Houve retirada de amostra?</label>
+      <select id="qA"><option value="1" ${q&&q.amostra?'selected':''}>Sim</option>
+        <option value="0" ${q&&!q.amostra?'selected':''}>Não</option></select></div>
+    <div class="fld" style="flex:1;min-width:220px"><label>Observação</label>
+      <input id="qO" value="${q?(q.obs||''):''}" placeholder="opcional"></div>
+    <button class="b pri" ${pode?'':'disabled'} onclick="salvaQual(${o.id})">Salvar apontamento</button>
+  </div>${pode?'':'<div class="legend">Somente o perfil Qualidade pode apontar.</div>'}`;
+}
+const tagQ = v => ({'Aprovado':'t-ap','Aprovado com observação':'t-apo','Reprovado':'t-rep'})[v];
+function salvaQual(id){
+  const o = S.ordens.find(x=>x.id===id);
+  if(!regra(o,'qual')){
+    alert('Qualidade só pode ser apontada em ordem finalizada (status atual: "'+statusOrd(o)+'").');
+    return;
+  }
+  o.qual = {visual:document.getElementById('qV').value,
+            amostra:document.getElementById('qA').value==='1',
+            obs:document.getElementById('qO').value, por:S.role, em:new Date()};
+  o.status='Qualidade apontada';
+  reabre(id); render();
+}
+
+function vQual(){
+  const os = S.ordens.filter(o=>['Finalizada','Qualidade apontada','Apontada'].includes(o.status));
+  let h = `<h2>Qualidade do processo / produto</h2>
+    <div class="hint">Por ordem: qualidade visual do tratamento (Aprovado / Aprovado com observação / Reprovado)
+    e se houve retirada de amostra.</div>`;
+  if(!ACOES.qualidade(S.role))
+    h += `<div class="rolebox">Perfil <b>${S.role}</b>: leitura. O apontamento é feito pelo perfil <b>Qualidade</b>.</div>`;
+  const pend = os.filter(o=>!o.qual).length;
+  h += `<div class="kpis">
+    <div class="kpi"><div class="lb">Ordens finalizadas</div><div class="vl">${os.length}</div></div>
+    <div class="kpi ${pend?'mid':'ok'}"><div class="lb">Aguardando qualidade</div><div class="vl">${pend}</div></div>
+    <div class="kpi ok"><div class="lb">Aprovadas</div><div class="vl">${os.filter(o=>o.qual&&o.qual.visual==='Aprovado').length}</div></div>
+    <div class="kpi bad"><div class="lb">Reprovadas</div><div class="vl">${os.filter(o=>o.qual&&o.qual.visual==='Reprovado').length}</div></div>
+  </div>`;
+  if(!os.length) return h + `<div class="card mut">Nenhuma ordem finalizada ainda. Vá em <b>Execução</b>,
+    inicie e finalize uma ordem para liberar o apontamento de qualidade.</div>`;
+  h += `<div class="card"><table><thead><tr><th>Ordem</th><th>Cultivar / receita</th><th>Máq/T</th>
+    <th>Qualidade visual</th><th>Amostra</th><th>Inspetor</th><th>Observação</th><th></th></tr></thead><tbody>`;
+  os.forEach(o=>{
+    h += `<tr><td><b>${o.num}</b></td><td>${o.cult}<br><span class="mut" style="font-size:12px">${rec(o.rec).nome}</span></td>
+      <td>${maq(o.maq).nome}${o.turno?'/T'+o.turno:''}</td>
+      <td>${o.qual?`<span class="tag ${tagQ(o.qual.visual)}">${o.qual.visual}</span>`:'<span class="tag t-aguard">pendente</span>'}</td>
+      <td>${o.qual?(o.qual.amostra?'Sim':'Não'):'—'}</td>
+      <td>${o.qual?o.qual.por:'—'}</td><td class="mut">${o.qual?(o.qual.obs||'—'):'—'}</td>
+      <td class="right"><button class="b sm" onclick="abreOrd(${o.id})">Apontar</button></td></tr>`;
+  });
+  return h + `</tbody></table></div>`;
+}
+
+/* ============================================================
+   5. INDICADORES
+   ============================================================ */
+function vInd(){
+  const fin = S.ordens.filter(o=>tempos(o).bruto>0);
+  let h = `<h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Indicadores de produção
+    <span style="flex:1"></span>
+    <button class="b" onclick="expProducao()">⬇ Exportar produção (.xlsx)</button></h2>
+    <div class="hint">Dia de produção 07:30 → 03:00. Turno 1 = apontamentos até 17:30 · Turno 2 = 17:30 às 03:00.</div>`;
+
+  // por máquina (dia selecionado)
+  h += `<div class="card"><h3>Produção por máquina — ${dow(S.diaSel)} ${fmtDia(S.diaSel)}</h3><table><thead><tr>
+    <th>Máquina</th><th class="num">Capacidade/dia</th><th class="num">Programado</th>
+    <th class="num">Ocupação</th><th class="num">Produzido</th><th class="num">Ordens</th></tr></thead><tbody>`;
+  S.maquinas.forEach(m=>{
+    const os = cel(m.id), cp = capDia(m.id);
+    const prog = os.reduce((a,o)=>a+pesoT(o),0);
+    const prod = os.filter(o=>['Finalizada','Qualidade apontada','Apontada'].includes(o.status))
+                   .reduce((a,o)=>a+pesoT(o),0);
+    const pc = prog/cp*100;
+    h += `<tr><td><b>${m.nome}</b></td>
+      <td class="num">${n(cp,0)} t</td><td class="num">${n(prog,1)} t</td>
+      <td class="num ${pc>100?'dv-b':(pc>85?'dv-w':'dv-ok')}">${n(pc,0)}%</td>
+      <td class="num">${n(prod,1)} t</td><td class="num">${os.length}</td></tr>`;
+  });
+  h += `</tbody></table>
+  <h3 style="margin-top:14px">Produção por turno <span class="mut" style="font-weight:400;font-size:11.5px">
+    — turno real, atribuído pelo horário do Início (até 17:30 = T1)</span></h3>
+  <table><thead><tr><th>Turno</th><th>Janela</th><th class="num">Ordens iniciadas</th>
+    <th class="num">Produzido</th></tr></thead><tbody>
+  ${S.turnos.map(t=>{
+    const osT = S.ordens.filter(o=>o.turno===t.id && o.eventos.some(e=>e.t==='inicio'));
+    const prodT = osT.filter(o=>['Finalizada','Qualidade apontada','Apontada'].includes(o.status))
+                     .reduce((a,o)=>a+pesoT(o),0);
+    return `<tr><td><b>${t.nome}</b></td><td class="mut">${t.ini} – ${t.fim}</td>
+      <td class="num">${osT.length}</td><td class="num">${n(prodT,1)} t</td></tr>`;
+  }).join('')}
+  </tbody></table></div>`;
+
+  // tempos
+  if(fin.length){
+    const tot = fin.reduce((a,o)=>{const T=tempos(o);
+      return {b:a.b+T.bruto, pp:a.pp+T.pPlan, pn:a.pn+T.pNao, l:a.l+T.liq};},{b:0,pp:0,pn:0,l:0});
+    h += `<div class="kpis">
+      <div class="kpi"><div class="lb">Tempo bruto</div><div class="vl timer" style="font-size:19px">${hms(tot.b)}</div></div>
+      <div class="kpi"><div class="lb">Paradas planejadas</div><div class="vl timer" style="font-size:19px">${hms(tot.pp)}</div><div class="fo">setup, limpeza, refeição</div></div>
+      <div class="kpi bad"><div class="lb">Paradas não planejadas</div><div class="vl timer" style="font-size:19px">${hms(tot.pn)}</div><div class="fo">perda real</div></div>
+      <div class="kpi ok"><div class="lb">Tempo líquido</div><div class="vl timer" style="font-size:19px">${hms(tot.l)}</div></div>
+      <div class="kpi"><div class="lb">Disponib. bruta</div><div class="vl">${n(tot.l/tot.b*100,0)}%</div><div class="fo">líquido ÷ bruto</div></div>
+      <div class="kpi"><div class="lb">Disponib. operacional</div><div class="vl">${n(tot.l/Math.max(1,tot.b-tot.pp)*100,0)}%</div><div class="fo">desconta paradas planejadas</div></div>
+    </div>`;
+
+    // pareto de paradas
+    const agg = {};
+    S.ordens.forEach(o=>o.paradas.forEach(p=>{
+      const m = motivo(p.motivo), d = ((p.fim||Date.now())-p.ini)/1000;
+      agg[m.id] = agg[m.id] || {desc:m.desc, tipo:m.tipo, s:0, n:0};
+      agg[m.id].s += d; agg[m.id].n++;
+    }));
+    const arr = Object.values(agg).sort((a,b)=>b.s-a.s), mx = arr[0]?arr[0].s:1;
+    h += `<div class="card"><h3>Pareto de paradas — planejadas vs não planejadas</h3>`;
+    if(!arr.length) h += `<div class="mut" style="font-size:12.5px">Nenhuma parada registrada. Vá em Execução, inicie uma ordem e clique em Parar.</div>`;
+    arr.forEach(a=>{
+      h += `<div class="pareto"><div class="nm">${a.desc}<br>
+        <span class="tag ${a.tipo==='Planejada'?'t-plan':'t-nplan'}" style="font-size:10px">${a.tipo}</span></div>
+        <div class="pb"><i style="width:${a.s/mx*100}%;background:${a.tipo==='Planejada'?'var(--azul)':'var(--vermelho)'}"></i></div>
+        <div class="vv timer">${hms(a.s)}</div><div class="vv mut">${a.n}×</div></div>`;
+    });
+    h += `<div class="legend">Sem essa classificação o setup penalizaria a disponibilidade como se fosse falha —
+      e a perda real ficaria escondida.</div></div>`;
+
+    // relatório de produção por ordem: início/fim, planejado vs realizado, produtividade
+    h += `<div class="card"><h3>Relatório de produção por ordem
+      <span class="mut" style="font-weight:400;font-size:11.5px">— tempo planejado (peso ÷ ${CAP_TH} t/h) vs realizado bruto e líquido</span></h3>
+      <table><thead><tr><th>Ordem</th><th>Máq/T</th><th class="num">Peso</th>
+      <th>Início</th><th>Fim</th>
+      <th class="num">Plan.</th><th class="num">Bruto</th><th class="num">vs plan</th>
+      <th class="num">Líquido</th><th class="num">vs plan</th>
+      <th class="num">Parado</th><th class="num">Prod. bruta</th><th class="num">Prod. líquida</th>
+      <th>Qualidade</th></tr></thead><tbody>`;
+    fin.forEach(o=>{ const T=tempos(o);
+      const ini=o.eventos.find(e=>e.t==='inicio'), fim=o.eventos.find(e=>e.t==='fim');
+      const plan = pesoT(o)/maq(o.maq).cap*3600;
+      const vsB = T.bruto/plan*100, vsL = T.liq/plan*100;
+      h += `<tr><td><b>${o.num}</b></td><td>${maq(o.maq).nome}${o.turno?'/T'+o.turno:''}</td>
+        <td class="num">${n(pesoT(o),1)} t</td>
+        <td class="nowrap">${ini?new Date(ini.ts).toLocaleTimeString('pt-BR').slice(0,5):'—'}</td>
+        <td class="nowrap">${fim?new Date(fim.ts).toLocaleTimeString('pt-BR').slice(0,5):'—'}</td>
+        <td class="num timer">${hms(plan)}</td>
+        <td class="num timer">${hms(T.bruto)}</td>
+        <td class="num ${vsB>110?'dv-b':(vsB>100?'dv-w':'dv-ok')}">${n(vsB,0)}%</td>
+        <td class="num timer">${hms(T.liq)}</td>
+        <td class="num ${vsL>110?'dv-b':(vsL>100?'dv-w':'dv-ok')}">${n(vsL,0)}%</td>
+        <td class="num timer">${hms(T.par)}</td>
+        <td class="num">${T.bruto?n(pesoT(o)/(T.bruto/3600),1)+' t/h':'—'}</td>
+        <td class="num">${T.liq?n(pesoT(o)/(T.liq/3600),1)+' t/h':'—'}</td>
+        <td>${o.qual?`<span class="tag ${tagQ(o.qual.visual)}">${o.qual.visual}</span>`:'<span class="mut">—</span>'}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+
+    // produção por período (dia / semana / mês / geral) com tempo parado
+    const finTodas = S.ordens.filter(o=>['Finalizada','Qualidade apontada','Apontada'].includes(o.status));
+    const porDia = {};
+    finTodas.forEach(o=>{ const T=tempos(o);
+      const g = porDia[o.data] = porDia[o.data]||{ton:0,n:0,bruto:0,par:0,liq:0};
+      g.ton+=pesoT(o); g.n++; g.bruto+=T.bruto; g.par+=T.par; g.liq+=T.liq; });
+    const dias = Object.keys(porDia).sort();
+    const somaDesde = iso => dias.filter(d=>d>=iso).reduce((a,d)=>({
+      ton:a.ton+porDia[d].ton, n:a.n+porDia[d].n, bruto:a.bruto+porDia[d].bruto,
+      par:a.par+porDia[d].par, liq:a.liq+porDia[d].liq}), {ton:0,n:0,bruto:0,par:0,liq:0});
+    const sem7 = somaDesde(addD(S.dia,-6));
+    const mes0 = S.dia.slice(0,8)+'01';
+    const mesA = somaDesde(mes0);
+    const geral = somaDesde('0000-00-00');
+    h += `<div class="card"><h3>Produção por período <span class="mut" style="font-weight:400;font-size:11.5px">
+      — inclui tempo parado por dia, semana e mês</span></h3>
+      <table><thead><tr><th>Período</th><th class="num">Ordens</th><th class="num">Produzido</th>
+      <th class="num">Tempo bruto</th><th class="num">Tempo parado</th><th class="num">Tempo líquido</th>
+      <th class="num">Prod. líquida</th></tr></thead><tbody>
+      ${dias.map(d=>{const g=porDia[d];
+        return `<tr><td>${dow(d)} ${fmtDia(d)}</td><td class="num">${g.n}</td>
+        <td class="num"><b>${n(g.ton,1)} t</b></td>
+        <td class="num timer">${hms(g.bruto)}</td><td class="num timer">${hms(g.par)}</td>
+        <td class="num timer">${hms(g.liq)}</td>
+        <td class="num">${g.liq?n(g.ton/(g.liq/3600),1)+' t/h':'—'}</td></tr>`;}).join('')}
+      <tr style="border-top:2px solid var(--borda)"><td><b>Semana (últimos 7 dias)</b></td>
+        <td class="num">${sem7.n}</td><td class="num"><b>${n(sem7.ton,1)} t</b></td>
+        <td class="num timer">${hms(sem7.bruto)}</td><td class="num timer">${hms(sem7.par)}</td>
+        <td class="num timer">${hms(sem7.liq)}</td>
+        <td class="num">${sem7.liq?n(sem7.ton/(sem7.liq/3600),1)+' t/h':'—'}</td></tr>
+      <tr><td><b>Mês corrente</b></td>
+        <td class="num">${mesA.n}</td><td class="num"><b>${n(mesA.ton,1)} t</b></td>
+        <td class="num timer">${hms(mesA.bruto)}</td><td class="num timer">${hms(mesA.par)}</td>
+        <td class="num timer">${hms(mesA.liq)}</td>
+        <td class="num">${mesA.liq?n(mesA.ton/(mesA.liq/3600),1)+' t/h':'—'}</td></tr>
+      <tr><td><b>Geral</b></td>
+        <td class="num">${geral.n}</td><td class="num"><b>${n(geral.ton,1)} t</b></td>
+        <td class="num timer">${hms(geral.bruto)}</td><td class="num timer">${hms(geral.par)}</td>
+        <td class="num timer">${hms(geral.liq)}</td>
+        <td class="num">${geral.liq?n(geral.ton/(geral.liq/3600),1)+' t/h':'—'}</td></tr>
+      </tbody></table></div>`;
+  } else {
+    h += `<div class="card mut">Nenhum apontamento de tempo ainda. Vá em <b>Execução</b> (perfil Produção),
+      inicie uma ordem, registre uma parada e finalize — os indicadores se preenchem sozinhos.</div>`;
+  }
+  return h;
+}
+
+/* ============================================================
+   6. CADASTROS
+   ============================================================ */
+function vCad(){
+  let h = `<h2>Cadastros</h2><div class="hint">Base do sistema. No protótipo são somente leitura.</div>`;
+
+  h += `<div class="card"><h3>Máquinas e capacidade</h3><table><thead><tr><th>Máquina</th>
+    <th class="num">Capacidade</th><th class="num">Tanques</th><th class="num">Cap. Turno 1 (10h)</th>
+    <th class="num">Cap. Turno 2 (9h30)</th><th class="num">Cap. dia</th></tr></thead><tbody>
+    ${S.maquinas.map(m=>`<tr><td><b>${m.nome}</b></td><td class="num">${m.cap} t/h</td>
+      <td class="num">${m.tanques}</td><td class="num">${n(m.cap*10,0)} t</td>
+      <td class="num">${n(m.cap*9.5,0)} t</td><td class="num"><b>${n(m.cap*19.5,0)} t</b></td></tr>`).join('')}
+    </tbody></table></div>`;
+
+  h += `<div class="card"><h3>Turnos</h3><table><thead><tr><th>Turno</th><th>Início</th><th>Fim</th>
+    <th class="num">Horas</th><th>Regra de atribuição</th></tr></thead><tbody>
+    <tr><td><b>Turno 1</b></td><td>07:30</td><td>17:30</td><td class="num">10,0</td>
+      <td class="mut">turno não é programado: é atribuído pelo horário real do Início (até 17:30 = T1)</td></tr>
+    <tr><td><b>Turno 2</b></td><td>17:30</td><td>03:00 (+1d)</td><td class="num">9,5</td>
+      <td class="mut">cruza a meia-noite; pertence ao dia de produção que começou às 07:30</td></tr>
+    </tbody></table></div>`;
+
+  h += `<div class="card"><h3>Embalagens</h3><table><thead><tr><th>Código</th><th>Descrição</th>
+    <th class="num">Sementes</th></tr></thead><tbody>
+    ${S.embalagens.map(e=>`<tr><td><b>${e.cod}</b></td><td>${e.desc}</td>
+      <td class="num">${e.sem.toLocaleString('pt-BR')}</td></tr>`).join('')}</tbody></table></div>`;
+
+  h += `<div class="card"><h3>Produtos químicos</h3><table><thead><tr><th>Produto</th>
+    <th>Unidade de dose</th><th class="num">Densidade (g/ml)</th><th>Lotes disponíveis</th></tr></thead><tbody>
+    ${S.quimicos.map(q=>`<tr><td><b>${q.nome}</b></td><td>${q.un}</td>
+      <td class="num">${q.dens?n(q.dens,2):'<span class="mut">— (dose já em peso)</span>'}</td>
+      <td class="mut">${S.lotesQ.filter(l=>l.q===q.id).map(l=>l.id).join(', ')||'—'}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="legend">A densidade converte a dose (ml/kg) em <b>peso de balança</b> — é o valor que a produção
+    usa para aferir a balança dos tanques. A receita continua definida por dose.</div></div>`;
+
+  h += `<div class="card"><h3>Receitas de tratamento</h3>
+    <div class="hint">A dose define o VOLUME; a densidade converte em PESO DE BALANÇA — que é o valor
+    usado na aferição dos tanques nas ordens.</div>`;
+  S.receitas.forEach(r=>{
+    h += `<h3 style="margin-top:12px">${r.nome}</h3><table><thead><tr><th>Tanque</th><th>Produto</th>
+      <th class="num">Dose</th><th class="num">Densidade</th>
+      <th class="num">Volume p/ 40 t</th><th class="num">Peso balança p/ 40 t</th></tr></thead><tbody>
+      ${r.itens.map(i=>{const q=quim(i.q);
+        const vol = i.dose*40000/1000;                                  // L (ml/kg) ou kg (g/kg)
+        const peso = q.un==='ml/kg' ? vol*(q.dens||1) : vol;            // kg de balança
+        return `<tr><td>T${i.tq}</td><td>${q.nome}</td>
+        <td class="num">${n(i.dose,2)} ${q.un}</td>
+        <td class="num">${q.dens?n(q.dens,2)+' g/ml':'<span class="mut">—</span>'}</td>
+        <td class="num">${q.un==='ml/kg'?n(vol,1)+' L':'<span class="mut">—</span>'}</td>
+        <td class="num"><b>${n(peso,1)} kg</b></td></tr>`;}).join('')}
+      </tbody></table>`;
+  });
+  h += `</div>`;
+
+  h += `<div class="card"><h3>Motivos de parada</h3><table><thead><tr><th>Motivo</th><th>Tipo</th>
+    <th>Efeito no indicador</th></tr></thead><tbody>
+    ${S.motivos.map(m=>`<tr><td>${m.desc}</td>
+      <td><span class="tag ${m.tipo==='Planejada'?'t-plan':'t-nplan'}">${m.tipo}</span></td>
+      <td class="mut" style="font-size:12px">${m.tipo==='Planejada'
+        ?'descontada da disponibilidade operacional':'contabilizada como perda real'}</td></tr>`).join('')}
+    </tbody></table></div>`;
+
+  h += `<div class="card"><h3>Lotes de semente <span class="mut" style="font-weight:400;font-size:12px">
+    — importados da planilha de lotes; o peso é resolvido por busca no nº do lote</span></h3>
+    <table><thead><tr><th>Lote</th><th>Cultivar</th><th class="num">Peso/bag</th><th>Status</th>
+    <th class="num">Ordens</th></tr></thead><tbody>
+    ${S.lotes.map(l=>{
+      const nOrd = S.ordens.filter(o=>o.lote===l.id).length;
+      const orfao = l.status==='Baixado' && nOrd===0;
+      return `<tr><td><b>${l.id}</b></td><td>${l.cult}</td><td class="num">${n(l.pesoBag,0)} kg</td>
+      <td><span class="tag ${l.status==='Baixado'?'t-baixado':'t-estoque'}">${l.status}</span>
+        ${orfao?'<span class="tag t-apo" title="baixado mas sem nenhuma ordem — devolver ao estoque na tela Lotes a baixar">⚠ sem ordens — estornar</span>':''}</td>
+      <td class="num ${orfao?'dv-b':''}">${nOrd}</td></tr>`;}).join('')}
+    </tbody></table></div>`;
+  return h;
+}
+
+/* ============================================================ */
+document.getElementById('hDia').textContent = '27/07/2026';
+render();
+// auto-refresh dos timers: SÓ na tela de Execução e com modal fechado —
+// nas demais telas re-renderizar apagaria o que o usuário está digitando
+setInterval(()=>{ if(view==='exec' && S.ordens.some(o=>['Em produção','Parada'].includes(o.status))){
+  if(!document.getElementById('ov').classList.contains('on')) render(); } }, 1000);
+</script>
+</body>
+</html>
