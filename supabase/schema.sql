@@ -447,6 +447,9 @@ begin
       raise exception 'Ordem % em andamento/finalizada nao pode ser editada', old.numero;
     end if;
   end if;
+  -- em trigger de DELETE o NEW e' NULL: retornar NULL num BEFORE DELETE cancelaria
+  -- a exclusao silenciosamente, bloqueando ordens que a matriz permite excluir
+  if tg_op = 'DELETE' then return old; end if;
   return new;
 end $$ language plpgsql;
 create trigger tg_ordem_imutavel before update or delete on ordens
@@ -522,6 +525,69 @@ create policy prod_tql on ordem_tanque_lotes for all
 -- Qualidade/Gestor
 create policy qual_ap on ordem_qualidade for all
   using (meu_perfil() in ('Qualidade','Gestor')) with check (meu_perfil() in ('Qualidade','Gestor'));
+
+-- ------------------------------------------------------------
+-- 8b. RLS DOS CADASTROS E DEMAIS TABELAS
+-- No Supabase, tabela SEM row level security fica legivel e gravavel por
+-- qualquer portador da chave anonima (que vai no bundle do front-end).
+-- Toda tabela exposta na API precisa de RLS explicito.
+-- ------------------------------------------------------------
+alter table usuarios           enable row level security;
+alter table perfil_permissoes  enable row level security;
+alter table maquinas           enable row level security;
+alter table turnos             enable row level security;
+alter table embalagens         enable row level security;
+alter table produtos_quimicos  enable row level security;
+alter table lotes_quimico      enable row level security;
+alter table receitas           enable row level security;
+alter table receita_itens      enable row level security;
+alter table motivos_parada     enable row level security;
+alter table cargas_demanda     enable row level security;
+alter table ordem_auditoria    enable row level security;
+
+-- leitura dos cadastros: todo usuario ativo (a operacao precisa das receitas e doses)
+create policy ler_usuarios on usuarios for select using (meu_perfil() is not null);
+create policy ler_perm     on perfil_permissoes for select using (meu_perfil() is not null);
+create policy ler_maq      on maquinas for select using (meu_perfil() is not null);
+create policy ler_tur      on turnos for select using (meu_perfil() is not null);
+create policy ler_emb      on embalagens for select using (meu_perfil() is not null);
+create policy ler_quim     on produtos_quimicos for select using (meu_perfil() is not null);
+create policy ler_lq       on lotes_quimico for select using (meu_perfil() is not null);
+create policy ler_rec      on receitas for select using (meu_perfil() is not null);
+create policy ler_ri       on receita_itens for select using (meu_perfil() is not null);
+create policy ler_mot      on motivos_parada for select using (meu_perfil() is not null);
+create policy ler_cargas   on cargas_demanda for select using (meu_perfil() is not null);
+create policy ler_aud      on ordem_auditoria for select using (meu_perfil() is not null);
+
+-- manutencao dos cadastros: PCP/Gestor (tela Cadastros da matriz de perfis)
+create policy pcp_maq  on maquinas for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_tur  on turnos for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_emb  on embalagens for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_quim on produtos_quimicos for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_lq   on lotes_quimico for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_rec  on receitas for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_ri   on receita_itens for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_mot  on motivos_parada for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_cargas on cargas_demanda for all
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
+
+-- usuarios e matriz de permissoes: so o Gestor administra (tela de administracao)
+create policy gestor_usuarios on usuarios for all
+  using (meu_perfil() = 'Gestor') with check (meu_perfil() = 'Gestor');
+create policy gestor_perm on perfil_permissoes for all
+  using (meu_perfil() = 'Gestor') with check (meu_perfil() = 'Gestor');
+
+-- auditoria: qualquer usuario ativo registra; ninguem altera nem apaga
+create policy grava_aud on ordem_auditoria for insert
+  with check (meu_perfil() is not null);
 
 -- ============================================================
 -- 9. SEED MÍNIMO
