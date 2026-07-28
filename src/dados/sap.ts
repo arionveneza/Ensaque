@@ -70,3 +70,38 @@ export const sementesComEstoque = () =>
 /** Lotes de um item, para rastreabilidade. */
 export const lotesDoItem = (itemCode: string) =>
   chamar<LoteSap[]>({ acao: 'lotesDoItem', itemCode })
+
+/**
+ * Linha de pedido de venda em aberto, vinda da consulta salva TSI_PEDIDOS.
+ * As chaves são os aliases do SQL — o SAP devolve exatamente como nomeados.
+ */
+export interface PedidoSap {
+  PV: number | string
+  DataPedido: string | null
+  Safra: string | null
+  Filial: string | null
+  Vendedor: string | null
+  CodPN: string | null
+  NomePN: string | null
+  CodItem: string
+  DescricaoItem: string
+  Quantidade: number
+  QuantidadePendente: number
+  /** UDF U_TP_Tratamento: o código do tratamento, língua única com o comercial. */
+  Tratamento: string | null
+  SituacaoPedido: string | null
+  Deposito: string | null
+  Status: string | null
+}
+
+/** Pedidos de venda em aberto. Exige a consulta já registrada no SAP. */
+export const pedidosVenda = () => chamar<PedidoSap[]>({ acao: 'pedidosVenda' })
+
+/**
+ * Cria a consulta salva no SAP. Única operação de escrita, restrita ao
+ * Gestor — é instalação, roda uma vez. Não toca dado de negócio.
+ */
+export const registrarConsultaPedidos = () =>
+  chamar<{ registrada: boolean; codigo: string; jaExistia: boolean }>({
+    acao: 'registrarConsultaPedidos',
+  })
