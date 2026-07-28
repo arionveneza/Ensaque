@@ -190,18 +190,69 @@ async function lotesDoItem(itemCode: string) {
 const CODIGO_CONSULTA_VALIDO = /^[A-Z][A-Z0-9_]{2,29}$/
 
 /**
+ * Remove comentários e o ponto e vírgula final.
+ *
+ * O SAP recusa consulta salva com comentário — devolve "Invalid SQL syntax".
+ * E é natural o SQL chegar comentado: a pessoa copia de um arquivo, ou
+ * documenta o que a consulta faz. Então o comentário fica guardado no
+ * cadastro, para quem for editar depois, e o que vai ao SAP é o texto limpo.
+ *
+ * Percorre caractere a caractere respeitando literais entre aspas simples,
+ * porque um `--` dentro de 'texto--assim' não é comentário.
+ */
+function limpaSql(sql: string): string {
+  let saida = ''
+  let i = 0
+  let dentroDeTexto = false
+
+  while (i < sql.length) {
+    const c = sql[i]
+    const proximo = sql[i + 1]
+
+    if (dentroDeTexto) {
+      saida += c
+      // '' é aspa escapada dentro do literal, não o fim dele
+      if (c === "'" && proximo === "'") {
+        saida += proximo
+        i += 2
+        continue
+      }
+      if (c === "'") dentroDeTexto = false
+      i++
+      continue
+    }
+
+    if (c === "'") {
+      dentroDeTexto = true
+      saida += c
+      i++
+      continue
+    }
+    if (c === '-' && proximo === '-') {
+      while (i < sql.length && sql[i] !== '\n') i++
+      continue
+    }
+    if (c === '/' && proximo === '*') {
+      i += 2
+      while (i < sql.length && !(sql[i] === '*' && sql[i + 1] === '/')) i++
+      i += 2
+      continue
+    }
+    saida += c
+    i++
+  }
+
+  return saida.replace(/\s+/g, ' ').trim().replace(/;+$/, '').trim()
+}
+
+/**
  * Aceita apenas UM comando SELECT.
  *
  * O SAP também barra pela autorização do usuário — foi o que aconteceu com
  * "Table 'OSLP' not accessible" — mas essa é a última linha de defesa, não a
  * primeira. Aqui recusamos antes de o texto sair daqui.
  */
-function validaSelect(sql: string): void {
-  const limpo = sql
-    .replace(/--[^\n]*/g, ' ') // comentário de linha
-    .replace(/\/\*[\s\S]*?\*\//g, ' ') // comentário de bloco
-    .trim()
-
+function validaSelect(limpo: string): void {
   if (!/^select\s/i.test(limpo)) {
     throw new Error('A consulta precisa começar com SELECT.')
   }
@@ -248,12 +299,16 @@ async function buscaConsulta(sb: SupabaseClient, codigo: string): Promise<Consul
  */
 async function registrarConsulta(sb: SupabaseClient, codigo: string) {
   const consulta = await buscaConsulta(sb, codigo)
-  validaSelect(consulta.sql)
+
+  // o cadastro guarda o SQL como a pessoa escreveu, com comentários e tudo;
+  // o SAP recebe só o comando
+  const sqlLimpo = limpaSql(consulta.sql)
+  validaSelect(sqlLimpo)
 
   const corpo = {
     SqlCode: consulta.codigo,
     SqlName: consulta.nome.slice(0, 100),
-    SqlText: consulta.sql,
+    SqlText: sqlLimpo,
   }
 
   let atualizou = false
