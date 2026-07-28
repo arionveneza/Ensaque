@@ -54,16 +54,45 @@ npm install
 ```
 Depois `npm run dev` (aplicação), `npm test` (153 testes) e `npm run build` (produção).
 
-### 6. Publicar na Vercel
-1. https://vercel.com → **Add New → Project** → importe `arionveneza/Ensaque`
-2. O `vercel.json` do repositório já define build, saída e cabeçalhos — não mexa nas
-   configurações detectadas
-3. **Environment Variables**: cadastre `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
-   com os mesmos valores do `.env.local`, nos três ambientes (Production, Preview, Development)
-4. **Deploy**. A cada `git push` na `main` sai uma nova versão
+### 6. Publicar
 
-> A chave anônima vai no bundle do front-end — é pública por natureza. Quem protege os dados
-> é o RLS no banco, não o segredo da chave. **Nunca** cadastre a `service_role` aqui.
+A pilha é **GitHub + Supabase, só isso**: o GitHub guarda o código e serve o app pelo
+Pages, o Supabase guarda os dados. Nenhum terceiro.
+
+O workflow `.github/workflows/deploy.yml` roda os testes, faz o build e publica a cada
+`push` na `main` — **teste vermelho não vira deploy**. Três passos no repositório:
+
+1. **Settings → Pages → Source**: `GitHub Actions`
+   *(repositório privado exige plano pago do GitHub; no gratuito o Pages só publica de
+   repositório público, e este aqui tem nome de cliente e dados de infraestrutura)*
+2. **Settings → Secrets and variables → Actions**, aba **Secrets**:
+   - `VITE_SUPABASE_URL` → `https://ztwmrhfloelqxhhpdmoz.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` → a chave `anon public`
+3. Mesma tela, aba **Variables**: `PAGES_ATIVO` = `true`
+
+Enquanto a variável não existir, o job de publicação é **pulado** em vez de falhar — o
+repositório não acumula erro só porque a configuração inicial não foi feita.
+
+O endereço final fica em `https://arionveneza.github.io/Ensaque/`.
+
+> A chave anônima vai no bundle do front-end — é pública por natureza, em qualquer
+> hospedagem. Quem protege os dados é o RLS no banco. **Nunca** cadastre a `service_role`.
+
+<details>
+<summary>Alternativas de hospedagem</summary>
+
+O app é estático puro e não usa nada específico de nenhum provedor, então migrar é trocar
+um arquivo de configuração.
+
+- **Cloudflare Pages** — gratuito com uso comercial explicitamente permitido, conecta em
+  repositório privado sem plano pago. É a opção mais barata sem zona cinzenta.
+- **Vercel** — o `vercel.json` já está no repositório. Atenção: o plano gratuito da Vercel
+  é restrito a uso **não comercial e pessoal**; para uso da empresa seria o Pro, a US$ 20
+  por desenvolvedor/mês.
+- **GitHub Pages** (o configurado) — proíbe usar o serviço para rodar negócio online,
+  e-commerce ou SaaS comercial. Uma ferramenta interna de chão de fábrica não é nada disso,
+  mas é interpretação, não autorização explícita.
+</details>
 
 ## Situação das telas
 

@@ -1,0 +1,107 @@
+name: Testar e publicar
+
+# Publica o TSI no GitHub Pages. A pilha é só GitHub + Supabase:
+# o GitHub guarda o código e serve o app, o Supabase guarda os dados.
+#
+# ANTES DO PRIMEIRO USO, no repositório:
+#   1. Settings → Pages → Source: "GitHub Actions"
+#      (repositório privado exige plano pago do GitHub)
+#   2. Settings → Secrets and variables → Actions → aba Secrets:
+#        VITE_SUPABASE_URL       = https://ztwmrhfloelqxhhpdmoz.supabase.co
+#        VITE_SUPABASE_ANON_KEY  = a chave "anon public" do projeto
+#   3. Mesma tela, aba Variables:
+#        PAGES_ATIVO = true      ← só então o deploy passa a rodar
+#
+# A chave anônima é pública por natureza — ela vai no bundle do front-end de
+# qualquer forma. Quem protege os dados é o RLS no banco. NUNCA cadastre aqui
+# a service_role.
+
+on:
+  push:
+    branches: [main]
+  # permite publicar manualmente pela aba Actions
+  workflow_dispatch:
+
+# só o necessário para publicar no Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# um deploy por vez; não cancela o que já está publicando
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  testar:
+    name: Testes e verificação de tipos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # os testes rodam ANTES do build: teste vermelho não vira deploy
+      - name: Testes
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+  publicar:
+    name: Build e publicação
+    needs: testar
+    runs-on: ubuntu-latest
+    # enquanto os secrets não existirem o deploy é PULADO, não falha em
+    # vermelho: assim o repositório não fica com histórico de erro só porque
+    # a configuração inicial ainda não foi feita
+    if: ${{ vars.PAGES_ATIVO == 'true' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configurar Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        env:
+          # project site fica em /<repo>/ — sem isso os assets dão 404
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Faltam os secrets VITE_SUPABASE_URL e/ou VITE_SUPABASE_ANON_KEY."
+            echo "::error::Cadastre em Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npm run build
+
+      # o Pages não tem regra de rewrite: servir o index como 404 evita
+      # tela em branco se alguém abrir um endereço que não existe
+      - name: Fallback de rota
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Publicar
+        id: deploy
+        uses: actions/deploy-pages@v4
