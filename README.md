@@ -60,18 +60,13 @@ A pilha é **GitHub + Supabase, só isso**: o GitHub guarda o código e serve o 
 Pages, o Supabase guarda os dados. Nenhum terceiro.
 
 O workflow `.github/workflows/deploy.yml` roda os testes, faz o build e publica a cada
-`push` na `main` — **teste vermelho não vira deploy**. Três passos no repositório:
+`push` na `main` — **teste vermelho não vira deploy**. Dois passos no repositório:
 
 1. **Settings → Pages → Source**: `GitHub Actions`
-   *(repositório privado exige plano pago do GitHub; no gratuito o Pages só publica de
-   repositório público, e este aqui tem nome de cliente e dados de infraestrutura)*
+   *(o Pages é gratuito em repositório público)*
 2. **Settings → Secrets and variables → Actions**, aba **Secrets**:
    - `VITE_SUPABASE_URL` → `https://ztwmrhfloelqxhhpdmoz.supabase.co`
    - `VITE_SUPABASE_ANON_KEY` → a chave `anon public`
-3. Mesma tela, aba **Variables**: `PAGES_ATIVO` = `true`
-
-Enquanto a variável não existir, o job de publicação é **pulado** em vez de falhar — o
-repositório não acumula erro só porque a configuração inicial não foi feita.
 
 O endereço final fica em `https://arionveneza.github.io/Ensaque/`.
 

@@ -9,8 +9,6 @@ name: Testar e publicar
 #   2. Settings → Secrets and variables → Actions → aba Secrets:
 #        VITE_SUPABASE_URL       = https://ztwmrhfloelqxhhpdmoz.supabase.co
 #        VITE_SUPABASE_ANON_KEY  = a chave "anon public" do projeto
-#   3. Mesma tela, aba Variables:
-#        PAGES_ATIVO = true      ← só então o deploy passa a rodar
 #
 # A chave anônima é pública por natureza — ela vai no bundle do front-end de
 # qualquer forma. Quem protege os dados é o RLS no banco. NUNCA cadastre aqui
@@ -58,10 +56,6 @@ jobs:
     name: Build e publicação
     needs: testar
     runs-on: ubuntu-latest
-    # enquanto os secrets não existirem o deploy é PULADO, não falha em
-    # vermelho: assim o repositório não fica com histórico de erro só porque
-    # a configuração inicial ainda não foi feita
-    if: ${{ vars.PAGES_ATIVO == 'true' }}
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
