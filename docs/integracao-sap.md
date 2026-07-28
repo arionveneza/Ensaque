@@ -9,6 +9,13 @@
 > `code 301 — "Invalid session or session already timeout"`. **O cliente HTTP precisa preservar
 > todos os cookies** (em PowerShell: `-SessionVariable`/`-WebSession`; em Node: um cookie jar).
 
+> ⚠️ **Segunda lição, do lado do Supabase:** o `supabase-js` envia `apikey` e `x-client-info`
+> em toda chamada, além do `Authorization`. Se qualquer um deles ficar fora do
+> `Access-Control-Allow-Headers` da Edge Function, o navegador bloqueia a requisição **no
+> preflight** e o app recebe apenas `Failed to send a request to the Edge Function` — uma
+> mensagem que não tem nenhuma relação aparente com a causa. Diagnostica-se com um
+> `curl -X OPTIONS` mandando os mesmos `Access-Control-Request-Headers` do navegador.
+
 ## 1. Ambiente
 
 | Item | Valor |

@@ -20,10 +20,18 @@ const SAP_DB = Deno.env.get('SAP_COMPANY_DB') ?? ''
 const SAP_USER = Deno.env.get('SAP_USER') ?? ''
 const SAP_PASSWORD = Deno.env.get('SAP_PASSWORD') ?? ''
 
+/**
+ * O supabase-js manda mais que Authorization: envia `apikey` e `x-client-info`
+ * em toda chamada. Se qualquer um deles ficar de fora desta lista, o navegador
+ * bloqueia a requisição no preflight e o erro que chega ao app é o genérico
+ * "Failed to send a request to the Edge Function" — sem pista da causa.
+ */
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, apikey, x-client-info, content-type, x-supabase-api-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 }
 
 const json = (corpo: unknown, status = 200) =>
