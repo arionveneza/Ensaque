@@ -70,17 +70,36 @@ export default function AbaSap() {
       <Cartao
         titulo="Conexão"
         acoes={
-          <Botao
-            disabled={ocupado}
-            onClick={() =>
-              acao('testando conexão…', async () => {
-                const r = await sap.pingSap()
-                alert(`SAP ${r.sap} · base ${r.base}`)
-              })
-            }
-          >
-            Testar conexão
-          </Botao>
+          <>
+            <Botao
+              disabled={ocupado}
+              onClick={() =>
+                acao('testando conexão…', async () => {
+                  const r = await sap.pingSap()
+                  alert(`SAP ${r.sap} · base ${r.base}`)
+                })
+              }
+            >
+              Testar conexão
+            </Botao>
+            {ehGestor && (
+              <Botao
+                disabled={ocupado}
+                titulo="Lista as consultas que já existem no SAP. Só leitura — serve para descobrir o código de uma consulta criada pelo cliente B1."
+                onClick={() =>
+                  acao('lendo consultas do SAP…', async () => {
+                    const lista = await sap.consultasNoSap()
+                    setResultado({
+                      codigo: 'consultas registradas no SAP',
+                      linhas: lista as unknown as LinhaResultado[],
+                    })
+                  })
+                }
+              >
+                Ver o que existe no SAP
+              </Botao>
+            )}
+          </>
         }
         className="mb-5"
       >
@@ -107,9 +126,12 @@ export default function AbaSap() {
       >
         <div className="mb-3">
           <Aviso>
-            O SQL fica guardado aqui e é enviado ao SAP com <b>Registrar</b>. Editar o SQL
-            invalida o registro anterior — o botão volta a aparecer até você registrar de novo,
-            para não executar no SAP uma versão diferente da que está na tela.
+            <b>Criada no B1:</b> você monta a consulta no Query Manager do SAP e cadastra aqui só
+            o código dela. O app apenas executa — é o caminho que funciona hoje, porque o usuário
+            de integração não tem permissão para criar consulta.
+            <br />
+            <b>Registrada pelo app:</b> o SQL daqui é enviado ao SAP no botão Registrar. Depende
+            de o usuário de integração ganhar essa permissão.
           </Aviso>
         </div>
 
@@ -158,8 +180,10 @@ export default function AbaSap() {
                         <code className="text-sm">{c.codigo}</code>
                         <span className="ml-2 font-normal">{c.nome}</span>
                         <span className="ml-2">
-                          {c.registrada_em ? (
-                            <Tag cor="ok">registrada</Tag>
+                          {c.origem === 'sap' ? (
+                            <Tag cor="info">criada no B1</Tag>
+                          ) : c.registrada_em ? (
+                            <Tag cor="ok">registrada pelo app</Tag>
                           ) : (
                             <Tag cor="alerta">não registrada no SAP</Tag>
                           )}
@@ -170,7 +194,7 @@ export default function AbaSap() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {ehGestor && !c.registrada_em && (
+                      {ehGestor && c.origem === 'app' && !c.registrada_em && (
                         <Botao
                           disabled={ocupado}
                           titulo="Envia este SQL ao Service Layer. Cria ou sobrescreve."
@@ -191,8 +215,12 @@ export default function AbaSap() {
                       )}
                       <Botao
                         variante="primario"
-                        disabled={ocupado || !c.registrada_em}
-                        titulo={c.registrada_em ? undefined : 'Registre no SAP antes de executar'}
+                        disabled={ocupado || (c.origem === 'app' && !c.registrada_em)}
+                        titulo={
+                          c.origem === 'app' && !c.registrada_em
+                            ? 'Registre no SAP antes de executar'
+                            : undefined
+                        }
                         onClick={() =>
                           acao('executando no SAP…', async () => {
                             setResultado({
@@ -410,11 +438,47 @@ function FormConsulta({
   const [nome, setNome] = useState(inicial?.nome ?? '')
   const [descricao, setDescricao] = useState(inicial?.descricao ?? '')
   const [sql, setSql] = useState(inicial?.sql ?? '')
+  const [origem, setOrigem] = useState<sap.OrigemConsulta>(inicial?.origem ?? 'sap')
 
+  const criadaNoB1 = origem === 'sap'
   const comecaComSelect = /^\s*select\s/i.test(sql)
+  // consulta criada no B1 não manda SQL para lugar nenhum: o texto é documentação
+  const sqlObrigatorio = !criadaNoB1
 
   return (
     <div className="space-y-3">
+      <div className="rounded-md border border-stone-200 p-3 dark:border-stone-700">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-stone-500">
+          Onde a consulta vive
+        </p>
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              checked={criadaNoB1}
+              onChange={() => setOrigem('sap')}
+              className="mt-1"
+            />
+            <span>
+              <b>Criada no cliente B1.</b> Você monta no Query Manager do SAP e informa aqui o
+              código dela. O app só executa. <i>É o que funciona hoje.</i>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              checked={!criadaNoB1}
+              onChange={() => setOrigem('app')}
+              className="mt-1"
+            />
+            <span>
+              <b>Registrada pelo app.</b> O SQL abaixo é enviado ao SAP. Depende de o usuário de
+              integração ter permissão para criar consulta — hoje ele não tem.
+            </span>
+          </label>
+        </div>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
           Código
@@ -446,18 +510,22 @@ function FormConsulta({
       </div>
 
       <label className="block text-xs font-medium uppercase tracking-wide text-stone-500">
-        SQL (HANA)
+        SQL (HANA){criadaNoB1 && ' — opcional, só documentação'}
         <textarea
           value={sql}
           onChange={(e) => setSql(e.target.value)}
-          rows={14}
+          rows={criadaNoB1 ? 8 : 14}
           spellCheck={false}
-          placeholder={'SELECT ...\nFROM "ORDR" T0\nWHERE ...'}
+          placeholder={
+            criadaNoB1
+              ? 'Opcional: cole aqui o SQL da consulta do B1, para quem for entender ou refazer depois.'
+              : 'SELECT ...\nFROM "ORDR" T0\nWHERE ...'
+          }
           className={`${INPUT} mt-1 font-mono text-xs normal-case`}
         />
       </label>
 
-      {sql.trim() !== '' && !comecaComSelect && (
+      {sqlObrigatorio && sql.trim() !== '' && !comecaComSelect && (
         <Aviso gravidade="bloqueio">
           A consulta precisa começar com <b>SELECT</b>. A função recusa qualquer outro comando —
           e a autorização do usuário no SAP é a última barreira.
@@ -465,15 +533,27 @@ function FormConsulta({
       )}
 
       <p className="text-xs text-stone-500">
-        Sintaxe HANA, com os nomes de tabela entre aspas duplas. Não use o prefixo do schema
-        (<code>"SBOVENPRD".</code>) — sem ele a mesma consulta serve homologação.
+        {criadaNoB1 ? (
+          <>
+            O <b>código</b> precisa ser exatamente o mesmo da consulta no SAP. Use o botão
+            <b> Ver o que existe no SAP</b>, no cartão de conexão, para descobri-lo.
+          </>
+        ) : (
+          <>
+            Sintaxe HANA, com os nomes de tabela entre aspas duplas. Não use o prefixo do schema
+            (<code>"SBOVENPRD".</code>) — sem ele a mesma consulta serve homologação. Comentários
+            podem ficar: são removidos antes de enviar ao SAP.
+          </>
+        )}
       </p>
 
       <div className="flex gap-2">
         <Botao
           variante="primario"
-          disabled={!codigo.trim() || !nome.trim() || !comecaComSelect}
-          onClick={() => onSalvar({ codigo, nome, descricao, sql })}
+          disabled={
+            !codigo.trim() || !nome.trim() || (sqlObrigatorio && !comecaComSelect)
+          }
+          onClick={() => onSalvar({ codigo, nome, descricao, sql, origem })}
         >
           Salvar
         </Botao>

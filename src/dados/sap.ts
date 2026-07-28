@@ -25,6 +25,9 @@ export interface LoteSap {
   fabricacao: string | null
 }
 
+/** Onde a consulta nasceu — muda quem é responsável por colocá-la no SAP. */
+export type OrigemConsulta = 'app' | 'sap'
+
 export interface ConsultaSap {
   id: string
   codigo: string
@@ -33,6 +36,8 @@ export interface ConsultaSap {
   sql: string
   /** null = nunca registrada, ou o SQL mudou depois do último registro. */
   registrada_em: string | null
+  /** 'sap' = criada no cliente B1; o app só executa. */
+  origem: OrigemConsulta
   ativa: boolean
   atualizada_em: string
 }
@@ -105,7 +110,7 @@ export const consultasNoSap = () =>
 export async function listarConsultas(): Promise<ConsultaSap[]> {
   const { data, error } = await supabase
     .from('consultas_sap')
-    .select('id, codigo, nome, descricao, sql, registrada_em, ativa, atualizada_em')
+    .select('id, codigo, nome, descricao, sql, registrada_em, origem, ativa, atualizada_em')
     .order('codigo')
   if (error) throw new Error(`consultas: ${error.message}`)
   return (data ?? []) as ConsultaSap[]
@@ -116,6 +121,7 @@ export interface NovaConsulta {
   nome: string
   descricao?: string | null
   sql: string
+  origem: OrigemConsulta
 }
 
 export async function salvarConsulta(c: NovaConsulta, id?: string): Promise<void> {
@@ -124,6 +130,7 @@ export async function salvarConsulta(c: NovaConsulta, id?: string): Promise<void
     nome: c.nome.trim(),
     descricao: c.descricao?.trim() || null,
     sql: c.sql.trim(),
+    origem: c.origem,
   }
   const { error } = id
     ? await supabase.from('consultas_sap').update(registro).eq('id', id)

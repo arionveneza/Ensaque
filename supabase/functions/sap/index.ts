@@ -279,13 +279,15 @@ interface ConsultaSalva {
   nome: string
   sql: string
   registrada_em: string | null
+  /** 'sap' = criada no cliente B1, só executamos. 'app' = nós registramos. */
+  origem: 'app' | 'sap'
 }
 
 async function buscaConsulta(sb: SupabaseClient, codigo: string): Promise<ConsultaSalva> {
   if (!CODIGO_CONSULTA_VALIDO.test(codigo)) throw new Error('Código de consulta inválido.')
   const { data, error } = await sb
     .from('consultas_sap')
-    .select('codigo, nome, sql, registrada_em')
+    .select('codigo, nome, sql, registrada_em, origem')
     .eq('codigo', codigo)
     .maybeSingle()
   if (error) throw new Error(`Consulta ${codigo}: ${error.message}`)
@@ -299,6 +301,12 @@ async function buscaConsulta(sb: SupabaseClient, codigo: string): Promise<Consul
  */
 async function registrarConsulta(sb: SupabaseClient, codigo: string) {
   const consulta = await buscaConsulta(sb, codigo)
+  if (consulta.origem === 'sap') {
+    throw new Error(
+      `A consulta ${codigo} foi criada no cliente B1 — o app apenas a executa. ` +
+        'Para o app registrar, mude a origem para "app".',
+    )
+  }
 
   // o cadastro guarda o SQL como a pessoa escreveu, com comentários e tudo;
   // o SAP recebe só o comando
@@ -336,7 +344,8 @@ async function registrarConsulta(sb: SupabaseClient, codigo: string) {
 
 async function executarConsulta(sb: SupabaseClient, codigo: string) {
   const consulta = await buscaConsulta(sb, codigo)
-  if (!consulta.registrada_em) {
+  // consulta criada no B1 já vive lá: não há nada nosso para registrar antes
+  if (consulta.origem === 'app' && !consulta.registrada_em) {
     throw new Error(
       `A consulta ${codigo} ainda não foi registrada no SAP, ou o SQL mudou depois do último registro. Clique em Registrar.`,
     )
