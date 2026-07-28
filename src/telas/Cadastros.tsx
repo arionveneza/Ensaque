@@ -6,6 +6,7 @@ import type { ReceitaCompleta } from '@/dados/api-gestao'
 import { capacidadeDiaT, pesoItemKg } from '@/dominio/calculos'
 import type { ProdutoQuimico, TipoParada, UnidadeDose } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
+import AbaSap from './cadastros/AbaSap'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n } from '@/componentes/ui'
 
 /** Peso de referência usado só para exibir a receita numa escala legível. */
@@ -14,7 +15,7 @@ const REFERENCIA_KG = 40_000
 const INPUT =
   'rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800'
 
-type Aba = 'quimicos' | 'receitas' | 'maquinas' | 'embalagens' | 'motivos' | 'lotes'
+type Aba = 'quimicos' | 'receitas' | 'maquinas' | 'embalagens' | 'motivos' | 'lotes' | 'sap'
 
 const ABAS: { id: Aba; nome: string }[] = [
   { id: 'quimicos', nome: 'Produtos químicos' },
@@ -23,6 +24,7 @@ const ABAS: { id: Aba; nome: string }[] = [
   { id: 'embalagens', nome: 'Embalagens' },
   { id: 'motivos', nome: 'Motivos de parada' },
   { id: 'lotes', nome: 'Lotes de semente' },
+  { id: 'sap', nome: 'SAP (leitura)' },
 ]
 
 export default function Cadastros() {
@@ -122,6 +124,7 @@ export default function Cadastros() {
         <AbaMotivos motivos={cad?.motivos ?? []} podeEditar={!!podeEditar} acao={acao} />
       )}
       {aba === 'lotes' && <AbaLotes lotes={lotes} />}
+      {aba === 'sap' && <AbaSap />}
     </Pagina>
   )
 }
