@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+
+/*
+  Uso previsto: tablets no chão de fábrica (operação) e desktop (PCP/gestão).
+  Alvos de toque generosos e tipografia legível a distância de braço.
+*/
+@theme {
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Números de balança e peso alinham melhor com largura fixa. */
+.num-tabular {
+  font-variant-numeric: tabular-nums;
+}

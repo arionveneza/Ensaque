@@ -1,0 +1,274 @@
+import { describe, expect, it } from 'vitest'
+import {
+  capacidadeDiaT,
+  consumoPorTanque,
+  diaDeProducao,
+  ensaquePorBagKg,
+  montaTanques,
+  ocupacao,
+  pesoBagKg,
+  pesoItemKg,
+  pesoOrdemKg,
+  pesoQuimicoTotalKg,
+  rendimentoTh,
+  tempoPlanejadoS,
+  temposOrdem,
+  turnoDoInicio,
+  volumeItemL,
+} from './calculos'
+import type {
+  Embalagem,
+  MotivoParada,
+  Ordem,
+  ProdutoQuimico,
+  Receita,
+} from './tipos'
+
+const BG5M: Embalagem = {
+  codigo: 'BG5M', codigoExt: 'BB5M', descricao: 'Bag 5 milhoes',
+  sementes: 5_000_000, fatorPeso: 5,
+}
+const MEIOBAG: Embalagem = {
+  codigo: 'MEIOBAG', codigoExt: 'BMB', descricao: 'Meio bag',
+  sementes: 2_500_000, fatorPeso: 2.5,
+}
+
+// densidade em ml/kg e produto já dosado em peso
+const FTZ: ProdutoQuimico = {
+  id: 'FTZ', codigo: 'FTZ', nome: 'Fortenza Duo',
+  unidade: 'ml/kg', densidade: 1.08,
+}
+const GRF: ProdutoQuimico = {
+  id: 'GRF', codigo: 'GRF', nome: 'Grafite', unidade: 'g/kg', densidade: null,
+}
+const MXA: ProdutoQuimico = {
+  id: 'MXA', codigo: 'MXA', nome: 'Maxim Advanced',
+  unidade: 'ml/kg', densidade: 1.05,
+}
+const PRODUTOS = new Map([FTZ, GRF, MXA].map((p) => [p.id, p]))
+
+describe('peso do bag', () => {
+  it('PMS 171 em BB5M da 855 kg por bag', () => {
+    expect(pesoBagKg(171, BG5M)).toBe(855)
+  })
+
+  it('meio bag usa fator 2,5', () => {
+    expect(pesoBagKg(171, MEIOBAG)).toBe(427.5)
+  })
+
+  it('peso da ordem e bags x peso do bag', () => {
+    expect(pesoOrdemKg(45, 855)).toBe(38_475)
+  })
+})
+
+describe('peso de balanca a partir da dose', () => {
+  it('ml/kg multiplica pela densidade', () => {
+    // 0,60 ml/kg x 40.000 kg x 1,08 / 1000 = 25,92 kg
+    expect(pesoItemKg({ produtoId: 'FTZ', dose: 0.6, tanque: 1 }, FTZ, 40_000))
+      .toBeCloseTo(25.92, 6)
+  })
+
+  it('g/kg nao usa densidade: a dose ja e peso', () => {
+    // 0,50 g/kg x 40.000 kg / 1000 = 20 kg
+    expect(pesoItemKg({ produtoId: 'GRF', dose: 0.5, tanque: 4 }, GRF, 40_000))
+      .toBeCloseTo(20, 6)
+  })
+
+  it('recusa produto em ml/kg sem densidade, em vez de assumir 1', () => {
+    const semDensidade: ProdutoQuimico = { ...FTZ, densidade: null }
+    expect(() =>
+      pesoItemKg({ produtoId: 'FTZ', dose: 0.6, tanque: 1 }, semDensidade, 40_000),
+    ).toThrow(/densidade/i)
+  })
+
+  it('volume so existe para ml/kg', () => {
+    expect(volumeItemL({ produtoId: 'FTZ', dose: 0.6, tanque: 1 }, FTZ, 40_000))
+      .toBeCloseTo(24, 6)
+    expect(volumeItemL({ produtoId: 'GRF', dose: 0.5, tanque: 4 }, GRF, 40_000))
+      .toBeNull()
+  })
+})
+
+describe('ensaque', () => {
+  it('soma ao peso do bag a parcela de quimico por bag', () => {
+    // 100 kg de quimico distribuidos em 40 bags = 2,5 kg por bag
+    expect(ensaquePorBagKg(855, 100, 40)).toBeCloseTo(857.5, 6)
+  })
+
+  it('ordem sem bags e erro, nao divisao por zero', () => {
+    expect(() => ensaquePorBagKg(855, 100, 0)).toThrow()
+  })
+})
+
+describe('tanques e mistura', () => {
+  const receita6em5: Receita = {
+    id: 'R6', nome: 'CORTEVA COMPLETO',
+    itens: [
+      { produtoId: 'FTZ', dose: 0.5, tanque: 1 },
+      { produtoId: 'MXA', dose: 0.2, tanque: 3 },
+      { produtoId: 'GRF', dose: 0.3, tanque: 3 }, // mistura no tanque 3
+    ],
+  }
+
+  it('agrupa produtos do mesmo tanque em uma linha', () => {
+    const tanques = montaTanques(receita6em5)
+    expect(tanques.map((t) => t.tanque)).toEqual([1, 3])
+    expect(tanques[1].itens).toHaveLength(2)
+  })
+
+  it('planejado do tanque com mistura e a SOMA dos produtos', () => {
+    const tanques = montaTanques(receita6em5)
+    const consumo = consumoPorTanque(tanques, PRODUTOS, 40_000)
+    const t3 = consumo.find((c) => c.tanque === 3)!
+    // MXA: 0,2 x 40000 x 1,05 / 1000 = 8,4 ; GRF: 0,3 x 40000 / 1000 = 12
+    expect(t3.planejadoKg).toBeCloseTo(20.4, 6)
+  })
+
+  it('real e peso inicial menos final, e o desvio compara com a soma', () => {
+    const tanques = montaTanques(receita6em5)
+    tanques[1].pesoInicial = 100
+    tanques[1].pesoFinal = 79.6 // consumo real de 20,4 = exatamente o planejado
+    const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
+    expect(t3.realKg).toBeCloseTo(20.4, 6)
+    expect(t3.desvioPct).toBeCloseTo(0, 6)
+  })
+
+  it('sem pesagem fechada nao inventa real nem desvio', () => {
+    const tanques = montaTanques(receita6em5)
+    tanques[1].pesoInicial = 100
+    const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
+    expect(t3.realKg).toBeNull()
+    expect(t3.desvioPct).toBeNull()
+  })
+
+  it('peso total de quimico soma todos os itens da receita', () => {
+    // FTZ 0,5x40000x1,08/1000=21,6 ; MXA 8,4 ; GRF 12
+    expect(pesoQuimicoTotalKg(receita6em5, PRODUTOS, 40_000)).toBeCloseTo(42, 6)
+  })
+})
+
+describe('tempos', () => {
+  const MOTIVOS = new Map<string, MotivoParada>([
+    ['P1', { id: 'P1', descricao: 'Setup', tipo: 'Planejada' }],
+    ['N1', { id: 'N1', descricao: 'Quebra', tipo: 'Nao planejada' }],
+  ])
+
+  const base = (): Ordem => ({
+    id: 'o1', numero: '1', cultivar: 'C', receitaId: 'R', embalagem: 'BG5M',
+    bags: 10, loteId: 'L', prioridade: 'Normal', maquinaId: 'TSI1',
+    dataProg: '2026-07-28', seq: 1, turnoId: null, status: 'Finalizada',
+    eventos: [], paradas: [], tanques: [],
+  })
+
+  it('sem apontamento de inicio nao ha tempos', () => {
+    expect(temposOrdem(base(), MOTIVOS, 0)).toBeNull()
+  })
+
+  it('liquido desconta todas as paradas', () => {
+    const o = base()
+    o.eventos = [
+      { tipo: 'inicio', ts: 0 },
+      { tipo: 'fim', ts: 10_000 * 1000 },
+    ]
+    o.paradas = [
+      { motivoId: 'P1', inicio: 1_000 * 1000, fim: 2_000 * 1000 }, // 1000 s planejada
+      { motivoId: 'N1', inicio: 3_000 * 1000, fim: 3_500 * 1000 }, //  500 s nao planejada
+    ]
+    const t = temposOrdem(o, MOTIVOS, 0)!
+    expect(t.brutoS).toBe(10_000)
+    expect(t.paradasPlanejadasS).toBe(1_000)
+    expect(t.paradasNaoPlanejadasS).toBe(500)
+    expect(t.liquidoS).toBe(8_500)
+  })
+
+  it('setup nao penaliza a disponibilidade operacional como falha', () => {
+    const o = base()
+    o.eventos = [
+      { tipo: 'inicio', ts: 0 },
+      { tipo: 'fim', ts: 10_000 * 1000 },
+    ]
+    o.paradas = [{ motivoId: 'P1', inicio: 0, fim: 1_000 * 1000 }]
+    const t = temposOrdem(o, MOTIVOS, 0)!
+    // bruta penaliza a parada planejada; operacional a desconta da base
+    expect(t.dispBruta).toBeCloseTo(9_000 / 10_000, 6)
+    expect(t.dispOperacional).toBeCloseTo(1, 6)
+  })
+
+  it('ordem em andamento usa o agora informado, sem depender do relogio', () => {
+    const o = base()
+    o.status = 'Em producao'
+    o.eventos = [{ tipo: 'inicio', ts: 0 }]
+    const t = temposOrdem(o, MOTIVOS, 5_000 * 1000)!
+    expect(t.brutoS).toBe(5_000)
+  })
+
+  it('parada aberta conta ate o agora', () => {
+    const o = base()
+    o.status = 'Parada'
+    o.eventos = [{ tipo: 'inicio', ts: 0 }]
+    o.paradas = [{ motivoId: 'N1', inicio: 1_000 * 1000, fim: null }]
+    const t = temposOrdem(o, MOTIVOS, 3_000 * 1000)!
+    expect(t.paradasNaoPlanejadasS).toBe(2_000)
+    expect(t.liquidoS).toBe(1_000)
+  })
+
+  it('tempo planejado vem da capacidade da maquina', () => {
+    // 12 t a 12 t/h = 1 h
+    expect(tempoPlanejadoS(12, 12)).toBe(3_600)
+  })
+
+  it('rendimento e toneladas por hora liquida', () => {
+    expect(rendimentoTh(12, 3_600)).toBeCloseTo(12, 6)
+    expect(rendimentoTh(12, 0)).toBeNull()
+  })
+})
+
+describe('turno derivado do horario real do inicio', () => {
+  it('inicio as 07:30 e turno 1', () => {
+    expect(turnoDoInicio(new Date(2026, 6, 28, 7, 30))).toBe(1)
+  })
+
+  it('inicio as 17:30 ainda e turno 1', () => {
+    expect(turnoDoInicio(new Date(2026, 6, 28, 17, 30))).toBe(1)
+  })
+
+  it('inicio as 17:31 e turno 2', () => {
+    expect(turnoDoInicio(new Date(2026, 6, 28, 17, 31))).toBe(2)
+  })
+
+  it('madrugada, antes das 07:30, e turno 2', () => {
+    expect(turnoDoInicio(new Date(2026, 6, 28, 1, 0))).toBe(2)
+  })
+})
+
+describe('dia de producao das 07:30 as 03:00', () => {
+  it('a tarde pertence ao proprio dia', () => {
+    expect(diaDeProducao(new Date(2026, 6, 28, 14, 0))).toBe('2026-07-28')
+  })
+
+  it('a madrugada pertence ao dia que comecou', () => {
+    expect(diaDeProducao(new Date(2026, 6, 29, 2, 0))).toBe('2026-07-28')
+  })
+
+  it('as 07:29 ainda e o dia anterior', () => {
+    expect(diaDeProducao(new Date(2026, 6, 29, 7, 29))).toBe('2026-07-28')
+  })
+})
+
+describe('ocupacao', () => {
+  it('capacidade do dia e 234 t por maquina', () => {
+    expect(capacidadeDiaT(12, [10, 9.5])).toBe(234)
+  })
+
+  it('alerta ambar acima de 85 por cento', () => {
+    expect(ocupacao(200, 234).alerta).toBe('ambar')
+  })
+
+  it('alerta vermelho acima de 100 por cento', () => {
+    expect(ocupacao(240, 234).alerta).toBe('vermelho')
+  })
+
+  it('dentro do limite fica ok', () => {
+    expect(ocupacao(100, 234).alerta).toBe('ok')
+  })
+})
