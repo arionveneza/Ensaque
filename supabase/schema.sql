@@ -510,6 +510,15 @@ create policy pcp_est on estoque_pa for all
 -- Logística/Gestor: baixa de lote
 create policy log_lotes on lotes_semente for update
   using (meu_perfil() in ('Logistica','Gestor')) with check (meu_perfil() in ('Logistica','Gestor'));
+
+-- PCP/Gestor: carga dos lotes vinda do upload da planilha de Saldos.
+-- O upload é do PCP (tela Ordens), então sem estas políticas a importação falha.
+-- Obs.: a exclusividade da BAIXA (mudança de status) pela Logística é garantida
+-- pelo app e pelo trigger de estorno — RLS não distingue qual coluna mudou.
+create policy pcp_lotes_ins on lotes_semente for insert
+  with check (meu_perfil() in ('PCP','Gestor'));
+create policy pcp_lotes_upd on lotes_semente for update
+  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
 create policy log_mov on lote_movimentos for insert
   with check (meu_perfil() in ('Logistica','Gestor'));
 
