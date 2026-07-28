@@ -171,14 +171,38 @@ Colunas: C cultivar · F lote · G lote tratamento · H PMS · K saldo (bags) ·
 - Saldo negativo → ignorar e **reportar** (o arquivo de referência tem 4 casos, −27 bags).
 - **Resultado esperado**: 753 lotes · 16.865 bags · 0 estoque PA tratado.
 
-### SAP Business One (futuro)
-Ambiente **HANA hospedado pela Agrotis/AutoSky**. Service Layer existe (`https://saphasementesven:50000/b1s/v1`)
-mas responde 503 e é hostname interno — **pendência: chamado à Agrotis** para exposição externa +
-usuário somente leitura + CompanyDB. Endpoints alvo: `/Orders` (pedidos abertos) e
-`/Items` + `ItemWarehouseInfoCollection` (estoque). Preferir job **dentro** da rede empurrando para o
-Supabase (evita abrir porta).
+### SAP Business One — Service Layer **LIBERADO** ✅
+Ambiente **B1 sobre HANA**, hospedado pela Agrotis/AutoSky. Acesso externo concedido:
+
+| Item | Valor |
+|---|---|
+| Endpoint | `https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1` |
+| Base de **homologação** | `SBOVENHOM2` |
+| Base de **produção** | `SBOVENPRD` |
+| Credenciais | usuário/senha fornecidos por e-mail — **nunca comitar** (ver §4.1) |
+| Certificado | provavelmente autoassinado (navegador exige "Avançado → Continuar") |
+
+Ver **`docs/integracao-sap.md`** para o fluxo de login, as queries de pedidos e estoque, o mapeamento
+de campos e o desenho do job de sincronização.
+
+**Regra de trabalho:** desenvolver e testar **sempre contra `SBOVENHOM2`**. `SBOVENPRD` só no job
+final e **somente leitura** — nenhum POST/PATCH/DELETE em produção.
 
 ---
+
+### 4.1 Segredos — regra dura
+Credenciais **nunca** entram no repositório, no CLAUDE.md, em prints ou em chat. Sempre:
+- desenvolvimento local → `.env.local` (já no `.gitignore`)
+- job de sincronização → **Supabase Secrets** / variáveis de ambiente do servidor
+- rotação: se um segredo aparecer em qualquer lugar versionado, trocar imediatamente com a Agrotis.
+
+```
+# .env.local (exemplo — preencher com os valores reais)
+SAP_SL_URL=https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1
+SAP_COMPANY_DB=SBOVENHOM2
+SAP_USER=
+SAP_PASSWORD=
+```
 
 ## 5. Perfis e permissões
 
