@@ -3,16 +3,18 @@ name: Testar e publicar
 # Publica o TSI no GitHub Pages. A pilha é só GitHub + Supabase:
 # o GitHub guarda o código e serve o app, o Supabase guarda os dados.
 #
-# ANTES DO PRIMEIRO USO, no repositório:
-#   1. Settings → Pages → Source: "GitHub Actions"
-#      (repositório privado exige plano pago do GitHub)
-#   2. Settings → Secrets and variables → Actions → aba Secrets:
-#        VITE_SUPABASE_URL       = https://ztwmrhfloelqxhhpdmoz.supabase.co
-#        VITE_SUPABASE_ANON_KEY  = a chave "anon public" do projeto
+# Configuração necessária: apenas Settings → Pages → Source: "GitHub Actions".
 #
-# A chave anônima é pública por natureza — ela vai no bundle do front-end de
-# qualquer forma. Quem protege os dados é o RLS no banco. NUNCA cadastre aqui
-# a service_role.
+# Os valores do Supabase estão abaixo, em texto claro, de propósito. A chave
+# `anon` é PÚBLICA por natureza: ela vai dentro do bundle que qualquer pessoa
+# baixa ao abrir o site, em qualquer hospedagem. Guardá-la num secret não
+# esconderia nada de ninguém. Quem protege os dados é o RLS no banco, que
+# bloqueia tudo para quem não tem registro em `tsi.usuarios`.
+#
+# Se um dia cadastrar os secrets de mesmo nome, eles têm precedência — útil
+# para apontar um build para outro projeto Supabase sem mexer no código.
+#
+# NUNCA coloque aqui a chave `service_role`: ela ignora todo o RLS.
 
 on:
   push:
@@ -77,15 +79,9 @@ jobs:
         env:
           # project site fica em /<repo>/ — sem isso os assets dão 404
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: |
-          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo "::error::Faltam os secrets VITE_SUPABASE_URL e/ou VITE_SUPABASE_ANON_KEY."
-            echo "::error::Cadastre em Settings → Secrets and variables → Actions."
-            exit 1
-          fi
-          npm run build
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://ztwmrhfloelqxhhpdmoz.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0d21yaGZsb2VscXhoaHBkbW96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNDc0MDEsImV4cCI6MjEwMDgyMzQwMX0.zKMPGKFMY5RU7o_BihOcZqChfNXX-B4Hi8IuF9nYuo8' }}
+        run: npm run build
 
       # o Pages não tem regra de rewrite: servir o index como 404 evita
       # tela em branco se alguém abrir um endereço que não existe

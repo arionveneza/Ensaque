@@ -60,18 +60,18 @@ A pilha é **GitHub + Supabase, só isso**: o GitHub guarda o código e serve o 
 Pages, o Supabase guarda os dados. Nenhum terceiro.
 
 O workflow `.github/workflows/deploy.yml` roda os testes, faz o build e publica a cada
-`push` na `main` — **teste vermelho não vira deploy**. Dois passos no repositório:
-
-1. **Settings → Pages → Source**: `GitHub Actions`
-   *(o Pages é gratuito em repositório público)*
-2. **Settings → Secrets and variables → Actions**, aba **Secrets**:
-   - `VITE_SUPABASE_URL` → `https://ztwmrhfloelqxhhpdmoz.supabase.co`
-   - `VITE_SUPABASE_ANON_KEY` → a chave `anon public`
+`push` na `main` — **teste vermelho não vira deploy**. A única configuração necessária é
+**Settings → Pages → Source**: `GitHub Actions`.
 
 O endereço final fica em `https://arionveneza.github.io/Ensaque/`.
 
-> A chave anônima vai no bundle do front-end — é pública por natureza, em qualquer
-> hospedagem. Quem protege os dados é o RLS no banco. **Nunca** cadastre a `service_role`.
+Os valores do Supabase estão em texto claro dentro do workflow, de propósito. A chave
+`anon` é **pública por natureza**: ela vai dentro do bundle que qualquer pessoa baixa ao
+abrir o site, em qualquer hospedagem — guardá-la num secret não esconderia nada. Quem
+protege os dados é o RLS no banco, que bloqueia tudo para quem não tem registro em
+`tsi.usuarios`. Se um dia cadastrar secrets de mesmo nome, eles têm precedência.
+
+> **Nunca** coloque no repositório a chave `service_role`: ela ignora todo o RLS.
 
 <details>
 <summary>Alternativas de hospedagem</summary>
