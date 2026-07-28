@@ -1,21 +1,24 @@
 /**
- * Proxy de leitura do SAP Business One (Service Layer).
+ * Proxy do SAP Business One (Service Layer).
  *
  * Por que existe: as credenciais do SAP não podem viver no navegador. O
  * front-end chama esta função autenticado no Supabase; ela guarda usuário e
  * senha como secrets, faz o login no SAP, reaproveita a sessão e devolve
  * apenas os dados de que o app precisa.
  *
- * Superfície fechada: em vez de repassar OData livre, expõe AÇÕES nomeadas com
- * parâmetros validados. Repassar `$filter` do cliente permitiria montar
- * consulta arbitrária no ERP — inclusive fora de Items.
+ * Duas superfícies:
  *
- * Leitura, com uma exceção declarada: `registrarConsultaPedidos` cria a
- * consulta salva no SAP (tabela OUQR). É instalação, não uso diário — não
- * toca dado de negócio e é restrita ao perfil Gestor.
+ *  - AÇÕES FIXAS (Items, lotes): parâmetros validados, sem OData livre do
+ *    cliente. Repassar `$filter` permitiria montar consulta arbitrária no ERP.
+ *
+ *  - CONSULTAS SALVAS: o Gestor cadastra SQL em `tsi.consultas_sap`, manda
+ *    registrar no Service Layer e executa por código. É poder de
+ *    administrador — por isso o cadastro é restrito ao Gestor, o SQL é
+ *    validado como SELECT único, e a autorização de tabelas do usuário do
+ *    SAP continua sendo a última barreira.
  */
 
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 
 const SAP_URL = Deno.env.get('SAP_SL_URL') ?? ''
 const SAP_DB = Deno.env.get('SAP_COMPANY_DB') ?? ''
@@ -64,16 +67,11 @@ async function login(): Promise<Sessao> {
   const resp = await fetch(`${SAP_URL}/Login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      CompanyDB: SAP_DB,
-      UserName: SAP_USER,
-      Password: SAP_PASSWORD,
-    }),
+    body: JSON.stringify({ CompanyDB: SAP_DB, UserName: SAP_USER, Password: SAP_PASSWORD }),
   })
 
   if (!resp.ok) {
     const corpo = await resp.text()
-    // nunca ecoar o corpo cru: pode conter detalhe de ambiente
     console.error(`SAP login falhou: HTTP ${resp.status}`)
     throw new Error(
       resp.status === 401
@@ -83,12 +81,7 @@ async function login(): Promise<Sessao> {
     )
   }
 
-  // getSetCookie preserva TODOS os cookies; juntar num header único
-  const cookies = resp.headers
-    .getSetCookie()
-    .map((c) => c.split(';')[0])
-    .join('; ')
-
+  const cookies = resp.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')
   if (!cookies.includes('B1SESSION')) {
     throw new Error('SAP respondeu ao login sem cookie de sessão.')
   }
@@ -104,14 +97,21 @@ async function sessaoValida(): Promise<Sessao> {
   return sessao
 }
 
+function motivoDoSap(status: number, corpo: string): string {
+  try {
+    const j = JSON.parse(corpo) as { error?: { message?: { value?: string } } }
+    if (j.error?.message?.value) return j.error.message.value
+  } catch { /* corpo não-JSON: fica o status */ }
+  return `HTTP ${status}`
+}
+
 /** GET no Service Layer, com um relogin automático se a sessão tiver caído. */
 async function sapGet(caminho: string): Promise<unknown> {
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     const s = await sessaoValida()
     const resp = await fetch(`${SAP_URL}/${caminho}`, {
-      headers: { Cookie: s.cookies, Prefer: 'odata.maxpagesize=200' },
+      headers: { Cookie: s.cookies, Prefer: 'odata.maxpagesize=500' },
     })
-
     if (resp.ok) return await resp.json()
 
     // 401/301 = sessão expirada ou perdida: derruba o cache e tenta de novo
@@ -119,136 +119,42 @@ async function sapGet(caminho: string): Promise<unknown> {
       sessao = null
       continue
     }
-
+    const corpo = await resp.text()
     console.error(`SAP GET ${caminho.split('?')[0]} → HTTP ${resp.status}`)
-    throw new Error(`SAP recusou a consulta (HTTP ${resp.status}).`)
+    throw new Error(`SAP recusou a consulta: ${motivoDoSap(resp.status, corpo)}`)
   }
   throw new Error('SAP: sessão não pôde ser renovada.')
 }
 
-/**
- * POST no Service Layer. Existe para UMA finalidade: registrar a consulta
- * salva. Não escreve dado de negócio — cria um objeto de consulta (tabela
- * OUQR). A ação que usa isto é restrita ao perfil Gestor.
- */
-async function sapPost(caminho: string, corpo: unknown): Promise<unknown> {
+async function sapEnviar(
+  metodo: 'POST' | 'PATCH' | 'DELETE',
+  caminho: string,
+  corpo?: unknown,
+): Promise<void> {
   const s = await sessaoValida()
   const resp = await fetch(`${SAP_URL}/${caminho}`, {
-    method: 'POST',
+    method: metodo,
     headers: { Cookie: s.cookies, 'Content-Type': 'application/json' },
-    body: JSON.stringify(corpo),
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
   })
-  if (resp.ok) return await resp.json().catch(() => ({}))
-
-  const detalhe = await resp.text()
-  console.error(`SAP POST ${caminho} → HTTP ${resp.status}`)
-  // o SAP devolve o motivo em JSON; repassar ajuda a distinguir
-  // "já existe" de "sem permissão"
-  let motivo = `HTTP ${resp.status}`
-  try {
-    const j = JSON.parse(detalhe) as { error?: { message?: { value?: string } } }
-    if (j.error?.message?.value) motivo = j.error.message.value
-  } catch { /* corpo não-JSON: fica o status */ }
-  throw new Error(`SAP recusou a gravação: ${motivo}`)
+  if (resp.ok) return
+  const texto = await resp.text()
+  console.error(`SAP ${metodo} ${caminho} → HTTP ${resp.status}`)
+  throw new Error(`SAP recusou a gravação: ${motivoDoSap(resp.status, texto)}`)
 }
 
 // ---------------------------------------------------------------
-// Consulta salva de pedidos de venda
-// ---------------------------------------------------------------
-
-const CONSULTA_PEDIDOS_CODE = 'TSI_PEDIDOS'
-
-/**
- * Base da demanda do TSI, substituindo o relatório da SimpleAgro.
- *
- * Difere da consulta original do cliente B1 em quatro pontos, todos
- * validados pela Veneza antes de registrar:
- *  - sem o join RDR1 por SlpCode, que multiplicava as linhas sem ser usado
- *  - LEFT JOIN nos atributos opcionais, para não perder pedido em silêncio
- *  - sem o schema fixo, para funcionar também em homologação
- *  - só linha aberta com saldo, que é o que o TSI precisa produzir
- */
-const CONSULTA_PEDIDOS_SQL = `
-SELECT
-  T2."DocNum" AS "PV", T2."DocDate" AS "DataPedido", T2."U_AGRT_Safra" AS "Safra",
-  T5."BPLName" AS "Filial", T3."SlpName" AS "Vendedor",
-  T2."U_GR_COMPRAS" AS "GrupoCompras", T2."U_Agente" AS "Agente",
-  T2."CardCode" AS "CodPN", T2."CardName" AS "NomePN",
-  T6."CityB" AS "Cidade", T6."StateB" AS "Estado", T6."CountryB" AS "Pais",
-  T1."ItemCode" AS "CodItem", T1."Dscription" AS "DescricaoItem",
-  T1."Quantity" AS "Quantidade", T1."OpenCreQty" AS "QuantidadePendente",
-  T1."U_TP_Tratamento" AS "Tratamento",
-  T1."U_AGRC_VlrUnitLiq" AS "Germoplasma", T1."U_AGRC_VlrTratamento" AS "TSI",
-  T1."U_AGRC_VlrRoyaties" AS "Royalties", T1."U_AGRC_VlrFrete" AS "Frete",
-  T1."U_AGRC_VlrOutros" AS "Outros", T1."LineTotal" AS "TotalLinha",
-  T0."Usage" AS "Utilizacao", T8."TrnspName" AS "TipoEnvio",
-  T1."WhsCode" AS "Deposito", T7."Name" AS "SituacaoPedido",
-  T1."LineStatus" AS "Status"
-FROM "ORDR" T2
-  INNER JOIN "RDR1" T1 ON T1."DocEntry" = T2."DocEntry"
-  LEFT JOIN "OSLP" T3 ON T3."SlpCode" = T2."SlpCode"
-  LEFT JOIN "OUSG" T0 ON T0."ID" = T1."Usage"
-  LEFT JOIN "OBPL" T5 ON T5."BPLId" = T2."BPLId"
-  LEFT JOIN "RDR12" T6 ON T6."DocEntry" = T2."DocEntry"
-  LEFT JOIN "@AGRT_SITPEDVENDA" T7 ON T7."Code" = T2."U_AGRT_SitVenda"
-  LEFT JOIN "OSHP" T8 ON T8."TrnspCode" = T2."TrnspCode"
-WHERE T2."CANCELED" = 'N' AND T1."LineStatus" = 'O' AND T1."OpenCreQty" > 0
-ORDER BY T2."DocNum" DESC
-`.trim()
-
-/** Registro da consulta salva. Idempotente do ponto de vista de quem chama. */
-async function registrarConsultaPedidos() {
-  try {
-    await sapPost('SQLQueries', {
-      SqlCode: CONSULTA_PEDIDOS_CODE,
-      SqlName: 'TSI - Pedidos de venda em aberto',
-      SqlText: CONSULTA_PEDIDOS_SQL,
-    })
-    return { registrada: true, codigo: CONSULTA_PEDIDOS_CODE, jaExistia: false }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    // já existir não é erro para quem só quer a consulta disponível
-    if (/exist|duplicat|already/i.test(msg)) {
-      return { registrada: true, codigo: CONSULTA_PEDIDOS_CODE, jaExistia: true }
-    }
-    throw e
-  }
-}
-
-async function pedidosVenda(): Promise<Record<string, unknown>[]> {
-  const dados = (await sapGet(`SQLQueries('${CONSULTA_PEDIDOS_CODE}')/List`)) as {
-    value?: Record<string, unknown>[]
-  }
-  return dados.value ?? []
-}
-
-// ---------------------------------------------------------------
-// Ações permitidas
+// Ações fixas
 // ---------------------------------------------------------------
 
 /** Prefixos do cadastro de itens. Só sementes interessam ao TSI. */
-const PREFIXOS = { sementes: 'SOJ', insumos: 'INS', consumo: 'CUS', patrimonio: 'PAT' }
+const PREFIXO_SEMENTES = 'SOJ'
 
 /** Um ItemCode válido é alfanumérico — barra injeção no caminho e no OData. */
-const CODIGO_VALIDO = /^[A-Za-z0-9._-]{1,50}$/
+const CODIGO_ITEM_VALIDO = /^[A-Za-z0-9._-]{1,50}$/
 
-interface Semente {
-  itemCode: string
-  nome: string
-  estoque: number
-  grupo: number | null
-}
-
-interface Lote {
-  numero: string
-  itemCode: string
-  quantidade: number
-  validade: string | null
-  fabricacao: string | null
-}
-
-async function sementesComEstoque(): Promise<Semente[]> {
-  const filtro = `startswith(ItemCode,'${PREFIXOS.sementes}') and QuantityOnStock gt 0`
+async function sementesComEstoque() {
+  const filtro = `startswith(ItemCode,'${PREFIXO_SEMENTES}') and QuantityOnStock gt 0`
   const dados = (await sapGet(
     `Items?$select=ItemCode,ItemName,QuantityOnStock,ItemsGroupCode&$filter=${encodeURIComponent(filtro)}`,
   )) as { value?: Record<string, unknown>[] }
@@ -261,10 +167,8 @@ async function sementesComEstoque(): Promise<Semente[]> {
   }))
 }
 
-async function lotesDoItem(itemCode: string): Promise<Lote[]> {
-  if (!CODIGO_VALIDO.test(itemCode)) {
-    throw new Error('ItemCode inválido.')
-  }
+async function lotesDoItem(itemCode: string) {
+  if (!CODIGO_ITEM_VALIDO.test(itemCode)) throw new Error('ItemCode inválido.')
   const filtro = `ItemCode eq '${itemCode}'`
   const dados = (await sapGet(
     `BatchNumberDetails?$select=Batch,ItemCode,Quantity,ExpirationDate,ManufacturingDate&$filter=${encodeURIComponent(filtro)}`,
@@ -279,11 +183,124 @@ async function lotesDoItem(itemCode: string): Promise<Lote[]> {
   }))
 }
 
-async function itemPorCodigo(itemCode: string) {
-  if (!CODIGO_VALIDO.test(itemCode)) throw new Error('ItemCode inválido.')
-  return await sapGet(
-    `Items('${itemCode}')?$select=ItemCode,ItemName,QuantityOnStock,ItemsGroupCode`,
-  )
+// ---------------------------------------------------------------
+// Consultas salvas
+// ---------------------------------------------------------------
+
+const CODIGO_CONSULTA_VALIDO = /^[A-Z][A-Z0-9_]{2,29}$/
+
+/**
+ * Aceita apenas UM comando SELECT.
+ *
+ * O SAP também barra pela autorização do usuário — foi o que aconteceu com
+ * "Table 'OSLP' not accessible" — mas essa é a última linha de defesa, não a
+ * primeira. Aqui recusamos antes de o texto sair daqui.
+ */
+function validaSelect(sql: string): void {
+  const limpo = sql
+    .replace(/--[^\n]*/g, ' ') // comentário de linha
+    .replace(/\/\*[\s\S]*?\*\//g, ' ') // comentário de bloco
+    .trim()
+
+  if (!/^select\s/i.test(limpo)) {
+    throw new Error('A consulta precisa começar com SELECT.')
+  }
+
+  // ponto e vírgula no meio = mais de um comando
+  if (/;\s*\S/.test(limpo)) {
+    throw new Error('Apenas um comando por consulta: remova o ponto e vírgula do meio.')
+  }
+
+  const proibidas = [
+    'insert', 'update', 'delete', 'merge', 'upsert', 'truncate', 'drop',
+    'alter', 'create', 'grant', 'revoke', 'exec', 'execute', 'call',
+  ]
+  const achada = proibidas.find((p) => new RegExp(`\\b${p}\\b`, 'i').test(limpo))
+  if (achada) {
+    throw new Error(
+      `A consulta contém "${achada.toUpperCase()}". Só leitura é permitida aqui.`,
+    )
+  }
+}
+
+interface ConsultaSalva {
+  codigo: string
+  nome: string
+  sql: string
+  registrada_em: string | null
+}
+
+async function buscaConsulta(sb: SupabaseClient, codigo: string): Promise<ConsultaSalva> {
+  if (!CODIGO_CONSULTA_VALIDO.test(codigo)) throw new Error('Código de consulta inválido.')
+  const { data, error } = await sb
+    .from('consultas_sap')
+    .select('codigo, nome, sql, registrada_em')
+    .eq('codigo', codigo)
+    .maybeSingle()
+  if (error) throw new Error(`Consulta ${codigo}: ${error.message}`)
+  if (!data) throw new Error(`Consulta ${codigo} não existe no cadastro.`)
+  return data as ConsultaSalva
+}
+
+/**
+ * Envia a consulta ao Service Layer. Tenta criar; se já existir, atualiza —
+ * assim editar o SQL no app e mandar registrar de novo simplesmente funciona.
+ */
+async function registrarConsulta(sb: SupabaseClient, codigo: string) {
+  const consulta = await buscaConsulta(sb, codigo)
+  validaSelect(consulta.sql)
+
+  const corpo = {
+    SqlCode: consulta.codigo,
+    SqlName: consulta.nome.slice(0, 100),
+    SqlText: consulta.sql,
+  }
+
+  let atualizou = false
+  try {
+    await sapEnviar('POST', 'SQLQueries', corpo)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!/exist|duplicat|already/i.test(msg)) throw e
+    // já existe: sobrescreve o texto
+    await sapEnviar('PATCH', `SQLQueries('${consulta.codigo}')`, {
+      SqlName: corpo.SqlName,
+      SqlText: corpo.SqlText,
+    })
+    atualizou = true
+  }
+
+  const { error } = await sb
+    .from('consultas_sap')
+    .update({ registrada_em: new Date().toISOString() })
+    .eq('codigo', codigo)
+  if (error) console.error(`registrada_em não gravado: ${error.message}`)
+
+  return { codigo, atualizou }
+}
+
+async function executarConsulta(sb: SupabaseClient, codigo: string) {
+  const consulta = await buscaConsulta(sb, codigo)
+  if (!consulta.registrada_em) {
+    throw new Error(
+      `A consulta ${codigo} ainda não foi registrada no SAP, ou o SQL mudou depois do último registro. Clique em Registrar.`,
+    )
+  }
+  const dados = (await sapGet(`SQLQueries('${codigo}')/List`)) as {
+    value?: Record<string, unknown>[]
+  }
+  return dados.value ?? []
+}
+
+async function removerConsulta(sb: SupabaseClient, codigo: string) {
+  await buscaConsulta(sb, codigo)
+  await sapEnviar('DELETE', `SQLQueries('${codigo}')`)
+  const { error } = await sb
+    .from('consultas_sap')
+    .update({ registrada_em: null })
+    .eq('codigo', codigo)
+  if (error) console.error(`registrada_em não limpo: ${error.message}`)
+  return { codigo, removida: true }
 }
 
 // ---------------------------------------------------------------
@@ -303,18 +320,16 @@ Deno.serve(async (req) => {
   // verify_jwt sozinho não protege nada. Exigimos um usuário de verdade e
   // com cadastro em tsi.usuarios, o mesmo critério do RLS.
   const auth = req.headers.get('Authorization') ?? ''
-  const supabase = createClient(
+  const sb = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     { global: { headers: { Authorization: auth } }, db: { schema: 'tsi' } },
   )
 
-  const { data: userData, error: erroAuth } = await supabase.auth.getUser()
-  if (erroAuth || !userData?.user) {
-    return json({ erro: 'Não autenticado.' }, 401)
-  }
+  const { data: userData, error: erroAuth } = await sb.auth.getUser()
+  if (erroAuth || !userData?.user) return json({ erro: 'Não autenticado.' }, 401)
 
-  const { data: perfil } = await supabase
+  const { data: perfil } = await sb
     .from('usuarios')
     .select('perfil, ativo')
     .eq('id', userData.user.id)
@@ -323,34 +338,40 @@ Deno.serve(async (req) => {
   if (!perfil || perfil.ativo !== true) {
     return json({ erro: 'Usuário sem cadastro ativo no TSI.' }, 403)
   }
+  const ehGestor = perfil.perfil === 'Gestor'
 
   // ---- configuração (só depois de autenticado) ----
   const faltando = Object.entries({
-    SAP_SL_URL: SAP_URL,
-    SAP_COMPANY_DB: SAP_DB,
-    SAP_USER: SAP_USER,
-    SAP_PASSWORD: SAP_PASSWORD,
-  })
-    .filter(([, v]) => !v)
-    .map(([k]) => k)
+    SAP_SL_URL: SAP_URL, SAP_COMPANY_DB: SAP_DB,
+    SAP_USER: SAP_USER, SAP_PASSWORD: SAP_PASSWORD,
+  }).filter(([, v]) => !v).map(([k]) => k)
 
   if (faltando.length > 0) {
-    return json(
-      { erro: `Secret não configurado no projeto: ${faltando.join(', ')}.` },
-      500,
-    )
+    return json({ erro: `Secret não configurado no projeto: ${faltando.join(', ')}.` }, 500)
   }
 
   // ---- ação ----
-  let corpo: { acao?: string; itemCode?: string }
+  let corpo: { acao?: string; itemCode?: string; codigo?: string }
   try {
     corpo = await req.json()
   } catch {
     return json({ erro: 'Corpo inválido: esperado JSON.' }, 400)
   }
 
+  const exigeGestor = () => {
+    if (!ehGestor) throw new Error('Apenas o perfil Gestor administra consultas do SAP.')
+  }
+  const exigeCodigo = () => {
+    if (!corpo.codigo) throw new Error('codigo é obrigatório.')
+    return corpo.codigo
+  }
+
   try {
     switch (corpo.acao) {
+      case 'ping':
+        await sessaoValida()
+        return json({ dados: { sap: 'conectado', base: SAP_DB } })
+
       case 'sementesComEstoque':
         return json({ dados: await sementesComEstoque() })
 
@@ -358,33 +379,34 @@ Deno.serve(async (req) => {
         if (!corpo.itemCode) return json({ erro: 'itemCode é obrigatório.' }, 400)
         return json({ dados: await lotesDoItem(corpo.itemCode) })
 
-      case 'itemPorCodigo':
-        if (!corpo.itemCode) return json({ erro: 'itemCode é obrigatório.' }, 400)
-        return json({ dados: await itemPorCodigo(corpo.itemCode) })
+      // ---- consultas salvas ----
+      case 'executarConsulta':
+        return json({ dados: await executarConsulta(sb, exigeCodigo()) })
 
-      case 'pedidosVenda':
-        return json({ dados: await pedidosVenda() })
+      case 'registrarConsulta':
+        exigeGestor()
+        return json({ dados: await registrarConsulta(sb, exigeCodigo()) })
 
-      case 'registrarConsultaPedidos':
-        // ÚNICA ação que grava no SAP, e só cria um objeto de consulta salva.
-        // Restrita ao Gestor: é operação de instalação, não de uso diário.
-        if (perfil.perfil !== 'Gestor') {
-          return json({ erro: 'Apenas o perfil Gestor registra consultas no SAP.' }, 403)
+      case 'removerConsulta':
+        exigeGestor()
+        return json({ dados: await removerConsulta(sb, exigeCodigo()) })
+
+      /** O que está registrado no SAP hoje, independente do nosso cadastro. */
+      case 'consultasNoSap': {
+        exigeGestor()
+        const r = (await sapGet('SQLQueries?$select=SqlCode,SqlName')) as {
+          value?: Record<string, unknown>[]
         }
-        return json({ dados: await registrarConsultaPedidos() })
-
-      case 'ping':
-        // confirma que o login no SAP funciona, sem trazer dado nenhum
-        await sessaoValida()
-        return json({ dados: { sap: 'conectado', base: SAP_DB } })
+        return json({ dados: r.value ?? [] })
+      }
 
       default:
         return json(
           {
             erro: 'Ação desconhecida.',
             permitidas: [
-              'sementesComEstoque', 'lotesDoItem', 'itemPorCodigo',
-              'pedidosVenda', 'registrarConsultaPedidos', 'ping',
+              'ping', 'sementesComEstoque', 'lotesDoItem',
+              'executarConsulta', 'registrarConsulta', 'removerConsulta', 'consultasNoSap',
             ],
           },
           400,
@@ -393,6 +415,8 @@ Deno.serve(async (req) => {
   } catch (e) {
     const mensagem = e instanceof Error ? e.message : String(e)
     console.error(`Falha na ação ${corpo.acao}: ${mensagem}`)
-    return json({ erro: mensagem }, 502)
+    // 403 quando é barreira de perfil, 502 quando é o SAP que recusou
+    const status = /perfil Gestor/.test(mensagem) ? 403 : 502
+    return json({ erro: mensagem }, status)
   }
 })

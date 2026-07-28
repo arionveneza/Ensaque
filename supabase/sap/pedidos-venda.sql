@@ -2,75 +2,79 @@
 -- Pedidos de venda no SAP B1 (HANA) — fonte da demanda do TSI
 -- ============================================================
 --
--- Substitui o relatório "Pedidos Analítico Resumido" da SimpleAgro.
 -- Registrada no Service Layer como SQLQuery e executada por
 --   GET /b1s/v1/SQLQueries('TSI_PEDIDOS')/List
 --
--- Partiu da consulta que a Veneza já usa no cliente B1, com três correções:
+-- ============================================================
+-- POR QUE ESTA VERSÃO É ENXUTA
+-- ============================================================
 --
--- 1. REMOVIDO o join `RDR1 T4 ON T4.SlpCode = T3.SlpCode`.
---    T4 não era usado em lugar nenhum do SELECT e ligava apenas pelo código do
---    vendedor — ou seja, multiplicava cada linha pelo número de itens que
---    aquele vendedor já vendeu na vida. O DISTINCT escondia o efeito no
---    resultado, mas o banco processava tudo. É a diferença entre a consulta
---    voltar em segundos ou em minutos.
+-- A consulta original da Veneza junta oito tabelas. Ao registrá-la, o SAP
+-- recusou com "Table 'OSLP' not accessible": o usuário de integração não tem
+-- autorização no cadastro de vendedores. O mesmo valeria provavelmente para
+-- OBPL, OUSG, OSHP e a UDT de situação.
 --
--- 2. INNER JOIN -> LEFT JOIN nos atributos opcionais (utilização, filial,
---    endereço, situação, tipo de envio). Com INNER, um pedido sem tipo de
---    envio cadastrado simplesmente DESAPARECE do resultado. Num relatório
---    isso passa; no balanço de demanda do TSI significa perder pedido e
---    planejar produção a menos, sem nenhum aviso.
+-- Em vez de pedir mais permissões, esta versão usa só o que o TSI precisa
+-- para planejar produção: ORDR e RDR1. Vendedor, filial, transportadora,
+-- endereço e utilização são colunas de RELATÓRIO — não entram no balanço de
+-- demanda nem definem o que a máquina trata.
 --
--- 3. Schema "SBOVENPRD" removido dos nomes de tabela. A SQLQuery roda no
---    contexto da base conectada, então fixar o schema impede testar em
---    homologação sem editar a consulta.
+-- Isso também reduz a superfície de permissão do usuário de integração, que
+-- é desejável por si só: quanto menos tabelas ele precisa enxergar, menor o
+-- estrago possível se a credencial vazar.
 --
--- Também acrescentado filtro de linha aberta: o TSI só precisa do que ainda
--- vai ser faturado. `OpenCreQty` é o equivalente ao "Saldo a Faturar" (coluna
--- BW) do relatório da SimpleAgro.
+-- A situação de venda é devolvida como CÓDIGO (U_AGRT_SitVenda), sem juntar a
+-- UDT que traz a descrição. O código basta para filtrar; a descrição é
+-- cosmética e custaria mais uma tabela.
+--
+-- ============================================================
+-- CORREÇÕES HERDADAS DA CONSULTA ORIGINAL
+-- ============================================================
+--
+-- 1. Removido o join `RDR1 T4 ON T4.SlpCode = T3.SlpCode`. T4 não era usado
+--    em nenhuma coluna e ligava só pelo vendedor, multiplicando cada linha
+--    pelo número de itens que aquele vendedor já vendeu. O DISTINCT escondia
+--    o efeito no resultado, mas o banco processava a explosão inteira.
+-- 2. Sem o schema fixo "SBOVENPRD", para a mesma consulta servir homologação.
+-- 3. Só linha aberta com saldo: `OpenCreQty` é o equivalente ao "Saldo a
+--    Faturar" (coluna BW) do relatório da SimpleAgro.
 -- ============================================================
 
 SELECT
-  T2."DocNum"                        AS "PV",
-  T2."DocDate"                       AS "DataPedido",
-  T2."U_AGRT_Safra"                  AS "Safra",
-  T5."BPLName"                       AS "Filial",
-  T3."SlpName"                       AS "Vendedor",
-  T2."U_GR_COMPRAS"                  AS "GrupoCompras",
-  T2."U_Agente"                      AS "Agente",
-  T2."CardCode"                      AS "CodPN",
-  T2."CardName"                      AS "NomePN",
-  T6."CityB"                         AS "Cidade",
-  T6."StateB"                        AS "Estado",
-  T6."CountryB"                      AS "Pais",
-  T1."ItemCode"                      AS "CodItem",
-  T1."Dscription"                    AS "DescricaoItem",
-  T1."Quantity"                      AS "Quantidade",
-  T1."OpenCreQty"                    AS "QuantidadePendente",
-  T1."U_TP_Tratamento"               AS "Tratamento",
-  T1."U_AGRC_VlrUnitLiq"             AS "Germoplasma",
-  T1."U_AGRC_VlrTratamento"          AS "TSI",
-  T1."U_AGRC_VlrRoyaties"            AS "Royalties",
-  T1."U_AGRC_VlrFrete"               AS "Frete",
-  T1."U_AGRC_VlrOutros"              AS "Outros",
-  T1."LineTotal"                     AS "TotalLinha",
-  T0."Usage"                         AS "Utilizacao",
-  T8."TrnspName"                     AS "TipoEnvio",
-  T1."WhsCode"                       AS "Deposito",
-  T7."Name"                          AS "SituacaoPedido",
-  T1."LineStatus"                    AS "Status"
+  T0."DocNum"              AS "PV",
+  T0."DocDate"             AS "DataPedido",
+  T0."U_AGRT_Safra"        AS "Safra",
+  T0."CardCode"            AS "CodPN",
+  T0."CardName"            AS "NomePN",
+  T0."U_AGRT_SitVenda"     AS "SituacaoPedido",
+  T1."ItemCode"            AS "CodItem",
+  T1."Dscription"          AS "DescricaoItem",
+  T1."U_TP_Tratamento"     AS "Tratamento",
+  T1."Quantity"            AS "Quantidade",
+  T1."OpenCreQty"          AS "QuantidadePendente",
+  T1."WhsCode"             AS "Deposito",
+  T1."LineTotal"           AS "TotalLinha",
+  T1."LineStatus"          AS "Status"
 
-FROM "ORDR" T2
-  INNER JOIN "RDR1"  T1 ON T1."DocEntry" = T2."DocEntry"
-  LEFT  JOIN "OSLP"  T3 ON T3."SlpCode"  = T2."SlpCode"
-  LEFT  JOIN "OUSG"  T0 ON T0."ID"       = T1."Usage"
-  LEFT  JOIN "OBPL"  T5 ON T5."BPLId"    = T2."BPLId"
-  LEFT  JOIN "RDR12" T6 ON T6."DocEntry" = T2."DocEntry"
-  LEFT  JOIN "@AGRT_SITPEDVENDA" T7 ON T7."Code" = T2."U_AGRT_SitVenda"
-  LEFT  JOIN "OSHP"  T8 ON T8."TrnspCode" = T2."TrnspCode"
+FROM "ORDR" T0
+  INNER JOIN "RDR1" T1 ON T1."DocEntry" = T0."DocEntry"
 
-WHERE T2."CANCELED" = 'N'
+WHERE T0."CANCELED" = 'N'
   AND T1."LineStatus" = 'O'
   AND T1."OpenCreQty" > 0
 
-ORDER BY T2."DocNum" DESC
+ORDER BY T0."DocNum" DESC
+
+-- ============================================================
+-- Se um dia o usuário de integração ganhar as autorizações, as colunas de
+-- relatório voltam com estes LEFT JOIN — nunca INNER, porque INNER faz o
+-- pedido sem o atributo DESAPARECER do resultado, e no balanço de demanda
+-- isso vira produção planejada a menos, sem aviso nenhum:
+--
+--   LEFT JOIN "OSLP"  ON "OSLP"."SlpCode"   = T0."SlpCode"      -- vendedor
+--   LEFT JOIN "OBPL"  ON "OBPL"."BPLId"     = T0."BPLId"        -- filial
+--   LEFT JOIN "OUSG"  ON "OUSG"."ID"        = T1."Usage"        -- utilização
+--   LEFT JOIN "RDR12" ON "RDR12"."DocEntry" = T0."DocEntry"     -- endereço
+--   LEFT JOIN "OSHP"  ON "OSHP"."TrnspCode" = T0."TrnspCode"    -- tipo envio
+--   LEFT JOIN "@AGRT_SITPEDVENDA" ON "Code" = T0."U_AGRT_SitVenda"
+-- ============================================================

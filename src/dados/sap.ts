@@ -1,13 +1,13 @@
 import { supabase } from '@/lib/supabase'
 
 /**
- * Leitura do SAP Business One através da Edge Function `sap`.
+ * SAP Business One através da Edge Function `sap`.
  *
- * O navegador nunca fala com o Service Layer: as credenciais ficam nos secrets
- * da função. Aqui só existem as ações que a função aceita — qualquer coisa
- * fora dessa lista é recusada do outro lado.
+ * O navegador nunca fala com o Service Layer: as credenciais ficam nos
+ * secrets da função. Aqui só existem as ações que ela aceita.
  *
- * Esta fase é somente leitura. O apontamento continua gravando no Supabase.
+ * Consultas salvas: o SQL fica em `tsi.consultas_sap`, é enviado ao Service
+ * Layer com "Registrar" e executado por código com "Executar".
  */
 
 export interface SementeSap {
@@ -25,6 +25,21 @@ export interface LoteSap {
   fabricacao: string | null
 }
 
+export interface ConsultaSap {
+  id: string
+  codigo: string
+  nome: string
+  descricao: string | null
+  sql: string
+  /** null = nunca registrada, ou o SQL mudou depois do último registro. */
+  registrada_em: string | null
+  ativa: boolean
+  atualizada_em: string
+}
+
+/** Linha genérica: as colunas variam conforme o SQL de cada consulta. */
+export type LinhaResultado = Record<string, unknown>
+
 interface Resposta<T> {
   dados?: T
   erro?: string
@@ -32,13 +47,9 @@ interface Resposta<T> {
 }
 
 async function chamar<T>(corpo: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke<Resposta<T>>('sap', {
-    body: corpo,
-  })
+  const { data, error } = await supabase.functions.invoke<Resposta<T>>('sap', { body: corpo })
 
-  // erro de transporte, função ausente ou status não-2xx
   if (error) {
-    // a função devolve JSON com `erro` mesmo em status de falha; tenta ler
     const detalhe = await extraiMensagem(error)
     throw new Error(detalhe ?? `Falha ao chamar o SAP: ${error.message}`)
   }
@@ -60,48 +71,76 @@ async function extraiMensagem(error: unknown): Promise<string | null> {
   }
 }
 
-/** Confere se a função consegue autenticar no SAP, sem trazer dados. */
+// ---------------------------------------------------------------
+// Ações no SAP
+// ---------------------------------------------------------------
+
 export const pingSap = () => chamar<{ sap: string; base: string }>({ acao: 'ping' })
 
-/** Itens com prefixo SOJ e saldo maior que zero. */
-export const sementesComEstoque = () =>
-  chamar<SementeSap[]>({ acao: 'sementesComEstoque' })
+export const sementesComEstoque = () => chamar<SementeSap[]>({ acao: 'sementesComEstoque' })
 
-/** Lotes de um item, para rastreabilidade. */
 export const lotesDoItem = (itemCode: string) =>
   chamar<LoteSap[]>({ acao: 'lotesDoItem', itemCode })
 
-/**
- * Linha de pedido de venda em aberto, vinda da consulta salva TSI_PEDIDOS.
- * As chaves são os aliases do SQL — o SAP devolve exatamente como nomeados.
- */
-export interface PedidoSap {
-  PV: number | string
-  DataPedido: string | null
-  Safra: string | null
-  Filial: string | null
-  Vendedor: string | null
-  CodPN: string | null
-  NomePN: string | null
-  CodItem: string
-  DescricaoItem: string
-  Quantidade: number
-  QuantidadePendente: number
-  /** UDF U_TP_Tratamento: o código do tratamento, língua única com o comercial. */
-  Tratamento: string | null
-  SituacaoPedido: string | null
-  Deposito: string | null
-  Status: string | null
+/** Executa uma consulta já registrada no Service Layer. */
+export const executarConsulta = (codigo: string) =>
+  chamar<LinhaResultado[]>({ acao: 'executarConsulta', codigo })
+
+/** Envia o SQL ao SAP. Cria se não existir, sobrescreve se existir. Só Gestor. */
+export const registrarConsulta = (codigo: string) =>
+  chamar<{ codigo: string; atualizou: boolean }>({ acao: 'registrarConsulta', codigo })
+
+/** Apaga a consulta do SAP. O cadastro no Supabase continua. Só Gestor. */
+export const removerConsultaDoSap = (codigo: string) =>
+  chamar<{ codigo: string; removida: boolean }>({ acao: 'removerConsulta', codigo })
+
+/** O que está registrado no SAP hoje, independente do nosso cadastro. */
+export const consultasNoSap = () =>
+  chamar<{ SqlCode: string; SqlName: string }[]>({ acao: 'consultasNoSap' })
+
+// ---------------------------------------------------------------
+// Cadastro das consultas (tabela do Supabase, não do SAP)
+// ---------------------------------------------------------------
+
+export async function listarConsultas(): Promise<ConsultaSap[]> {
+  const { data, error } = await supabase
+    .from('consultas_sap')
+    .select('id, codigo, nome, descricao, sql, registrada_em, ativa, atualizada_em')
+    .order('codigo')
+  if (error) throw new Error(`consultas: ${error.message}`)
+  return (data ?? []) as ConsultaSap[]
 }
 
-/** Pedidos de venda em aberto. Exige a consulta já registrada no SAP. */
-export const pedidosVenda = () => chamar<PedidoSap[]>({ acao: 'pedidosVenda' })
+export interface NovaConsulta {
+  codigo: string
+  nome: string
+  descricao?: string | null
+  sql: string
+}
 
-/**
- * Cria a consulta salva no SAP. Única operação de escrita, restrita ao
- * Gestor — é instalação, roda uma vez. Não toca dado de negócio.
- */
-export const registrarConsultaPedidos = () =>
-  chamar<{ registrada: boolean; codigo: string; jaExistia: boolean }>({
-    acao: 'registrarConsultaPedidos',
-  })
+export async function salvarConsulta(c: NovaConsulta, id?: string): Promise<void> {
+  const registro = {
+    codigo: c.codigo.trim().toUpperCase(),
+    nome: c.nome.trim(),
+    descricao: c.descricao?.trim() || null,
+    sql: c.sql.trim(),
+  }
+  const { error } = id
+    ? await supabase.from('consultas_sap').update(registro).eq('id', id)
+    : await supabase.from('consultas_sap').insert(registro)
+
+  if (error) {
+    if (error.code === '23505') throw new Error(`Já existe consulta com o código ${registro.codigo}.`)
+    if (error.code === '23514') {
+      throw new Error(
+        'Código inválido: use letras maiúsculas, números e underscore, começando por letra (3 a 30 caracteres).',
+      )
+    }
+    throw new Error(`salvar consulta: ${error.message}`)
+  }
+}
+
+export async function excluirConsulta(id: string): Promise<void> {
+  const { error } = await supabase.from('consultas_sap').delete().eq('id', id)
+  if (error) throw new Error(`excluir consulta: ${error.message}`)
+}

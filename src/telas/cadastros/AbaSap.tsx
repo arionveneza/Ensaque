@@ -1,25 +1,42 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import * as sap from '@/dados/sap'
-import type { LoteSap, PedidoSap, SementeSap } from '@/dados/sap'
+import type { ConsultaSap, LinhaResultado, LoteSap, SementeSap } from '@/dados/sap'
 import { useAuth } from '@/auth/AuthProvider'
-import { Aviso, Botao, Cartao, Erro, Tabela, Tag, Vazio, inteiro, n } from '@/componentes/ui'
+import {
+  Aviso, Botao, Cartao, Erro, Tabela, Tag, Vazio, inteiro, n,
+} from '@/componentes/ui'
+import { exportarXlsx } from '@/lib/exportar'
+
+const INPUT =
+  'w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800'
 
 /**
- * Leitura do SAP. Nesta fase serve para conferência: o cadastro de lotes do
- * TSI continua vindo da planilha de Saldos da SimpleAgro. Comparar as duas
- * fontes aqui é o que vai dar confiança para, na fase 2, trocar a origem.
+ * Leitura do SAP e gerenciamento das consultas salvas.
+ *
+ * O SQL fica no Supabase (editável, com histórico de quem mexeu) e é enviado
+ * ao Service Layer sob demanda. Assim dá para ajustar uma consulta sem
+ * publicar a Edge Function de novo.
  */
 export default function AbaSap() {
   const { usuario } = useAuth()
   const ehGestor = usuario?.perfil === 'Gestor'
 
+  const [consultas, setConsultas] = useState<ConsultaSap[]>([])
+  const [resultado, setResultado] = useState<{ codigo: string; linhas: LinhaResultado[] } | null>(null)
   const [sementes, setSementes] = useState<SementeSap[] | null>(null)
-  const [pedidos, setPedidos] = useState<PedidoSap[] | null>(null)
   const [lotes, setLotes] = useState<{ item: string; lista: LoteSap[] } | null>(null)
+  const [editando, setEditando] = useState<ConsultaSap | 'nova' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
-  const [busca, setBusca] = useState('')
+
+  const recarregar = useCallback(async () => {
+    setConsultas(await sap.listarConsultas())
+  }, [])
+
+  useEffect(() => {
+    recarregar().catch((e) => setErro(e instanceof Error ? e.message : String(e)))
+  }, [recarregar])
 
   async function acao(rotulo: string, fn: () => Promise<void>) {
     setErro(null)
@@ -35,24 +52,21 @@ export default function AbaSap() {
     }
   }
 
-  const filtradas = (sementes ?? []).filter(
-    (s) =>
-      !busca.trim() ||
-      `${s.itemCode} ${s.nome}`.toLowerCase().includes(busca.trim().toLowerCase()),
-  )
-
   return (
     <>
       <div className="mb-4">
         <Aviso>
-          Integração <b>somente leitura</b>. O SAP é a fonte de verdade do estoque; o
-          apontamento de tratamento continua gravando no Supabase. Escrita no SAP — baixa de
-          granel e entrada de sacos — fica para a fase 2.
+          Integração <b>somente leitura</b> de dados. O SAP é a fonte de verdade do estoque e dos
+          pedidos; o apontamento de tratamento continua gravando no Supabase.
         </Aviso>
       </div>
 
       {erro && <Erro>{erro}</Erro>}
+      {status && (
+        <p className="mb-4 text-sm text-stone-500 dark:text-stone-400">{status}</p>
+      )}
 
+      {/* ---------------- conexão ---------------- */}
       <Cartao
         titulo="Conexão"
         acoes={
@@ -61,8 +75,6 @@ export default function AbaSap() {
             onClick={() =>
               acao('testando conexão…', async () => {
                 const r = await sap.pingSap()
-                setStatus(null)
-                setErro(null)
                 alert(`SAP ${r.sap} · base ${r.base}`)
               })
             }
@@ -73,61 +85,229 @@ export default function AbaSap() {
         className="mb-5"
       >
         <p className="text-sm text-stone-500">
-          O navegador não fala com o SAP: a chamada passa pela Edge Function{' '}
-          <code>sap</code>, que guarda usuário e senha como secrets do projeto e reaproveita a
-          sessão do Service Layer.
+          As chamadas passam pela Edge Function <code>sap</code>, que guarda usuário e senha como
+          secrets do projeto e reaproveita a sessão do Service Layer.
         </p>
-        {status && <p className="mt-2 text-sm text-stone-500">{status}</p>}
       </Cartao>
 
+      {/* ---------------- consultas salvas ---------------- */}
       <Cartao
-        titulo={`Sementes com estoque no SAP${sementes ? ` (${filtradas.length})` : ''}`}
+        titulo={`Consultas SQL (${consultas.length})`}
         acoes={
-          <>
-            {sementes && (
-              <input
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="buscar item ou nome…"
-                className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
-              />
-            )}
+          ehGestor ? (
             <Botao
               variante="primario"
-              disabled={ocupado}
-              onClick={() =>
-                acao('consultando o SAP…', async () => {
-                  setSementes(await sap.sementesComEstoque())
-                  setLotes(null)
+              onClick={() => setEditando(editando === 'nova' ? null : 'nova')}
+            >
+              {editando === 'nova' ? 'Cancelar' : 'Nova consulta'}
+            </Botao>
+          ) : undefined
+        }
+        className="mb-5"
+      >
+        <div className="mb-3">
+          <Aviso>
+            O SQL fica guardado aqui e é enviado ao SAP com <b>Registrar</b>. Editar o SQL
+            invalida o registro anterior — o botão volta a aparecer até você registrar de novo,
+            para não executar no SAP uma versão diferente da que está na tela.
+          </Aviso>
+        </div>
+
+        {editando === 'nova' && (
+          <div className="mb-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
+            <FormConsulta
+              onSalvar={(c) =>
+                acao('salvando…', async () => {
+                  await sap.salvarConsulta(c)
+                  await recarregar()
+                  setEditando(null)
                 })
               }
-            >
-              {sementes ? 'Atualizar' : 'Carregar do SAP'}
-            </Botao>
-          </>
+              onCancelar={() => setEditando(null)}
+            />
+          </div>
+        )}
+
+        {consultas.length === 0 ? (
+          <Vazio>Nenhuma consulta cadastrada.</Vazio>
+        ) : (
+          <div className="space-y-3">
+            {consultas.map((c) =>
+              editando !== 'nova' && editando?.id === c.id ? (
+                <div key={c.id} className="rounded-md border border-stone-200 p-4 dark:border-stone-700">
+                  <FormConsulta
+                    inicial={c}
+                    onSalvar={(nova) =>
+                      acao('salvando…', async () => {
+                        await sap.salvarConsulta(nova, c.id)
+                        await recarregar()
+                        setEditando(null)
+                      })
+                    }
+                    onCancelar={() => setEditando(null)}
+                  />
+                </div>
+              ) : (
+                <div
+                  key={c.id}
+                  className="rounded-md border border-stone-200 p-3 dark:border-stone-700"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        <code className="text-sm">{c.codigo}</code>
+                        <span className="ml-2 font-normal">{c.nome}</span>
+                        <span className="ml-2">
+                          {c.registrada_em ? (
+                            <Tag cor="ok">registrada</Tag>
+                          ) : (
+                            <Tag cor="alerta">não registrada no SAP</Tag>
+                          )}
+                        </span>
+                      </p>
+                      {c.descricao && (
+                        <p className="mt-0.5 text-xs text-stone-500">{c.descricao}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {ehGestor && !c.registrada_em && (
+                        <Botao
+                          disabled={ocupado}
+                          titulo="Envia este SQL ao Service Layer. Cria ou sobrescreve."
+                          onClick={() =>
+                            acao('registrando no SAP…', async () => {
+                              const r = await sap.registrarConsulta(c.codigo)
+                              await recarregar()
+                              alert(
+                                r.atualizou
+                                  ? `Consulta ${r.codigo} atualizada no SAP.`
+                                  : `Consulta ${r.codigo} criada no SAP.`,
+                              )
+                            })
+                          }
+                        >
+                          Registrar
+                        </Botao>
+                      )}
+                      <Botao
+                        variante="primario"
+                        disabled={ocupado || !c.registrada_em}
+                        titulo={c.registrada_em ? undefined : 'Registre no SAP antes de executar'}
+                        onClick={() =>
+                          acao('executando no SAP…', async () => {
+                            setResultado({
+                              codigo: c.codigo,
+                              linhas: await sap.executarConsulta(c.codigo),
+                            })
+                          })
+                        }
+                      >
+                        Executar
+                      </Botao>
+                      {ehGestor && (
+                        <>
+                          <Botao disabled={ocupado} onClick={() => setEditando(c)}>
+                            Editar
+                          </Botao>
+                          <Botao
+                            variante="perigo"
+                            disabled={ocupado}
+                            onClick={() => {
+                              if (!confirm(`Excluir a consulta ${c.codigo} do cadastro?`)) return
+                              acao('excluindo…', async () => {
+                                if (c.registrada_em) await sap.removerConsultaDoSap(c.codigo)
+                                await sap.excluirConsulta(c.id)
+                                await recarregar()
+                                if (resultado?.codigo === c.codigo) setResultado(null)
+                              })
+                            }}
+                          >
+                            Excluir
+                          </Botao>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs text-stone-500">ver SQL</summary>
+                    <pre className="mt-2 max-h-64 overflow-auto rounded bg-stone-50 p-3 text-xs dark:bg-stone-800/50">
+                      {c.sql}
+                    </pre>
+                  </details>
+                </div>
+              ),
+            )}
+          </div>
+        )}
+      </Cartao>
+
+      {/* ---------------- resultado ---------------- */}
+      {resultado && (
+        <Cartao
+          titulo={`Resultado de ${resultado.codigo} (${resultado.linhas.length} linhas)`}
+          acoes={
+            <>
+              <Botao
+                disabled={resultado.linhas.length === 0}
+                onClick={() => {
+                  const colunas = Object.keys(resultado.linhas[0] ?? {})
+                  exportarXlsx(
+                    resultado.codigo.toLowerCase(),
+                    colunas.map((c) => ({ titulo: c, largura: 18 })),
+                    resultado.linhas.map((l) =>
+                      colunas.map((c) => {
+                        const v = l[c]
+                        return v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+                      }),
+                    ),
+                  ).catch((e) => setErro(String(e)))
+                }}
+              >
+                Exportar .xlsx
+              </Botao>
+              <Botao onClick={() => setResultado(null)}>Fechar</Botao>
+            </>
+          }
+          className="mb-5"
+        >
+          {resultado.linhas.length === 0 ? (
+            <Vazio>A consulta não devolveu nenhuma linha.</Vazio>
+          ) : (
+            <ResultadoGenerico linhas={resultado.linhas} />
+          )}
+        </Cartao>
+      )}
+
+      {/* ---------------- itens e lotes ---------------- */}
+      <Cartao
+        titulo={`Sementes com estoque${sementes ? ` (${sementes.length})` : ''}`}
+        acoes={
+          <Botao
+            disabled={ocupado}
+            onClick={() =>
+              acao('consultando itens…', async () => {
+                setSementes(await sap.sementesComEstoque())
+                setLotes(null)
+              })
+            }
+          >
+            {sementes ? 'Atualizar' : 'Carregar itens SOJ'}
+          </Botao>
         }
         className="mb-5"
       >
         {sementes == null ? (
           <Vazio>
-            Nenhuma consulta feita ainda. O filtro traz itens com código iniciando em{' '}
-            <code>SOJ</code> e saldo maior que zero.
+            Consulta direta por OData: itens com código iniciando em <code>SOJ</code> e saldo
+            maior que zero.
           </Vazio>
-        ) : filtradas.length === 0 ? (
-          <Vazio>Nenhum item corresponde à busca.</Vazio>
         ) : (
-          <Tabela cabecalho={['Item', 'Descrição', '#Estoque', '#Grupo', '']}>
-            {filtradas.map((s) => (
-              <tr
-                key={s.itemCode}
-                className="border-t border-stone-100 dark:border-stone-800/60"
-              >
+          <Tabela cabecalho={['Item', 'Descrição', '#Estoque', '']}>
+            {sementes.map((s) => (
+              <tr key={s.itemCode} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5 font-medium">{s.itemCode}</td>
                 <td className="px-2 py-1.5">{s.nome}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{n(s.estoque, 0)}</td>
-                <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
-                  {s.grupo ?? '—'}
-                </td>
                 <td className="px-2 py-1.5 text-right">
                   <button
                     disabled={ocupado}
@@ -147,110 +327,6 @@ export default function AbaSap() {
         )}
       </Cartao>
 
-      <Cartao
-        titulo={`Pedidos de venda em aberto${pedidos ? ` (${pedidos.length} linhas)` : ''}`}
-        acoes={
-          <>
-            {ehGestor && !pedidos && (
-              <Botao
-                disabled={ocupado}
-                titulo="Cria a consulta salva no SAP. Roda uma vez; não altera dado de negócio."
-                onClick={() =>
-                  acao('registrando a consulta no SAP…', async () => {
-                    const r = await sap.registrarConsultaPedidos()
-                    alert(
-                      r.jaExistia
-                        ? `A consulta ${r.codigo} já existia no SAP — nada foi alterado.`
-                        : `Consulta ${r.codigo} registrada no SAP.`,
-                    )
-                  })
-                }
-              >
-                Registrar consulta
-              </Botao>
-            )}
-            <Botao
-              variante="primario"
-              disabled={ocupado}
-              onClick={() =>
-                acao('consultando pedidos…', async () => {
-                  setPedidos(await sap.pedidosVenda())
-                })
-              }
-            >
-              {pedidos ? 'Atualizar' : 'Carregar pedidos'}
-            </Botao>
-          </>
-        }
-        className="mb-5"
-      >
-        {pedidos == null ? (
-          <Vazio>
-            Substitui o relatório de pedidos da SimpleAgro. Exige a consulta{' '}
-            <code>TSI_PEDIDOS</code> registrada no SAP — o botão ao lado faz isso uma vez.
-          </Vazio>
-        ) : pedidos.length === 0 ? (
-          <Vazio>Nenhum pedido de venda em aberto.</Vazio>
-        ) : (
-          <>
-            <div className="mb-3 flex flex-wrap gap-4 text-sm text-stone-500">
-              <span>
-                <b className="text-stone-800 dark:text-stone-200">
-                  {inteiro(pedidos.reduce((a, p) => a + Number(p.QuantidadePendente ?? 0), 0))}
-                </b>{' '}
-                em quantidade pendente
-              </span>
-              <span>
-                <b className="text-stone-800 dark:text-stone-200">
-                  {new Set(pedidos.map((p) => p.Tratamento).filter(Boolean)).size}
-                </b>{' '}
-                códigos de tratamento distintos
-              </span>
-              <span>
-                <b className="text-stone-800 dark:text-stone-200">
-                  {pedidos.filter((p) => !p.Tratamento).length}
-                </b>{' '}
-                linhas sem tratamento
-              </span>
-            </div>
-            <Tabela
-              cabecalho={['PV', 'Cliente', 'Item', 'Descrição', 'Tratamento',
-                '#Qtd', '#Pendente', 'Situação']}
-            >
-              {pedidos.slice(0, 200).map((p, i) => (
-                <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-1.5 font-medium">{p.PV}</td>
-                  <td className="max-w-40 truncate px-2 py-1.5">{p.NomePN ?? '—'}</td>
-                  <td className="px-2 py-1.5">{p.CodItem}</td>
-                  <td className="max-w-48 truncate px-2 py-1.5">{p.DescricaoItem}</td>
-                  <td className="px-2 py-1.5">
-                    {p.Tratamento ? (
-                      <Tag cor="info">{p.Tratamento}</Tag>
-                    ) : (
-                      <span className="text-stone-400">—</span>
-                    )}
-                  </td>
-                  <td className="num-tabular px-2 py-1.5 text-right">
-                    {n(Number(p.Quantidade ?? 0), 0)}
-                  </td>
-                  <td className="num-tabular px-2 py-1.5 text-right font-medium">
-                    {n(Number(p.QuantidadePendente ?? 0), 0)}
-                  </td>
-                  <td className="px-2 py-1.5 text-xs text-stone-500">
-                    {p.SituacaoPedido ?? '—'}
-                  </td>
-                </tr>
-              ))}
-            </Tabela>
-            {pedidos.length > 200 && (
-              <p className="mt-3 text-xs text-stone-500">
-                Mostrando as 200 primeiras de {pedidos.length} linhas.
-              </p>
-            )}
-          </>
-        )}
-      </Cartao>
-
       {lotes && (
         <Cartao
           titulo={`Lotes de ${lotes.item} (${lotes.lista.length})`}
@@ -263,29 +339,16 @@ export default function AbaSap() {
               {lotes.lista.map((l) => {
                 const vencido = l.validade != null && new Date(l.validade) < new Date()
                 return (
-                  <tr
-                    key={l.numero}
-                    className="border-t border-stone-100 dark:border-stone-800/60"
-                  >
+                  <tr key={l.numero} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5 font-medium">{l.numero}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">
-                      {inteiro(l.quantidade)}
-                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.quantidade)}</td>
+                    <td className="px-2 py-1.5">{dataCurta(l.fabricacao)}</td>
                     <td className="px-2 py-1.5">
-                      {l.fabricacao ? l.fabricacao.slice(0, 10).split('-').reverse().join('/') : '—'}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {l.validade ? (
-                        <>
-                          {l.validade.slice(0, 10).split('-').reverse().join('/')}
-                          {vencido && (
-                            <span className="ml-2">
-                              <Tag cor="perigo">vencido</Tag>
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        '—'
+                      {dataCurta(l.validade)}
+                      {vencido && (
+                        <span className="ml-2">
+                          <Tag cor="perigo">vencido</Tag>
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -296,5 +359,126 @@ export default function AbaSap() {
         </Cartao>
       )}
     </>
+  )
+}
+
+const dataCurta = (iso: string | null) =>
+  !iso ? '—' : iso.slice(0, 10).split('-').reverse().join('/')
+
+/** As colunas vêm do SQL, então a tabela se monta a partir da primeira linha. */
+function ResultadoGenerico({ linhas }: { linhas: LinhaResultado[] }) {
+  const colunas = Object.keys(linhas[0] ?? {})
+  const LIMITE = 300
+  return (
+    <>
+      <Tabela cabecalho={colunas}>
+        {linhas.slice(0, LIMITE).map((l, i) => (
+          <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+            {colunas.map((c) => {
+              const v = l[c]
+              const numero = typeof v === 'number'
+              return (
+                <td
+                  key={c}
+                  className={`max-w-56 truncate px-2 py-1.5 ${numero ? 'num-tabular text-right' : ''}`}
+                  title={v == null ? '' : String(v)}
+                >
+                  {v == null ? <span className="text-stone-400">—</span> : String(v)}
+                </td>
+              )
+            })}
+          </tr>
+        ))}
+      </Tabela>
+      {linhas.length > LIMITE && (
+        <p className="mt-3 text-xs text-stone-500">
+          Mostrando as {LIMITE} primeiras de {linhas.length} linhas. O export traz todas.
+        </p>
+      )}
+    </>
+  )
+}
+
+function FormConsulta({
+  inicial, onSalvar, onCancelar,
+}: {
+  inicial?: ConsultaSap
+  onSalvar: (c: sap.NovaConsulta) => void
+  onCancelar: () => void
+}) {
+  const [codigo, setCodigo] = useState(inicial?.codigo ?? '')
+  const [nome, setNome] = useState(inicial?.nome ?? '')
+  const [descricao, setDescricao] = useState(inicial?.descricao ?? '')
+  const [sql, setSql] = useState(inicial?.sql ?? '')
+
+  const comecaComSelect = /^\s*select\s/i.test(sql)
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Código
+          <input
+            value={codigo}
+            disabled={!!inicial}
+            onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+            placeholder="TSI_PEDIDOS"
+            title={inicial ? 'O código é a chave no SAP e não muda depois de criado' : undefined}
+            className={`${INPUT} mt-1 normal-case disabled:opacity-60`}
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Nome
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Descrição
+          <input
+            value={descricao ?? ''}
+            onChange={(e) => setDescricao(e.target.value)}
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+      </div>
+
+      <label className="block text-xs font-medium uppercase tracking-wide text-stone-500">
+        SQL (HANA)
+        <textarea
+          value={sql}
+          onChange={(e) => setSql(e.target.value)}
+          rows={14}
+          spellCheck={false}
+          placeholder={'SELECT ...\nFROM "ORDR" T0\nWHERE ...'}
+          className={`${INPUT} mt-1 font-mono text-xs normal-case`}
+        />
+      </label>
+
+      {sql.trim() !== '' && !comecaComSelect && (
+        <Aviso gravidade="bloqueio">
+          A consulta precisa começar com <b>SELECT</b>. A função recusa qualquer outro comando —
+          e a autorização do usuário no SAP é a última barreira.
+        </Aviso>
+      )}
+
+      <p className="text-xs text-stone-500">
+        Sintaxe HANA, com os nomes de tabela entre aspas duplas. Não use o prefixo do schema
+        (<code>"SBOVENPRD".</code>) — sem ele a mesma consulta serve homologação.
+      </p>
+
+      <div className="flex gap-2">
+        <Botao
+          variante="primario"
+          disabled={!codigo.trim() || !nome.trim() || !comecaComSelect}
+          onClick={() => onSalvar({ codigo, nome, descricao, sql })}
+        >
+          Salvar
+        </Botao>
+        <Botao onClick={onCancelar}>Cancelar</Botao>
+      </div>
+    </div>
   )
 }
