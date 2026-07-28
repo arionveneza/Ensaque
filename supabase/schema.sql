@@ -3,8 +3,30 @@
 -- Schema PostgreSQL para Supabase
 -- Execute no SQL Editor do Supabase (ou via `supabase db push`)
 -- ============================================================
+--
+-- SCHEMA EXCLUSIVO: tudo do TSI vive em `tsi`, não em `public`.
+-- Isso mantém o projeto isolado caso o mesmo Supabase hospede outras
+-- aplicações, e evita colisão de nomes (ordens, lotes, usuarios são nomes
+-- genéricos demais para dividir o public com mais alguém).
+--
+-- DOIS PASSOS OBRIGATÓRIOS FORA DESTE ARQUIVO:
+--
+--  1. Supabase → Settings → API → Exposed schemas: acrescentar `tsi`.
+--     A API REST (PostgREST) só enxerga os schemas listados ali; sem isso o
+--     app recebe 404 em toda tabela, mesmo com o schema criado corretamente.
+--
+--  2. No cliente: createClient(url, key, { db: { schema: 'tsi' } })
+--     Já está assim em src/lib/supabase.ts.
+--
+-- Não é preciso extensão para UUID: gen_random_uuid() é nativo do
+-- PostgreSQL 13+ e vive em pg_catalog, sempre disponível.
+-- ============================================================
 
-create extension if not exists "uuid-ossp";
+create schema if not exists tsi;
+
+-- Vale para a sessão que roda este script: os objetos abaixo, sem prefixo,
+-- são criados dentro de `tsi`. As funções pinam o próprio search_path.
+set search_path = tsi, public;
 
 -- ============================================================
 -- 1. TIPOS
@@ -68,7 +90,7 @@ create table embalagens (
 );
 
 create table produtos_quimicos (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   codigo      text unique not null,
   nome        text not null,
   unidade     unidade_dose not null,
@@ -86,13 +108,13 @@ create table lotes_quimico (
 
 -- receita: NOME = código do comercial (FTZ60, V&P, DER + LMT...)
 create table receitas (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   nome      text unique not null,
   ativa     boolean not null default true
 );
 
 create table receita_itens (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   receita_id  uuid not null references receitas(id) on delete cascade,
   produto_id  uuid not null references produtos_quimicos(id),
   dose        numeric(8,4) not null,
@@ -101,7 +123,7 @@ create table receita_itens (
 );
 
 create table motivos_parada (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   descricao text not null,
   tipo      tipo_parada not null,
   ativo     boolean not null default true
@@ -125,7 +147,7 @@ create table lotes_semente (
 -- 4. DEMANDA (foto diária — substituição total por carga)
 -- ============================================================
 create table cargas_demanda (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   tipo      text not null check (tipo in ('pedidos','estoque')),
   origem    text not null default 'upload',     -- 'upload' | 'simpleagro-api' | 'sap'
   criada_em timestamptz not null default now(),
@@ -133,7 +155,7 @@ create table cargas_demanda (
 );
 
 create table pedidos_venda (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   carga_id  uuid not null references cargas_demanda(id) on delete cascade,
   cultivar  text not null,
   tratamento text not null,                     -- código; pode não ter receita cadastrada
@@ -143,7 +165,7 @@ create table pedidos_venda (
 );
 
 create table estoque_pa (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   carga_id  uuid not null references cargas_demanda(id) on delete cascade,
   cultivar  text not null,
   tratamento text not null,
@@ -155,7 +177,7 @@ create table estoque_pa (
 -- 5. ORDENS
 -- ============================================================
 create table ordens (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   numero        text not null,
   cultivar      text not null,
   receita_id    uuid not null references receitas(id),
@@ -186,7 +208,7 @@ create index on ordens (status);
 create index on ordens (lote_id);
 
 create table ordem_eventos (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   ordem_id  uuid not null references ordens(id) on delete cascade,
   tipo      text not null check (tipo in ('inicio','fim')),
   ts        timestamptz not null default now(),
@@ -194,7 +216,7 @@ create table ordem_eventos (
 );
 
 create table ordem_paradas (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   ordem_id  uuid not null references ordens(id) on delete cascade,
   motivo_id uuid not null references motivos_parada(id),
   inicio    timestamptz not null default now(),
@@ -204,7 +226,7 @@ create table ordem_paradas (
 
 -- 1 linha por TANQUE usado na ordem (mistura = vários produtos no mesmo tanque)
 create table ordem_tanques (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   ordem_id      uuid not null references ordens(id) on delete cascade,
   tanque        int not null check (tanque between 1 and 5),
   peso_inicial  numeric(10,3),                  -- obrigatório para confirmar início
@@ -214,7 +236,7 @@ create table ordem_tanques (
 
 -- lotes de químico por tanque (N por produto — rastreabilidade)
 create table ordem_tanque_lotes (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   ordem_tanque_id uuid not null references ordem_tanques(id) on delete cascade,
   lote_quimico_id text not null references lotes_quimico(id),
   unique (ordem_tanque_id, lote_quimico_id)
@@ -231,7 +253,7 @@ create table ordem_qualidade (
 
 -- trilha de auditoria (cancelamento de início, prioridade, AGROTIS...)
 create table ordem_auditoria (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   ordem_id  uuid not null references ordens(id) on delete cascade,
   acao      text not null,
   detalhe   text,
@@ -241,7 +263,7 @@ create table ordem_auditoria (
 
 -- log de baixas/estornos de lote (relatório da logística)
 create table lote_movimentos (
-  id        uuid primary key default uuid_generate_v4(),
+  id        uuid primary key default gen_random_uuid(),
   lote_id   text not null references lotes_semente(id),
   bags      numeric(12,2) not null,             -- negativo = estorno
   peso_t    numeric(12,3),
@@ -367,6 +389,22 @@ full join abe a on (a.cultivar,a.tratamento,a.embalagem) = (coalesce(p.cultivar,
                                                             coalesce(p.tratamento,e.tratamento),
                                                             coalesce(p.embalagem,e.embalagem));
 
+-- ------------------------------------------------------------
+-- 6b. VIEWS RESPEITAM O RLS DE QUEM CHAMA
+-- Por padrão uma view no PostgreSQL executa com os privilégios de quem a
+-- CRIOU, e não de quem a consulta — o que faria estas views devolverem dados
+-- passando por cima do RLS das tabelas de baixo. Como elas ficam expostas na
+-- API REST, `anon` conseguiria ler a produção inteira via v_ordens mesmo com
+-- a tabela `ordens` protegida. security_invoker inverte isso: a consulta
+-- aplica o RLS do usuário autenticado.
+-- ------------------------------------------------------------
+alter view v_ordens                set (security_invoker = true);
+alter view v_ordem_itens_planejado set (security_invoker = true);
+alter view v_ordem_tanque_consumo  set (security_invoker = true);
+alter view v_ordem_tempos          set (security_invoker = true);
+alter view v_ocupacao              set (security_invoker = true);
+alter view v_balanco_demanda       set (security_invoker = true);
+
 -- ============================================================
 -- 7. REGRAS NO BANCO (defesa em profundidade — o app também valida)
 -- ============================================================
@@ -400,7 +438,7 @@ begin
     end if;
   end if;
   return new;
-end $$ language plpgsql;
+end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_valida_inicio before update on ordens
   for each row execute function fn_valida_inicio();
 
@@ -414,7 +452,7 @@ begin
     if falta > 0 then raise exception 'Peso inicial/final pendente em % tanque(s)', falta; end if;
   end if;
   return new;
-end $$ language plpgsql;
+end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_valida_fim before update on ordens
   for each row execute function fn_valida_fim();
 
@@ -428,7 +466,7 @@ begin
     end if;
   end if;
   return new;
-end $$ language plpgsql;
+end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_valida_estorno before update on lotes_semente
   for each row execute function fn_valida_estorno();
 
@@ -451,7 +489,7 @@ begin
   -- a exclusao silenciosamente, bloqueando ordens que a matriz permite excluir
   if tg_op = 'DELETE' then return old; end if;
   return new;
-end $$ language plpgsql;
+end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_ordem_imutavel before update or delete on ordens
   for each row execute function fn_ordem_imutavel();
 
@@ -465,7 +503,7 @@ begin
     where id = new.ordem_id;
   end if;
   return new;
-end $$ language plpgsql;
+end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_turno_do_inicio after insert on ordem_eventos
   for each row execute function fn_turno_do_inicio();
 
@@ -483,9 +521,13 @@ alter table pedidos_venda       enable row level security;
 alter table estoque_pa          enable row level security;
 alter table lote_movimentos     enable row level security;
 
+-- SECURITY DEFINER: lê `usuarios` ignorando o RLS da própria tabela, o que
+-- evita recursão infinita nas políticas. O search_path fixo é obrigatório
+-- aqui — sem ele, um search_path manipulado poderia apontar `usuarios` para
+-- outra tabela e forjar o perfil de quem chama.
 create or replace function meu_perfil() returns perfil_tipo as $$
-  select perfil from usuarios where id = auth.uid() and ativo;
-$$ language sql stable security definer;
+  select perfil from tsi.usuarios where id = auth.uid() and ativo;
+$$ language sql stable security definer set search_path = tsi, public;
 
 -- leitura: todo usuário ativo
 create policy ler_ordens on ordens for select using (meu_perfil() is not null);
@@ -597,6 +639,28 @@ create policy gestor_perm on perfil_permissoes for all
 -- auditoria: qualquer usuario ativo registra; ninguem altera nem apaga
 create policy grava_aud on ordem_auditoria for insert
   with check (meu_perfil() is not null);
+
+-- ------------------------------------------------------------
+-- 8c. GRANTS DO SCHEMA tsi
+-- Expor o schema na API não basta: os papéis do PostgREST precisam de
+-- permissão no schema, senão toda chamada volta "permission denied".
+-- Quem restringe de fato é o RLS acima — o grant só abre a porta para ele.
+-- `anon` recebe acesso porque é o papel usado antes do login, mas todas as
+-- políticas exigem meu_perfil() não nulo, que é nulo para quem não é usuário.
+-- ------------------------------------------------------------
+grant usage on schema tsi to anon, authenticated, service_role;
+
+grant all on all tables    in schema tsi to anon, authenticated, service_role;
+grant all on all sequences in schema tsi to anon, authenticated, service_role;
+grant all on all functions in schema tsi to anon, authenticated, service_role;
+
+-- objetos criados depois deste script herdam os mesmos grants
+alter default privileges in schema tsi
+  grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema tsi
+  grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema tsi
+  grant all on functions to anon, authenticated, service_role;
 
 -- ============================================================
 -- 9. SEED MÍNIMO

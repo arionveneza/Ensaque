@@ -17,4 +17,11 @@ if (!url || !anonKey) {
   )
 }
 
-export const supabase = createClient(url, anonKey)
+/**
+ * O TSI vive no schema `tsi`, não no `public`. Além desta opção, o schema
+ * precisa estar em Settings → API → Exposed schemas no painel do Supabase,
+ * senão toda tabela responde 404.
+ */
+export const supabase = createClient(url, anonKey, {
+  db: { schema: 'tsi' },
+})

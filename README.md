@@ -18,10 +18,13 @@ gh repo create sementes-veneza/tsi-app --private --source=. --push
 ### 2. Criar o projeto no Supabase
 1. https://supabase.com → **New project** (região: São Paulo)
 2. **SQL Editor** → cole e execute `supabase/schema.sql`
-3. **Project Settings → API**: copie `Project URL` e `anon public key`
-4. **Authentication → Users**: crie os usuários e depois insira o perfil de cada um:
+   (cria o schema **`tsi`** — o projeto não usa o `public`)
+3. **Settings → API → Exposed schemas**: acrescentar **`tsi`** à lista.
+   Sem este passo a API não enxerga as tabelas e o app recebe 404 em tudo.
+4. **Settings → API**: copie `Project URL` e `anon public key` para o `.env.local`
+5. **Authentication → Users**: crie os usuários e depois insira o perfil de cada um:
 ```sql
-insert into usuarios (id, nome, perfil) values
+insert into tsi.usuarios (id, nome, perfil) values
   ('<uuid-do-auth-user>', 'Nome da Pessoa', 'PCP');   -- PCP|Logistica|Producao|Qualidade|Gestor
 ```
 
