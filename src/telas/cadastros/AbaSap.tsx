@@ -500,9 +500,13 @@ function FormConsulta({
           <input
             value={codigo}
             disabled={!!inicial}
-            onChange={(e) => setCodigo(e.target.value.toUpperCase())}
-            placeholder="TSI_PEDIDOS"
-            title={inicial ? 'O código é a chave no SAP e não muda depois de criado' : undefined}
+            onChange={(e) => setCodigo(e.target.value)}
+            placeholder="ex.: LotesSA"
+            title={
+              inicial
+                ? 'O código é a chave no SAP e não muda depois de criado'
+                : 'Copie exatamente como aparece em "Ver o que existe no SAP" — o SAP diferencia maiúsculas de minúsculas'
+            }
             className={`${INPUT} mt-1 normal-case disabled:opacity-60`}
           />
         </label>

@@ -134,7 +134,9 @@ export interface NovaConsulta {
 
 export async function salvarConsulta(c: NovaConsulta, id?: string): Promise<void> {
   const registro = {
-    codigo: c.codigo.trim().toUpperCase(),
+    // NUNCA mudar a caixa: o SAP diferencia maiúsculas de minúsculas no
+    // código, e as consultas reais chamam-se LotesSA, LotesSATratamentos…
+    codigo: c.codigo.trim(),
     nome: c.nome.trim(),
     descricao: c.descricao?.trim() || null,
     sql: c.sql.trim(),
@@ -148,7 +150,7 @@ export async function salvarConsulta(c: NovaConsulta, id?: string): Promise<void
     if (error.code === '23505') throw new Error(`Já existe consulta com o código ${registro.codigo}.`)
     if (error.code === '23514') {
       throw new Error(
-        'Código inválido: use letras maiúsculas, números e underscore, começando por letra (3 a 30 caracteres).',
+        'Código inválido: use letras, números e underscore, começando por letra (3 a 30 caracteres), exatamente como está no SAP.',
       )
     }
     throw new Error(`salvar consulta: ${error.message}`)

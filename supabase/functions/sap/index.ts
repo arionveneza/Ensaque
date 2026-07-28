@@ -243,7 +243,9 @@ async function pedidosAbertos() {
 // Consultas salvas
 // ---------------------------------------------------------------
 
-const CODIGO_CONSULTA_VALIDO = /^[A-Z][A-Z0-9_]{2,29}$/
+// os códigos no SAP são sensíveis a maiúsculas e os reais usam caixa mista
+// (LotesSA, LotesSATratamentos) — forçar maiúsculas quebraria a execução
+const CODIGO_CONSULTA_VALIDO = /^[A-Za-z][A-Za-z0-9_]{2,29}$/
 
 /**
  * Remove comentários e o ponto e vírgula final.
