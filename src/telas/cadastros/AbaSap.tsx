@@ -82,6 +82,21 @@ export default function AbaSap() {
             >
               Testar conexão
             </Botao>
+            <Botao
+              variante="primario"
+              disabled={ocupado}
+              titulo="Busca os pedidos em aberto por OData, sem passar por consulta SQL — usa a mesma permissão que já funciona para os itens."
+              onClick={() =>
+                acao('buscando pedidos por OData…', async () => {
+                  setResultado({
+                    codigo: 'pedidos em aberto (OData)',
+                    linhas: await sap.pedidosAbertos(),
+                  })
+                })
+              }
+            >
+              Pedidos em aberto
+            </Botao>
             {ehGestor && (
               <Botao
                 disabled={ocupado}

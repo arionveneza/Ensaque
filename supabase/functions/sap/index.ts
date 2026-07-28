@@ -183,6 +183,62 @@ async function lotesDoItem(itemCode: string) {
   }))
 }
 
+/**
+ * Pedidos de venda em aberto pelo OData, sem passar por consulta SQL.
+ *
+ * Por que existe: rodar SQL no B1 exige a autorização do Query Manager, que é
+ * poder de administrador — uma consulta alcança qualquer tabela do banco. Já
+ * `Orders` é um objeto de negócio, governado pela autorização de módulo, a
+ * mesma natureza de permissão que já funciona para `Items`.
+ *
+ * Os campos personalizados aparecem no OData como `U_*`, então o
+ * `U_TP_Tratamento` — que é o código do tratamento — vem junto com a linha.
+ */
+async function pedidosAbertos() {
+  const camposLinha =
+    'ItemCode,ItemDescription,Quantity,RemainingOpenQuantity,LineStatus,WarehouseCode,U_TP_Tratamento'
+  const filtro = `DocumentStatus eq 'bost_Open'`
+  const base =
+    `Orders?$select=DocNum,DocDate,CardCode,CardName,DocumentStatus` +
+    `&$filter=${encodeURIComponent(filtro)}`
+
+  let dados: { value?: Record<string, unknown>[] }
+  try {
+    dados = (await sapGet(
+      `${base}&$expand=DocumentLines($select=${camposLinha})`,
+    )) as typeof dados
+  } catch (e) {
+    // se o $select recusar algum campo (UDF ausente nesta base, por exemplo),
+    // traz a linha inteira em vez de falhar
+    console.error(`pedidos: $select nas linhas falhou, tentando sem — ${e}`)
+    dados = (await sapGet(`${base}&$expand=DocumentLines`)) as typeof dados
+  }
+
+  // uma linha do resultado por linha do pedido, que é o grão que o TSI usa
+  const linhas: Record<string, unknown>[] = []
+  for (const pedido of dados.value ?? []) {
+    const itens = (pedido.DocumentLines ?? []) as Record<string, unknown>[]
+    for (const item of itens) {
+      // só o que ainda vai ser faturado interessa ao planejamento
+      const pendente = Number(item.RemainingOpenQuantity ?? 0)
+      if (item.LineStatus !== 'bost_Open' || pendente <= 0) continue
+      linhas.push({
+        PV: pedido.DocNum,
+        DataPedido: pedido.DocDate,
+        CodPN: pedido.CardCode,
+        NomePN: pedido.CardName,
+        CodItem: item.ItemCode,
+        DescricaoItem: item.ItemDescription,
+        Tratamento: item.U_TP_Tratamento ?? null,
+        Quantidade: Number(item.Quantity ?? 0),
+        QuantidadePendente: pendente,
+        Deposito: item.WarehouseCode ?? null,
+      })
+    }
+  }
+  return linhas
+}
+
 // ---------------------------------------------------------------
 // Consultas salvas
 // ---------------------------------------------------------------
@@ -443,6 +499,9 @@ Deno.serve(async (req) => {
         if (!corpo.itemCode) return json({ erro: 'itemCode é obrigatório.' }, 400)
         return json({ dados: await lotesDoItem(corpo.itemCode) })
 
+      case 'pedidosAbertos':
+        return json({ dados: await pedidosAbertos() })
+
       // ---- consultas salvas ----
       case 'executarConsulta':
         return json({ dados: await executarConsulta(sb, exigeCodigo()) })
@@ -469,7 +528,7 @@ Deno.serve(async (req) => {
           {
             erro: 'Ação desconhecida.',
             permitidas: [
-              'ping', 'sementesComEstoque', 'lotesDoItem',
+              'ping', 'sementesComEstoque', 'lotesDoItem', 'pedidosAbertos',
               'executarConsulta', 'registrarConsulta', 'removerConsulta', 'consultasNoSap',
             ],
           },

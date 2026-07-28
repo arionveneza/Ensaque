@@ -87,6 +87,14 @@ export const sementesComEstoque = () => chamar<SementeSap[]>({ acao: 'sementesCo
 export const lotesDoItem = (itemCode: string) =>
   chamar<LoteSap[]>({ acao: 'lotesDoItem', itemCode })
 
+/**
+ * Pedidos em aberto pelo OData, sem consulta SQL.
+ *
+ * Usa a mesma natureza de permissão que já funciona para os itens —
+ * autorização de módulo, não a do Query Manager, que é de administrador.
+ */
+export const pedidosAbertos = () => chamar<LinhaResultado[]>({ acao: 'pedidosAbertos' })
+
 /** Executa uma consulta já registrada no Service Layer. */
 export const executarConsulta = (codigo: string) =>
   chamar<LinhaResultado[]>({ acao: 'executarConsulta', codigo })
