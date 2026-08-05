@@ -12,7 +12,6 @@
 --   delete from tsi.lotes_semente;
 --   delete from tsi.receita_itens;
 --   delete from tsi.receitas;
---   delete from tsi.lotes_quimico;
 --   delete from tsi.produtos_quimicos;
 -- ============================================================
 
@@ -29,17 +28,6 @@ insert into produtos_quimicos (codigo, nome, unidade, densidade) values
   ('GRF', 'Grafite',         'g/kg',  null),
   ('EKM', 'Inoculante EKM',  'ml/kg', 1.02)
 on conflict (codigo) do nothing;
-
--- ---------- lotes de químico ----------
-insert into lotes_quimico (id, produto_id, validade)
-select v.lote, p.id, date '2027-06-30'
-from (values
-  ('FTZ-2291','FTZ'), ('FTZ-2304','FTZ'), ('CRU-8813','CRU'),
-  ('MXA-4420','MXA'), ('DER-7701','DER'), ('RAN-3312','RAN'),
-  ('POL-9004','POL'), ('GRF-1180','GRF'), ('EKM-5521','EKM')
-) as v(lote, cod)
-join produtos_quimicos p on p.codigo = v.cod
-on conflict (id) do nothing;
 
 -- ---------- receitas (nome = código do comercial) ----------
 insert into receitas (nome) values

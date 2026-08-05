@@ -74,14 +74,17 @@ Nenhuma é problema de código; todas dependem de definição da operação.
   corrigida publicada — a única sugestão do `npm audit` é regredir para 7.11.0. Mantido;
   revisar quando sair correção.
 - **Testes**: só de domínio e dois de componente. Não há teste de fluxo ponta a ponta.
-- **Cadastros** cobrem químicos, receitas, máquinas, turnos, embalagens, motivos e lotes.
+- **Cadastros** cobrem produtos químicos, receitas, máquinas, turnos, embalagens, motivos e
+  lotes de semente.
 
 ---
 
 ## Armadilhas já pagas — não repetir
 
-**Não apagar lote de químico usado em ordem.** `ordem_tanque_lotes` referencia
-`lotes_quimico`, e apagar quebraria a rastreabilidade. O caminho é **desativar**.
+**Lote de químico saiu do escopo em 05/08/2026.** As tabelas `lotes_quimico` e
+`ordem_tanque_lotes` foram removidas, junto do cadastro, da escolha na ordem e da trava de
+início. Não reimplementar sem pedido explícito. O cadastro de **produtos** químicos (com a
+densidade da FISPQ) continua e é o que alimenta o peso de balança.
 
 **RLS: view sem `security_invoker` fura o RLS.** Por padrão a view roda com os privilégios
 de quem a criou. Como as views ficam expostas na API, `anon` conseguiria ler a produção

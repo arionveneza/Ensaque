@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { LinhaLoteQuimico, LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
+import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
 import * as api from '@/dados/api'
 import {
   mapaMotivos,
@@ -26,7 +26,6 @@ interface Props {
   ordem: LinhaOrdem
   produtos: LinhaProduto[]
   motivos: LinhaMotivo[]
-  lotesQuimico: LinhaLoteQuimico[]
   usuarioId: string
   podeApontar: boolean
   agora: number
@@ -38,7 +37,6 @@ export default function ModalOrdem({
   ordem,
   produtos,
   motivos,
-  lotesQuimico,
   usuarioId,
   podeApontar,
   agora,
@@ -91,19 +89,8 @@ export default function ModalOrdem({
   // ---- validações antes de confirmar (o banco também barra, via trigger) ----
   const semPesoInicial = ordem.ordem_tanques.filter((t) => t.peso_inicial == null)
   const semPesoFinal = ordem.ordem_tanques.filter((t) => t.peso_final == null)
-  const semLote = ordem.ordem_tanques.flatMap((t) => {
-    const itens = ordem.receitas.receita_itens.filter((i) => i.tanque === t.tanque)
-    return itens
-      .filter(
-        (i) =>
-          !t.ordem_tanque_lotes.some(
-            (l) => lotesQuimico.find((lq) => lq.id === l.lote_quimico_id)?.produto_id === i.produto_id,
-          ),
-      )
-      .map((i) => `${rotuloTanque(t.tanque)} — ${prods.get(i.produto_id)?.nome ?? i.produto_id}`)
-  })
 
-  const podeConfirmarInicio = semPesoInicial.length === 0 && semLote.length === 0
+  const podeConfirmarInicio = semPesoInicial.length === 0
   const podeConfirmarFim = semPesoFinal.length === 0
 
   return (
@@ -219,43 +206,11 @@ export default function ModalOrdem({
                           <td className="py-3 pr-3">
                             {itens.map((i) => {
                               const p = prods.get(i.produto_id)
-                              const doProduto = lotesQuimico.filter(
-                                (lq) => lq.produto_id === i.produto_id,
-                              )
-                              const selecionado = t.ordem_tanque_lotes.find((l) =>
-                                doProduto.some((lq) => lq.id === l.lote_quimico_id),
-                              )?.lote_quimico_id
-                              // desativado sai da escolha, mas continua visível se já
-                              // estiver vinculado — senão o vínculo antigo desapareceria
-                              const lotesDoProduto = doProduto.filter(
-                                (lq) => lq.ativo || lq.id === selecionado,
-                              )
                               return (
                                 <div key={i.produto_id} className="mb-1.5 last:mb-0">
                                   <span className="text-stone-700 dark:text-stone-300">
                                     {p?.nome} · {num(i.dose, 2)} {p?.unidade}
                                   </span>
-                                  <select
-                                    disabled={!podeApontar || emAndamento || ocupado}
-                                    value={selecionado ?? ''}
-                                    onChange={(e) =>
-                                      acao(async () => {
-                                        if (selecionado)
-                                          await api.desvincularLoteQuimico(t.id, selecionado)
-                                        if (e.target.value)
-                                          await api.vincularLoteQuimico(t.id, e.target.value)
-                                      })
-                                    }
-                                    className="ml-2 rounded border border-stone-300 px-1.5 py-0.5 text-xs disabled:opacity-60 dark:border-stone-700 dark:bg-stone-800"
-                                  >
-                                    <option value="">lote do químico…</option>
-                                    {lotesDoProduto.map((lq) => (
-                                      <option key={lq.id} value={lq.id}>
-                                        {lq.id}
-                                        {lq.ativo ? '' : ' (desativado)'}
-                                      </option>
-                                    ))}
-                                  </select>
                                 </div>
                               )
                             })}
@@ -315,13 +270,7 @@ export default function ModalOrdem({
                     Peso inicial em {semPesoInicial.map((t) => rotuloTanque(t.tanque)).join(', ')}
                   </li>
                 )}
-                {semLote.map((s) => (
-                  <li key={s}>Lote de químico em {s}</li>
-                ))}
               </ul>
-              <p className="mt-1.5 text-xs text-stone-500 dark:text-stone-400">
-                Sem o lote de cada produto não há rastreabilidade do tratamento.
-              </p>
             </div>
           )}
         </div>

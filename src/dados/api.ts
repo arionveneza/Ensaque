@@ -27,13 +27,6 @@ export interface LinhaProduto {
   densidade: number | null
 }
 
-export interface LinhaLoteQuimico {
-  id: string
-  produto_id: string
-  /** false = fora das novas seleções. Não é apagado: o histórico precisa dele. */
-  ativo: boolean
-}
-
 export interface LinhaOrdem {
   id: string
   numero: string
@@ -72,7 +65,6 @@ export interface LinhaOrdem {
     tanque: number
     peso_inicial: number | null
     peso_final: number | null
-    ordem_tanque_lotes: { lote_quimico_id: string }[]
   }[]
 }
 
@@ -84,8 +76,7 @@ const SELECT_ORDEM = `
   receitas ( nome, receita_itens ( produto_id, dose, tanque ) ),
   ordem_eventos ( tipo, ts ),
   ordem_paradas ( id, motivo_id, inicio, fim ),
-  ordem_tanques ( id, tanque, peso_inicial, peso_final,
-                  ordem_tanque_lotes ( lote_quimico_id ) )
+  ordem_tanques ( id, tanque, peso_inicial, peso_final )
 `
 
 function erro(contexto: string, e: { message: string } | null): never | void {
@@ -93,23 +84,18 @@ function erro(contexto: string, e: { message: string } | null): never | void {
 }
 
 export async function carregarCadastros() {
-  const [maquinas, motivos, produtos, lotesQuimico] = await Promise.all([
+  const [maquinas, motivos, produtos] = await Promise.all([
     supabase.from('maquinas').select('id, nome, capacidade_th, qtd_tanques').order('id'),
     supabase.from('motivos_parada').select('id, descricao, tipo').eq('ativo', true).order('descricao'),
     supabase.from('produtos_quimicos').select('id, codigo, nome, unidade, densidade'),
-    // traz inativos também: uma ordem antiga pode apontar para um lote já
-    // desativado, e a tela precisa conseguir exibir esse vínculo
-    supabase.from('lotes_quimico').select('id, produto_id, ativo').order('id'),
   ])
   erro('máquinas', maquinas.error)
   erro('motivos de parada', motivos.error)
   erro('produtos químicos', produtos.error)
-  erro('lotes de químico', lotesQuimico.error)
   return {
     maquinas: (maquinas.data ?? []) as LinhaMaquina[],
     motivos: (motivos.data ?? []) as LinhaMotivo[],
     produtos: (produtos.data ?? []) as LinhaProduto[],
-    lotesQuimico: (lotesQuimico.data ?? []) as LinhaLoteQuimico[],
   }
 }
 
@@ -155,36 +141,11 @@ export async function salvarPesoTanque(
   erro('salvar peso', error)
 }
 
-export async function vincularLoteQuimico(
-  ordemTanqueId: string,
-  loteQuimicoId: string,
-): Promise<void> {
-  const { error } = await supabase
-    .from('ordem_tanque_lotes')
-    .upsert(
-      { ordem_tanque_id: ordemTanqueId, lote_quimico_id: loteQuimicoId },
-      { onConflict: 'ordem_tanque_id,lote_quimico_id', ignoreDuplicates: true },
-    )
-  erro('vincular lote de químico', error)
-}
-
-export async function desvincularLoteQuimico(
-  ordemTanqueId: string,
-  loteQuimicoId: string,
-): Promise<void> {
-  const { error } = await supabase
-    .from('ordem_tanque_lotes')
-    .delete()
-    .eq('ordem_tanque_id', ordemTanqueId)
-    .eq('lote_quimico_id', loteQuimicoId)
-  erro('desvincular lote de químico', error)
-}
-
 /**
  * Confirma o início: grava o evento e muda o status.
- * Os triggers do banco recusam se faltar peso inicial, lote de químico em
- * algum produto, ou se o lote de semente não estiver baixado — o app valida
- * antes, mas a defesa final é do banco.
+ * Os triggers do banco recusam se faltar peso inicial em algum tanque ou se
+ * o lote de semente não estiver baixado — o app valida antes, mas a defesa
+ * final é do banco.
  */
 export async function confirmarInicio(ordemId: string, usuarioId: string): Promise<void> {
   const ev = await supabase

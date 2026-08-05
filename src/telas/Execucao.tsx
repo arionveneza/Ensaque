@@ -212,7 +212,6 @@ export default function Execucao() {
           ordem={ordemAberta}
           produtos={cadastros.produtos}
           motivos={cadastros.motivos}
-          lotesQuimico={cadastros.lotesQuimico}
           usuarioId={usuario.id}
           podeApontar={!!podeApontar}
           agora={agora}

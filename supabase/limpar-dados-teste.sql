@@ -24,7 +24,6 @@ select 'ordens' as tabela, count(*) from ordens
 union all select 'ordem_eventos',      count(*) from ordem_eventos
 union all select 'ordem_paradas',      count(*) from ordem_paradas
 union all select 'ordem_tanques',      count(*) from ordem_tanques
-union all select 'ordem_tanque_lotes', count(*) from ordem_tanque_lotes
 union all select 'ordem_qualidade',    count(*) from ordem_qualidade
 union all select 'qualidade_checks',   count(*) from qualidade_checks
 union all select 'ordem_conferencias', count(*) from ordem_conferencias
@@ -34,7 +33,6 @@ union all select 'lotes_semente',      count(*) from lotes_semente
 union all select 'pedidos_venda',      count(*) from pedidos_venda
 union all select 'estoque_pa',         count(*) from estoque_pa
 union all select 'cargas_demanda',     count(*) from cargas_demanda
-union all select 'lotes_quimico',      count(*) from lotes_quimico
 union all select 'receitas',           count(*) from receitas
 union all select 'produtos_quimicos',  count(*) from produtos_quimicos
 union all select 'usuarios',           count(*) from usuarios
@@ -44,7 +42,7 @@ order by 1;
 -- ============================================================
 -- NÍVEL 1 — só o movimento: ordens, apontamentos e demanda
 -- ============================================================
--- Mantém lotes de semente, lotes de químico, receitas e produtos.
+-- Mantém lotes de semente, receitas e produtos químicos.
 -- É o que você quer se a intenção é zerar a operação de teste e continuar
 -- com os cadastros que já estão certos.
 --
@@ -53,7 +51,6 @@ order by 1;
 --   delete from ordem_qualidade;
 --   delete from qualidade_checks;
 --   delete from ordem_conferencias;
---   delete from ordem_tanque_lotes;
 --   delete from ordem_tanques;
 --   delete from ordem_paradas;
 --   delete from ordem_eventos;
@@ -71,14 +68,13 @@ order by 1;
 
 
 -- ============================================================
--- NÍVEL 2 — nível 1 + os lotes
+-- NÍVEL 2 — nível 1 + os lotes de semente
 -- ============================================================
 -- Use quando os lotes importados nos testes também são descartáveis.
 -- Rode DEPOIS do nível 1, senão as ordens seguram os lotes.
 --
 -- begin;
 --   delete from lotes_semente;
---   delete from lotes_quimico;
 -- commit;
 
 
@@ -94,7 +90,6 @@ order by 1;
 -- begin;
 --   delete from receita_itens;
 --   delete from receitas;
---   delete from lotes_quimico;
 --   delete from produtos_quimicos;
 -- commit;
 

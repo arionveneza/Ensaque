@@ -39,7 +39,6 @@ export function paraOrdemDominio(l: LinhaOrdem): Ordem {
         itens: l.receitas.receita_itens
           .filter((i) => i.tanque === t.tanque)
           .map((i) => ({ produtoId: i.produto_id, dose: i.dose, tanque: i.tanque })),
-        lotesQuimico: t.ordem_tanque_lotes.map((x) => x.lote_quimico_id),
         pesoInicial: t.peso_inicial,
         pesoFinal: t.peso_final,
       })),

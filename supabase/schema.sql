@@ -101,13 +101,6 @@ create table produtos_quimicos (
   constraint dens_obrigatoria check (unidade <> 'ml/kg' or densidade is not null)
 );
 
-create table lotes_quimico (
-  id          text primary key,                 -- 'FTZ-2291'
-  produto_id  uuid not null references produtos_quimicos(id),
-  validade    date,
-  saldo       numeric(12,3)                     -- futuro: controle de estoque de insumo
-);
-
 -- receita: NOME = código do comercial (FTZ60, V&P, DER + LMT...)
 create table receitas (
   id        uuid primary key default gen_random_uuid(),
@@ -236,14 +229,6 @@ create table ordem_tanques (
   peso_inicial  numeric(10,3),                  -- obrigatório para confirmar início
   peso_final    numeric(10,3),                  -- obrigatório para confirmar finalização
   unique (ordem_id, tanque)
-);
-
--- lotes de químico por tanque (N por produto — rastreabilidade)
-create table ordem_tanque_lotes (
-  id              uuid primary key default gen_random_uuid(),
-  ordem_tanque_id uuid not null references ordem_tanques(id) on delete cascade,
-  lote_quimico_id text not null references lotes_quimico(id),
-  unique (ordem_tanque_id, lote_quimico_id)
 );
 
 create table ordem_qualidade (
@@ -418,7 +403,8 @@ create unique index ordem_unica_por_maquina
   on ordens (maquina_id)
   where status in ('Em producao','Parada');
 
--- não iniciar sem peso inicial e lote de químico em todos os tanques
+-- não iniciar sem peso inicial em todos os tanques e sem o lote de semente
+-- baixado (o controle de lote de QUÍMICO saiu do escopo em 05/08/2026)
 create or replace function fn_valida_inicio() returns trigger as $$
 declare falta int;
 begin
@@ -426,16 +412,6 @@ begin
     select count(*) into falta from ordem_tanques t
       where t.ordem_id = new.id and t.peso_inicial is null;
     if falta > 0 then raise exception 'Peso inicial pendente em % tanque(s)', falta; end if;
-
-    select count(*) into falta
-      from receita_itens ri
-      join ordem_tanques t on t.ordem_id = new.id and t.tanque = ri.tanque
-      where ri.receita_id = new.receita_id
-        and not exists (
-          select 1 from ordem_tanque_lotes otl
-          join lotes_quimico lq on lq.id = otl.lote_quimico_id
-          where otl.ordem_tanque_id = t.id and lq.produto_id = ri.produto_id);
-    if falta > 0 then raise exception 'Lote de quimico pendente em % produto(s)', falta; end if;
 
     if (select status from lotes_semente where id = new.lote_id) = 'Em estoque' then
       raise exception 'Lote de semente nao baixado pelo estoque';
@@ -518,7 +494,6 @@ alter table ordens              enable row level security;
 alter table ordem_eventos       enable row level security;
 alter table ordem_paradas       enable row level security;
 alter table ordem_tanques       enable row level security;
-alter table ordem_tanque_lotes  enable row level security;
 alter table ordem_qualidade     enable row level security;
 alter table lotes_semente       enable row level security;
 alter table pedidos_venda       enable row level security;
@@ -541,7 +516,6 @@ create policy ler_est    on estoque_pa for select using (meu_perfil() is not nul
 create policy ler_ev     on ordem_eventos for select using (meu_perfil() is not null);
 create policy ler_par    on ordem_paradas for select using (meu_perfil() is not null);
 create policy ler_tq     on ordem_tanques for select using (meu_perfil() is not null);
-create policy ler_tql    on ordem_tanque_lotes for select using (meu_perfil() is not null);
 create policy ler_qual   on ordem_qualidade for select using (meu_perfil() is not null);
 create policy ler_mov    on lote_movimentos for select using (meu_perfil() is not null);
 
@@ -574,8 +548,6 @@ create policy prod_par on ordem_paradas for all
   using (meu_perfil() in ('Producao','Gestor')) with check (meu_perfil() in ('Producao','Gestor'));
 create policy prod_tq on ordem_tanques for all
   using (meu_perfil() in ('Producao','Gestor')) with check (meu_perfil() in ('Producao','Gestor'));
-create policy prod_tql on ordem_tanque_lotes for all
-  using (meu_perfil() in ('Producao','Gestor')) with check (meu_perfil() in ('Producao','Gestor'));
 
 -- Qualidade/Gestor
 create policy qual_ap on ordem_qualidade for all
@@ -593,7 +565,6 @@ alter table maquinas           enable row level security;
 alter table turnos             enable row level security;
 alter table embalagens         enable row level security;
 alter table produtos_quimicos  enable row level security;
-alter table lotes_quimico      enable row level security;
 alter table receitas           enable row level security;
 alter table receita_itens      enable row level security;
 alter table motivos_parada     enable row level security;
@@ -607,7 +578,6 @@ create policy ler_maq      on maquinas for select using (meu_perfil() is not nul
 create policy ler_tur      on turnos for select using (meu_perfil() is not null);
 create policy ler_emb      on embalagens for select using (meu_perfil() is not null);
 create policy ler_quim     on produtos_quimicos for select using (meu_perfil() is not null);
-create policy ler_lq       on lotes_quimico for select using (meu_perfil() is not null);
 create policy ler_rec      on receitas for select using (meu_perfil() is not null);
 create policy ler_ri       on receita_itens for select using (meu_perfil() is not null);
 create policy ler_mot      on motivos_parada for select using (meu_perfil() is not null);
@@ -622,8 +592,6 @@ create policy pcp_tur  on turnos for all
 create policy pcp_emb  on embalagens for all
   using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
 create policy pcp_quim on produtos_quimicos for all
-  using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
-create policy pcp_lq   on lotes_quimico for all
   using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));
 create policy pcp_rec  on receitas for all
   using (meu_perfil() in ('PCP','Gestor')) with check (meu_perfil() in ('PCP','Gestor'));

@@ -75,8 +75,8 @@ export interface ItemReceita {
   dose: number
   /**
    * 1 a 5, ou 0 = transferidor (pó secante, que nunca vai em tanque).
-   * Mais de um produto no mesmo destino = mistura. O transferidor tem
-   * pesagem e lote de químico iguais aos tanques.
+   * Mais de um produto no mesmo destino = mistura. O transferidor pesa
+   * igual aos tanques.
    */
   tanque: number
 }
@@ -118,7 +118,6 @@ export interface EventoOrdem {
 export interface TanqueOrdem {
   tanque: number
   itens: ItemReceita[]
-  lotesQuimico: string[]
   pesoInicial: number | null
   pesoFinal: number | null
 }

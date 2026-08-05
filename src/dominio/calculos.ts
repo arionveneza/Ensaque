@@ -118,7 +118,6 @@ export function montaTanques(receita: Receita): TanqueOrdem[] {
     .map((tanque) => ({
       tanque,
       itens: porTanque.get(tanque)!,
-      lotesQuimico: [],
       pesoInicial: null,
       pesoFinal: null,
     }))

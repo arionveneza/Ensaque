@@ -94,7 +94,6 @@ export default function Cadastros() {
       {aba === 'quimicos' && (
         <AbaQuimicos
           produtos={cad?.produtos ?? []}
-          lotesQuimico={cad?.lotesQuimico ?? []}
           podeEditar={!!podeEditar}
           acao={acao}
         />
@@ -135,10 +134,9 @@ type Acao = (fn: () => Promise<void>) => Promise<void>
 // ================================================================
 
 function AbaQuimicos({
-  produtos, lotesQuimico, podeEditar, acao,
+  produtos, podeEditar, acao,
 }: {
   produtos: api.LinhaProduto[]
-  lotesQuimico: api.LinhaLoteQuimico[]
   podeEditar: boolean
   acao: Acao
 }) {
@@ -182,11 +180,11 @@ function AbaQuimicos({
             />
           </div>
         )}
-        <Tabela cabecalho={['Produto', 'Código', 'Unidade', '#Densidade', 'Lotes', '']}>
+        <Tabela cabecalho={['Produto', 'Código', 'Unidade', '#Densidade', '']}>
           {produtos.map((p) =>
             editando === p.id ? (
               <tr key={p.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td colSpan={6} className="px-2 py-3">
+                <td colSpan={5} className="px-2 py-3">
                   <FormProduto
                     inicial={p}
                     onSalvar={(x) =>
@@ -210,9 +208,6 @@ function AbaQuimicos({
                     `${n(p.densidade, 3)} g/ml`
                   )}
                 </td>
-                <td className="px-2 py-2 text-xs text-stone-500">
-                  {lotesQuimico.filter((l) => l.produto_id === p.id).map((l) => l.id).join(', ') || '—'}
-                </td>
                 <td className="px-2 py-2 text-right">
                   {podeEditar && (
                     <button onClick={() => setEditando(p.id)} className="text-xs underline">
@@ -223,53 +218,6 @@ function AbaQuimicos({
               </tr>
             ),
           )}
-        </Tabela>
-      </Cartao>
-
-      <Cartao titulo={`Lotes de químico (${lotesQuimico.filter((l) => l.ativo).length} ativos)`}>
-        <p className="mb-3 text-sm text-stone-500">
-          Cada tanque exige o lote do produto no início da ordem — é o que dá rastreabilidade do
-          tratamento. Por isso lote já usado <b>não pode ser excluído</b>: apagá-lo quebraria o
-          histórico da ordem. Para tirá-lo da lista do operador, use <b>desativar</b>.
-        </p>
-        {podeEditar && <FormLoteQuimico produtos={produtos} acao={acao} />}
-        <Tabela cabecalho={['Lote', 'Produto', 'Situação', '']}>
-          {lotesQuimico.map((l) => (
-            <tr
-              key={l.id}
-              className={`border-t border-stone-100 dark:border-stone-800/60 ${l.ativo ? '' : 'opacity-60'}`}
-            >
-              <td className="px-2 py-1.5 font-medium">{l.id}</td>
-              <td className="px-2 py-1.5">
-                {produtos.find((p) => p.id === l.produto_id)?.nome ?? '—'}
-              </td>
-              <td className="px-2 py-1.5">
-                <Tag cor={l.ativo ? 'ok' : 'neutro'}>{l.ativo ? 'Ativo' : 'Desativado'}</Tag>
-              </td>
-              <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                {podeEditar && (
-                  <>
-                    <button
-                      onClick={() => acao(() => adm.definirAtivoLoteQuimico(l.id, !l.ativo))}
-                      className="mr-3 text-xs underline"
-                    >
-                      {l.ativo ? 'desativar' : 'reativar'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!confirm(`Excluir o lote ${l.id} do cadastro?`)) return
-                        acao(() => adm.excluirLoteQuimico(l.id))
-                      }}
-                      className="text-xs text-red-600 underline"
-                      title="Só funciona se o lote nunca foi usado numa ordem"
-                    >
-                      excluir
-                    </button>
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
         </Tabela>
       </Cartao>
     </>
@@ -336,42 +284,6 @@ function FormProduto({
         Salvar
       </Botao>
       <Botao onClick={onCancelar}>Cancelar</Botao>
-    </div>
-  )
-}
-
-function FormLoteQuimico({ produtos, acao }: { produtos: api.LinhaProduto[]; acao: Acao }) {
-  const [id, setId] = useState('')
-  const [produtoId, setProdutoId] = useState('')
-  const [validade, setValidade] = useState('')
-  return (
-    <div className="mb-4 flex flex-wrap items-end gap-2">
-      <label className="text-xs text-stone-500">
-        Nº do lote
-        <input value={id} onChange={(e) => setId(e.target.value)} className={`${INPUT} mt-1 block w-40`} />
-      </label>
-      <label className="text-xs text-stone-500">
-        Produto
-        <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className={`${INPUT} mt-1 block`}>
-          <option value="">escolha…</option>
-          {produtos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-        </select>
-      </label>
-      <label className="text-xs text-stone-500">
-        Validade
-        <input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} className={`${INPUT} mt-1 block`} />
-      </label>
-      <Botao
-        disabled={!id.trim() || !produtoId}
-        onClick={() =>
-          acao(async () => {
-            await adm.salvarLoteQuimico({ id: id.trim(), produto_id: produtoId, validade: validade || null })
-            setId(''); setValidade('')
-          })
-        }
-      >
-        Adicionar lote
-      </Botao>
     </div>
   )
 }

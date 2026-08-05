@@ -60,8 +60,11 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   mesmo tanque. O planejado do tanque é a **soma** dos pesos dos produtos daquele tanque, e o
   Real vs Planejado compara contra essa soma.
 - **Transferidor (destino 0)**: pó secante (grafite) nunca vai em tanque — na receita ele é
-  dosado no transferidor. Tem **pesagem (peso inicial/final) e lote de químico iguais aos
-  tanques** (decisão de 05/08/2026); só o nome muda na tela.
+  dosado no transferidor. Tem **pesagem (peso inicial/final) igual aos tanques**
+  (decisão de 05/08/2026); só o nome muda na tela.
+- **Lote de químico está FORA do escopo** (decisão de 05/08/2026): não há cadastro de lote de
+  químico, escolha na ordem nem trava no início. O cadastro de **produtos** químicos (com
+  densidade) continua — é dele que sai o peso de balança.
 
 ### Peso de ensaque
 `ensaque_por_bag = peso_do_bag_do_lote + (peso_químico_total_da_ordem ÷ bags_da_ordem)`
@@ -91,7 +94,7 @@ registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele 
 
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
 1. **Iniciar** apenas *prepara*: monta os tanques da receita e abre a ordem. **Não** inicia o cronômetro.
-2. Operador informa **peso inicial de cada tanque** e o **lote de químico de cada produto** (obrigatórios).
+2. Operador informa o **peso inicial de cada tanque** (obrigatório).
 3. **Confirmar início** → grava o evento, define o turno, ocupa a máquina.
 4. Durante a produção o **peso final está travado**.
 5. **Finalizar** apenas *libera* a pesagem final. **Não** finaliza.
@@ -240,7 +243,7 @@ SAP_PASSWORD=
 |---|---|---|
 | **PCP** | Ordens, Programação, Lotes, Execução, Qualidade, Indicadores, Cadastros | criar/editar/excluir ordem, priorizar, programar, apontar AGROTIS |
 | **Logística** | Programação, Lotes, Indicadores | baixar/estornar lote |
-| **Produção** | Programação, Execução, Indicadores | iniciar/parar/retomar/finalizar, pesos, lotes de químico |
+| **Produção** | Programação, Execução, Indicadores | iniciar/parar/retomar/finalizar, pesos de tanque |
 | **Qualidade** | Execução, Qualidade, Indicadores | apontar qualidade visual e amostra |
 | **Gestor** | todas | todas |
 
