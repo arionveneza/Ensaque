@@ -171,8 +171,16 @@ Colunas: C cultivar · F lote · G lote tratamento · H PMS · K saldo (bags) ·
 - Saldo negativo → ignorar e **reportar** (o arquivo de referência tem 4 casos, −27 bags).
 - **Resultado esperado**: 753 lotes · 16.865 bags · 0 estoque PA tratado.
 
-### SAP Business One — Service Layer **LIBERADO** ✅
-Ambiente **B1 sobre HANA**, hospedado pela Agrotis/AutoSky. Acesso externo concedido:
+### SAP Business One — Service Layer **SUSPENSO** 🛑
+A integração foi **retirada do app**. O acesso externo existe e o login funciona, mas a
+execução de consultas via Service Layer é recusada com `403` mesmo para usuário
+profissional — trava de ambiente. Os dados do TSI seguem vindo do **upload das planilhas
+da SimpleAgro**, que está validado.
+
+Ver `docs/integracao-sap.md` para o diagnóstico completo e o que pedir à Agrotis caso se
+retome. **Não reimplementar sem antes confirmar que o `403` foi resolvido.**
+
+Ambiente **B1 sobre HANA**, hospedado pela Agrotis/AutoSky:
 
 | Item | Valor |
 |---|---|
@@ -182,11 +190,8 @@ Ambiente **B1 sobre HANA**, hospedado pela Agrotis/AutoSky. Acesso externo conce
 | Credenciais | usuário/senha fornecidos por e-mail — **nunca comitar** (ver §4.1) |
 | Certificado | provavelmente autoassinado (navegador exige "Avançado → Continuar") |
 
-Ver **`docs/integracao-sap.md`** para o fluxo de login, as queries de pedidos e estoque, o mapeamento
-de campos e o desenho do job de sincronização.
-
-**Regra de trabalho:** desenvolver e testar **sempre contra `SBOVENHOM2`**. `SBOVENPRD` só no job
-final e **somente leitura** — nenhum POST/PATCH/DELETE em produção.
+**Regra de trabalho, se um dia voltar:** desenvolver e testar **sempre contra `SBOVENHOM2`**.
+`SBOVENPRD` só no job final e **somente leitura** — nenhum POST/PATCH/DELETE em produção.
 
 ---
 

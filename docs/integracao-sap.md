@@ -1,5 +1,32 @@
 # Integração SAP Business One — Service Layer
 
+> ## 🛑 SUSPENSA — o código saiu do app
+>
+> A integração foi **removida do aplicativo** (código, Edge Function e tabela de consultas).
+> Este documento fica como registro do que foi descoberto, para quem retomar não repetir a
+> investigação. O histórico do git tem o código, se for preciso ressuscitar.
+>
+> **O que funciona no Service Layer com o usuário de integração:**
+> login, `Items`, `BatchNumberDetails`, `Orders` — tudo que é **objeto de negócio**,
+> governado por autorização de módulo.
+>
+> **O que não funciona:** executar consulta salva (`SQLQueries('CODE')/List` → **403**) e
+> criar consulta (`POST SQLQueries` → **403**). Testado também com usuário profissional, que
+> cria consultas normalmente pelo cliente B1 — **também deu 403**. Isso indica trava de
+> ambiente, não de usuário.
+>
+> **Detalhe que confunde:** *listar* as consultas funciona
+> (`SQLQueries?$select=SqlCode,SqlName` devolveu as 6 existentes: `LotesSA`,
+> `LotesSATratamentos`, `LotesSANome`, `LotesSAProduto`, `LotesSAOri`, `LotesAnaliseSA`).
+> Ler que existem, sim; executar, não.
+>
+> **Se retomar, o pedido à Agrotis é um só:** habilitar a **execução de SQLQueries via
+> Service Layer**. Sem isso, o caminho viável é OData nos objetos de negócio.
+>
+> **Armadilha que custou tempo:** o código da consulta é **sensível a maiúsculas**
+> (`LotesSA`, não `LOTESSA`), e o SAP responde **403** — não 404 — para consulta
+> inexistente. Ou seja, "sem permissão" pode significar "não existe".
+
 > **Status:** acesso liberado pela Agrotis em 28/07/2026, porém **o ambiente está instável** —
 > ver §7. Pendente: primeiro login estável e confirmação do mapeamento de campos (§4).
 >
