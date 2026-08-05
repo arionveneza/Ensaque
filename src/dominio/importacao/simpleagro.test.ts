@@ -168,6 +168,14 @@ describe('conversao de saldos', () => {
     expect(r.lotes[0].pesoBagKg).toBe(428) // 427,5 arredondado
   })
 
+  it('guarda o tratamento que veio da origem', () => {
+    const r = converterSaldos([
+      CAB_SALDOS,
+      saldo('SS X BB5M', 'X', 'SV001', 'SEM TSI', 171, 7),
+    ])
+    expect(r.lotes[0].tratamento).toBe('SEM TSI')
+  })
+
   it('agrega o mesmo lote espalhado em varios enderecos', () => {
     const r = converterSaldos([
       CAB_SALDOS,

@@ -159,6 +159,8 @@ export function converterPedidos(
 export interface LoteConvertido {
   id: string
   cultivar: string
+  /** Coluna LOTE TRATAMENTO da origem. Aqui é sempre a faixa `SEM TSI`. */
+  tratamento: string
   pms: number
   pesoBagKg: number
   bags: number
@@ -252,6 +254,7 @@ export function converterSaldos(rows: Linha[]): ResultadoSaldos {
         lotes.set(id, {
           id,
           cultivar,
+          tratamento,
           pms,
           pesoBagKg: Math.round(pms * emb.fator),
           bags,

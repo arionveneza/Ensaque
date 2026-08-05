@@ -177,6 +177,8 @@ export async function aplicarAtribuicoes(
 export interface LoteSementeLinha {
   id: string
   cultivar: string
+  /** Como veio da origem. 'SEM TSI' = semente crua, ainda a tratar. */
+  tratamento: string | null
   pms: number | null
   peso_bag_kg: number
   bags_disp: number | null
@@ -187,7 +189,7 @@ export interface LoteSementeLinha {
 export async function listarLotes(): Promise<LoteSementeLinha[]> {
   const { data, error } = await supabase
     .from('lotes_semente')
-    .select('id, cultivar, pms, peso_bag_kg, bags_disp, status, devolver')
+    .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver')
     .order('id')
   erro('lotes de semente', error)
   return (data ?? []) as LoteSementeLinha[]
@@ -335,6 +337,7 @@ export async function importarLotes(linhas: LoteConvertido[]): Promise<number> {
   const registros = linhas.map((l) => ({
     id: l.id,
     cultivar: l.cultivar,
+    tratamento: l.tratamento || null,
     pms: l.pms || null,
     peso_bag_kg: l.pesoBagKg,
     bags_disp: l.bags,

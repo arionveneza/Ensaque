@@ -905,7 +905,9 @@ function AbaLotes({
   const filtrados = lotes.filter(
     (l) =>
       !busca.trim() ||
-      `${l.id} ${l.cultivar}`.toLowerCase().includes(busca.trim().toLowerCase()),
+      `${l.id} ${l.cultivar} ${l.tratamento ?? ''}`
+        .toLowerCase()
+        .includes(busca.trim().toLowerCase()),
   )
 
   return (
@@ -959,11 +961,22 @@ function AbaLotes({
         o histórico. Para limpar tudo ao encerrar os testes, use{' '}
         <code>supabase/limpar-dados-teste.sql</code>.
       </p>
-      <Tabela cabecalho={['Lote', 'Cultivar', '#PMS', '#Peso/bag', '#Bags', 'Status', '']}>
+      <Tabela
+        cabecalho={['Lote', 'Cultivar', 'Tratamento', '#PMS', '#Peso/bag', '#Bags', 'Status', '']}
+      >
         {filtrados.slice(0, 300).map((l) => (
           <tr key={l.id} className="border-t border-stone-100 dark:border-stone-800/60">
             <td className="px-2 py-1.5 font-medium">{l.id}</td>
             <td className="px-2 py-1.5">{l.cultivar}</td>
+            <td className="px-2 py-1.5">
+              {l.tratamento ? (
+                <Tag cor={l.tratamento.toUpperCase() === 'SEM TSI' ? 'neutro' : 'info'}>
+                  {l.tratamento}
+                </Tag>
+              ) : (
+                <span className="text-stone-400">—</span>
+              )}
+            </td>
             <td className="num-tabular px-2 py-1.5 text-right">{l.pms == null ? '—' : n(l.pms, 1)}</td>
             <td className="num-tabular px-2 py-1.5 text-right">{n(l.peso_bag_kg, 0)} kg</td>
             <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags_disp)}</td>
