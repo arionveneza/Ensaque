@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import * as g from '@/dados/api-gestao'
 import type { ChecklistQualidade, DadosChecklist, OrdemVisao } from '@/dados/api-gestao'
 import { useRealtime } from '@/dados/useRealtime'
+import { exportarXlsx } from '@/lib/exportar'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, n,
@@ -15,14 +16,18 @@ export default function Qualidade() {
 
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [checks, setChecks] = useState<ChecklistQualidade[]>([])
+  const [nomes, setNomes] = useState<Record<string, string>>({})
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aberta, setAberta] = useState<string | null>(null)
 
   const recarregar = useCallback(async () => {
-    const [o, c] = await Promise.all([g.listarOrdens(), g.listarChecksQualidade()])
+    const [o, c, u] = await Promise.all([
+      g.listarOrdens(), g.listarChecksQualidade(), g.listarNomesUsuarios(),
+    ])
     setOrdens(o)
     setChecks(c)
+    setNomes(u)
   }, [])
 
   useEffect(() => {
@@ -53,12 +58,65 @@ export default function Qualidade() {
   const checksDe = (id: string, etapa: 'processo' | 'final') =>
     checks.filter((c) => c.ordem_id === id && c.etapa === etapa)
 
+  /**
+   * Relatório completo: uma linha por teste, com a ordem inteira do lado.
+   * Ordenado do mais recente para o mais antigo.
+   */
+  async function exportarRelatorio() {
+    const porId = new Map(ordens.map((o) => [o.id, o]))
+    await exportarXlsx(
+      'testes-de-qualidade',
+      [
+        { titulo: 'Data/hora', largura: 18 },
+        { titulo: 'Ordem', largura: 14 },
+        { titulo: 'Lote', largura: 14 },
+        { titulo: 'Cultivar', largura: 18 },
+        { titulo: 'Tratamento', largura: 18 },
+        { titulo: 'Embalagem', largura: 12 },
+        { titulo: 'Bags', largura: 8, tipo: 'numero', casas: 0 },
+        { titulo: 'Peso (t)', largura: 10, tipo: 'numero', casas: 2 },
+        { titulo: 'Etapa', largura: 12 },
+        { titulo: 'Origem', largura: 10 },
+        { titulo: 'Q. geral (1-5)', largura: 12, tipo: 'numero', casas: 0 },
+        { titulo: 'Umidade', largura: 14 },
+        { titulo: 'Desprend. pó', largura: 14 },
+        { titulo: 'Observação', largura: 30 },
+        { titulo: 'Inspetor', largura: 20 },
+      ],
+      checks.map((c) => {
+        const o = porId.get(c.ordem_id)
+        return [
+          new Date(c.ts).toLocaleString('pt-BR'),
+          o?.numero ?? '?', o?.lote_id ?? '?', o?.cultivar ?? '?',
+          o?.receita_nome ?? '?', o?.embalagem ?? '?', o?.bags ?? '',
+          o?.peso_t ?? '',
+          c.etapa === 'processo' ? 'Em processo' : 'Final',
+          c.origem ?? '—',
+          c.recobrimento,
+          c.umidade_ok ? 'OK' : 'Fora do padrão',
+          c.po_ok ? 'OK' : 'Fora do padrão',
+          c.observacao ?? '',
+          c.inspetor_id ? (nomes[c.inspetor_id] ?? '?') : '',
+        ]
+      }),
+    )
+  }
+
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando qualidade…</p>
 
   return (
     <Pagina
       titulo="Qualidade"
       descricao="Checklist informativo em duas etapas: durante a execução e após a finalização. Nota baixa não bloqueia — é registro para análise."
+      acoes={
+        <Botao
+          disabled={checks.length === 0}
+          titulo="Todos os testes registrados, um por linha, com a ordem completa"
+          onClick={() => exportarRelatorio().catch((e) => setErro(String(e)))}
+        >
+          Relatório de testes (.xlsx)
+        </Botao>
+      }
     >
       {erro && <Erro>{erro}</Erro>}
 

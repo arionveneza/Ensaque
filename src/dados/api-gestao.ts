@@ -122,8 +122,18 @@ export async function criarOrdensEmLote(lista: NovaOrdem[]): Promise<ResultadoLo
   return { criadas, jaExistiam }
 }
 
+/**
+ * Edição de ordem que a produção ainda não tocou (a Programação também usa,
+ * para máquina/dia/seq). A matriz de status decide QUANDO pode e o trigger
+ * de imutabilidade no banco garante mesmo se alguém contornar a tela.
+ */
 export async function atualizarOrdem(id: string, campos: Partial<NovaOrdem>): Promise<void> {
   const { error } = await supabase.from('ordens').update(campos).eq('id', id)
+  if (error?.code === '23505') {
+    throw new Error(
+      `Já existe ordem com ${campos.numero ?? ''} + ${campos.cultivar ?? ''} + esta receita + ${campos.embalagem ?? ''}.`,
+    )
+  }
   erro('atualizar ordem', error)
 }
 
@@ -193,6 +203,24 @@ export async function listarLotes(): Promise<LoteSementeLinha[]> {
     .order('id')
   erro('lotes de semente', error)
   return (data ?? []) as LoteSementeLinha[]
+}
+
+/** Cadastro manual de lote — o caminho normal é o upload de Saldos. */
+export async function criarLote(l: {
+  id: string
+  cultivar: string
+  tratamento: string | null
+  pms: number | null
+  peso_bag_kg: number
+  bags_disp: number
+}): Promise<void> {
+  const { error } = await supabase
+    .from('lotes_semente')
+    .insert({ ...l, status: 'Em estoque' })
+  if (error) {
+    if (error.code === '23505') throw new Error(`O lote ${l.id} já está cadastrado.`)
+    throw new Error(`criar lote: ${error.message}`)
+  }
 }
 
 export async function baixarLote(
@@ -367,6 +395,7 @@ export interface ChecklistQualidade {
   umidade_ok: boolean
   po_ok: boolean
   observacao: string | null
+  inspetor_id: string | null
   ts: string
 }
 
@@ -382,7 +411,7 @@ export interface DadosChecklist {
 export async function listarChecksQualidade(): Promise<ChecklistQualidade[]> {
   const { data, error } = await supabase
     .from('qualidade_checks')
-    .select('id, ordem_id, etapa, origem, recobrimento, umidade_ok, po_ok, observacao, ts')
+    .select('id, ordem_id, etapa, origem, recobrimento, umidade_ok, po_ok, observacao, inspetor_id, ts')
     .order('ts', { ascending: false })
   erro('checklists de qualidade', error)
   return (data ?? []) as ChecklistQualidade[]
@@ -530,6 +559,56 @@ export async function listarTempos(de: string, ate: string): Promise<TempoOrdem[
     .order('data_prog')
   erro('tempos por ordem', error)
   return (data ?? []) as TempoOrdem[]
+}
+
+/** Nomes para os relatórios (quem inspecionou, quem conferiu). */
+export async function listarNomesUsuarios(): Promise<Record<string, string>> {
+  const { data, error } = await supabase.from('usuarios').select('id, nome')
+  erro('nomes de usuários', error)
+  return Object.fromEntries(
+    ((data ?? []) as { id: string; nome: string }[]).map((u) => [u.id, u.nome]),
+  )
+}
+
+/** Uma parada individual, para o relatório por dia/ordem/turno. */
+export interface ParadaLinha {
+  inicio: string
+  fim: string | null
+  segundos: number
+  motivo: string
+  tipo: TipoParada
+  ordem_numero: string
+  maquina_id: string
+  data_prog: string | null
+  turno_id: number | null
+}
+
+export async function listarParadasPeriodo(de: string, ate: string): Promise<ParadaLinha[]> {
+  const { data, error } = await supabase
+    .from('ordem_paradas')
+    .select('inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( numero, maquina_id, data_prog, turno_id )')
+    .gte('ordens.data_prog', de)
+    .lte('ordens.data_prog', ate)
+    .order('inicio')
+  erro('paradas do período', error)
+
+  return ((data ?? []) as unknown as {
+    inicio: string
+    fim: string | null
+    motivos_parada: { descricao: string; tipo: TipoParada } | null
+    ordens: { numero: string; maquina_id: string; data_prog: string | null; turno_id: number | null }
+  }[]).map((p) => ({
+    inicio: p.inicio,
+    fim: p.fim,
+    segundos:
+      ((p.fim ? new Date(p.fim).getTime() : Date.now()) - new Date(p.inicio).getTime()) / 1000,
+    motivo: p.motivos_parada?.descricao ?? '?',
+    tipo: p.motivos_parada?.tipo ?? 'Nao planejada',
+    ordem_numero: p.ordens.numero,
+    maquina_id: p.ordens.maquina_id,
+    data_prog: p.ordens.data_prog,
+    turno_id: p.ordens.turno_id,
+  }))
 }
 
 export interface ParadaDetalhe {

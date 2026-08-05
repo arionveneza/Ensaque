@@ -901,6 +901,7 @@ function AbaLotes({
 }) {
   const [busca, setBusca] = useState('')
   const [semUso, setSemUso] = useState<number | null>(null)
+  const [novo, setNovo] = useState(false)
 
   const filtrados = lotes.filter(
     (l) =>
@@ -921,6 +922,11 @@ function AbaLotes({
             placeholder="buscar lote ou cultivar…"
             className={INPUT}
           />
+          {podeEditar && (
+            <Botao variante="primario" onClick={() => setNovo((v) => !v)}>
+              {novo ? 'Cancelar' : 'Novo lote'}
+            </Botao>
+          )}
           {podeEditar && lotes.length > 0 && (
             <Botao
               titulo="Apaga de uma vez os lotes que nenhuma ordem e nenhuma baixa referenciam"
@@ -956,11 +962,24 @@ function AbaLotes({
       }
     >
       <p className="mb-3 text-sm text-stone-500">
-        Os lotes vêm do relatório de Saldos da SimpleAgro, importado na tela de Ordens. Lote
-        que já tem ordem ou baixa registrada <b>não pode ser excluído</b> — apagá-lo quebraria
-        o histórico. Para limpar tudo ao encerrar os testes, use{' '}
-        <code>supabase/limpar-dados-teste.sql</code>.
+        Os lotes vêm do relatório de Saldos da SimpleAgro, importado na tela de Ordens — o
+        cadastro manual é para exceções. Lote que já tem ordem ou baixa registrada{' '}
+        <b>não pode ser excluído</b> — apagá-lo quebraria o histórico. Para limpar tudo ao
+        encerrar os testes, use <code>supabase/limpar-dados-teste.sql</code>.
       </p>
+
+      {novo && (
+        <div className="mb-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
+          <FormNovoLote
+            onSalvar={(l) =>
+              acao(async () => {
+                await g.criarLote(l)
+                setNovo(false)
+              })
+            }
+          />
+        </div>
+      )}
       <Tabela
         cabecalho={['Lote', 'Cultivar', 'Tratamento', '#PMS', '#Peso/bag', '#Bags', 'Status', '']}
       >
@@ -1004,5 +1023,137 @@ function AbaLotes({
         <p className="mt-3 text-xs text-stone-500">Mostrando os 300 primeiros.</p>
       )}
     </Cartao>
+  )
+}
+
+/**
+ * Cadastro manual, no mesmo padrão da tabela: Lote · Cultivar · Tratamento ·
+ * PMS · Peso/bag · Bags. O peso/bag segue PMS × fator da embalagem
+ * (5 no BG5M, 2,5 no MEIOBAG), editável para exceções.
+ */
+function FormNovoLote({
+  onSalvar,
+}: {
+  onSalvar: (l: {
+    id: string
+    cultivar: string
+    tratamento: string | null
+    pms: number | null
+    peso_bag_kg: number
+    bags_disp: number
+  }) => void
+}) {
+  const [id, setId] = useState('')
+  const [cultivar, setCultivar] = useState('')
+  const [tratamento, setTratamento] = useState('SEM TSI')
+  const [pms, setPms] = useState('')
+  const [fator, setFator] = useState(5)
+  const [pesoBag, setPesoBag] = useState('')
+  const [bags, setBags] = useState('')
+
+  const pmsNum = parseFloat(pms.replace(',', '.'))
+  const sugestao = Number.isFinite(pmsNum) && pmsNum > 0 ? Math.round(pmsNum * fator) : null
+  const pesoNum = pesoBag.trim()
+    ? parseFloat(pesoBag.replace(',', '.'))
+    : (sugestao ?? NaN)
+  const bagsNum = parseInt(bags, 10)
+  const valido =
+    id.trim() !== '' && cultivar.trim() !== '' &&
+    Number.isFinite(pesoNum) && pesoNum > 0 &&
+    Number.isFinite(bagsNum) && bagsNum > 0
+
+  return (
+    <div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Lote
+          <input
+            value={id}
+            onChange={(e) => setId(e.target.value.toUpperCase())}
+            placeholder="ex.: SV-0999"
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Cultivar
+          <input
+            value={cultivar}
+            onChange={(e) => setCultivar(e.target.value.toUpperCase())}
+            placeholder="ex.: NEO771 I2X"
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Tratamento
+          <input
+            value={tratamento}
+            onChange={(e) => setTratamento(e.target.value.toUpperCase())}
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          PMS (g)
+          <input
+            value={pms}
+            onChange={(e) => setPms(e.target.value)}
+            placeholder="ex.: 171"
+            inputMode="decimal"
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Peso/bag (kg)
+          <div className="mt-1 flex gap-2">
+            <select
+              value={fator}
+              onChange={(e) => setFator(Number(e.target.value))}
+              className={`${INPUT} w-28 normal-case`}
+              title="Fator da embalagem: define a sugestão PMS × fator"
+            >
+              <option value={5}>BG5M ×5</option>
+              <option value={2.5}>MEIOBAG ×2,5</option>
+            </select>
+            <input
+              value={pesoBag}
+              onChange={(e) => setPesoBag(e.target.value)}
+              placeholder={sugestao != null ? `${sugestao} (PMS × ${fator})` : 'kg'}
+              inputMode="decimal"
+              className={`${INPUT} normal-case`}
+            />
+          </div>
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Bags disponíveis
+          <input
+            value={bags}
+            onChange={(e) => setBags(e.target.value)}
+            placeholder="ex.: 20"
+            inputMode="numeric"
+            className={`${INPUT} mt-1 normal-case`}
+          />
+        </label>
+      </div>
+      <p className="mt-2 text-xs text-stone-500">
+        Peso/bag em branco usa a sugestão PMS × fator. O lote entra como <b>Em estoque</b>.
+      </p>
+      <div className="mt-3">
+        <Botao
+          variante="primario"
+          disabled={!valido}
+          onClick={() =>
+            onSalvar({
+              id: id.trim(),
+              cultivar: cultivar.trim(),
+              tratamento: tratamento.trim() || null,
+              pms: Number.isFinite(pmsNum) && pmsNum > 0 ? pmsNum : null,
+              peso_bag_kg: pesoNum,
+              bags_disp: bagsNum,
+            })
+          }
+        >
+          Cadastrar lote
+        </Botao>
+      </div>
+    </div>
   )
 }

@@ -83,8 +83,10 @@ async function baixarModeloOrdens(
 export default function Ordens() {
   const { usuario, permitido } = useAuth()
   const podeCriar = permitido('ordens', 'criar')
+  const podeEditarOrdem = permitido('ordens', 'editar')
   const podeExcluir = permitido('ordens', 'excluir')
   const podePriorizar = permitido('ordens', 'priorizar')
+  const [editando, setEditando] = useState<OrdemVisao | null>(null)
 
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
@@ -615,6 +617,25 @@ export default function Ordens() {
         />
       )}
 
+      {/* ---------------- edição (só antes de iniciar) ---------------- */}
+      {editando && (
+        <NovaOrdemForm
+          key={editando.id}
+          ordem={editando}
+          aoFechar={() => setEditando(null)}
+          lotes={lotes}
+          receitas={receitas}
+          embalagens={embalagens}
+          maquinas={maquinas}
+          ordens={ordens}
+          balanco={balanco}
+          onCriada={(texto) => {
+            setMsg(texto)
+            recarregar().catch(() => {})
+          }}
+        />
+      )}
+
       {/* ---------------- painel de demanda ---------------- */}
       <PainelDemanda balanco={balanco} />
 
@@ -664,8 +685,13 @@ export default function Ordens() {
                 key={dia}
                 dia={dia}
                 lista={lista}
+                podeEditar={podeEditarOrdem}
                 podeExcluir={podeExcluir}
                 podePriorizar={podePriorizar}
+                onEditar={(o) => {
+                  setEditando(o)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
                 onExcluir={(id) =>
                   comErro(async () => {
                     if (!confirm('Excluir esta ordem?')) return
@@ -948,12 +974,14 @@ function Placar({
 }
 
 function FragmentoDia({
-  dia, lista, podeExcluir, podePriorizar, onExcluir, onPrioridade,
+  dia, lista, podeEditar, podeExcluir, podePriorizar, onEditar, onExcluir, onPrioridade,
 }: {
   dia: string
   lista: OrdemVisao[]
+  podeEditar: boolean
   podeExcluir: boolean
   podePriorizar: boolean
+  onEditar: (o: OrdemVisao) => void
   onExcluir: (id: string) => void
   onPrioridade: (id: string, p: 'Normal' | 'Urgente') => void
 }) {
@@ -988,6 +1016,15 @@ function FragmentoDia({
             <td className="max-w-32 truncate px-2 py-1.5 text-stone-500">{o.cliente ?? '—'}</td>
             <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
             <td className="px-2 py-1.5 text-right whitespace-nowrap">
+              {podeEditar && pode(st, 'editar') && (
+                <button
+                  onClick={() => onEditar(o)}
+                  className="mr-1 text-xs underline"
+                  title="Editável enquanto a produção não toca a ordem"
+                >
+                  editar
+                </button>
+              )}
               {podePriorizar && pode(st, 'priorizar') && (
                 <button
                   onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
@@ -1009,8 +1046,13 @@ function FragmentoDia({
   )
 }
 
+/**
+ * Criação e edição na mesma tela. `ordem` preenchida = modo edição, restrito
+ * pela matriz de status a ordens que a produção ainda não tocou — o pai só
+ * renderiza nesse caso, e o trigger de imutabilidade garante no banco.
+ */
 function NovaOrdemForm({
-  lotes, receitas, embalagens, maquinas, ordens, balanco, onCriada,
+  lotes, receitas, embalagens, maquinas, ordens, balanco, ordem, aoFechar, onCriada,
 }: {
   lotes: LoteSementeLinha[]
   receitas: ReceitaCompleta[]
@@ -1018,21 +1060,26 @@ function NovaOrdemForm({
   maquinas: api.LinhaMaquina[]
   ordens: OrdemVisao[]
   balanco: BalancoLinha[]
+  ordem?: OrdemVisao | null
+  aoFechar?: () => void
   onCriada: (msg: string) => void
 }) {
-  const [aberto, setAberto] = useState(false)
-  const [numero, setNumero] = useState('')
-  const [loteId, setLoteId] = useState('')
-  const [receitaId, setReceitaId] = useState('')
-  const [embalagem, setEmbalagem] = useState(embalagens[0]?.codigo ?? '')
-  const [bags, setBags] = useState(0)
-  const [cliente, setCliente] = useState('')
-  const [observacao, setObservacao] = useState('')
-  const [armazem, setArmazem] = useState('')
-  const [bloco, setBloco] = useState('')
-  const [quadra, setQuadra] = useState('')
-  const [maquinaId, setMaquinaId] = useState('')
-  const [dataProg, setDataProg] = useState('')
+  const editando = ordem ?? null
+  const [aberto, setAberto] = useState(editando != null)
+  const [numero, setNumero] = useState(editando?.numero ?? '')
+  const [loteId, setLoteId] = useState(editando?.lote_id ?? '')
+  const [receitaId, setReceitaId] = useState(editando?.receita_id ?? '')
+  const [embalagem, setEmbalagem] = useState(
+    editando?.embalagem ?? embalagens[0]?.codigo ?? '',
+  )
+  const [bags, setBags] = useState(editando?.bags ?? 0)
+  const [cliente, setCliente] = useState(editando?.cliente ?? '')
+  const [observacao, setObservacao] = useState(editando?.observacao ?? '')
+  const [armazem, setArmazem] = useState(editando?.armazem ?? '')
+  const [bloco, setBloco] = useState(editando?.bloco ?? '')
+  const [quadra, setQuadra] = useState(editando?.quadra ?? '')
+  const [maquinaId, setMaquinaId] = useState(editando?.maquina_id ?? '')
+  const [dataProg, setDataProg] = useState(editando?.data_prog ?? '')
   const [buscaLote, setBuscaLote] = useState('')
   const [buscaTrat, setBuscaTrat] = useState('')
   const [erro, setErro] = useState<string | null>(null)
@@ -1085,7 +1132,7 @@ function NovaOrdemForm({
     )
   }, [lote, receita, embalagem, bags, balanco, ordens])
 
-  if (!aberto) {
+  if (!aberto && !editando) {
     return (
       <div className="mb-5">
         <Botao variante="primario" onClick={() => setAberto(true)}>Nova ordem</Botao>
@@ -1095,8 +1142,10 @@ function NovaOrdemForm({
 
   return (
     <Cartao
-      titulo="Nova ordem"
-      acoes={<Botao onClick={() => setAberto(false)}>Fechar</Botao>}
+      titulo={editando ? `Editar ordem ${editando.numero}` : 'Nova ordem'}
+      acoes={
+        <Botao onClick={() => (editando ? aoFechar?.() : setAberto(false))}>Fechar</Botao>
+      }
       className="mb-5"
     >
       {erro && <Erro>{erro}</Erro>}
@@ -1247,7 +1296,7 @@ function NovaOrdemForm({
           onClick={async () => {
             try {
               setErro(null)
-              await g.criarOrdem({
+              const dados = {
                 numero: numero.trim(),
                 cultivar: lote!.cultivar,
                 receita_id: receitaId,
@@ -1261,16 +1310,23 @@ function NovaOrdemForm({
                 quadra: quadra.trim() || null,
                 maquina_id: maquinaId || null,
                 data_prog: dataProg || null,
-              })
-              setNumero(''); setBags(0); setCliente(''); setObservacao('')
-              // endereço costuma repetir entre ordens do mesmo lote: mantém preenchido
-              onCriada(`Ordem criada.`)
+              }
+              if (editando) {
+                await g.atualizarOrdem(editando.id, dados)
+                onCriada(`Ordem ${dados.numero} atualizada.`)
+                aoFechar?.()
+              } else {
+                await g.criarOrdem(dados)
+                setNumero(''); setBags(0); setCliente(''); setObservacao('')
+                // endereço costuma repetir entre ordens do mesmo lote: mantém preenchido
+                onCriada(`Ordem criada.`)
+              }
             } catch (e) {
               setErro(e instanceof Error ? e.message : String(e))
             }
           }}
         >
-          Criar ordem
+          {editando ? 'Salvar alterações' : 'Criar ordem'}
         </Botao>
       </div>
     </Cartao>

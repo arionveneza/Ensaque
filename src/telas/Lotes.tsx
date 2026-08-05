@@ -323,10 +323,49 @@ export default function Lotes() {
           <Vazio>Nenhuma movimentação no período.</Vazio>
         ) : (
           <>
+            {(() => {
+              const baixas = movimentos.filter((m) => !m.estorno)
+              const estornos = movimentos.filter((m) => m.estorno)
+              const conferidasPeriodo = conferencias.filter((c) => c.ts >= `${desde}T00:00:00Z`)
+              const tile = 'rounded border border-stone-200 px-3 py-2 dark:border-stone-800'
+              const rot = 'text-[10px] uppercase tracking-wide text-stone-500'
+              const val = 'num-tabular text-lg font-semibold'
+              return (
+                <div className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                  <div className={tile}>
+                    <p className={rot}>Bags baixados</p>
+                    <p className={val}>{inteiro(baixas.reduce((a, m) => a + m.bags, 0))}</p>
+                  </div>
+                  <div className={tile}>
+                    <p className={rot}>Estornados</p>
+                    <p className={val}>
+                      {inteiro(Math.abs(estornos.reduce((a, m) => a + m.bags, 0)))}
+                    </p>
+                  </div>
+                  <div className={tile}>
+                    <p className={rot}>Líquido</p>
+                    <p className={val}>{inteiro(movimentos.reduce((a, m) => a + m.bags, 0))}</p>
+                  </div>
+                  <div className={tile}>
+                    <p className={rot}>Peso baixado</p>
+                    <p className={val}>
+                      {n(baixas.reduce((a, m) => a + (m.peso_t ?? 0), 0), 1)} t
+                    </p>
+                  </div>
+                  <div className={tile}>
+                    <p className={rot}>Lotes distintos</p>
+                    <p className={val}>{new Set(baixas.map((m) => m.lote_id)).size}</p>
+                  </div>
+                  <div className={tile}>
+                    <p className={rot}>Conferências</p>
+                    <p className={val}>{conferidasPeriodo.length}</p>
+                  </div>
+                </div>
+              )
+            })()}
             <p className="mb-3 text-sm text-stone-500">
               {movimentos.filter((m) => !m.estorno).length} baixa(s) ·{' '}
-              {movimentos.filter((m) => m.estorno).length} estorno(s) ·{' '}
-              {inteiro(movimentos.reduce((a, m) => a + m.bags, 0))} bags líquidos
+              {movimentos.filter((m) => m.estorno).length} estorno(s) no período
             </p>
             <Tabela cabecalho={['Data', 'Lote', '#Bags', '#Peso', 'Tipo']}>
               {movimentos.map((m) => (
