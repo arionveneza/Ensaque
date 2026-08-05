@@ -4,6 +4,7 @@ import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import type { BalancoLinha, LoteSementeLinha, OrdemVisao, ReceitaCompleta } from '@/dados/api-gestao'
 import {
+  EMBALAGEM_DEPARA,
   converterPedidos, converterSaldos, ehRelatorioPedidos, ehRelatorioSaldos,
   type Linha, type ResultadoPedidos, type ResultadoSaldos,
 } from '@/dominio/importacao/simpleagro'
@@ -397,6 +398,22 @@ export default function Ordens() {
                   </div>
                 )}
 
+              {/* Embalagem sem de-para descarta a linha inteira — isso é
+                  demanda de TSI sumindo do balanço, tem que gritar. */}
+              {Object.keys(previaPedidos.resumo.embalagemDesconhecida).length > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Embalagem não reconhecida — pedidos DESCARTADOS:</b>{' '}
+                    {Object.entries(previaPedidos.resumo.embalagemDesconhecida)
+                      .map(([cod, bags]) => `${cod} (${inteiro(bags)} bg)`)
+                      .join(' · ')}
+                    . O importador conhece BB5M → BG5M e BMB → MEIOBAG. Se apareceu um código
+                    novo no relatório, ele precisa entrar no de-para — esses bags não estão no
+                    balanço.
+                  </Aviso>
+                </div>
+              )}
+
               {Object.keys(previaPedidos.resumo.semReceita).length > 0 && (
                 <div className="mt-3">
                   <Aviso>
@@ -761,7 +778,7 @@ function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{b.cultivar}</td>
                     <td className="px-2 py-1.5">{b.tratamento}</td>
-                    <td className="px-2 py-1.5">{b.embalagem}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5"><Emb codigo={b.embalagem} /></td>
                     <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.pedido_aprovado)}</td>
                     <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
                       {inteiro(b.pedido_pendente)}
@@ -800,6 +817,26 @@ function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
         </>
       )}
     </Cartao>
+  )
+}
+
+/**
+ * Código comercial de cada embalagem (BG5M → BB5M, MEIOBAG → BMB), derivado
+ * do de-para da importação. O painel mostra os dois porque o PCP e o
+ * comercial falam BMB enquanto o app fala MEIOBAG — quem procura um código
+ * tem que achar pelo outro.
+ */
+const CODIGO_COMERCIAL: Record<string, string> = Object.fromEntries(
+  Object.entries(EMBALAGEM_DEPARA).map(([comercial, v]) => [v.codigo, comercial]),
+)
+
+function Emb({ codigo }: { codigo: string }) {
+  const comercial = CODIGO_COMERCIAL[codigo]
+  return (
+    <>
+      {codigo}
+      {comercial && <span className="text-stone-400"> · {comercial}</span>}
+    </>
   )
 }
 

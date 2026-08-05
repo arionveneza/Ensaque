@@ -154,7 +154,7 @@ export function converterPedidos(
       continue
     }
     const embRaw = txt(r[iEmb])
-    const emb = EMBALAGEM_DEPARA[embRaw]
+    const emb = EMBALAGEM_DEPARA[normaliza(embRaw)]
     if (!emb) {
       resumo.embalagemDesconhecida[embRaw || '?'] =
         (resumo.embalagemDesconhecida[embRaw || '?'] ?? 0) + bags
@@ -279,7 +279,7 @@ export function converterSaldos(rows: Linha[]): ResultadoSaldos {
   for (const r of rows.slice(1)) {
     const nome = txt(r[iNome])
     const ultimoToken = nome.split(/\s+/).pop() ?? ''
-    const emb = EMBALAGEM_DEPARA[ultimoToken]
+    const emb = EMBALAGEM_DEPARA[normaliza(ultimoToken)]
     if (!emb) {
       resumo.granel++
       continue

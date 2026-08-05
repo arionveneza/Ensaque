@@ -93,6 +93,17 @@ describe('conversao de pedidos', () => {
     expect(r.linhas.map((l) => l.embalagem).sort()).toEqual(['BG5M', 'MEIOBAG'])
   })
 
+  it('reconhece a embalagem independente de caixa', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'bmb', 20),
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', ' BMB ', 5),
+    ])
+    expect(r.linhas).toHaveLength(1)
+    expect(r.linhas[0].embalagem).toBe('MEIOBAG')
+    expect(r.linhas[0].bags).toBe(25)
+  })
+
   it('reporta embalagem sem de-para em vez de somar errado', () => {
     const r = converterPedidos([
       CAB_PEDIDOS,
