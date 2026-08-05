@@ -6,7 +6,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
-  corDoStatus, diaCurto, exportarCsv, inteiro, n, somaDias,
+  corDoStatus, diaCurto, enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
 
 type Periodo = 'dia' | 'semana' | 'mes'
@@ -157,7 +157,7 @@ export default function Lotes() {
                   <dd className="num-tabular font-semibold">{n(a.lote.peso_bag_kg, 0)} kg</dd>
                 </div>
               </dl>
-              <Tabela cabecalho={['Ordem', 'Tratamento', 'Dia', '#Bags', 'Status']}>
+              <Tabela cabecalho={['Ordem', 'Tratamento', 'Endereço', 'Dia', '#Bags', 'Status']}>
                 {a.abertas.map((o) => (
                   <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">
@@ -169,6 +169,16 @@ export default function Lotes() {
                       )}
                     </td>
                     <td className="px-2 py-1.5">{o.receita_nome}</td>
+                    {/* é a informação que a separação usa: onde ir buscar */}
+                    <td className="px-2 py-1.5 font-medium">
+                      {o.armazem || o.bloco || o.quadra ? (
+                        enderecoLote(o)
+                      ) : (
+                        <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
+                          sem endereço
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
                     <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                     <td className="px-2 py-1.5">

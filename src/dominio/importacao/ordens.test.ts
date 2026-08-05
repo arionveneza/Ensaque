@@ -12,6 +12,12 @@ const CTX: ContextoImportacao = {
 const CAB = ['Ordem', 'Lote', 'Tratamento', 'Embalagem', 'Bags', 'Cliente', 'Obs', 'Máquina', 'Dia']
 const linha = (...v: (string | number | Date | null)[]): Linha => v
 
+/** Cabeçalho com as colunas de endereço, na ordem em que o modelo as gera. */
+const CAB_END = [
+  'Ordem', 'Lote', 'Tratamento', 'Embalagem', 'Bags',
+  'Cliente', 'Obs', 'Armazém', 'Bloco', 'Quadra', 'Máquina', 'Dia',
+]
+
 describe('deteccao da planilha de ordens', () => {
   it('reconhece pelo conjunto minimo de colunas', () => {
     expect(ehPlanilhaDeOrdens([CAB])).toBe(true)
@@ -41,6 +47,9 @@ describe('conversao de ordens', () => {
       bags: 45,
       cliente: 'Fulano',
       observacao: 'SEM GRAFITE',
+      armazem: null,
+      bloco: null,
+      quadra: null,
       maquinaId: 'TSI1',
       dataProg: '2026-07-28',
     })
@@ -138,5 +147,54 @@ describe('conversao de ordens', () => {
   it('aceita bags com virgula decimal', () => {
     const r = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', '10,5')], CTX)
     expect(r.ordens[0].bags).toBe(10.5)
+  })
+})
+
+describe('endereco do lote na ordem', () => {
+  it('le armazem, bloco e quadra', () => {
+    const r = converterOrdens(
+      [CAB_END, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', 'ARMAZEM C', 'BL01', 'QD04')],
+      CTX,
+    )
+    expect(r.problemas).toHaveLength(0)
+    expect(r.ordens[0].armazem).toBe('ARMAZEM C')
+    expect(r.ordens[0].bloco).toBe('BL01')
+    expect(r.ordens[0].quadra).toBe('QD04')
+  })
+
+  it('normaliza para maiusculas, para o endereco nao duplicar por caixa', () => {
+    const r = converterOrdens(
+      [CAB_END, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', 'armazem c', 'bl01', 'qd04')],
+      CTX,
+    )
+    expect(r.ordens[0].armazem).toBe('ARMAZEM C')
+    expect(r.ordens[0].bloco).toBe('BL01')
+  })
+
+  it('endereco e opcional: sem as colunas a ordem entra igual', () => {
+    const r = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10)], CTX)
+    expect(r.problemas).toHaveLength(0)
+    expect(r.ordens[0].armazem).toBeNull()
+  })
+
+  it('endereco parcial e aceito: a logistica completa depois', () => {
+    const r = converterOrdens(
+      [CAB_END, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', 'ARMAZEM C', '', '')],
+      CTX,
+    )
+    expect(r.problemas).toHaveLength(0)
+    expect(r.ordens[0].armazem).toBe('ARMAZEM C')
+    expect(r.ordens[0].bloco).toBeNull()
+  })
+
+  it('aceita os nomes de coluna da origem: Deposito, BL e QD', () => {
+    const cab = ['Ordem', 'Lote', 'Tratamento', 'Embalagem', 'Bags', 'Deposito', 'BL', 'QD']
+    const r = converterOrdens(
+      [cab, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, 'ARMAZEM A', 'BL07', 'QD02')],
+      CTX,
+    )
+    expect(r.ordens[0].armazem).toBe('ARMAZEM A')
+    expect(r.ordens[0].bloco).toBe('BL07')
+    expect(r.ordens[0].quadra).toBe('QD02')
   })
 })

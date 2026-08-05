@@ -23,6 +23,10 @@ export interface OrdemVisao {
   lote_id: string
   cliente: string | null
   observacao: string | null
+  /** Endereço de onde buscar o lote para esta ordem. */
+  armazem: string | null
+  bloco: string | null
+  quadra: string | null
   prioridade: 'Normal' | 'Urgente'
   maquina_id: string | null
   data_prog: string | null
@@ -65,6 +69,10 @@ export interface NovaOrdem {
   lote_id: string
   cliente?: string | null
   observacao?: string | null
+  /** Endereço de onde buscar o lote: armazém, bloco e quadra. */
+  armazem?: string | null
+  bloco?: string | null
+  quadra?: string | null
   prioridade?: 'Normal' | 'Urgente'
   maquina_id?: string | null
   data_prog?: string | null

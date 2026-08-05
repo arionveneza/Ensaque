@@ -16,6 +16,10 @@ export interface OrdemImportada {
   bags: number
   cliente: string | null
   observacao: string | null
+  /** Endereço de onde buscar o lote para esta ordem. */
+  armazem: string | null
+  bloco: string | null
+  quadra: string | null
   maquinaId: string | null
   dataProg: string | null
 }
@@ -54,6 +58,11 @@ const SINONIMOS: Record<keyof OrdemImportada, string[]> = {
   bags: ['bags', 'quantidade', 'qtd', 'qtdbags'],
   cliente: ['cliente'],
   observacao: ['observacao', 'obs', 'observacoes'],
+  // o relatório de Saldos chama de ARMAZEM e ENDERECO (ex.: BL01-QD04);
+  // aqui bloco e quadra são separados, mas os nomes da origem também valem
+  armazem: ['armazem', 'deposito', 'armazenagem'],
+  bloco: ['bloco', 'bl'],
+  quadra: ['quadra', 'qd'],
   maquinaId: ['maquina', 'maquinaid', 'tsi'],
   dataProg: ['dia', 'data', 'dataprog', 'dataprogramacao'],
 }
@@ -159,6 +168,10 @@ export function converterOrdens(rows: Linha[], ctx: ContextoImportacao): Resulta
     }
     vistas.add(chave)
 
+    // endereço é livre e opcional: a logística pode preencher depois
+    const opcional = (idx: number | undefined) =>
+      texto(idx != null ? r[idx] : '').toUpperCase() || null
+
     ordens.push({
       numero,
       loteId,
@@ -167,6 +180,9 @@ export function converterOrdens(rows: Linha[], ctx: ContextoImportacao): Resulta
       bags,
       cliente: texto(cols.cliente != null ? r[cols.cliente] : '') || null,
       observacao: texto(cols.observacao != null ? r[cols.observacao] : '') || null,
+      armazem: opcional(cols.armazem),
+      bloco: opcional(cols.bloco),
+      quadra: opcional(cols.quadra),
       maquinaId,
       dataProg,
     })

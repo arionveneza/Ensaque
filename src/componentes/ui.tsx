@@ -13,6 +13,15 @@ export const inteiro = (v: number | null | undefined): string =>
 export const diaCurto = (iso: string | null): string =>
   !iso ? '—' : `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 
+/**
+ * Endereço do lote em uma linha: "ARMAZEM C · BL01 · QD04".
+ * Aceita endereço parcial — a logística às vezes só sabe o armazém.
+ */
+export const enderecoLote = (
+  o: { armazem?: string | null; bloco?: string | null; quadra?: string | null },
+  vazio = '—',
+): string => [o.armazem, o.bloco, o.quadra].filter(Boolean).join(' · ') || vazio
+
 const DOW = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 export const diaSemana = (iso: string): string =>
   DOW[new Date(`${iso}T12:00:00`).getDay()]

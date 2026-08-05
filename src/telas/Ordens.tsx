@@ -18,7 +18,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
-  corDoStatus, diaCurto, inteiro, n,
+  corDoStatus, diaCurto, enderecoLote, inteiro, n,
 } from '@/componentes/ui'
 
 const SA_BASE = 'https://sementesveneza.painel.simpleagro.com.br:3333'
@@ -34,6 +34,9 @@ const LAYOUT_ORDENS: { coluna: string; obrigatoria: boolean; obs: string }[] = [
   { coluna: 'Bags', obrigatoria: true, obs: 'Quantidade, maior que zero. Aceita Quantidade ou Qtd.' },
   { coluna: 'Cliente', obrigatoria: false, obs: 'Só informativo, aparece na ordem.' },
   { coluna: 'Obs', obrigatoria: false, obs: 'Observação de processo, ex.: SEM GRAFITE. Aparece destacada no apontamento.' },
+  { coluna: 'Armazém', obrigatoria: false, obs: 'Onde buscar o lote, ex.: ARMAZEM C. Aceita Deposito.' },
+  { coluna: 'Bloco', obrigatoria: false, obs: 'Ex.: BL01. Aceita BL.' },
+  { coluna: 'Quadra', obrigatoria: false, obs: 'Ex.: QD04. Aceita QD.' },
   { coluna: 'Maquina', obrigatoria: false, obs: 'TSI1 ou TSI2. Em branco, a ordem cai no pool para programar depois.' },
   { coluna: 'Dia', obrigatoria: false, obs: 'Data da programação, em 28/07/2026 ou 2026-07-28.' },
 ]
@@ -64,10 +67,11 @@ async function baixarModeloOrdens(
       casas: 0,
     })),
     [
-      // programada: máquina e dia preenchidos
-      ['79500-1', lote, receita, emb, 45, 'CLIENTE EXEMPLO', '', maquina, hoje],
-      // no pool: sem máquina e sem dia, para programar na tela de Programação
-      ['79500-2', outroLote, receita, emb, 30, '', 'SEM GRAFITE', '', ''],
+      // programada, com endereço completo
+      ['79500-1', lote, receita, emb, 45, 'CLIENTE EXEMPLO', '',
+        'ARMAZEM C', 'BL01', 'QD04', maquina, hoje],
+      // no pool e sem endereço: a logística preenche na separação
+      ['79500-2', outroLote, receita, emb, 30, '', 'SEM GRAFITE', '', '', '', '', ''],
     ],
   )
 }
@@ -225,14 +229,17 @@ export default function Ordens() {
                   { titulo: 'Ordem', largura: 14 }, { titulo: 'Cultivar', largura: 18 },
                   { titulo: 'Tratamento', largura: 20 }, { titulo: 'Embalagem', largura: 12 },
                   { titulo: 'Lote', largura: 18 },
+                  { titulo: 'Armazém', largura: 14 }, { titulo: 'Bloco', largura: 10 },
+                  { titulo: 'Quadra', largura: 10 },
                   { titulo: 'Bags', largura: 8, tipo: 'numero', casas: 0 },
                   { titulo: 'Peso (t)', largura: 10, tipo: 'numero', casas: 2 },
                   { titulo: 'Cliente', largura: 28 }, { titulo: 'Status', largura: 20 },
                 ],
                 filtradas.map((o) => [
                   o.data_prog ?? '', o.maquina_id ?? '', o.seq, o.numero, o.cultivar,
-                  o.receita_nome, o.embalagem, o.lote_id, o.bags, o.peso_t,
-                  o.cliente ?? '', o.status_efetivo,
+                  o.receita_nome, o.embalagem, o.lote_id,
+                  o.armazem ?? '', o.bloco ?? '', o.quadra ?? '',
+                  o.bags, o.peso_t, o.cliente ?? '', o.status_efetivo,
                 ]),
               ).catch((e) => setErro(`exportar: ${e instanceof Error ? e.message : String(e)}`))
             }
@@ -250,11 +257,11 @@ export default function Ordens() {
                   (filtroMaquina ? ` · ${filtroMaquina}` : '') +
                   (busca.trim() ? ` · busca "${busca.trim()}"` : ''),
                 ['Dia', 'Máq.', 'Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.',
-                  'Lote', 'Bags', 'Peso (t)', 'Status'],
+                  'Lote', 'Endereço', 'Bags', 'Peso (t)', 'Status'],
                 filtradas.map((o) => [
                   diaCurto(o.data_prog), o.maquina_id ?? '—', o.seq ?? '—', o.numero,
-                  o.cultivar, o.receita_nome, o.embalagem, o.lote_id, o.bags,
-                  n(o.peso_t, 1), o.status_efetivo,
+                  o.cultivar, o.receita_nome, o.embalagem, o.lote_id,
+                  enderecoLote(o), o.bags, n(o.peso_t, 1), o.status_efetivo,
                 ]),
               )
             }
@@ -488,6 +495,9 @@ export default function Ordens() {
                           lote_id: o.loteId,
                           cliente: o.cliente,
                           observacao: o.observacao,
+                          armazem: o.armazem,
+                          bloco: o.bloco,
+                          quadra: o.quadra,
                           maquina_id: o.maquinaId,
                           data_prog: o.dataProg,
                         }
@@ -607,7 +617,7 @@ export default function Ordens() {
           <Vazio>Nenhuma ordem encontrada com esses filtros.</Vazio>
         ) : (
           <Tabela
-            cabecalho={['Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.', 'Lote',
+            cabecalho={['Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.', 'Lote', 'Endereço',
               '#Bags', '#Peso', 'Cliente', 'Status', '']}
           >
             {porDia.map(([dia, lista]) => (
@@ -647,7 +657,7 @@ function FragmentoDia({
   return (
     <>
       <tr className="bg-stone-100/70 dark:bg-stone-800/40">
-        <td colSpan={7} className="px-2 py-1.5 text-xs font-semibold uppercase">
+        <td colSpan={8} className="px-2 py-1.5 text-xs font-semibold uppercase">
           {dia === 'sem-dia' ? 'Sem dia programado' : `Dia ${diaCurto(dia)}`}
         </td>
         <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold">
@@ -668,6 +678,7 @@ function FragmentoDia({
             <td className="px-2 py-1.5">{o.receita_nome}</td>
             <td className="px-2 py-1.5">{o.embalagem}</td>
             <td className="px-2 py-1.5 font-medium">{o.lote_id}</td>
+            <td className="px-2 py-1.5 text-xs text-stone-500">{enderecoLote(o)}</td>
             <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
             <td className="num-tabular px-2 py-1.5 text-right">{n(o.peso_t, 1)} t</td>
             <td className="max-w-32 truncate px-2 py-1.5 text-stone-500">{o.cliente ?? '—'}</td>
@@ -713,6 +724,9 @@ function NovaOrdemForm({
   const [bags, setBags] = useState(0)
   const [cliente, setCliente] = useState('')
   const [observacao, setObservacao] = useState('')
+  const [armazem, setArmazem] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [quadra, setQuadra] = useState('')
   const [maquinaId, setMaquinaId] = useState('')
   const [dataProg, setDataProg] = useState('')
   const [erro, setErro] = useState<string | null>(null)
@@ -823,7 +837,39 @@ function NovaOrdemForm({
             />
           </div>
         </Campo>
+        <Campo rotulo="Endereço do lote (opcional)">
+          <div className="flex gap-2">
+            <input
+              value={armazem}
+              onChange={(e) => setArmazem(e.target.value.toUpperCase())}
+              placeholder="ARMAZEM C"
+              title="Armazém — onde buscar o lote para esta ordem"
+              className={INPUT}
+            />
+            <input
+              value={bloco}
+              onChange={(e) => setBloco(e.target.value.toUpperCase())}
+              placeholder="BL01"
+              title="Bloco"
+              className={`${INPUT} w-24`}
+            />
+            <input
+              value={quadra}
+              onChange={(e) => setQuadra(e.target.value.toUpperCase())}
+              placeholder="QD04"
+              title="Quadra"
+              className={`${INPUT} w-24`}
+            />
+          </div>
+        </Campo>
       </div>
+
+      {lote && (
+        <p className="mt-2 text-xs text-stone-500">
+          O mesmo lote pode estar em vários endereços — por isso o endereço fica na ordem, não no
+          lote. Em branco, a logística preenche na separação.
+        </p>
+      )}
 
       {analise && analise.avisos.length > 0 && (
         <div className="mt-4 space-y-2">
@@ -857,10 +903,14 @@ function NovaOrdemForm({
                 lote_id: loteId,
                 cliente: cliente.trim() || null,
                 observacao: observacao.trim() || null,
+                armazem: armazem.trim() || null,
+                bloco: bloco.trim() || null,
+                quadra: quadra.trim() || null,
                 maquina_id: maquinaId || null,
                 data_prog: dataProg || null,
               })
               setNumero(''); setBags(0); setCliente(''); setObservacao('')
+              // endereço costuma repetir entre ordens do mesmo lote: mantém preenchido
               onCriada(`Ordem criada.`)
             } catch (e) {
               setErro(e instanceof Error ? e.message : String(e))

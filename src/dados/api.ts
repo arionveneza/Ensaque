@@ -44,6 +44,9 @@ export interface LinhaOrdem {
   lote_id: string
   cliente: string | null
   observacao: string | null
+  armazem: string | null
+  bloco: string | null
+  quadra: string | null
   prioridade: 'Normal' | 'Urgente'
   maquina_id: string | null
   data_prog: string | null
@@ -75,6 +78,7 @@ export interface LinhaOrdem {
 
 const SELECT_ORDEM = `
   id, numero, cultivar, receita_id, embalagem, bags, lote_id, cliente, observacao,
+  armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente,
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status ),
   receitas ( nome, receita_itens ( produto_id, dose, tanque ) ),

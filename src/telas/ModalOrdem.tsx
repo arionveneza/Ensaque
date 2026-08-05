@@ -15,6 +15,7 @@ import {
   temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
+import { enderecoLote } from '@/componentes/ui'
 
 const num = (v: number | null | undefined, casas = 1) =>
   v == null || Number.isNaN(v)
@@ -116,6 +117,12 @@ export default function ModalOrdem({
             <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">
               {ordem.receitas.nome} · {ordem.embalagem} · {ordem.bags} bags · Lote{' '}
               <span className="font-medium">{ordem.lote_id}</span>
+              {(ordem.armazem || ordem.bloco || ordem.quadra) && (
+                <>
+                  {' · '}
+                  <span className="font-medium">{enderecoLote(ordem)}</span>
+                </>
+              )}
             </p>
           </div>
           <button
