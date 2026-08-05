@@ -59,8 +59,6 @@ export interface ResumoPedidos {
 }
 
 /**
- * `Integrado` é o único Status Pedido que gera trabalho.
- *
  * A comparação ignora caixa e acento de propósito: uma renomeação na origem
  * (`INTEGRADO`, `integrado`) descartaria o arquivo inteiro e o painel mostraria
  * zero demanda — indistinguível de "não há pedido". Falha calada é pior que
@@ -69,7 +67,14 @@ export interface ResumoPedidos {
 const normaliza = (s: string): string =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
 
-const STATUS_VALE = 'INTEGRADO'
+/**
+ * Status Pedido que geram trabalho: pedido firme (decisão do PCP, 05/08/2026).
+ * `Aprovado` é o pedido aprovado comercialmente; `Integrado` é o aprovado que
+ * já sincronizou com o ERP — no arquivo de referência de 28/07/2026 só existe
+ * `Integrado`. Cotação, cancelado, reprovado e aguardando aprovação ficam
+ * fora, mas a prévia mostra quantos bags de TSI real cada um levou.
+ */
+const STATUS_FIRME = new Set(['APROVADO', 'INTEGRADO'])
 /** `Não Aprovado` normaliza para `NAO APROVADO`: a igualdade exata basta. */
 const FINANCEIRO_APROVADO = 'APROVADO'
 
@@ -87,7 +92,8 @@ export const ehRelatorioPedidos = (rows: Linha[]): boolean => {
 
 /**
  * Regras validadas contra o arquivo real de 1.196 linhas:
- * - coluna E `Status Pedido`: só `Integrado`
+ * - coluna `Status Pedido`: só pedido firme — `Aprovado` ou `Integrado`
+ *   (as colunas são achadas pelo NOME do cabeçalho; a letra varia por export)
  * - coluna H `Status Financeiro`: `Aprovado` entra no balanço
  * - coluna BW `Saldo a Faturar` = quantidade em bags (já líquida do faturado)
  * - coluna AT `Tratamento` = código da receita; `SEM TSI` é excluído
@@ -126,7 +132,7 @@ export function converterPedidos(
     const tratamento = txt(r[iTrat])
     const bags = num(r[iSaldo])
 
-    if (normaliza(statusRaw) !== STATUS_VALE) {
+    if (!STATUS_FIRME.has(normaliza(statusRaw))) {
       resumo.foraStatus++
       // só reporta o descarte que era trabalho de TSI de verdade: cancelado
       // de SEM TSI ou com saldo zerado é ruído, não perda

@@ -29,15 +29,18 @@ describe('deteccao do relatorio de pedidos', () => {
 })
 
 describe('conversao de pedidos', () => {
-  it('mantem apenas pedidos Integrados', () => {
+  it('mantem apenas pedido firme: Aprovado ou Integrado', () => {
     const r = converterPedidos([
       CAB_PEDIDOS,
       pedido('Integrado', 'Aprovado', '761 I2X - 761 I2X', 'FTZ60', 'BB5M', 10),
+      pedido('Aprovado', 'Aprovado', '761 I2X - 761 I2X', 'FTZ60', 'BB5M', 7),
       pedido('Em cotação', 'Aprovado', '761 I2X - 761 I2X', 'FTZ60', 'BB5M', 99),
       pedido('Cancelado', 'Aprovado', '761 I2X - 761 I2X', 'FTZ60', 'BB5M', 99),
+      pedido('Aguardando Aprovação', 'Aprovado', '761 I2X - 761 I2X', 'FTZ60', 'BB5M', 99),
+      pedido('Reprovado', 'Aprovado', '761 I2X - 761 I2X', 'FTZ60', 'BB5M', 99),
     ])
-    expect(r.totalAprovado).toBe(10)
-    expect(r.resumo.foraStatus).toBe(2)
+    expect(r.totalAprovado).toBe(17)
+    expect(r.resumo.foraStatus).toBe(4)
   })
 
   it('separa aprovado de aguardando aprovacao financeira', () => {

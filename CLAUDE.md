@@ -148,7 +148,9 @@ saldo = pedidos_APROVADOS − estoque_PA − ordens_abertas
 `https://sementesveneza.painel.simpleagro.com.br:3333/sales/relatorios/pedidos-analitico-resumido`
 
 Regras de conversão (validadas contra arquivo real de 1.196 linhas):
-- **Coluna E `Status Pedido`**: só `Integrado`.
+- **Coluna `Status Pedido`** (E no arquivo de referência; a letra varia por export, o importador
+  acha pelo nome): só pedido firme — `Aprovado` ou `Integrado` (aprovado já sincronizado no ERP).
+  Decisão do PCP em 05/08/2026; no arquivo de referência só existe `Integrado`.
 - **Coluna H `Status Financeiro`**: `Aprovado` entra no balanço; `Não Aprovado` é importado como
   *aguardando aprovação* (visível, fora do cálculo).
 - **Coluna BW `Saldo a Faturar`** = quantidade em bags (já líquida do faturado).

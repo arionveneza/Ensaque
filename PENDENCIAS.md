@@ -45,13 +45,12 @@ O código saiu do app, mas ficaram coisas no projeto:
 
 Nenhuma é problema de código; todas dependem de definição da operação.
 
-- **Pedido `Aguardando Aprovação` fica invisível.** O importador só aceita `Status Pedido =
-  Integrado`. No arquivo de 28/07/2026 isso descarta **28 linhas / 213 bg de TSI real**, sendo
-  **16 linhas / 119 bg** de `Aguardando Aprovação` — pedido em aprovação comercial, que tende a
-  virar firme. Hoje não aparece nem na coluna `#Aguardando`, que mostra só o
-  `Status Financeiro = Não Aprovado`. **Dois "aguardando" diferentes, um deles cego.**
-  Decidir: `Aguardando Aprovação` e `Reaberto` devem entrar como demanda pendente?
-  A prévia da importação já mostra o número descartado, então a perda é visível.
+- ~~Pedido `Aguardando Aprovação` fica invisível~~ — **DECIDIDO em 05/08/2026**: só pedido
+  firme entra (`Status Pedido = Aprovado` ou `Integrado`). Cotação, cancelado, reprovado,
+  aguardando aprovação e reaberto ficam fora — a prévia da importação mostra quantos bags de
+  TSI real cada status descartou. O "aguardando" do painel é só o
+  `Status Financeiro = Não Aprovado`: importado, visível, fora do saldo. Quantidade é a
+  coluna `Saldo a Faturar` (BW), já líquida do faturado — sempre foi.
 - **Qualidade reprovada:** hoje é só um carimbo. Gera retrabalho? Bloqueia o lote? Cria nova ordem?
 - **Estoque de químicos:** o app registra consumo real mas não sabe o saldo de insumo, então
   não consegue avisar "o Fortenza não cobre a programação da semana".

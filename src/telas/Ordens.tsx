@@ -351,7 +351,7 @@ export default function Ordens() {
                   {inteiro(previaPedidos.totalPendente)} aguardando aprovação financeira
                 </li>
                 <li className="text-stone-500">
-                  Fora: {previaPedidos.resumo.foraStatus} não-Integrado ·{' '}
+                  Fora: {previaPedidos.resumo.foraStatus} sem status firme (Aprovado/Integrado) ·{' '}
                   {previaPedidos.resumo.semTsi} SEM TSI · {previaPedidos.resumo.saldoZero} sem saldo
                 </li>
               </ul>
@@ -377,8 +377,9 @@ export default function Ordens() {
                       ))}
                   </ul>
                   <p className="mt-1 pl-4 text-xs text-stone-400">
-                    Só <b>Integrado</b> gera trabalho de TSI. Esses pedidos não entram nem como
-                    aguardando — some da programação e do balanço.
+                    Só pedido firme (<b>Aprovado</b> ou <b>Integrado</b>) gera trabalho de TSI.
+                    Esses pedidos não entram nem como aguardando — somem da programação e do
+                    balanço. O aguardando do painel é outro: Status Financeiro = Não Aprovado.
                   </p>
                 </details>
               )}
@@ -389,8 +390,9 @@ export default function Ordens() {
                     <Aviso>
                       <b>Nenhuma linha aproveitada em {previaPedidos.resumo.totalLinhas}.</b>{' '}
                       Confira se o arquivo é o “Pedidos Analítico Resumido” da safra certa. Se a
-                      SimpleAgro tiver renomeado a coluna Status Pedido ou o valor Integrado, o
-                      importador precisa de ajuste — não importe por cima da carga boa.
+                      SimpleAgro tiver renomeado a coluna Status Pedido ou os valores
+                      Aprovado/Integrado, o importador precisa de ajuste — não importe por cima
+                      da carga boa.
                     </Aviso>
                   </div>
                 )}
