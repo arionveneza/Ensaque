@@ -361,6 +361,8 @@ export interface ChecklistQualidade {
   id: string
   ordem_id: string
   etapa: 'processo' | 'final'
+  /** De onde saiu a amostra em processo: bowl da máquina ou bag ensacado. */
+  origem: 'BOWL' | 'BAG' | null
   recobrimento: number
   umidade_ok: boolean
   po_ok: boolean
@@ -369,6 +371,8 @@ export interface ChecklistQualidade {
 }
 
 export interface DadosChecklist {
+  /** Obrigatória na etapa em processo; a final não usa. */
+  origem?: 'BOWL' | 'BAG'
   recobrimento: number
   umidadeOk: boolean
   poOk: boolean
@@ -378,7 +382,7 @@ export interface DadosChecklist {
 export async function listarChecksQualidade(): Promise<ChecklistQualidade[]> {
   const { data, error } = await supabase
     .from('qualidade_checks')
-    .select('id, ordem_id, etapa, recobrimento, umidade_ok, po_ok, observacao, ts')
+    .select('id, ordem_id, etapa, origem, recobrimento, umidade_ok, po_ok, observacao, ts')
     .order('ts', { ascending: false })
   erro('checklists de qualidade', error)
   return (data ?? []) as ChecklistQualidade[]
@@ -390,9 +394,11 @@ export async function registrarCheckProcesso(
   d: DadosChecklist,
   inspetorId: string,
 ): Promise<void> {
+  if (!d.origem) throw new Error('Informe a origem da amostra: BOWL ou BAG.')
   const { error } = await supabase.from('qualidade_checks').insert({
     ordem_id: ordemId,
     etapa: 'processo',
+    origem: d.origem,
     recobrimento: d.recobrimento,
     umidade_ok: d.umidadeOk,
     po_ok: d.poOk,

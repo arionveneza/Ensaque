@@ -682,8 +682,50 @@ export default function Ordens() {
  */
 function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
   const [filtro, setFiltro] = useState<'tudo' | SituacaoDemanda | 'sem-receita'>('tudo')
+  // a tabela é comprida; a preferência de ocultar sobrevive ao recarregamento
+  const [oculto, setOculto] = useState(
+    () => localStorage.getItem('tsi.demanda.oculta') === '1',
+  )
+  const alternar = () => {
+    const v = !oculto
+    setOculto(v)
+    localStorage.setItem('tsi.demanda.oculta', v ? '1' : '0')
+  }
 
   const resumo = useMemo(() => resumoBalanco(balanco), [balanco])
+
+  // recolhido: só o título e a linha-resumo — a informação crítica continua à vista
+  if (oculto) {
+    return (
+      <Cartao
+        titulo="Demanda × Estoque × Planejado"
+        acoes={<Botao onClick={alternar}>Mostrar</Botao>}
+        className="mb-5"
+      >
+        {balanco.length === 0 ? (
+          <p className="text-sm text-stone-500">Nenhuma carga de demanda importada ainda.</p>
+        ) : (
+          <p className="text-sm text-stone-600 dark:text-stone-300">
+            Falta produzir <b>{inteiro(resumo.faltando)} bg</b>
+            {resumo.sobrando > 0 && (
+              <> · vai sobrar{' '}
+                <b className="text-amber-600 dark:text-amber-400">
+                  {inteiro(resumo.sobrando)} bg
+                </b>
+              </>
+            )}
+            {resumo.semPedido > 0 && (
+              <> · sem pedido{' '}
+                <b className="text-red-600 dark:text-red-400">
+                  {inteiro(resumo.semPedido)} bg
+                </b>
+              </>
+            )}
+          </p>
+        )}
+      </Cartao>
+    )
+  }
 
   const linhas = useMemo(() => {
     const lista =
@@ -708,7 +750,11 @@ function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
   ]
 
   return (
-    <Cartao titulo="Demanda × Estoque × Planejado" className="mb-5">
+    <Cartao
+      titulo="Demanda × Estoque × Planejado"
+      acoes={<Botao onClick={alternar}>Ocultar</Botao>}
+      className="mb-5"
+    >
       {balanco.length === 0 ? (
         <Vazio>
           Nenhuma carga de demanda importada ainda. Suba o relatório
@@ -974,10 +1020,32 @@ function NovaOrdemForm({
   const [quadra, setQuadra] = useState('')
   const [maquinaId, setMaquinaId] = useState('')
   const [dataProg, setDataProg] = useState('')
+  const [buscaLote, setBuscaLote] = useState('')
+  const [buscaTrat, setBuscaTrat] = useState('')
   const [erro, setErro] = useState<string | null>(null)
 
   const lote = lotes.find((l) => l.id === loteId)
   const receita = receitas.find((r) => r.id === receitaId)
+
+  // com centenas de lotes o select puro não dá: filtro por texto acima de
+  // cada um. O item já escolhido nunca some da lista.
+  const lotesFiltrados = useMemo(() => {
+    const termo = buscaLote.trim().toLowerCase()
+    if (!termo) return lotes
+    return lotes.filter(
+      (l) =>
+        l.id === loteId ||
+        `${l.id} ${l.cultivar} ${l.tratamento ?? ''}`.toLowerCase().includes(termo),
+    )
+  }, [lotes, buscaLote, loteId])
+
+  const receitasFiltradas = useMemo(() => {
+    const termo = buscaTrat.trim().toLowerCase()
+    if (!termo) return receitas
+    return receitas.filter(
+      (r) => r.id === receitaId || r.nome.toLowerCase().includes(termo),
+    )
+  }, [receitas, buscaTrat, receitaId])
 
   const analise = useMemo(() => {
     if (!lote || !receita || !embalagem || bags <= 0) return null
@@ -1024,9 +1092,19 @@ function NovaOrdemForm({
           <input value={numero} onChange={(e) => setNumero(e.target.value)} className={INPUT} />
         </Campo>
         <Campo rotulo="Lote de semente">
+          <input
+            value={buscaLote}
+            onChange={(e) => setBuscaLote(e.target.value)}
+            placeholder="filtrar por lote ou cultivar…"
+            className={`${INPUT} mb-1`}
+          />
           <select value={loteId} onChange={(e) => setLoteId(e.target.value)} className={INPUT}>
-            <option value="">escolha…</option>
-            {lotes.map((l) => (
+            <option value="">
+              {lotesFiltrados.length === 0
+                ? 'nenhum lote nesse filtro'
+                : `escolha… (${lotesFiltrados.length})`}
+            </option>
+            {lotesFiltrados.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.id} · {l.cultivar} · {n(l.peso_bag_kg, 0)} kg/bag
               </option>
@@ -1034,9 +1112,19 @@ function NovaOrdemForm({
           </select>
         </Campo>
         <Campo rotulo="Tratamento">
+          <input
+            value={buscaTrat}
+            onChange={(e) => setBuscaTrat(e.target.value)}
+            placeholder="filtrar por receita…"
+            className={`${INPUT} mb-1`}
+          />
           <select value={receitaId} onChange={(e) => setReceitaId(e.target.value)} className={INPUT}>
-            <option value="">escolha…</option>
-            {receitas.map((r) => (
+            <option value="">
+              {receitasFiltradas.length === 0
+                ? 'nenhuma receita nesse filtro'
+                : `escolha… (${receitasFiltradas.length})`}
+            </option>
+            {receitasFiltradas.map((r) => (
               <option key={r.id} value={r.id}>{r.nome}</option>
             ))}
           </select>
@@ -1087,21 +1175,21 @@ function NovaOrdemForm({
             <input
               value={armazem}
               onChange={(e) => setArmazem(e.target.value.toUpperCase())}
-              placeholder="ARMAZEM C"
+              placeholder="Armazém"
               title="Armazém — onde buscar o lote para esta ordem"
               className={INPUT}
             />
             <input
               value={bloco}
               onChange={(e) => setBloco(e.target.value.toUpperCase())}
-              placeholder="BL01"
+              placeholder="Bloco"
               title="Bloco"
               className={`${INPUT} w-24`}
             />
             <input
               value={quadra}
               onChange={(e) => setQuadra(e.target.value.toUpperCase())}
-              placeholder="QD04"
+              placeholder="Quadra"
               title="Quadra"
               className={`${INPUT} w-24`}
             />

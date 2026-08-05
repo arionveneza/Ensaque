@@ -25,6 +25,8 @@ create table if not exists qualidade_checks (
   id           uuid primary key default gen_random_uuid(),
   ordem_id     uuid not null references ordens(id) on delete cascade,
   etapa        text not null check (etapa in ('processo','final')),
+  -- de onde saiu a amostra da verificação em processo (a final não usa)
+  origem       text check (origem in ('BOWL','BAG')),
   recobrimento int  not null check (recobrimento between 1 and 5),
   umidade_ok   boolean not null,   -- false = fora do padrão
   po_ok        boolean not null,   -- desprendimento de pó; false = fora do padrão
@@ -32,6 +34,9 @@ create table if not exists qualidade_checks (
   inspetor_id  uuid references usuarios(id),
   ts           timestamptz not null default now()
 );
+-- quem já criou a tabela sem a coluna (versão anterior deste script)
+alter table qualidade_checks add column if not exists origem text
+  check (origem in ('BOWL','BAG'));
 create index if not exists qualidade_checks_ordem on qualidade_checks (ordem_id);
 
 -- em processo repete; a final é única por ordem
@@ -45,6 +50,9 @@ begin
   select status::text into st from ordens where id = new.ordem_id;
   if new.etapa = 'processo' and st not in ('Em producao','Parada') then
     raise exception 'Checklist em processo exige ordem em execucao (status atual: %)', st;
+  end if;
+  if new.etapa = 'processo' and new.origem is null then
+    raise exception 'Checklist em processo exige a origem da amostra (BOWL ou BAG)';
   end if;
   if new.etapa = 'final' and st <> 'Finalizada' then
     raise exception 'Checklist final exige ordem Finalizada (status atual: %)', st;

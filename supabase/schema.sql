@@ -702,6 +702,8 @@ create table qualidade_checks (
   id           uuid primary key default gen_random_uuid(),
   ordem_id     uuid not null references ordens(id) on delete cascade,
   etapa        text not null check (etapa in ('processo','final')),
+  -- de onde saiu a amostra da verificação em processo (a final não usa)
+  origem       text check (origem in ('BOWL','BAG')),
   recobrimento int  not null check (recobrimento between 1 and 5),
   umidade_ok   boolean not null,   -- false = fora do padrão
   po_ok        boolean not null,   -- desprendimento de pó; false = fora do padrão
@@ -719,6 +721,9 @@ begin
   select status::text into st from ordens where id = new.ordem_id;
   if new.etapa = 'processo' and st not in ('Em producao','Parada') then
     raise exception 'Checklist em processo exige ordem em execucao (status atual: %)', st;
+  end if;
+  if new.etapa = 'processo' and new.origem is null then
+    raise exception 'Checklist em processo exige a origem da amostra (BOWL ou BAG)';
   end if;
   if new.etapa = 'final' and st <> 'Finalizada' then
     raise exception 'Checklist final exige ordem Finalizada (status atual: %)', st;

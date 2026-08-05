@@ -98,6 +98,7 @@ export default function Qualidade() {
                   {aberta === idForm && (
                     <FormChecklist
                       rotuloSalvar="Registrar verificação"
+                      comOrigem
                       onSalvar={(d) =>
                         comErro(async () => {
                           await g.registrarCheckProcesso(o.id, d, usuario!.id)
@@ -223,11 +224,14 @@ function OkFora({ ok }: { ok: boolean }) {
 function ListaChecks({ checks }: { checks: ChecklistQualidade[] }) {
   return (
     <div className="mt-3 border-t border-stone-200 pt-2 dark:border-stone-700">
-      <Tabela cabecalho={['Hora', 'Recobr.', 'Umidade', 'Pó', 'Obs']}>
+      <Tabela cabecalho={['Hora', 'Origem', 'Recobr.', 'Umidade', 'Pó', 'Obs']}>
         {checks.map((c) => (
           <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
             <td className="px-2 py-1 text-xs text-stone-500">
               {new Date(c.ts).toLocaleString('pt-BR')}
+            </td>
+            <td className="px-2 py-1">
+              {c.origem ? <Tag cor={c.origem === 'BOWL' ? 'info' : 'roxo'}>{c.origem}</Tag> : '—'}
             </td>
             <td className="px-2 py-1 text-center"><Nota valor={c.recobrimento} /></td>
             <td className="px-2 py-1"><OkFora ok={c.umidade_ok} /></td>
@@ -242,20 +246,49 @@ function ListaChecks({ checks }: { checks: ChecklistQualidade[] }) {
   )
 }
 
-/** O checklist das duas etapas — mesmo formulário, destino diferente. */
+/**
+ * O checklist das duas etapas — mesmo formulário, destino diferente.
+ * `comOrigem` (só em processo): de onde saiu a amostra, BOWL ou BAG.
+ */
 function FormChecklist({
-  rotuloSalvar, onSalvar,
+  rotuloSalvar, comOrigem = false, onSalvar,
 }: {
   rotuloSalvar: string
+  comOrigem?: boolean
   onSalvar: (d: DadosChecklist) => void
 }) {
+  const [origem, setOrigem] = useState<'BOWL' | 'BAG' | null>(null)
   const [recobrimento, setRecobrimento] = useState(0)
   const [umidadeOk, setUmidadeOk] = useState(true)
   const [poOk, setPoOk] = useState(true)
   const [obs, setObs] = useState('')
 
+  const incompleto = recobrimento === 0 || (comOrigem && origem === null)
+
   return (
     <div className="mt-3 border-t border-stone-200 pt-3 dark:border-stone-700">
+      {comOrigem && (
+        <div className="mb-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+            Origem da amostra
+          </p>
+          <div className="mt-1 flex gap-1">
+            {(['BOWL', 'BAG'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setOrigem(v)}
+                className={`rounded-md border px-4 py-1.5 text-sm font-medium ${
+                  origem === v
+                    ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
+                    : 'border-stone-300 dark:border-stone-700'
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
@@ -289,10 +322,17 @@ function FormChecklist({
       <div className="mt-3">
         <Botao
           variante="primario"
-          disabled={recobrimento === 0}
-          titulo={recobrimento === 0 ? 'Escolha a nota de recobrimento' : undefined}
+          disabled={incompleto}
+          titulo={
+            incompleto
+              ? comOrigem && origem === null
+                ? 'Escolha a origem da amostra (BOWL ou BAG)'
+                : 'Escolha a nota de recobrimento'
+              : undefined
+          }
           onClick={() =>
             onSalvar({
+              origem: origem ?? undefined,
               recobrimento,
               umidadeOk,
               poOk,
