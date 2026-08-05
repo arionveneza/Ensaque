@@ -32,7 +32,9 @@ set search_path = tsi, public;
 -- 1. TIPOS
 -- ============================================================
 create type perfil_tipo as enum ('PCP','Logistica','Producao','Qualidade','Gestor');
-create type unidade_dose as enum ('ml/kg','g/kg');
+-- dose por kg ou por 100 kg (a base das bulas de TSI) — copiar a unidade
+-- exata da FISPQ evita conversão de cabeça, onde nasce erro de 100×
+create type unidade_dose as enum ('ml/kg','g/kg','ml/100kg','g/100kg');
 create type status_lote as enum ('Em estoque','Baixado');
 create type tipo_parada as enum ('Planejada','Nao planejada');
 create type prioridade_tipo as enum ('Normal','Urgente');

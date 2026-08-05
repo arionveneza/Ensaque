@@ -87,6 +87,32 @@ describe('peso de balanca a partir da dose', () => {
     expect(volumeItemL({ produtoId: 'GRF', dose: 0.5, tanque: 4 }, GRF, 40_000))
       .toBeNull()
   })
+
+  // As bulas de TSI costumam dosar por 100 kg de semente. A mesma dose
+  // escrita nas duas bases tem que dar o MESMO peso de balança.
+  it('ml/100kg divide por 100: 60 ml/100kg equivale a 0,6 ml/kg', () => {
+    const ftz100: ProdutoQuimico = { ...FTZ, unidade: 'ml/100kg' }
+    expect(pesoItemKg({ produtoId: 'FTZ', dose: 60, tanque: 1 }, ftz100, 40_000))
+      .toBeCloseTo(25.92, 6)
+    expect(volumeItemL({ produtoId: 'FTZ', dose: 60, tanque: 1 }, ftz100, 40_000))
+      .toBeCloseTo(24, 6)
+  })
+
+  it('g/100kg divide por 100: 50 g/100kg equivale a 0,5 g/kg', () => {
+    const grf100: ProdutoQuimico = { ...GRF, unidade: 'g/100kg' }
+    expect(pesoItemKg({ produtoId: 'GRF', dose: 50, tanque: 4 }, grf100, 40_000))
+      .toBeCloseTo(20, 6)
+    // dose em gramas segue sem volume
+    expect(volumeItemL({ produtoId: 'GRF', dose: 50, tanque: 4 }, grf100, 40_000))
+      .toBeNull()
+  })
+
+  it('ml/100kg sem densidade tambem e recusado', () => {
+    const semDensidade: ProdutoQuimico = { ...FTZ, unidade: 'ml/100kg', densidade: null }
+    expect(() =>
+      pesoItemKg({ produtoId: 'FTZ', dose: 60, tanque: 1 }, semDensidade, 40_000),
+    ).toThrow(/densidade/i)
+  })
 })
 
 describe('ensaque', () => {

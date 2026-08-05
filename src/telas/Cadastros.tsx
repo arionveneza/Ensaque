@@ -145,7 +145,9 @@ function AbaQuimicos({
   const [editando, setEditando] = useState<string | null>(null)
   const [novo, setNovo] = useState(false)
 
-  const semDensidade = produtos.filter((p) => p.unidade === 'ml/kg' && p.densidade == null)
+  const semDensidade = produtos.filter(
+    (p) => p.unidade.startsWith('ml') && p.densidade == null,
+  )
 
   return (
     <>
@@ -153,8 +155,8 @@ function AbaQuimicos({
         <Aviso gravidade={semDensidade.length > 0 ? 'bloqueio' : 'alerta'}>
           {semDensidade.length > 0 ? (
             <>
-              <b>{semDensidade.length} produto(s) em ml/kg sem densidade.</b> O peso de balança não
-              pode ser calculado e a ordem não inicia:{' '}
+              <b>{semDensidade.length} produto(s) dosado(s) em ml sem densidade.</b> O peso de
+              balança não pode ser calculado e a ordem não inicia:{' '}
               {semDensidade.map((p) => p.nome).join(', ')}
             </>
           ) : (
@@ -200,7 +202,7 @@ function AbaQuimicos({
                 <td className="px-2 py-2 text-stone-500">{p.codigo}</td>
                 <td className="px-2 py-2">{p.unidade}</td>
                 <td className="num-tabular px-2 py-2 text-right">
-                  {p.unidade === 'g/kg' ? (
+                  {!p.unidade.startsWith('ml') ? (
                     <span className="text-stone-400">— dose já em peso</span>
                   ) : p.densidade == null ? (
                     <span className="font-medium text-red-600">falta densidade</span>
@@ -283,11 +285,13 @@ function FormProduto({
 }) {
   const [codigo, setCodigo] = useState(inicial?.codigo ?? '')
   const [nome, setNome] = useState(inicial?.nome ?? '')
-  const [unidade, setUnidade] = useState<UnidadeDose>(inicial?.unidade ?? 'ml/kg')
+  // produto novo nasce em ml/100kg: é a base que as bulas de TSI usam
+  const [unidade, setUnidade] = useState<UnidadeDose>(inicial?.unidade ?? 'ml/100kg')
   const [densidade, setDensidade] = useState(inicial?.densidade?.toString() ?? '')
 
+  const emMl = unidade.startsWith('ml')
   const dens = densidade.trim() === '' ? null : Number(densidade.replace(',', '.'))
-  const faltaDensidade = unidade === 'ml/kg' && (dens == null || !(dens > 0))
+  const faltaDensidade = emMl && (dens == null || !(dens > 0))
 
   return (
     <div className="flex flex-wrap items-end gap-2">
@@ -305,25 +309,28 @@ function FormProduto({
           value={unidade}
           onChange={(e) => setUnidade(e.target.value as UnidadeDose)}
           className={`${INPUT} mt-1 block`}
+          title="Copie a unidade exata da bula/FISPQ — as bulas de TSI costumam dosar por 100 kg de semente"
         >
-          <option value="ml/kg">ml/kg</option>
-          <option value="g/kg">g/kg</option>
+          <option value="ml/100kg">ml / 100 kg</option>
+          <option value="g/100kg">g / 100 kg</option>
+          <option value="ml/kg">ml / kg</option>
+          <option value="g/kg">g / kg</option>
         </select>
       </label>
       <label className="text-xs text-stone-500">
         Densidade (g/ml)
         <input
-          value={unidade === 'g/kg' ? '' : densidade}
-          disabled={unidade === 'g/kg'}
+          value={emMl ? densidade : ''}
+          disabled={!emMl}
           onChange={(e) => setDensidade(e.target.value)}
-          placeholder={unidade === 'g/kg' ? 'não se aplica' : 'ex.: 1,08'}
+          placeholder={emMl ? 'ex.: 1,08' : 'não se aplica'}
           className={`${INPUT} mt-1 block w-32 disabled:opacity-50`}
         />
       </label>
       <Botao
         variante="primario"
         disabled={!codigo.trim() || !nome.trim() || faltaDensidade}
-        titulo={faltaDensidade ? 'Produto em ml/kg exige densidade da FISPQ' : undefined}
+        titulo={faltaDensidade ? `Produto em ${unidade} exige densidade da FISPQ` : undefined}
         onClick={() => onSalvar({ codigo, nome, unidade, densidade: dens })}
       >
         Salvar
@@ -512,6 +519,22 @@ function TabelaReceita({ receita }: { receita: ReceitaCompleta }) {
   )
 }
 
+/**
+ * A dose fica como TEXTO enquanto se digita: convertê-la a cada tecla
+ * engolia a vírgula (digitar "2," virava 2 e "0,5" virava 5). A conversão
+ * acontece só no salvar, aceitando vírgula ou ponto.
+ */
+interface ItemReceitaForm {
+  produto_id: string
+  doseTxt: string
+  tanque: number
+}
+
+const doseNumero = (txt: string): number => {
+  const v = parseFloat(txt.trim().replace(',', '.'))
+  return Number.isFinite(v) ? v : NaN
+}
+
 function FormReceita({
   produtos, inicialNome = '', inicialItens = [], onSalvar, onCancelar,
 }: {
@@ -522,14 +545,22 @@ function FormReceita({
   onCancelar: () => void
 }) {
   const [nome, setNome] = useState(inicialNome)
-  const [itens, setItens] = useState<adm.ItemReceitaEdicao[]>(
-    inicialItens.length > 0 ? inicialItens : [{ produto_id: '', dose: 0, tanque: 1 }],
+  const [itens, setItens] = useState<ItemReceitaForm[]>(
+    inicialItens.length > 0
+      ? inicialItens.map((i) => ({
+          produto_id: i.produto_id,
+          doseTxt: String(i.dose).replace('.', ','),
+          tanque: i.tanque,
+        }))
+      : [{ produto_id: '', doseTxt: '', tanque: 1 }],
   )
 
-  const atualizar = (i: number, campo: Partial<adm.ItemReceitaEdicao>) =>
+  const atualizar = (i: number, campo: Partial<ItemReceitaForm>) =>
     setItens(itens.map((it, idx) => (idx === i ? { ...it, ...campo } : it)))
 
   const tanquesUsados = new Set(itens.map((i) => i.tanque))
+  const unidadeDe = (produtoId: string) =>
+    produtos.find((p) => p.id === produtoId)?.unidade
 
   return (
     <div>
@@ -555,11 +586,12 @@ function FormReceita({
               </select>
             </label>
             <label className="text-xs text-stone-500">
-              Dose
+              Dose{unidadeDe(it.produto_id) ? ` (${unidadeDe(it.produto_id)})` : ''}
               <input
                 inputMode="decimal"
-                value={it.dose || ''}
-                onChange={(e) => atualizar(i, { dose: Number(e.target.value.replace(',', '.')) })}
+                value={it.doseTxt}
+                onChange={(e) => atualizar(i, { doseTxt: e.target.value })}
+                placeholder="ex.: 2,5"
                 className={`${INPUT} mt-1 block w-24 text-right`}
               />
             </label>
@@ -585,7 +617,7 @@ function FormReceita({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Botao onClick={() => setItens([...itens, { produto_id: '', dose: 0, tanque: 1 }])}>
+        <Botao onClick={() => setItens([...itens, { produto_id: '', doseTxt: '', tanque: 1 }])}>
           Adicionar produto
         </Botao>
         <span className="text-xs text-stone-500">
@@ -597,8 +629,17 @@ function FormReceita({
       <div className="mt-4 flex gap-2">
         <Botao
           variante="primario"
-          disabled={!nome.trim() || itens.some((i) => !i.produto_id || !(i.dose > 0))}
-          onClick={() => onSalvar(nome, itens)}
+          disabled={!nome.trim() || itens.some((i) => !i.produto_id || !(doseNumero(i.doseTxt) > 0))}
+          onClick={() =>
+            onSalvar(
+              nome,
+              itens.map((i) => ({
+                produto_id: i.produto_id,
+                dose: doseNumero(i.doseTxt),
+                tanque: i.tanque,
+              })),
+            )
+          }
         >
           Salvar receita
         </Botao>

@@ -76,9 +76,10 @@ export interface ProdutoEdicao {
 }
 
 export async function salvarProduto(p: ProdutoEdicao): Promise<void> {
-  if (p.unidade === 'ml/kg' && (p.densidade == null || p.densidade <= 0)) {
+  const emMl = p.unidade.startsWith('ml')
+  if (emMl && (p.densidade == null || p.densidade <= 0)) {
     throw new Error(
-      `${p.nome}: produto dosado em ml/kg exige densidade. Sem ela o peso de balança fica errado — ` +
+      `${p.nome}: produto dosado em ${p.unidade} exige densidade. Sem ela o peso de balança fica errado — ` +
         'consulte a FISPQ do fabricante.',
     )
   }
@@ -87,8 +88,8 @@ export async function salvarProduto(p: ProdutoEdicao): Promise<void> {
     codigo: p.codigo.trim().toUpperCase(),
     nome: p.nome.trim(),
     unidade: p.unidade,
-    // g/kg dosa direto em peso: densidade não se aplica
-    densidade: p.unidade === 'ml/kg' ? p.densidade : null,
+    // dose em gramas já é peso: densidade não se aplica
+    densidade: emMl ? p.densidade : null,
     ativo: p.ativo ?? true,
   }
   const { error } = p.id

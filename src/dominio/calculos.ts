@@ -30,36 +30,47 @@ export function pesoOrdemT(bags: number, pesoBagKg: number): number {
   return pesoOrdemKg(bags, pesoBagKg) / 1000
 }
 
+/** Dose em volume (exige densidade) ou já em peso? */
+export const doseEmMl = (unidade: ProdutoQuimico['unidade']): boolean =>
+  unidade.startsWith('ml')
+
+/** Quantos kg de semente a dose referencia: 1 (por kg) ou 100 (por 100 kg). */
+export const baseDoseKg = (unidade: ProdutoQuimico['unidade']): number =>
+  unidade.endsWith('/100kg') ? 100 : 1
+
 /**
  * Peso de balança planejado de um item da receita, em kg.
  *
- *   ml/kg → dose × peso_semente_kg × densidade / 1000
- *   g/kg  → dose × peso_semente_kg / 1000
+ *   ml → dose × peso_semente_kg × densidade / 1000 ÷ base
+ *   g  → dose × peso_semente_kg / 1000 ÷ base
+ *
+ * `base` = 1 (dose por kg) ou 100 (dose por 100 kg, o padrão das bulas).
  */
 export function pesoItemKg(
   item: ItemReceita,
   produto: ProdutoQuimico,
   pesoSementeKg: number,
 ): number {
-  if (produto.unidade === 'ml/kg') {
+  const base = baseDoseKg(produto.unidade)
+  if (doseEmMl(produto.unidade)) {
     if (produto.densidade == null) {
       throw new Error(
-        `Produto ${produto.codigo} está em ml/kg sem densidade: o peso de balança seria incorreto.`,
+        `Produto ${produto.codigo} está em ${produto.unidade} sem densidade: o peso de balança seria incorreto.`,
       )
     }
-    return (item.dose * pesoSementeKg * produto.densidade) / 1000
+    return (item.dose * pesoSementeKg * produto.densidade) / 1000 / base
   }
-  return (item.dose * pesoSementeKg) / 1000
+  return (item.dose * pesoSementeKg) / 1000 / base
 }
 
-/** Volume planejado em litros. Só faz sentido para produtos dosados em ml/kg. */
+/** Volume planejado em litros. Só faz sentido para produtos dosados em ml. */
 export function volumeItemL(
   item: ItemReceita,
   produto: ProdutoQuimico,
   pesoSementeKg: number,
 ): number | null {
-  if (produto.unidade !== 'ml/kg') return null
-  return (item.dose * pesoSementeKg) / 1000
+  if (!doseEmMl(produto.unidade)) return null
+  return (item.dose * pesoSementeKg) / 1000 / baseDoseKg(produto.unidade)
 }
 
 /** Peso total de químico da ordem, em kg. */

@@ -8,7 +8,12 @@
 
 export type Perfil = 'PCP' | 'Logistica' | 'Producao' | 'Qualidade' | 'Gestor'
 
-export type UnidadeDose = 'ml/kg' | 'g/kg'
+/**
+ * As bulas de TSI costumam expressar a dose por 100 kg de semente; algumas
+ * fichas trazem por kg. As quatro combinações existem para o cadastro copiar
+ * o número EXATO da ficha — conversão de cabeça é onde nasce erro de 100×.
+ */
+export type UnidadeDose = 'ml/kg' | 'g/kg' | 'ml/100kg' | 'g/100kg'
 
 export type StatusLote = 'Em estoque' | 'Baixado'
 
