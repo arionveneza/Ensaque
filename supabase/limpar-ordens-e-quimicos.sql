@@ -32,6 +32,11 @@ order by 1;
 
 begin;
 
+-- 0. a trava de imutabilidade recusa excluir ordem iniciada/apontada —
+--    é a proteção certa em produção, mas aqui o objetivo é justamente
+--    apagar o histórico de teste. Desliga só dentro desta transação.
+alter table ordens disable trigger tg_ordem_imutavel;
+
 -- 1. ordens e tudo que pende delas (filho antes de pai)
 delete from ordem_auditoria;
 delete from ordem_qualidade;
@@ -42,6 +47,9 @@ delete from ordem_tanques;
 delete from ordem_paradas;
 delete from ordem_eventos;
 delete from ordens;
+
+-- religa a trava
+alter table ordens enable trigger tg_ordem_imutavel;
 
 -- 2. lote de semente baixado nos testes volta a ficar disponível,
 --    e o log de baixas dos testes sai junto
