@@ -766,6 +766,20 @@ begin
    where id = p_ordem and status = 'Finalizada';
 end $$ language plpgsql security definer set search_path = tsi, public;
 
+-- AGROTIS exige a conferência da logística: a qualidade final já é garantida
+-- pelo fluxo de status, mas a conferência não muda status — cadeado próprio.
+create or replace function fn_valida_agrotis() returns trigger as $$
+begin
+  if new.status = 'Apontada' and old.status is distinct from 'Apontada' then
+    if not exists (select 1 from ordem_conferencias c where c.ordem_id = new.id) then
+      raise exception 'Lancamento no AGROTIS exige a conferencia de estoque da logistica';
+    end if;
+  end if;
+  return new;
+end $$ language plpgsql set search_path = tsi, public;
+create trigger tg_valida_agrotis before update on ordens
+  for each row execute function fn_valida_agrotis();
+
 create or replace view v_ordem_etapas as
 select o.*,
        coalesce(qp.qtd, 0)          as checks_processo,

@@ -51,21 +51,35 @@ describe('regua de etapas', () => {
     expect(e.detalhe).toBe('não realizada')
   })
 
-  it('finalizada: q. final e conferencia pendentes, agrotis espera a q. final', () => {
+  it('finalizada crua: agrotis aguarda os dois pre-requisitos', () => {
     const o = ordem('Finalizada')
     expect(situacao(o, 'producao')).toBe('feita')
     expect(situacao(o, 'q_final')).toBe('pendente')
     expect(situacao(o, 'conferencia')).toBe('pendente')
     const agrotis = etapasDaOrdem(o).find((x) => x.id === 'agrotis')!
     expect(agrotis.situacao).toBe('nao-aplicavel')
+    expect(agrotis.detalhe).toBe('aguarda q. final e conferência')
+  })
+
+  it('qualidade apontada sem conferencia: agrotis segue travado', () => {
+    const o = ordem('Qualidade apontada')
+    expect(situacao(o, 'q_final')).toBe('feita')
+    expect(situacao(o, 'conferencia')).toBe('pendente')
+    const agrotis = etapasDaOrdem(o).find((x) => x.id === 'agrotis')!
+    expect(agrotis.situacao).toBe('nao-aplicavel')
+    expect(agrotis.detalhe).toBe('aguarda conferência')
+  })
+
+  it('conferida sem q. final: agrotis aguarda a qualidade', () => {
+    const o = ordem('Finalizada', { conferida: true })
+    const agrotis = etapasDaOrdem(o).find((x) => x.id === 'agrotis')!
+    expect(agrotis.situacao).toBe('nao-aplicavel')
     expect(agrotis.detalhe).toBe('aguarda q. final')
   })
 
-  it('qualidade apontada: agrotis destrava; conferencia segue paralela', () => {
-    const o = ordem('Qualidade apontada')
-    expect(situacao(o, 'q_final')).toBe('feita')
+  it('q. final + conferencia: agrotis destrava', () => {
+    const o = ordem('Qualidade apontada', { conferida: true })
     expect(situacao(o, 'agrotis')).toBe('pendente')
-    expect(situacao(o, 'conferencia')).toBe('pendente')
   })
 
   it('o status carrega a qualidade final implicita', () => {
@@ -91,7 +105,9 @@ describe('regua de etapas', () => {
   it('conta as pendencias para ordenar a visao geral', () => {
     // finalizada crua: q. final + conferencia (agrotis ainda nao abriu)
     expect(etapasPendentes(ordem('Finalizada'))).toBe(2)
-    // qualidade apontada sem conferencia: conferencia + agrotis
-    expect(etapasPendentes(ordem('Qualidade apontada'))).toBe(2)
+    // qualidade apontada sem conferencia: so a conferencia (agrotis travado)
+    expect(etapasPendentes(ordem('Qualidade apontada'))).toBe(1)
+    // com os dois pre-requisitos, sobra so o agrotis
+    expect(etapasPendentes(ordem('Qualidade apontada', { conferida: true }))).toBe(1)
   })
 })

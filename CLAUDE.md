@@ -105,13 +105,14 @@ recobrimento (nota 1–5) · umidade do tratamento (OK/Fora do padrão) · despr
   (histórico). Não muda status.
 - **Final**: com a ordem `Finalizada`. Um registro por ordem → status `Qualidade apontada`.
 - **Conferência de estoque (Logística)**: para ordens finalizadas, registra os **bags contados**
-  fisicamente (compara com o esperado). Etapa paralela — **não trava o AGROTIS**.
+  fisicamente (compara com o esperado). **É pré-requisito do AGROTIS** (trigger no banco).
 - **Visão geral (tela Etapas)**: régua por ordem — Produção → Q. processo → Q. final →
   Conferência → AGROTIS.
 
 ### Encerramento (AGROTIS — tela própria)
-Após a **qualidade final**, o **PCP** lança a ordem no AGROTIS e registra o **nº do lançamento**
-(obrigatório) → status `Apontada`, registro definitivo. Gancho natural para integração futura.
+Após a **qualidade final** e a **conferência de estoque**, o **PCP** lança a ordem no AGROTIS e
+registra o **nº do lançamento** (obrigatório) → status `Apontada`, registro definitivo. Gancho
+natural para integração futura.
 
 ---
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as g from '@/dados/api-gestao'
-import type { ChecklistQualidade, OrdemVisao } from '@/dados/api-gestao'
+import type { ChecklistQualidade, OrdemEtapasLinha } from '@/dados/api-gestao'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import {
@@ -8,23 +8,23 @@ import {
 } from '@/componentes/ui'
 
 /**
- * Encerramento no AGROTIS — etapa do PCP.
+ * Encerramento no AGROTIS — etapa do PCP, a última da régua.
  *
- * Só entra aqui a ordem Finalizada COM a qualidade final apontada (status
- * 'Qualidade apontada'). O nº do lançamento é obrigatório e torna a ordem
- * registro definitivo ('Apontada').
+ * Pré-requisitos: qualidade final apontada E conferência de estoque da
+ * logística. O nº do lançamento é obrigatório e torna a ordem registro
+ * definitivo ('Apontada'). O banco valida os dois de novo (trigger).
  */
 export default function Agrotis() {
   const { usuario, permitido } = useAuth()
   const podeLancar = permitido('agrotis', 'lancar')
 
-  const [ordens, setOrdens] = useState<OrdemVisao[]>([])
+  const [ordens, setOrdens] = useState<OrdemEtapasLinha[]>([])
   const [checks, setChecks] = useState<ChecklistQualidade[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
   const recarregar = useCallback(async () => {
-    const [o, c] = await Promise.all([g.listarOrdens(), g.listarChecksQualidade()])
+    const [o, c] = await Promise.all([g.listarOrdensEtapas(), g.listarChecksQualidade()])
     setOrdens(o)
     setChecks(c)
   }, [])
@@ -36,7 +36,7 @@ export default function Agrotis() {
       .finally(() => setCarregando(false))
   }, [recarregar])
 
-  useRealtime(['ordens', 'qualidade_checks'], recarregar)
+  useRealtime(['ordens', 'qualidade_checks', 'ordem_conferencias'], recarregar)
 
   async function comErro(fn: () => Promise<void>) {
     try {
@@ -48,26 +48,42 @@ export default function Agrotis() {
     }
   }
 
-  const prontas = ordens.filter((o) => o.status_efetivo === 'Qualidade apontada')
-  const bloqueadas = ordens.filter((o) => o.status_efetivo === 'Finalizada')
+  // pronta = qualidade final apontada E conferida pela logística
+  const prontas = ordens.filter(
+    (o) => o.status_efetivo === 'Qualidade apontada' && o.conferida,
+  )
+  const aguardando = ordens.filter(
+    (o) =>
+      o.status_efetivo === 'Finalizada' ||
+      (o.status_efetivo === 'Qualidade apontada' && !o.conferida),
+  )
   const lancadas = ordens.filter((o) => o.status_efetivo === 'Apontada')
 
   const checkFinal = (id: string) =>
     checks.find((c) => c.ordem_id === id && c.etapa === 'final')
+
+  const faltaDe = (o: OrdemEtapasLinha): string => {
+    const falta: string[] = []
+    if (o.status_efetivo === 'Finalizada') falta.push('qualidade final')
+    if (!o.conferida) falta.push('conferência de estoque')
+    return falta.join(' e ')
+  }
 
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando AGROTIS…</p>
 
   return (
     <Pagina
       titulo="AGROTIS"
-      descricao="Lançamento das ordens no AGROTIS. Só libera com a qualidade final apontada; o nº do lançamento encerra a ordem em definitivo."
+      descricao="Última etapa da ordem. Só libera com a qualidade final apontada E a conferência de estoque feita; o nº do lançamento encerra em definitivo."
     >
       {erro && <Erro>{erro}</Erro>}
 
       {/* ---------------- prontas para lançar ---------------- */}
       <Cartao titulo={`Prontas para lançar (${prontas.length})`} className="mb-5">
         {prontas.length === 0 ? (
-          <Vazio>Nenhuma ordem com qualidade final apontada aguardando lançamento.</Vazio>
+          <Vazio>
+            Nenhuma ordem com os dois pré-requisitos cumpridos (qualidade final + conferência).
+          </Vazio>
         ) : (
           <div className="space-y-3">
             {prontas.map((o) => {
@@ -90,6 +106,9 @@ export default function Agrotis() {
                             </Tag>
                           </>
                         )}
+                        <Tag cor={o.bags_contados === o.bags ? 'ok' : 'alerta'}>
+                          conferido: {o.bags_contados} bg
+                        </Tag>
                       </p>
                     </div>
                     {podeLancar && (
@@ -107,15 +126,14 @@ export default function Agrotis() {
         )}
       </Cartao>
 
-      {/* ---------------- aguardando qualidade ---------------- */}
-      {bloqueadas.length > 0 && (
-        <Cartao titulo={`Aguardando qualidade final (${bloqueadas.length})`} className="mb-5">
+      {/* ---------------- aguardando pré-requisitos ---------------- */}
+      {aguardando.length > 0 && (
+        <Cartao titulo={`Aguardando pré-requisitos (${aguardando.length})`} className="mb-5">
           <p className="mb-3 text-sm text-stone-500">
-            Finalizadas pela produção, mas a qualidade final ainda não foi apontada — sem ela o
-            lançamento não libera.
+            Finalizadas pela produção, mas ainda sem tudo que o lançamento exige.
           </p>
-          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', 'Lote', '#Bags', 'Dia']}>
-            {bloqueadas.map((o) => (
+          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', 'Lote', '#Bags', 'Dia', 'Falta']}>
+            {aguardando.map((o) => (
               <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5 font-medium">{o.numero}</td>
                 <td className="px-2 py-1.5">{o.cultivar}</td>
@@ -123,6 +141,9 @@ export default function Agrotis() {
                 <td className="px-2 py-1.5">{o.lote_id}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                 <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
+                <td className="px-2 py-1.5">
+                  <Tag cor="alerta">{faltaDe(o)}</Tag>
+                </td>
               </tr>
             ))}
           </Tabela>

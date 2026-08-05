@@ -5,8 +5,8 @@
  *
  * A qualidade em processo só existe ENQUANTO a ordem roda: se a ordem
  * finalizou sem nenhum registro, a janela passou — não é pendência, é
- * "não realizada". Conferência e AGROTIS são paralelas após finalizar,
- * mas o AGROTIS espera a qualidade final.
+ * "não realizada". O AGROTIS é o último: exige a qualidade final E a
+ * conferência de estoque da logística.
  */
 
 export type SituacaoEtapa = 'feita' | 'pendente' | 'nao-aplicavel'
@@ -72,16 +72,24 @@ export function etapasDaOrdem(o: OrdemComEtapas): EtapaOrdem[] {
     {
       id: 'agrotis',
       rotulo: 'AGROTIS',
+      // pré-requisitos: qualidade final E conferência da logística
       situacao:
         o.status_efetivo === 'Apontada'
           ? 'feita'
-          : qualFinal
+          : qualFinal && o.conferida
             ? 'pendente'
             : 'nao-aplicavel',
       detalhe:
-        finalizada && !qualFinal && o.status_efetivo !== 'Apontada'
-          ? 'aguarda q. final'
-          : undefined,
+        o.status_efetivo === 'Apontada' || !finalizada
+          ? undefined
+          : qualFinal && o.conferida
+            ? undefined
+            : `aguarda ${[
+                !qualFinal ? 'q. final' : null,
+                !o.conferida ? 'conferência' : null,
+              ]
+                .filter(Boolean)
+                .join(' e ')}`,
     },
   ]
 }
