@@ -30,6 +30,8 @@ export interface LinhaProduto {
 export interface LinhaLoteQuimico {
   id: string
   produto_id: string
+  /** false = fora das novas seleções. Não é apagado: o histórico precisa dele. */
+  ativo: boolean
 }
 
 export interface LinhaOrdem {
@@ -91,7 +93,9 @@ export async function carregarCadastros() {
     supabase.from('maquinas').select('id, nome, capacidade_th, qtd_tanques').order('id'),
     supabase.from('motivos_parada').select('id, descricao, tipo').eq('ativo', true).order('descricao'),
     supabase.from('produtos_quimicos').select('id, codigo, nome, unidade, densidade'),
-    supabase.from('lotes_quimico').select('id, produto_id').order('id'),
+    // traz inativos também: uma ordem antiga pode apontar para um lote já
+    // desativado, e a tela precisa conseguir exibir esse vínculo
+    supabase.from('lotes_quimico').select('id, produto_id, ativo').order('id'),
   ])
   erro('máquinas', maquinas.error)
   erro('motivos de parada', motivos.error)

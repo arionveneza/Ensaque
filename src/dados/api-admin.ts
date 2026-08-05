@@ -111,8 +111,31 @@ export async function salvarLoteQuimico(l: {
   erro('salvar lote de químico', error)
 }
 
+/**
+ * Tira o lote das novas seleções sem apagá-lo.
+ *
+ * É o caminho para lote esgotado ou vencido: as ordens antigas continuam
+ * apontando para ele, porque é isso que dá rastreabilidade do tratamento.
+ */
+export async function definirAtivoLoteQuimico(id: string, ativo: boolean): Promise<void> {
+  const { error } = await supabase.from('lotes_quimico').update({ ativo }).eq('id', id)
+  erro(ativo ? 'reativar lote de químico' : 'desativar lote de químico', error)
+}
+
+/**
+ * Só funciona para lote nunca usado numa ordem. Se já foi usado, o banco
+ * recusa por chave estrangeira — e é para recusar: apagar quebraria o
+ * histórico. Nesse caso o caminho é desativar.
+ */
 export async function excluirLoteQuimico(id: string): Promise<void> {
   const { error } = await supabase.from('lotes_quimico').delete().eq('id', id)
+  if (error?.code === '23503') {
+    throw new Error(
+      `O lote ${id} já foi usado em alguma ordem e não pode ser excluído — apagá-lo ` +
+        'quebraria a rastreabilidade do tratamento. Use "desativar": ele sai da lista de ' +
+        'escolha do operador e o histórico continua intacto.',
+    )
+  }
   erro('excluir lote de químico', error)
 }
 

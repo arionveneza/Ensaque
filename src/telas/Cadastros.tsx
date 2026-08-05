@@ -222,27 +222,46 @@ function AbaQuimicos({
         </Tabela>
       </Cartao>
 
-      <Cartao titulo="Lotes de químico">
+      <Cartao titulo={`Lotes de químico (${lotesQuimico.filter((l) => l.ativo).length} ativos)`}>
         <p className="mb-3 text-sm text-stone-500">
           Cada tanque exige o lote do produto no início da ordem — é o que dá rastreabilidade do
-          tratamento.
+          tratamento. Por isso lote já usado <b>não pode ser excluído</b>: apagá-lo quebraria o
+          histórico da ordem. Para tirá-lo da lista do operador, use <b>desativar</b>.
         </p>
         {podeEditar && <FormLoteQuimico produtos={produtos} acao={acao} />}
-        <Tabela cabecalho={['Lote', 'Produto', '']}>
+        <Tabela cabecalho={['Lote', 'Produto', 'Situação', '']}>
           {lotesQuimico.map((l) => (
-            <tr key={l.id} className="border-t border-stone-100 dark:border-stone-800/60">
+            <tr
+              key={l.id}
+              className={`border-t border-stone-100 dark:border-stone-800/60 ${l.ativo ? '' : 'opacity-60'}`}
+            >
               <td className="px-2 py-1.5 font-medium">{l.id}</td>
               <td className="px-2 py-1.5">
                 {produtos.find((p) => p.id === l.produto_id)?.nome ?? '—'}
               </td>
-              <td className="px-2 py-1.5 text-right">
+              <td className="px-2 py-1.5">
+                <Tag cor={l.ativo ? 'ok' : 'neutro'}>{l.ativo ? 'Ativo' : 'Desativado'}</Tag>
+              </td>
+              <td className="px-2 py-1.5 text-right whitespace-nowrap">
                 {podeEditar && (
-                  <button
-                    onClick={() => acao(() => adm.excluirLoteQuimico(l.id))}
-                    className="text-xs text-red-600 underline"
-                  >
-                    excluir
-                  </button>
+                  <>
+                    <button
+                      onClick={() => acao(() => adm.definirAtivoLoteQuimico(l.id, !l.ativo))}
+                      className="mr-3 text-xs underline"
+                    >
+                      {l.ativo ? 'desativar' : 'reativar'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!confirm(`Excluir o lote ${l.id} do cadastro?`)) return
+                        acao(() => adm.excluirLoteQuimico(l.id))
+                      }}
+                      className="text-xs text-red-600 underline"
+                      title="Só funciona se o lote nunca foi usado numa ordem"
+                    >
+                      excluir
+                    </button>
+                  </>
                 )}
               </td>
             </tr>

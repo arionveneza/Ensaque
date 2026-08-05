@@ -212,12 +212,17 @@ export default function ModalOrdem({
                           <td className="py-3 pr-3">
                             {itens.map((i) => {
                               const p = prods.get(i.produto_id)
-                              const lotesDoProduto = lotesQuimico.filter(
+                              const doProduto = lotesQuimico.filter(
                                 (lq) => lq.produto_id === i.produto_id,
                               )
                               const selecionado = t.ordem_tanque_lotes.find((l) =>
-                                lotesDoProduto.some((lq) => lq.id === l.lote_quimico_id),
+                                doProduto.some((lq) => lq.id === l.lote_quimico_id),
                               )?.lote_quimico_id
+                              // desativado sai da escolha, mas continua visível se já
+                              // estiver vinculado — senão o vínculo antigo desapareceria
+                              const lotesDoProduto = doProduto.filter(
+                                (lq) => lq.ativo || lq.id === selecionado,
+                              )
                               return (
                                 <div key={i.produto_id} className="mb-1.5 last:mb-0">
                                   <span className="text-stone-700 dark:text-stone-300">
@@ -240,6 +245,7 @@ export default function ModalOrdem({
                                     {lotesDoProduto.map((lq) => (
                                       <option key={lq.id} value={lq.id}>
                                         {lq.id}
+                                        {lq.ativo ? '' : ' (desativado)'}
                                       </option>
                                     ))}
                                   </select>
