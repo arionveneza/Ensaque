@@ -60,6 +60,12 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 
 ## 4. Melhorias técnicas conhecidas
 
+- **Usuários da operação criados em 05/08/2026** (6 Produção, 1 Logística, 2 PCP) via script
+  SQL direto no Auth + `tsi.usuarios` — o script **não está no repositório de propósito**
+  (repo público; contém logins e senha inicial). Todos entraram com a **mesma senha inicial**,
+  que deve ser trocada — mas **o app não tem tela de troca de senha** nem "esqueci a senha".
+  Enquanto não tiver, a troca é pelo painel do Supabase (Authentication → usuário → Reset
+  password) ou um novo script. É a próxima lacuna real de segurança.
 - **react-router 7.18.1** tem o aviso `GHSA-qwww-vcr4-c8h2` (CSRF bypass), que só ocorre em
   **modo RSC**. Este app é SPA sem RSC, então o vetor não existe aqui, e não há versão
   corrigida publicada — a única sugestão do `npm audit` é regredir para 7.11.0. Mantido;
