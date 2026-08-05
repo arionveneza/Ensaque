@@ -694,7 +694,31 @@ function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
 
   const resumo = useMemo(() => resumoBalanco(balanco), [balanco])
 
-  // recolhido: só o título e a linha-resumo — a informação crítica continua à vista
+  const linhas = useMemo(() => {
+    const lista =
+      filtro === 'tudo'
+        ? balanco
+        : filtro === 'sem-receita'
+          ? balanco.filter((b) => !b.receita_cadastrada)
+          : balanco.filter((b) => situacaoDemanda(b) === filtro)
+    // maior descoberto primeiro; ao filtrar sobra, o maior excesso vem no topo
+    return lista
+      .slice()
+      .sort((a, b) => (filtro === 'tudo' ? b.saldo - a.saldo : a.saldo - b.saldo))
+  }, [balanco, filtro])
+
+  const semReceita = balanco.filter((b) => !b.receita_cadastrada).length
+  const chips: { id: typeof filtro; texto: string; ativo: boolean }[] = [
+    { id: 'tudo', texto: `Tudo (${balanco.length})`, ativo: true },
+    { id: 'descoberto', texto: `Falta produzir (${resumo.combosFaltando})`, ativo: resumo.combosFaltando > 0 },
+    { id: 'sobra', texto: `Vai sobrar (${resumo.combosSobrando})`, ativo: resumo.combosSobrando > 0 },
+    { id: 'sem-pedido', texto: `Sem pedido (${resumo.combosSemPedido})`, ativo: resumo.combosSemPedido > 0 },
+    { id: 'sem-receita', texto: `Sem receita (${semReceita})`, ativo: semReceita > 0 },
+  ]
+
+  // recolhido: só o título e a linha-resumo — a informação crítica continua à
+  // vista. Fica DEPOIS de todos os hooks: retorno antecipado antes de um hook
+  // quebra a regra do React (foi o que derrubou o lint no CI).
   if (oculto) {
     return (
       <Cartao
@@ -726,28 +750,6 @@ function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
       </Cartao>
     )
   }
-
-  const linhas = useMemo(() => {
-    const lista =
-      filtro === 'tudo'
-        ? balanco
-        : filtro === 'sem-receita'
-          ? balanco.filter((b) => !b.receita_cadastrada)
-          : balanco.filter((b) => situacaoDemanda(b) === filtro)
-    // maior descoberto primeiro; ao filtrar sobra, o maior excesso vem no topo
-    return lista
-      .slice()
-      .sort((a, b) => (filtro === 'tudo' ? b.saldo - a.saldo : a.saldo - b.saldo))
-  }, [balanco, filtro])
-
-  const semReceita = balanco.filter((b) => !b.receita_cadastrada).length
-  const chips: { id: typeof filtro; texto: string; ativo: boolean }[] = [
-    { id: 'tudo', texto: `Tudo (${balanco.length})`, ativo: true },
-    { id: 'descoberto', texto: `Falta produzir (${resumo.combosFaltando})`, ativo: resumo.combosFaltando > 0 },
-    { id: 'sobra', texto: `Vai sobrar (${resumo.combosSobrando})`, ativo: resumo.combosSobrando > 0 },
-    { id: 'sem-pedido', texto: `Sem pedido (${resumo.combosSemPedido})`, ativo: resumo.combosSemPedido > 0 },
-    { id: 'sem-receita', texto: `Sem receita (${semReceita})`, ativo: semReceita > 0 },
-  ]
 
   return (
     <Cartao
