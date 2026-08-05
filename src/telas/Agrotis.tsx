@@ -97,7 +97,7 @@ export default function Agrotis() {
                         <span>{o.receita_nome} · lote {o.lote_id} · {o.bags} bg · {n(o.peso_t, 1)} t</span>
                         {f && (
                           <>
-                            <span>· recobrimento <b>{f.recobrimento}</b>/5</span>
+                            <span>· q. geral <b>{f.recobrimento}</b>/5</span>
                             <Tag cor={f.umidade_ok ? 'ok' : 'alerta'}>
                               umidade {f.umidade_ok ? 'OK' : 'fora'}
                             </Tag>

@@ -174,7 +174,7 @@ export default function Qualidade() {
             <p className="mb-3 text-sm text-stone-500">
               O lançamento no AGROTIS é feito pelo PCP na tela <b>AGROTIS</b>.
             </p>
-            <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', '#Peso', 'Recobr.',
+            <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', '#Peso', 'Q. geral',
               'Umidade', 'Pó', 'Obs', 'Status']}>
               {concluidas.map((o) => {
                 const f = checksDe(o.id, 'final')[0]
@@ -224,7 +224,7 @@ function OkFora({ ok }: { ok: boolean }) {
 function ListaChecks({ checks }: { checks: ChecklistQualidade[] }) {
   return (
     <div className="mt-3 border-t border-stone-200 pt-2 dark:border-stone-700">
-      <Tabela cabecalho={['Hora', 'Origem', 'Recobr.', 'Umidade', 'Pó', 'Obs']}>
+      <Tabela cabecalho={['Hora', 'Origem', 'Q. geral', 'Umidade', 'Pó', 'Obs']}>
         {checks.map((c) => (
           <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
             <td className="px-2 py-1 text-xs text-stone-500">
@@ -292,7 +292,7 @@ function FormChecklist({
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
-            Recobrimento (1 a 5)
+            Qualidade geral do tratamento (1 a 5)
           </p>
           <div className="mt-1 flex gap-1">
             {[1, 2, 3, 4, 5].map((v) => (
@@ -327,7 +327,7 @@ function FormChecklist({
             incompleto
               ? comOrigem && origem === null
                 ? 'Escolha a origem da amostra (BOWL ou BAG)'
-                : 'Escolha a nota de recobrimento'
+                : 'Escolha a nota de qualidade geral do tratamento'
               : undefined
           }
           onClick={() =>

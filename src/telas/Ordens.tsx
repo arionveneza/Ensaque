@@ -1174,27 +1174,34 @@ function NovaOrdemForm({
         </Campo>
         <Campo rotulo="Endereço do lote (opcional)">
           <div className="flex gap-2">
-            <input
-              value={armazem}
-              onChange={(e) => setArmazem(e.target.value.toUpperCase())}
-              placeholder="Armazém"
-              title="Armazém — onde buscar o lote para esta ordem"
-              className={INPUT}
-            />
-            <input
-              value={bloco}
-              onChange={(e) => setBloco(e.target.value.toUpperCase())}
-              placeholder="Bloco"
-              title="Bloco"
-              className={`${INPUT} w-24`}
-            />
-            <input
-              value={quadra}
-              onChange={(e) => setQuadra(e.target.value.toUpperCase())}
-              placeholder="Quadra"
-              title="Quadra"
-              className={`${INPUT} w-24`}
-            />
+            <div className="flex-1">
+              <p className="text-xs text-stone-500">Armazém</p>
+              <input
+                value={armazem}
+                onChange={(e) => setArmazem(e.target.value.toUpperCase())}
+                placeholder="ex.: ARMAZEM C"
+                title="Armazém — onde buscar o lote para esta ordem"
+                className={INPUT}
+              />
+            </div>
+            <div className="w-24">
+              <p className="text-xs text-stone-500">Bloco</p>
+              <input
+                value={bloco}
+                onChange={(e) => setBloco(e.target.value.toUpperCase())}
+                placeholder="BL01"
+                className={INPUT}
+              />
+            </div>
+            <div className="w-24">
+              <p className="text-xs text-stone-500">Quadra</p>
+              <input
+                value={quadra}
+                onChange={(e) => setQuadra(e.target.value.toUpperCase())}
+                placeholder="QD04"
+                className={INPUT}
+              />
+            </div>
           </div>
         </Campo>
       </div>

@@ -99,8 +99,10 @@ Fechar a janela em qualquer etapa **não** muda o estado. `Cancelar início` des
 
 ### Qualidade em 2 etapas + conferência (decisão de 05/08/2026)
 O **checklist substituiu** o Aprovado/Reprovado + amostra. Campos, iguais nas duas etapas:
-recobrimento (nota 1–5) · umidade do tratamento (OK/Fora do padrão) · desprendimento de pó
-(OK/Fora do padrão) · observação. **Apenas informativos — nunca bloqueiam.**
+**qualidade geral do tratamento** (nota 1–5; a coluna no banco chama `recobrimento`, nome
+histórico) · umidade do tratamento (OK/Fora do padrão) · desprendimento de pó (OK/Fora do
+padrão) · observação. Em processo tem ainda a **origem da amostra (BOWL/BAG)**.
+**Apenas informativos — nunca bloqueiam.**
 - **Em processo**: com a ordem `Em produção`/`Parada`. Vários registros por ordem, com hora
   (histórico). Não muda status.
 - **Final**: com a ordem `Finalizada`. Um registro por ordem → status `Qualidade apontada`.

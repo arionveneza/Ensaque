@@ -27,6 +27,7 @@ create table if not exists qualidade_checks (
   etapa        text not null check (etapa in ('processo','final')),
   -- de onde saiu a amostra da verificação em processo (a final não usa)
   origem       text check (origem in ('BOWL','BAG')),
+  -- "qualidade geral do tratamento" na tela; nome histórico da coluna
   recobrimento int  not null check (recobrimento between 1 and 5),
   umidade_ok   boolean not null,   -- false = fora do padrão
   po_ok        boolean not null,   -- desprendimento de pó; false = fora do padrão
