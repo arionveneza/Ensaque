@@ -1,5 +1,9 @@
 # TSI — Controle de Tratamento Industrial de Sementes
 
+> 📋 **Retomando o projeto?** Comece por **[PENDENCIAS.md](PENDENCIAS.md)** — traz o estado
+> atual, o que falta (com as densidades reais das FISPQ em primeiro lugar) e as armadilhas
+> já descobertas.
+
 Aplicação de execução de produção (MES enxuto) para o tratamento industrial de sementes da
 **Sementes Veneza**. Substitui a planilha `TSI 2025`.
 
