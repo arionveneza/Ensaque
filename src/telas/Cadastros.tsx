@@ -121,7 +121,9 @@ export default function Cadastros() {
       {aba === 'motivos' && (
         <AbaMotivos motivos={cad?.motivos ?? []} podeEditar={!!podeEditar} acao={acao} />
       )}
-      {aba === 'lotes' && <AbaLotes lotes={lotes} />}
+      {aba === 'lotes' && (
+        <AbaLotes lotes={lotes} podeEditar={!!podeEditar} acao={acao} />
+      )}
     </Pagina>
   )
 }
@@ -890,29 +892,74 @@ function AbaMotivos({
   )
 }
 
-function AbaLotes({ lotes }: { lotes: g.LoteSementeLinha[] }) {
+function AbaLotes({
+  lotes, podeEditar, acao,
+}: {
+  lotes: g.LoteSementeLinha[]
+  podeEditar: boolean
+  acao: Acao
+}) {
   const [busca, setBusca] = useState('')
+  const [semUso, setSemUso] = useState<number | null>(null)
+
   const filtrados = lotes.filter(
     (l) =>
       !busca.trim() ||
       `${l.id} ${l.cultivar}`.toLowerCase().includes(busca.trim().toLowerCase()),
   )
+
   return (
     <Cartao
       titulo={`Lotes de semente (${filtrados.length} de ${lotes.length})`}
       acoes={
-        <input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="buscar lote ou cultivar…"
-          className={INPUT}
-        />
+        <>
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="buscar lote ou cultivar…"
+            className={INPUT}
+          />
+          {podeEditar && lotes.length > 0 && (
+            <Botao
+              titulo="Apaga de uma vez os lotes que nenhuma ordem e nenhuma baixa referenciam"
+              onClick={() =>
+                acao(async () => {
+                  const quantos = await adm.contarLotesSemUso()
+                  setSemUso(quantos)
+                  if (quantos === 0) {
+                    alert(
+                      'Nenhum lote pode ser apagado: todos estão em uso por alguma ordem ou já ' +
+                        'têm baixa registrada.\n\nPara zerar tudo ao sair dos testes, use o ' +
+                        'script supabase/limpar-dados-teste.sql.',
+                    )
+                    return
+                  }
+                  if (
+                    !confirm(
+                      `Excluir ${quantos} lote(s) sem uso?\n\nSão os que nenhuma ordem e ` +
+                        'nenhuma baixa referenciam. Os demais permanecem.\n\nNão tem desfazer.',
+                    )
+                  )
+                    return
+                  const removidos = await adm.excluirLotesSemUso()
+                  setSemUso(null)
+                  alert(`${removidos} lote(s) excluído(s).`)
+                })
+              }
+            >
+              Excluir sem uso{semUso != null && semUso > 0 ? ` (${semUso})` : ''}
+            </Botao>
+          )}
+        </>
       }
     >
       <p className="mb-3 text-sm text-stone-500">
-        Os lotes vêm do relatório de Saldos da SimpleAgro, importado na tela de Ordens.
+        Os lotes vêm do relatório de Saldos da SimpleAgro, importado na tela de Ordens. Lote
+        que já tem ordem ou baixa registrada <b>não pode ser excluído</b> — apagá-lo quebraria
+        o histórico. Para limpar tudo ao encerrar os testes, use{' '}
+        <code>supabase/limpar-dados-teste.sql</code>.
       </p>
-      <Tabela cabecalho={['Lote', 'Cultivar', '#PMS', '#Peso/bag', '#Bags', 'Status']}>
+      <Tabela cabecalho={['Lote', 'Cultivar', '#PMS', '#Peso/bag', '#Bags', 'Status', '']}>
         {filtrados.slice(0, 300).map((l) => (
           <tr key={l.id} className="border-t border-stone-100 dark:border-stone-800/60">
             <td className="px-2 py-1.5 font-medium">{l.id}</td>
@@ -922,6 +969,20 @@ function AbaLotes({ lotes }: { lotes: g.LoteSementeLinha[] }) {
             <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags_disp)}</td>
             <td className="px-2 py-1.5">
               <Tag cor={l.status === 'Baixado' ? 'ok' : 'neutro'}>{l.status}</Tag>
+            </td>
+            <td className="px-2 py-1.5 text-right">
+              {podeEditar && (
+                <button
+                  onClick={() => {
+                    if (!confirm(`Excluir o lote ${l.id}?`)) return
+                    acao(() => adm.excluirLoteSemente(l.id))
+                  }}
+                  className="text-xs text-red-600 underline"
+                  title="Só funciona se o lote não tem ordem nem baixa"
+                >
+                  excluir
+                </button>
+              )}
             </td>
           </tr>
         ))}

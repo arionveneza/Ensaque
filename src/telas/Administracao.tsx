@@ -37,6 +37,7 @@ export default function Administracao() {
   const [usuarios, setUsuarios] = useState<UsuarioLinha[]>([])
   const [permissoes, setPermissoes] = useState<PermissaoLinha[]>([])
   const [perfilSel, setPerfilSel] = useState<Perfil>('PCP')
+  const [novo, setNovo] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -87,14 +88,43 @@ export default function Administracao() {
     >
       {erro && <Erro>{erro}</Erro>}
 
-      <Cartao titulo={`Usuários (${usuarios.length})`} className="mb-5">
+      <Cartao
+        titulo={`Usuários (${usuarios.length})`}
+        acoes={
+          <Botao variante="primario" onClick={() => setNovo((v) => !v)}>
+            {novo ? 'Cancelar' : 'Novo usuário'}
+          </Botao>
+        }
+        className="mb-5"
+      >
         <div className="mb-3">
           <Aviso>
-            Criar o login é feito em <b>Authentication → Users</b> no painel do Supabase, porque
-            envolve senha. Aqui se define o nome e o perfil de quem já tem login. Enquanto não
-            houver registro nesta tabela, o RLS bloqueia todo o acesso da pessoa.
+            São <b>dois passos</b>, porque criar senha só acontece no Supabase.
+            <br />
+            <b>1.</b> No painel do Supabase, <b>Authentication → Users → Add user</b>: informe
+            e-mail e uma senha inicial, e copie o <b>UUID</b> que aparece na lista.
+            <br />
+            <b>2.</b> Aqui em <b>Novo usuário</b>: cole o UUID, informe o nome e escolha o
+            perfil.
+            <br />
+            Sem o passo 2 a pessoa consegue entrar, mas o RLS bloqueia tudo e ela vê a tela de
+            &quot;usuário sem perfil cadastrado&quot;.
           </Aviso>
         </div>
+
+        {novo && (
+          <div className="mb-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
+            <FormNovoUsuario
+              onSalvar={(u) =>
+                acao(async () => {
+                  await adm.salvarUsuario(u)
+                  setNovo(false)
+                })
+              }
+              onCancelar={() => setNovo(false)}
+            />
+          </div>
+        )}
 
         {usuarios.length === 0 ? (
           <Vazio>Nenhum usuário cadastrado.</Vazio>
@@ -167,6 +197,95 @@ export default function Administracao() {
       </Cartao>
     </Pagina>
   )
+}
+
+/** O UUID vem do Supabase Auth; só o formato é validado aqui. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function FormNovoUsuario({
+  onSalvar, onCancelar,
+}: {
+  onSalvar: (u: { id: string; nome: string; perfil: Perfil; ativo: boolean }) => void
+  onCancelar: () => void
+}) {
+  const [id, setId] = useState('')
+  const [nome, setNome] = useState('')
+  const [perfil, setPerfil] = useState<Perfil>('Producao')
+
+  const idLimpo = id.trim()
+  const idValido = UUID.test(idLimpo)
+
+  return (
+    <div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          UUID do login
+          <input
+            value={id}
+            onChange={(e) => setId(e.target.value)}
+            placeholder="cole de Authentication → Users"
+            className="mt-1 w-full rounded-md border border-stone-300 px-2 py-1.5 font-mono text-xs normal-case dark:border-stone-700 dark:bg-stone-800"
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Nome da pessoa
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="quem aparece no apontamento"
+            className="mt-1 w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm normal-case dark:border-stone-700 dark:bg-stone-800"
+          />
+        </label>
+        <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+          Perfil
+          <select
+            value={perfil}
+            onChange={(e) => setPerfil(e.target.value as Perfil)}
+            className="mt-1 w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm normal-case dark:border-stone-700 dark:bg-stone-800"
+          >
+            {PERFIS.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <p className="mt-2 text-xs text-stone-500">
+        O apontamento registra <b>a pessoa</b>, não o perfil — por isso cada operador precisa do
+        seu próprio login. {DESCRICAO_PERFIL[perfil]}
+      </p>
+
+      {idLimpo !== '' && !idValido && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            Isso não parece um UUID. Copie o valor da coluna <b>UID</b> em Authentication →
+            Users — tem 36 caracteres, no formato
+            <code> 08050b65-fbb8-425e-b879-747ec0d5d814</code>.
+          </Aviso>
+        </div>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <Botao
+          variante="primario"
+          disabled={!idValido || !nome.trim()}
+          onClick={() => onSalvar({ id: idLimpo, nome: nome.trim(), perfil, ativo: true })}
+        >
+          Cadastrar
+        </Botao>
+        <Botao onClick={onCancelar}>Cancelar</Botao>
+      </div>
+    </div>
+  )
+}
+
+/** O que cada perfil enxerga, para escolher sem consultar a documentação. */
+const DESCRICAO_PERFIL: Record<Perfil, string> = {
+  PCP: 'Vê todas as telas menos Administração; cria e programa ordens, importa planilhas e lança no AGROTIS.',
+  Logistica: 'Vê Programação, Lotes e Indicadores; é quem baixa e estorna lote de semente.',
+  Producao: 'Vê Programação, Execução e Indicadores; aponta início, paradas, fim e os pesos de tanque.',
+  Qualidade: 'Vê Execução, Qualidade e Indicadores; aponta a avaliação visual e a retirada de amostra.',
+  Gestor: 'Vê tudo, inclusive Administração. Use com parcimônia.',
 }
 
 function LinhaUsuario({

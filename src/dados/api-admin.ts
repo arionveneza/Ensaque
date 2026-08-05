@@ -212,6 +212,38 @@ export async function excluirMotivo(id: string): Promise<void> {
   erro('excluir motivo', error)
 }
 
+// ---------------- lotes de semente ----------------
+
+/**
+ * Só apaga lote que nenhuma ordem e nenhum movimento referenciam. O banco
+ * recusa o resto — e deve recusar: apagar quebraria o histórico da ordem.
+ */
+export async function excluirLoteSemente(id: string): Promise<void> {
+  const { error } = await supabase.from('lotes_semente').delete().eq('id', id)
+  if (error?.code === '23503') {
+    throw new Error(
+      `O lote ${id} está em uso por alguma ordem ou já tem baixa registrada, então não pode ` +
+        'ser excluído — apagá-lo quebraria o histórico. Para zerar tudo de uma vez ao sair ' +
+        'dos testes, use o script supabase/limpar-dados-teste.sql.',
+    )
+  }
+  erro('excluir lote de semente', error)
+}
+
+/** Quantos lotes dá para apagar agora. */
+export async function contarLotesSemUso(): Promise<number> {
+  const { data, error } = await supabase.rpc('contar_lotes_sem_uso')
+  erro('contar lotes sem uso', error)
+  return Number(data ?? 0)
+}
+
+/** Apaga de uma vez todos os lotes sem ordem e sem movimento. */
+export async function excluirLotesSemUso(): Promise<number> {
+  const { data, error } = await supabase.rpc('excluir_lotes_sem_uso')
+  erro('excluir lotes sem uso', error)
+  return Number(data ?? 0)
+}
+
 // ---------------- usuários e permissões ----------------
 
 export interface UsuarioLinha {

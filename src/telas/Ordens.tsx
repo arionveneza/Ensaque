@@ -25,6 +25,53 @@ const SA_BASE = 'https://sementesveneza.painel.simpleagro.com.br:3333'
 const SA_PEDIDOS = `${SA_BASE}/sales/relatorios/pedidos-analitico-resumido`
 const SA_SALDOS = `${SA_BASE}/work/saldos`
 
+/** Documentação do layout, exibida na tela e usada para gerar o modelo. */
+const LAYOUT_ORDENS: { coluna: string; obrigatoria: boolean; obs: string }[] = [
+  { coluna: 'Ordem', obrigatoria: true, obs: 'Nº da ordem. Aceita também Numero, Nº Ordem, Pedido ou OP.' },
+  { coluna: 'Lote', obrigatoria: true, obs: 'Lote de semente já cadastrado. Define o cultivar e o peso do bag.' },
+  { coluna: 'Tratamento', obrigatoria: true, obs: 'Nome da receita, exatamente como cadastrada. Aceita Receita.' },
+  { coluna: 'Embalagem', obrigatoria: true, obs: 'BG5M ou MEIOBAG.' },
+  { coluna: 'Bags', obrigatoria: true, obs: 'Quantidade, maior que zero. Aceita Quantidade ou Qtd.' },
+  { coluna: 'Cliente', obrigatoria: false, obs: 'Só informativo, aparece na ordem.' },
+  { coluna: 'Obs', obrigatoria: false, obs: 'Observação de processo, ex.: SEM GRAFITE. Aparece destacada no apontamento.' },
+  { coluna: 'Maquina', obrigatoria: false, obs: 'TSI1 ou TSI2. Em branco, a ordem cai no pool para programar depois.' },
+  { coluna: 'Dia', obrigatoria: false, obs: 'Data da programação, em 28/07/2026 ou 2026-07-28.' },
+]
+
+/**
+ * Gera a planilha de exemplo com dados reais do cadastro, para o arquivo já
+ * importar sem erro em vez de esbarrar em lote ou receita inexistente.
+ */
+async function baixarModeloOrdens(
+  lotes: LoteSementeLinha[],
+  receitas: ReceitaCompleta[],
+  embalagens: g.EmbalagemLinha[],
+  maquinas: api.LinhaMaquina[],
+): Promise<void> {
+  const lote = lotes[0]?.id ?? 'L-0001'
+  const outroLote = lotes[1]?.id ?? lote
+  const receita = receitas[0]?.nome ?? 'FTZ60'
+  const emb = embalagens[0]?.codigo ?? 'BG5M'
+  const maquina = maquinas[0]?.id ?? 'TSI1'
+  const hoje = new Date().toISOString().slice(0, 10)
+
+  await exportarXlsx(
+    'modelo-ordens',
+    LAYOUT_ORDENS.map((c) => ({
+      titulo: c.coluna,
+      largura: c.coluna === 'Obs' || c.coluna === 'Cliente' ? 28 : 16,
+      tipo: c.coluna === 'Bags' ? 'numero' : 'texto',
+      casas: 0,
+    })),
+    [
+      // programada: máquina e dia preenchidos
+      ['79500-1', lote, receita, emb, 45, 'CLIENTE EXEMPLO', '', maquina, hoje],
+      // no pool: sem máquina e sem dia, para programar na tela de Programação
+      ['79500-2', outroLote, receita, emb, 30, '', 'SEM GRAFITE', '', ''],
+    ],
+  )
+}
+
 export default function Ordens() {
   const { usuario } = useAuth()
   const podeEditar = usuario?.perfil === 'PCP' || usuario?.perfil === 'Gestor'
@@ -228,10 +275,58 @@ export default function Ordens() {
             tratamento <code>SEM TSI</code> viram lotes de semente; com tratamento real viram
             estoque de produto acabado. Pré-lote e granel são ignorados.
           </p>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium dark:border-stone-700">
-            Carregar planilha (.xlsx)
-            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerArquivo} />
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium dark:border-stone-700">
+              Carregar planilha (.xlsx)
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerArquivo} />
+            </label>
+            <Botao
+              titulo="Baixa uma planilha de exemplo já com as colunas certas e duas linhas preenchidas"
+              onClick={() =>
+                baixarModeloOrdens(lotes, receitas, embalagens, maquinas).catch((e) =>
+                  setErro(`gerar modelo: ${e instanceof Error ? e.message : String(e)}`),
+                )
+              }
+            >
+              Baixar modelo de ordens
+            </Botao>
+          </div>
+
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer text-stone-600 dark:text-stone-300">
+              Layout da planilha de ordens
+            </summary>
+            <div className="mt-2 rounded-md bg-stone-50 p-3 dark:bg-stone-800/50">
+              <p className="mb-2 text-stone-600 dark:text-stone-300">
+                A primeira linha é o cabeçalho. A ordem das colunas não importa, e o nome
+                tolera acento e maiúsculas — <code>Nº Ordem</code>, <code>numero</code> e{' '}
+                <code>OP</code> valem o mesmo.
+              </p>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-stone-500">
+                    <th className="py-1 pr-3">Coluna</th>
+                    <th className="py-1 pr-3">Obrigatória</th>
+                    <th className="py-1">Observação</th>
+                  </tr>
+                </thead>
+                <tbody className="text-stone-600 dark:text-stone-300">
+                  {LAYOUT_ORDENS.map((c) => (
+                    <tr key={c.coluna} className="border-t border-stone-200 dark:border-stone-700">
+                      <td className="py-1 pr-3 font-medium">{c.coluna}</td>
+                      <td className="py-1 pr-3">{c.obrigatoria ? 'sim' : 'não'}</td>
+                      <td className="py-1">{c.obs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-stone-500">
+                O cultivar não é coluna: vem do lote informado. Antes de importar, o sistema
+                mostra uma prévia e lista linha por linha o que estiver errado — nada é gravado
+                até você confirmar.
+              </p>
+            </div>
+          </details>
 
           {previaPedidos && (
             <div className="mt-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
