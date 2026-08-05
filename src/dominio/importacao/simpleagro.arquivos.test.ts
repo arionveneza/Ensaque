@@ -91,6 +91,19 @@ quando('conversao contra os arquivos reais de 28/07/2026', () => {
     expect(r.totalBagsLotes).toBe(16865)
   })
 
+  it('saldos: cultivares truncados na origem sao recuperados pelo nome', async () => {
+    const rows = await ler(ARQ_SALDOS)
+    const r = converterSaldos(rows)
+    // os dois casos reais da carga de 28/07 — e nenhum lote fica com o truncado
+    expect(Object.keys(r.resumo.cultivarCorrigidos).sort()).toEqual([
+      'O700 I2X → NEO700 I2X',
+      'O801 CE → NEO801 CE',
+    ])
+    const cultivares = new Set(r.lotes.map((l) => l.cultivar))
+    expect(cultivares.has('O700 I2X')).toBe(false)
+    expect(cultivares.has('NEO700 I2X')).toBe(true)
+  })
+
   it('saldos: nenhum estoque de produto acabado tratado', async () => {
     const rows = await ler(ARQ_SALDOS)
     const r = converterSaldos(rows)

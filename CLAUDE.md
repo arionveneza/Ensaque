@@ -180,6 +180,11 @@ Regras de conversão (validadas contra arquivo real de 1.196 linhas):
 `https://sementesveneza.painel.simpleagro.com.br:3333/work/saldos` (escolher safra → Ir → Exportar)
 
 Colunas: C cultivar · F lote · G lote tratamento · H PMS · K saldo (bags) · A nome do produto (embalagem no fim).
+- **Cultivar truncado na origem**: em alguns produtos a coluna CULTIVAR perde o começo do nome
+  (`O700 I2X` quando o nome do produto diz `SS NEO700 I2X BB5M`) — e os pedidos usam o nome
+  completo, então o balanço nunca casaria. Regra validada na carga de 28/07 (126 linhas, 2
+  cultivares, 0 falso positivo): quando o miolo do nome do produto TERMINA com a coluna, o
+  miolo vence. A prévia mostra cada correção.
 **Um arquivo, dois destinos:**
 - linhas **com embalagem** + tratamento `SEM TSI` → **lotes de semente** (peso/bag = PMS × fator),
   agregando o mesmo lote em vários endereços;

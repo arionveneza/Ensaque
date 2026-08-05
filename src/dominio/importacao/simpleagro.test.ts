@@ -231,6 +231,36 @@ describe('conversao de saldos', () => {
     expect(r.lotes[0].pesoBagKg).toBe(428) // 427,5 arredondado
   })
 
+  // Caso real: pedidos dizem NEO700, saldos dizem O700 na coluna CULTIVAR —
+  // mas o nome do produto tem o nome completo. Sem corrigir, o balanço nunca
+  // casa demanda com estoque para esses cultivares.
+  it('recupera cultivar truncado pelo nome do produto', () => {
+    const r = converterSaldos([
+      CAB_SALDOS,
+      saldo('SS NEO700 I2X BB5M', 'O700 I2X', 'SV001', 'SEM TSI', 171, 7),
+    ])
+    expect(r.lotes[0].cultivar).toBe('NEO700 I2X')
+    expect(r.resumo.cultivarCorrigidos).toEqual({ 'O700 I2X → NEO700 I2X': 1 })
+  })
+
+  it('corrige tambem no estoque de produto acabado', () => {
+    const r = converterSaldos([
+      CAB_SALDOS,
+      saldo('SS NEO801 CE BB5M', 'O801 CE', 'SV002', 'FTZ60', 171, 5),
+    ])
+    expect(r.estoquePa[0].cultivar).toBe('NEO801 CE')
+  })
+
+  it('nao inventa correcao quando o nome nao termina com o cultivar', () => {
+    const r = converterSaldos([
+      CAB_SALDOS,
+      saldo('SS OUTRACOISA BB5M', 'NEO771 I2X', 'SV003', 'SEM TSI', 171, 4),
+    ])
+    // sem relação entre nome e coluna: fica a coluna, sem mexer
+    expect(r.lotes[0].cultivar).toBe('NEO771 I2X')
+    expect(r.resumo.cultivarCorrigidos).toEqual({})
+  })
+
   it('guarda o tratamento que veio da origem', () => {
     const r = converterSaldos([
       CAB_SALDOS,

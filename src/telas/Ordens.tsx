@@ -476,6 +476,17 @@ export default function Ordens() {
                   </Aviso>
                 </div>
               )}
+              {Object.keys(previaSaldos.resumo.cultivarCorrigidos).length > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Cultivar corrigido pelo nome do produto</b> (a coluna veio truncada
+                    da SimpleAgro — sem isso o balanço não casa com os pedidos):{' '}
+                    {Object.entries(previaSaldos.resumo.cultivarCorrigidos)
+                      .map(([de, linhas]) => `${de} (${linhas} linha${linhas > 1 ? 's' : ''})`)
+                      .join(' · ')}
+                  </Aviso>
+                </div>
+              )}
               <div className="mt-3 flex gap-2">
                 <Botao
                   variante="primario"

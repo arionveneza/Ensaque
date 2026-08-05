@@ -22,6 +22,13 @@ export const EMBALAGEM_DEPARA: Record<string, { codigo: string; fator: number }>
   BMB: { codigo: 'MEIOBAG', fator: 2.5 },
 }
 
+/**
+ * Cultivar canônico: caixa alta e espaços colapsados. O balanço cruza os dois
+ * relatórios por texto — qualquer diferença de grafia quebra o casamento.
+ */
+export const normalizaCultivar = (s: string): string =>
+  s.replace(/\s+/g, ' ').trim().toUpperCase()
+
 // ================================================================
 // 1. Pedidos Analítico Resumido
 // ================================================================
@@ -165,7 +172,7 @@ export function converterPedidos(
     if (receitas.size > 0 && !receitas.has(tratamento.toUpperCase())) {
       resumo.semReceita[tratamento] = (resumo.semReceita[tratamento] ?? 0) + bags
     }
-    const cultivar = txt(r[iProduto]).split(' - ')[0].trim()
+    const cultivar = normalizaCultivar(txt(r[iProduto]).split(' - ')[0])
     const finRaw = txt(r[iFin])
     resumo.porStatusFinanceiro[finRaw || '(vazio)'] =
       (resumo.porStatusFinanceiro[finRaw || '(vazio)'] ?? 0) + bags
@@ -231,6 +238,13 @@ export interface ResumoSaldos {
   /** Saldo negativo na origem: ignorado, mas reportado. */
   negativos: { lote: string; bags: number }[]
   semPms: number
+  /**
+   * Coluna CULTIVAR truncada, recuperada pelo nome do produto:
+   * `"O700 I2X → NEO700 I2X"` → linhas corrigidas. Caso real da origem —
+   * os pedidos trazem NEO700 e os saldos O700, e sem isto o balanço
+   * nunca casa demanda com estoque.
+   */
+  cultivarCorrigidos: Record<string, number>
 }
 
 export interface ResultadoSaldos {
@@ -274,6 +288,7 @@ export function converterSaldos(rows: Linha[]): ResultadoSaldos {
     saldoZeroOuNegativo: 0,
     negativos: [],
     semPms: 0,
+    cultivarCorrigidos: {},
   }
 
   for (const r of rows.slice(1)) {
@@ -290,7 +305,17 @@ export function converterSaldos(rows: Linha[]): ResultadoSaldos {
       resumo.saldoZeroOuNegativo++
       continue
     }
-    const cultivar = txt(r[iCult])
+    // A coluna CULTIVAR vem truncada em alguns produtos (O700 quando o nome
+    // diz NEO700). O nome do produto é "SS <cultivar> <embalagem>" — quando o
+    // miolo dele TERMINA com a coluna, o miolo é o nome completo e vence.
+    const cultColuna = normalizaCultivar(txt(r[iCult]))
+    const miolo = normalizaCultivar(nome.split(/\s+/).slice(1, -1).join(' '))
+    let cultivar = cultColuna
+    if (miolo && miolo !== cultColuna && (miolo.endsWith(cultColuna) || !cultColuna)) {
+      cultivar = miolo
+      const chaveCorr = cultColuna ? `${cultColuna} → ${miolo}` : `(vazio) → ${miolo}`
+      resumo.cultivarCorrigidos[chaveCorr] = (resumo.cultivarCorrigidos[chaveCorr] ?? 0) + 1
+    }
     const tratamento = txt(r[iTrat])
     const pms = iPms >= 0 ? num(r[iPms]) : 0
 
