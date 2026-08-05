@@ -14,10 +14,12 @@ type Periodo = 'dia' | 'semana' | 'mes'
 export default function Lotes() {
   const { usuario, permitido } = useAuth()
   const podeBaixar = permitido('lotes', 'baixar_lote')
+  const podeConferir = permitido('lotes', 'conferir')
 
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [movimentos, setMovimentos] = useState<MovimentoLote[]>([])
+  const [conferencias, setConferencias] = useState<g.ConferenciaLinha[]>([])
   const [periodo, setPeriodo] = useState<Periodo>('semana')
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -30,14 +32,16 @@ export default function Lotes() {
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const [l, o, m] = await Promise.all([
+      const [l, o, m, c] = await Promise.all([
         g.listarLotes(),
         g.listarOrdens(),
         g.listarMovimentos(`${desde}T00:00:00Z`),
+        g.listarConferencias(),
       ])
       setLotes(l)
       setOrdens(o)
       setMovimentos(m)
+      setConferencias(c)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -80,6 +84,17 @@ export default function Lotes() {
   const aBaixar = agregado.filter((a) => a.lote.status === 'Em estoque' && a.abertas.length > 0)
   const orfaos = agregado.filter((a) => a.orfao)
   const criticos = agregado.filter((a) => a.critico)
+
+  // etapa da logística: conferir fisicamente o estoque das finalizadas
+  const FINALIZADAS = ['Finalizada', 'Qualidade apontada', 'Apontada']
+  const conferenciaDe = (id: string) => conferencias.find((c) => c.ordem_id === id)
+  const aConferir = ordens.filter(
+    (o) => FINALIZADAS.includes(o.status_efetivo) && !conferenciaDe(o.id),
+  )
+  const divergentes = ordens.filter((o) => {
+    const c = conferenciaDe(o.id)
+    return c != null && c.bags_contados !== o.bags
+  })
 
   async function comErro(fn: () => Promise<void>) {
     try {
@@ -237,6 +252,39 @@ export default function Lotes() {
         </Cartao>
       )}
 
+      {/* -------- conferência de estoque (etapa da logística) -------- */}
+      <Cartao
+        titulo={`Conferência de estoque — ordens finalizadas (${aConferir.length})`}
+        className="mb-6"
+      >
+        {divergentes.length > 0 && (
+          <div className="mb-3">
+            <Aviso gravidade="bloqueio">
+              <b>{divergentes.length} divergência(s) na contagem:</b>{' '}
+              {divergentes
+                .map((o) => `${o.numero} (esperado ${o.bags}, contado ${conferenciaDe(o.id)!.bags_contados})`)
+                .join(' · ')}
+            </Aviso>
+          </div>
+        )}
+        {aConferir.length === 0 ? (
+          <Vazio>Nenhuma ordem finalizada aguardando conferência física.</Vazio>
+        ) : (
+          <div className="space-y-3">
+            {aConferir.map((o) => (
+              <LinhaConferencia
+                key={o.id}
+                ordem={o}
+                podeConferir={podeConferir}
+                onConferir={(bags, obs) =>
+                  comErro(() => g.registrarConferencia(o.id, bags, obs, usuario!.id))
+                }
+              />
+            ))}
+          </div>
+        )}
+      </Cartao>
+
       {/* -------- relatório de baixas -------- */}
       <Cartao
         titulo="Relatório de baixas"
@@ -299,5 +347,77 @@ export default function Lotes() {
         )}
       </Cartao>
     </Pagina>
+  )
+}
+
+/**
+ * A contagem física de uma ordem finalizada. O campo já vem com o esperado
+ * preenchido — o operador só corrige se a contagem der diferente.
+ */
+function LinhaConferencia({
+  ordem, podeConferir, onConferir,
+}: {
+  ordem: OrdemVisao
+  podeConferir: boolean
+  onConferir: (bags: number, obs: string | null) => void
+}) {
+  const [bags, setBags] = useState(String(ordem.bags))
+  const [obs, setObs] = useState('')
+  const contados = parseInt(bags, 10)
+  const valido = Number.isFinite(contados) && contados >= 0
+  const diverge = valido && contados !== ordem.bags
+
+  return (
+    <div className="rounded-md border border-stone-200 p-3 dark:border-stone-700">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-medium">
+            {ordem.numero} · {ordem.cultivar}{' '}
+            <Tag cor={corDoStatus(ordem.status_efetivo)}>{ordem.status_efetivo}</Tag>
+          </p>
+          <p className="text-xs text-stone-500">
+            {ordem.receita_nome} · lote {ordem.lote_id} · esperado <b>{ordem.bags} bg</b> ·{' '}
+            {n(ordem.peso_t, 1)} t
+          </p>
+        </div>
+        {podeConferir && (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-sm">
+              contados
+              <input
+                type="number"
+                min={0}
+                value={bags}
+                onChange={(e) => setBags(e.target.value)}
+                className={`w-20 rounded-md border px-2 py-1.5 text-right text-sm dark:bg-stone-800 ${
+                  diverge
+                    ? 'border-amber-500 dark:border-amber-600'
+                    : 'border-stone-300 dark:border-stone-700'
+                }`}
+              />
+            </label>
+            <input
+              value={obs}
+              onChange={(e) => setObs(e.target.value)}
+              placeholder={diverge ? 'motivo da diferença' : 'observação (opcional)'}
+              className="w-44 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
+            />
+            <Botao
+              variante="primario"
+              disabled={!valido}
+              onClick={() => onConferir(contados, obs.trim() || null)}
+            >
+              Conferir
+            </Botao>
+          </div>
+        )}
+      </div>
+      {diverge && (
+        <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+          Divergência: {contados} contados para {ordem.bags} esperados
+          ({contados > ordem.bags ? '+' : ''}{contados - ordem.bags} bg).
+        </p>
+      )}
+    </div>
   )
 }

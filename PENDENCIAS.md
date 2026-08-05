@@ -51,7 +51,10 @@ Nenhuma é problema de código; todas dependem de definição da operação.
   TSI real cada status descartou. O "aguardando" do painel é só o
   `Status Financeiro = Não Aprovado`: importado, visível, fora do saldo. Quantidade é a
   coluna `Saldo a Faturar` (BW), já líquida do faturado — sempre foi.
-- **Qualidade reprovada:** hoje é só um carimbo. Gera retrabalho? Bloqueia o lote? Cria nova ordem?
+- ~~Qualidade reprovada~~ — **RESOLVIDO em 05/08/2026**: o Aprovado/Reprovado saiu. A qualidade
+  virou checklist informativo em 2 etapas (em processo + final): recobrimento 1–5, umidade,
+  desprendimento de pó, observação. Nunca bloqueia. A tabela `ordem_qualidade` ficou sem uso —
+  remover na limpeza geral (o nível 1 do limpar-dados-teste já a esvazia).
 - **Estoque de químicos:** o app registra consumo real mas não sabe o saldo de insumo, então
   não consegue avisar "o Fortenza não cobre a programação da semana".
 - **Etiquetas:** ~15 abas da planilha antiga ficaram fora do escopo.

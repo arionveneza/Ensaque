@@ -26,6 +26,8 @@ union all select 'ordem_paradas',      count(*) from ordem_paradas
 union all select 'ordem_tanques',      count(*) from ordem_tanques
 union all select 'ordem_tanque_lotes', count(*) from ordem_tanque_lotes
 union all select 'ordem_qualidade',    count(*) from ordem_qualidade
+union all select 'qualidade_checks',   count(*) from qualidade_checks
+union all select 'ordem_conferencias', count(*) from ordem_conferencias
 union all select 'ordem_auditoria',    count(*) from ordem_auditoria
 union all select 'lote_movimentos',    count(*) from lote_movimentos
 union all select 'lotes_semente',      count(*) from lotes_semente
@@ -49,6 +51,8 @@ order by 1;
 -- begin;
 --   delete from ordem_auditoria;
 --   delete from ordem_qualidade;
+--   delete from qualidade_checks;
+--   delete from ordem_conferencias;
 --   delete from ordem_tanque_lotes;
 --   delete from ordem_tanques;
 --   delete from ordem_paradas;

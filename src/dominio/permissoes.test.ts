@@ -25,8 +25,21 @@ describe('matriz padrao', () => {
   })
 
   it('AGROTIS e do PCP, nao da Qualidade', () => {
-    expect(permitidoPadrao('PCP', 'qualidade', 'agrotis')).toBe(true)
-    expect(permitidoPadrao('Qualidade', 'qualidade', 'agrotis')).toBe(false)
+    expect(permitidoPadrao('PCP', 'agrotis', 'lancar')).toBe(true)
+    expect(permitidoPadrao('PCP', 'agrotis', 'ver')).toBe(true)
+    expect(permitidoPadrao('Qualidade', 'agrotis', 'lancar')).toBe(false)
+    expect(permitidoPadrao('Qualidade', 'agrotis', 'ver')).toBe(false)
+  })
+
+  it('conferencia de estoque e da Logistica', () => {
+    expect(permitidoPadrao('Logistica', 'lotes', 'conferir')).toBe(true)
+    expect(permitidoPadrao('PCP', 'lotes', 'conferir')).toBe(false)
+    expect(permitidoPadrao('Qualidade', 'lotes', 'conferir')).toBe(false)
+  })
+
+  it('a visao geral de etapas todo perfil ve', () => {
+    for (const p of ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Gestor'] as const)
+      expect(permitidoPadrao(p, 'etapas', 'ver')).toBe(true)
   })
 
   it('Gestor tem todas as acoes de todos os recursos', () => {

@@ -97,8 +97,20 @@ registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele 
 Fechar a janela em qualquer etapa **não** muda o estado. `Cancelar início` descarta apontamentos
 (com auditoria) e libera a máquina — usado quando o operador inicia a ordem errada.
 
-### Encerramento (AGROTIS)
-Após a qualidade, o **PCP** lança a ordem no AGROTIS e registra aqui o **nº do lançamento**
+### Qualidade em 2 etapas + conferência (decisão de 05/08/2026)
+O **checklist substituiu** o Aprovado/Reprovado + amostra. Campos, iguais nas duas etapas:
+recobrimento (nota 1–5) · umidade do tratamento (OK/Fora do padrão) · desprendimento de pó
+(OK/Fora do padrão) · observação. **Apenas informativos — nunca bloqueiam.**
+- **Em processo**: com a ordem `Em produção`/`Parada`. Vários registros por ordem, com hora
+  (histórico). Não muda status.
+- **Final**: com a ordem `Finalizada`. Um registro por ordem → status `Qualidade apontada`.
+- **Conferência de estoque (Logística)**: para ordens finalizadas, registra os **bags contados**
+  fisicamente (compara com o esperado). Etapa paralela — **não trava o AGROTIS**.
+- **Visão geral (tela Etapas)**: régua por ordem — Produção → Q. processo → Q. final →
+  Conferência → AGROTIS.
+
+### Encerramento (AGROTIS — tela própria)
+Após a **qualidade final**, o **PCP** lança a ordem no AGROTIS e registra o **nº do lançamento**
 (obrigatório) → status `Apontada`, registro definitivo. Gancho natural para integração futura.
 
 ---

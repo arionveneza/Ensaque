@@ -12,13 +12,15 @@ const Programacao = lazy(() => import('@/telas/Programacao'))
 const Lotes = lazy(() => import('@/telas/Lotes'))
 const Ordens = lazy(() => import('@/telas/Ordens'))
 const Qualidade = lazy(() => import('@/telas/Qualidade'))
+const Agrotis = lazy(() => import('@/telas/Agrotis'))
+const Etapas = lazy(() => import('@/telas/Etapas'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
 
 type TelaId =
-  | 'ordens' | 'programacao' | 'lotes' | 'execucao'
-  | 'qualidade' | 'indicadores' | 'cadastros' | 'administracao'
+  | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
+  | 'agrotis' | 'etapas' | 'indicadores' | 'cadastros' | 'administracao'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -26,6 +28,8 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'lotes', nome: 'Lotes a baixar' },
   { id: 'execucao', nome: 'Execução' },
   { id: 'qualidade', nome: 'Qualidade' },
+  { id: 'agrotis', nome: 'AGROTIS' },
+  { id: 'etapas', nome: 'Etapas' },
   { id: 'indicadores', nome: 'Indicadores' },
   { id: 'cadastros', nome: 'Cadastros' },
   { id: 'administracao', nome: 'Administração' },
@@ -128,6 +132,8 @@ function Shell() {
           {atual === 'lotes' && <Lotes />}
           {atual === 'execucao' && <Execucao />}
           {atual === 'qualidade' && <Qualidade />}
+          {atual === 'agrotis' && <Agrotis />}
+          {atual === 'etapas' && <Etapas />}
           {atual === 'indicadores' && <Indicadores />}
           {atual === 'cadastros' && <Cadastros />}
           {atual === 'administracao' && <Administracao />}

@@ -690,3 +690,106 @@ insert into motivos_parada (descricao,tipo) values
 
 -- ATENÇÃO: produtos_quimicos, receitas e receita_itens devem ser carregados com os
 -- dados REAIS (densidades da FISPQ). O protótipo usa valores fictícios plausíveis.
+
+-- ============================================================
+-- 10. ETAPAS DA ORDEM (05/08/2026)
+-- Qualidade em 2 tempos + conferência da logística + visão geral.
+-- O checklist SUBSTITUI o Aprovado/Reprovado + amostra da ordem_qualidade,
+-- que fica sem uso (remover na limpeza geral). Espelho de etapas.sql.
+-- ============================================================
+
+create table qualidade_checks (
+  id           uuid primary key default gen_random_uuid(),
+  ordem_id     uuid not null references ordens(id) on delete cascade,
+  etapa        text not null check (etapa in ('processo','final')),
+  recobrimento int  not null check (recobrimento between 1 and 5),
+  umidade_ok   boolean not null,   -- false = fora do padrão
+  po_ok        boolean not null,   -- desprendimento de pó; false = fora do padrão
+  observacao   text,
+  inspetor_id  uuid references usuarios(id),
+  ts           timestamptz not null default now()
+);
+create index on qualidade_checks (ordem_id);
+create unique index qualidade_final_unica
+  on qualidade_checks (ordem_id) where etapa = 'final';
+
+create or replace function fn_valida_qualidade_check() returns trigger as $$
+declare st text;
+begin
+  select status::text into st from ordens where id = new.ordem_id;
+  if new.etapa = 'processo' and st not in ('Em producao','Parada') then
+    raise exception 'Checklist em processo exige ordem em execucao (status atual: %)', st;
+  end if;
+  if new.etapa = 'final' and st <> 'Finalizada' then
+    raise exception 'Checklist final exige ordem Finalizada (status atual: %)', st;
+  end if;
+  return new;
+end $$ language plpgsql set search_path = tsi, public;
+create trigger tg_valida_qualidade_check before insert on qualidade_checks
+  for each row execute function fn_valida_qualidade_check();
+
+create table ordem_conferencias (
+  ordem_id      uuid primary key references ordens(id) on delete cascade,
+  bags_contados int not null check (bags_contados >= 0),
+  observacao    text,
+  conferido_por uuid references usuarios(id),
+  ts            timestamptz not null default now()
+);
+
+create or replace function fn_valida_conferencia() returns trigger as $$
+declare st text;
+begin
+  select status::text into st from ordens where id = new.ordem_id;
+  if st not in ('Finalizada','Qualidade apontada','Apontada') then
+    raise exception 'Conferencia de estoque exige ordem finalizada (status atual: %)', st;
+  end if;
+  return new;
+end $$ language plpgsql set search_path = tsi, public;
+create trigger tg_valida_conferencia before insert or update on ordem_conferencias
+  for each row execute function fn_valida_conferencia();
+
+-- SECURITY DEFINER: o perfil Qualidade não tem UPDATE em ordens pelo RLS,
+-- então o flip Finalizada → Qualidade apontada precisa vir por aqui.
+create or replace function apontar_qualidade_final(
+  p_ordem uuid, p_recobrimento int, p_umidade_ok boolean, p_po_ok boolean, p_obs text
+) returns void as $$
+begin
+  if meu_perfil() not in ('Qualidade','Gestor') then
+    raise exception 'Apenas Qualidade ou Gestor apontam a qualidade final';
+  end if;
+  insert into qualidade_checks
+    (ordem_id, etapa, recobrimento, umidade_ok, po_ok, observacao, inspetor_id)
+  values
+    (p_ordem, 'final', p_recobrimento, p_umidade_ok, p_po_ok,
+     nullif(trim(coalesce(p_obs,'')), ''), auth.uid());
+  update ordens set status = 'Qualidade apontada'
+   where id = p_ordem and status = 'Finalizada';
+end $$ language plpgsql security definer set search_path = tsi, public;
+
+create or replace view v_ordem_etapas as
+select o.*,
+       coalesce(qp.qtd, 0)          as checks_processo,
+       (qf.ordem_id is not null)    as tem_qualidade_final,
+       (c.ordem_id  is not null)    as conferida,
+       c.bags_contados
+from v_ordens o
+left join (select ordem_id, count(*) as qtd
+             from qualidade_checks where etapa = 'processo' group by 1) qp
+       on qp.ordem_id = o.id
+left join (select distinct ordem_id
+             from qualidade_checks where etapa = 'final') qf
+       on qf.ordem_id = o.id
+left join ordem_conferencias c on c.ordem_id = o.id;
+alter view v_ordem_etapas set (security_invoker = true);
+
+alter table qualidade_checks   enable row level security;
+alter table ordem_conferencias enable row level security;
+create policy ler_qc on qualidade_checks for select using (meu_perfil() is not null);
+-- checklist é trilha: insere, não edita nem apaga
+create policy qual_qc on qualidade_checks for insert
+  with check (meu_perfil() in ('Qualidade','Gestor'));
+create policy ler_conf on ordem_conferencias for select using (meu_perfil() is not null);
+-- conferência pode ser corrigida (recontagem) pela própria logística
+create policy log_conf on ordem_conferencias for all
+  using (meu_perfil() in ('Logistica','Gestor'))
+  with check (meu_perfil() in ('Logistica','Gestor'));

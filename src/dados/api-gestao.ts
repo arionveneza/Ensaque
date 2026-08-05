@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { QualidadeVisual, TipoParada, UnidadeDose } from '@/dominio/tipos'
+import type { TipoParada, UnidadeDose } from '@/dominio/tipos'
 import type { PedidoConvertido, EstoquePaConvertido, LoteConvertido } from '@/dominio/importacao/simpleagro'
 
 /** Consultas e comandos das telas de Programação, Lotes, Ordens, Qualidade, Indicadores e Cadastros. */
@@ -353,51 +353,128 @@ export async function importarLotes(linhas: LoteConvertido[]): Promise<number> {
 }
 
 // ================================================================
-// Qualidade e encerramento
+// Qualidade em 2 etapas, conferência de estoque e encerramento
 // ================================================================
 
-export async function apontarQualidade(
+/** Um item do checklist — informativo, nunca bloqueia. */
+export interface ChecklistQualidade {
+  id: string
+  ordem_id: string
+  etapa: 'processo' | 'final'
+  recobrimento: number
+  umidade_ok: boolean
+  po_ok: boolean
+  observacao: string | null
+  ts: string
+}
+
+export interface DadosChecklist {
+  recobrimento: number
+  umidadeOk: boolean
+  poOk: boolean
+  observacao: string | null
+}
+
+export async function listarChecksQualidade(): Promise<ChecklistQualidade[]> {
+  const { data, error } = await supabase
+    .from('qualidade_checks')
+    .select('id, ordem_id, etapa, recobrimento, umidade_ok, po_ok, observacao, ts')
+    .order('ts', { ascending: false })
+  erro('checklists de qualidade', error)
+  return (data ?? []) as ChecklistQualidade[]
+}
+
+/** Em processo: vários por ordem, cada verificação vira um registro com hora. */
+export async function registrarCheckProcesso(
   ordemId: string,
-  visual: QualidadeVisual,
-  amostra: boolean,
-  observacao: string | null,
+  d: DadosChecklist,
   inspetorId: string,
 ): Promise<void> {
-  const q = await supabase.from('ordem_qualidade').upsert(
+  const { error } = await supabase.from('qualidade_checks').insert({
+    ordem_id: ordemId,
+    etapa: 'processo',
+    recobrimento: d.recobrimento,
+    umidade_ok: d.umidadeOk,
+    po_ok: d.poOk,
+    observacao: d.observacao,
+    inspetor_id: inspetorId,
+  })
+  erro('registrar verificação em processo', error)
+}
+
+/**
+ * Final: um por ordem; grava o check e muda o status para 'Qualidade
+ * apontada'. Vai por RPC porque o perfil Qualidade não tem UPDATE em
+ * `ordens` — feito no cliente, o flip falharia em silêncio.
+ */
+export async function apontarQualidadeFinal(
+  ordemId: string,
+  d: DadosChecklist,
+): Promise<void> {
+  const { error } = await supabase.rpc('apontar_qualidade_final', {
+    p_ordem: ordemId,
+    p_recobrimento: d.recobrimento,
+    p_umidade_ok: d.umidadeOk,
+    p_po_ok: d.poOk,
+    p_obs: d.observacao,
+  })
+  erro('apontar qualidade final', error)
+}
+
+/** Conferência física da logística — uma por ordem, recontagem sobrescreve. */
+export interface ConferenciaLinha {
+  ordem_id: string
+  bags_contados: number
+  observacao: string | null
+  ts: string
+}
+
+export async function listarConferencias(): Promise<ConferenciaLinha[]> {
+  const { data, error } = await supabase
+    .from('ordem_conferencias')
+    .select('ordem_id, bags_contados, observacao, ts')
+  erro('conferências de estoque', error)
+  return (data ?? []) as ConferenciaLinha[]
+}
+
+export async function registrarConferencia(
+  ordemId: string,
+  bagsContados: number,
+  observacao: string | null,
+  usuarioId: string,
+): Promise<void> {
+  if (!Number.isFinite(bagsContados) || bagsContados < 0)
+    throw new Error('Informe a quantidade de bags contados (0 ou mais).')
+  const { error } = await supabase.from('ordem_conferencias').upsert(
     {
       ordem_id: ordemId,
-      visual,
-      amostra,
+      bags_contados: Math.round(bagsContados),
       observacao,
-      inspetor_id: inspetorId,
-      apontado_em: new Date().toISOString(),
+      conferido_por: usuarioId,
+      ts: new Date().toISOString(),
     },
     { onConflict: 'ordem_id' },
   )
-  erro('apontar qualidade', q.error)
-
-  const up = await supabase
-    .from('ordens')
-    .update({ status: 'Qualidade apontada' })
-    .eq('id', ordemId)
-    .eq('status', 'Finalizada')
-  erro('mudar status para Qualidade apontada', up.error)
+  erro('registrar conferência', error)
 }
 
-export interface QualidadeLinha {
-  ordem_id: string
-  visual: QualidadeVisual
-  amostra: boolean
-  observacao: string | null
-  apontado_em: string
+/** Visão geral: cada ordem com o resumo das etapas (v_ordem_etapas). */
+export interface OrdemEtapasLinha extends OrdemVisao {
+  checks_processo: number
+  tem_qualidade_final: boolean
+  conferida: boolean
+  bags_contados: number | null
 }
 
-export async function listarQualidade(): Promise<QualidadeLinha[]> {
+export async function listarOrdensEtapas(): Promise<OrdemEtapasLinha[]> {
   const { data, error } = await supabase
-    .from('ordem_qualidade')
-    .select('ordem_id, visual, amostra, observacao, apontado_em')
-  erro('apontamentos de qualidade', error)
-  return (data ?? []) as QualidadeLinha[]
+    .from('v_ordem_etapas')
+    .select('*')
+    .order('data_prog')
+    .order('maquina_id')
+    .order('seq')
+  erro('etapas das ordens', error)
+  return (data ?? []) as OrdemEtapasLinha[]
 }
 
 /** Encerramento: o PCP lança no AGROTIS e registra o número aqui. */

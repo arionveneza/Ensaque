@@ -15,9 +15,11 @@ import type { Perfil } from './tipos'
 export const ACOES_POR_RECURSO: Record<string, string[]> = {
   ordens: ['ver', 'criar', 'editar', 'excluir', 'priorizar'],
   programacao: ['ver', 'editar'],
-  lotes: ['ver', 'baixar_lote'],
+  lotes: ['ver', 'baixar_lote', 'conferir'],
   execucao: ['ver', 'apontar'],
-  qualidade: ['ver', 'qualidade', 'agrotis'],
+  qualidade: ['ver', 'qualidade'],
+  agrotis: ['ver', 'lancar'],
+  etapas: ['ver'],
   indicadores: ['ver'],
   cadastros: ['ver', 'editar'],
 }
@@ -29,9 +31,10 @@ export const ROTULO_ACAO: Record<string, string> = {
   excluir: 'Excluir',
   priorizar: 'Priorizar',
   baixar_lote: 'Baixar lote',
+  conferir: 'Conferir estoque',
   apontar: 'Apontar',
   qualidade: 'Apontar qualidade',
-  agrotis: 'Lançar AGROTIS',
+  lancar: 'Lançar no AGROTIS',
 }
 
 /**
@@ -45,23 +48,28 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     programacao: ['ver', 'editar'],
     lotes: ['ver'],
     execucao: ['ver'],
-    qualidade: ['ver', 'agrotis'],
+    qualidade: ['ver'],
+    agrotis: ['ver', 'lancar'],
+    etapas: ['ver'],
     indicadores: ['ver'],
     cadastros: ['ver', 'editar'],
   },
   Logistica: {
     programacao: ['ver'],
-    lotes: ['ver', 'baixar_lote'],
+    lotes: ['ver', 'baixar_lote', 'conferir'],
+    etapas: ['ver'],
     indicadores: ['ver'],
   },
   Producao: {
     programacao: ['ver'],
     execucao: ['ver', 'apontar'],
+    etapas: ['ver'],
     indicadores: ['ver'],
   },
   Qualidade: {
     execucao: ['ver'],
     qualidade: ['ver', 'qualidade'],
+    etapas: ['ver'],
     indicadores: ['ver'],
   },
   Gestor: { ...ACOES_POR_RECURSO },
