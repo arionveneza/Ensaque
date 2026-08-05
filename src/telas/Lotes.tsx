@@ -153,9 +153,7 @@ export default function Lotes() {
               item={a}
               podeBaixar={podeBaixar}
               onBaixar={() =>
-                comErro(() =>
-                  g.baixarLote(a.lote.id, a.bagsNecessarios, a.pesoT, usuario!.id),
-                )
+                comErro(() => g.baixarLote(a.lote.id, a.bagsNecessarios, a.pesoT))
               }
             />
           ))}
@@ -191,9 +189,7 @@ export default function Lotes() {
                         disabled={!permissao.permitido}
                         titulo={permissao.motivo}
                         onClick={() =>
-                          comErro(() =>
-                            g.estornarLote(a.lote.id, a.lote.bags_disp ?? 0, usuario!.id),
-                          )
+                          comErro(() => g.estornarLote(a.lote.id, a.lote.bags_disp ?? 0))
                         }
                       >
                         Estornar

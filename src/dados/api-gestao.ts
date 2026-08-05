@@ -223,43 +223,30 @@ export async function criarLote(l: {
   }
 }
 
-export async function baixarLote(
-  loteId: string,
-  bags: number,
-  pesoT: number,
-  usuarioId: string,
-): Promise<void> {
-  const up = await supabase
-    .from('lotes_semente')
-    .update({ status: 'Baixado', baixado_por: usuarioId, baixado_em: new Date().toISOString() })
-    .eq('id', loteId)
-  erro('baixar lote', up.error)
-
-  const mov = await supabase
-    .from('lote_movimentos')
-    .insert({ lote_id: loteId, bags, peso_t: pesoT, estorno: false, usuario_id: usuarioId })
-  erro('registrar baixa', mov.error)
+/**
+ * A baixa muda o status E registra o movimento — duas escritas que precisam
+ * valer juntas. Antes eram duas chamadas: quando o RLS recusava a segunda,
+ * sobrava lote Baixado sem movimento (baixa fantasma que liberava produção
+ * sem separação física). A RPC roda as duas numa transação só; quem decide
+ * quem pode é a policy `pode_baixar_lote()`, que lê a matriz da Administração.
+ * Requer supabase/baixa-atomica-e-rls-apontamento.sql aplicado.
+ */
+export async function baixarLote(loteId: string, bags: number, pesoT: number): Promise<void> {
+  const { error } = await supabase.rpc('baixar_lote', {
+    p_lote: loteId,
+    p_bags: bags,
+    p_peso_t: pesoT,
+  })
+  erro('baixar lote', error)
 }
 
 /**
- * Estorno. O trigger do banco recusa se qualquer ordem do lote já foi
- * iniciada — a mensagem que volta é a do próprio banco.
+ * Estorno, mesma transação da baixa. O trigger do banco recusa se qualquer
+ * ordem do lote já foi iniciada — a mensagem que volta é a do próprio banco.
  */
-export async function estornarLote(
-  loteId: string,
-  bags: number,
-  usuarioId: string,
-): Promise<void> {
-  const up = await supabase
-    .from('lotes_semente')
-    .update({ status: 'Em estoque', baixado_por: null, baixado_em: null, devolver: false })
-    .eq('id', loteId)
-  erro('estornar lote', up.error)
-
-  const mov = await supabase
-    .from('lote_movimentos')
-    .insert({ lote_id: loteId, bags: -bags, estorno: true, usuario_id: usuarioId })
-  erro('registrar estorno', mov.error)
+export async function estornarLote(loteId: string, bags: number): Promise<void> {
+  const { error } = await supabase.rpc('estornar_lote', { p_lote: loteId, p_bags: bags })
+  erro('estornar lote', error)
 }
 
 export interface MovimentoLote {

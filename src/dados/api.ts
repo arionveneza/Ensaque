@@ -83,6 +83,16 @@ function erro(contexto: string, e: { message: string } | null): never | void {
   if (e) throw new Error(`${contexto}: ${e.message}`)
 }
 
+/**
+ * UPDATE barrado pelo RLS não dá erro: afeta 0 linhas em silêncio, e o app
+ * seguiria adiante achando que gravou. Todo update de apontamento pede as
+ * linhas de volta (.select) e trata 0 linhas como recusa.
+ */
+const SEM_LINHA = 'o banco não alterou nenhuma linha — o seu perfil não tem essa permissão'
+function exigeLinha(contexto: string, linhas: unknown[] | null): void {
+  if ((linhas ?? []).length === 0) throw new Error(`${contexto}: ${SEM_LINHA}`)
+}
+
 export async function carregarCadastros() {
   const [maquinas, motivos, produtos] = await Promise.all([
     supabase.from('maquinas').select('id, nome, capacidade_th, qtd_tanques').order('id'),
@@ -134,11 +144,13 @@ export async function salvarPesoTanque(
   campo: 'peso_inicial' | 'peso_final',
   valor: number | null,
 ): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('ordem_tanques')
     .update({ [campo]: valor })
     .eq('id', tanqueId)
+    .select('id')
   erro('salvar peso', error)
+  exigeLinha('salvar peso', data)
 }
 
 /**
@@ -153,30 +165,53 @@ export async function confirmarInicio(ordemId: string, usuarioId: string): Promi
     .insert({ ordem_id: ordemId, tipo: 'inicio', usuario_id: usuarioId })
   erro('registrar início', ev.error)
 
-  const up = await supabase.from('ordens').update({ status: 'Em producao' }).eq('id', ordemId)
-  if (up.error) {
+  const up = await supabase
+    .from('ordens')
+    .update({ status: 'Em producao' })
+    .eq('id', ordemId)
+    .select('id')
+  if (up.error || (up.data ?? []).length === 0) {
     // desfaz o evento para não deixar início órfão de status
     await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId).eq('tipo', 'inicio')
-    throw new Error(`confirmar início: ${up.error.message}`)
+    throw new Error(`confirmar início: ${up.error?.message ?? SEM_LINHA}`)
   }
 }
 
 export async function abrirPesagemFinal(ordemId: string): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('ordens')
     .update({ fim_pendente: true })
     .eq('id', ordemId)
+    .select('id')
   erro('abrir pesagem final', error)
+  exigeLinha('abrir pesagem final', data)
+}
+
+/**
+ * Desiste da finalização e volta a produzir. Não descarta nada: os pesos
+ * finais já digitados ficam guardados (e travados) para a próxima tentativa.
+ * Sem isto, um Finalizar clicado por engano só saía pelo Cancelar início,
+ * que joga fora a ordem inteira.
+ */
+export async function voltarParaProducao(ordemId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('ordens')
+    .update({ fim_pendente: false })
+    .eq('id', ordemId)
+    .select('id')
+  erro('voltar para produção', error)
+  exigeLinha('voltar para produção', data)
 }
 
 export async function confirmarFim(ordemId: string, usuarioId: string): Promise<void> {
-  // fecha parada em aberto antes de encerrar
-  const { error: eParada } = await supabase
+  // fecha parada em aberto antes de encerrar, guardando quais para poder desfazer
+  const par = await supabase
     .from('ordem_paradas')
     .update({ fim: new Date().toISOString() })
     .eq('ordem_id', ordemId)
     .is('fim', null)
-  erro('fechar parada em aberto', eParada)
+    .select('id')
+  erro('fechar parada em aberto', par.error)
 
   const ev = await supabase
     .from('ordem_eventos')
@@ -187,7 +222,15 @@ export async function confirmarFim(ordemId: string, usuarioId: string): Promise<
     .from('ordens')
     .update({ status: 'Finalizada', fim_pendente: false })
     .eq('id', ordemId)
-  erro('confirmar finalização', up.error)
+    .select('id')
+  if (up.error || (up.data ?? []).length === 0) {
+    // sem o status, o fim não aconteceu: apaga o evento e reabre as paradas
+    await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId).eq('tipo', 'fim')
+    const ids = (par.data ?? []).map((p) => (p as { id: string }).id)
+    if (ids.length > 0)
+      await supabase.from('ordem_paradas').update({ fim: null }).in('id', ids)
+    throw new Error(`confirmar finalização: ${up.error?.message ?? SEM_LINHA}`)
+  }
 }
 
 export async function registrarParada(
@@ -198,9 +241,19 @@ export async function registrarParada(
   const p = await supabase
     .from('ordem_paradas')
     .insert({ ordem_id: ordemId, motivo_id: motivoId, usuario_id: usuarioId })
+    .select('id')
+    .single()
   erro('registrar parada', p.error)
-  const up = await supabase.from('ordens').update({ status: 'Parada' }).eq('id', ordemId)
-  erro('mudar status para Parada', up.error)
+  const up = await supabase
+    .from('ordens')
+    .update({ status: 'Parada' })
+    .eq('id', ordemId)
+    .select('id')
+  if (up.error || (up.data ?? []).length === 0) {
+    // parada sem status é meia-verdade: descarta a parada recém-criada
+    if (p.data) await supabase.from('ordem_paradas').delete().eq('id', p.data.id)
+    throw new Error(`mudar status para Parada: ${up.error?.message ?? SEM_LINHA}`)
+  }
 }
 
 export async function retomar(ordemId: string): Promise<void> {
@@ -209,9 +262,20 @@ export async function retomar(ordemId: string): Promise<void> {
     .update({ fim: new Date().toISOString() })
     .eq('ordem_id', ordemId)
     .is('fim', null)
+    .select('id')
   erro('fechar parada', p.error)
-  const up = await supabase.from('ordens').update({ status: 'Em producao' }).eq('id', ordemId)
-  erro('retomar produção', up.error)
+  const up = await supabase
+    .from('ordens')
+    .update({ status: 'Em producao' })
+    .eq('id', ordemId)
+    .select('id')
+  if (up.error || (up.data ?? []).length === 0) {
+    // status não voltou: reabre a parada para não parar de contar o tempo
+    const ids = (p.data ?? []).map((x) => (x as { id: string }).id)
+    if (ids.length > 0)
+      await supabase.from('ordem_paradas').update({ fim: null }).in('id', ids)
+    throw new Error(`retomar produção: ${up.error?.message ?? SEM_LINHA}`)
+  }
 }
 
 /**
@@ -233,14 +297,25 @@ export async function cancelarInicio(
   erro('registrar auditoria', aud.error)
 
   // o status volta antes de apagar os eventos: o trigger de imutabilidade
-  // só libera a ordem depois que ela deixa de estar em andamento
+  // só libera a ordem depois que ela deixa de estar em andamento.
+  // Se o RLS recusar aqui, parar ANTES dos deletes — senão os apontamentos
+  // seriam apagados com a ordem ainda em andamento.
   const up = await supabase
     .from('ordens')
     .update({ status: 'Programada', turno_id: null, fim_pendente: false })
     .eq('id', ordemId)
+    .select('id')
   erro('devolver ordem para Programada', up.error)
+  exigeLinha('devolver ordem para Programada', up.data)
 
-  await supabase.from('ordem_paradas').delete().eq('ordem_id', ordemId)
-  await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId)
-  await supabase.from('ordem_tanques').delete().eq('ordem_id', ordemId)
+  // os deletes também devolvem as linhas: descarte recusado não pode passar
+  // batido, senão sobra evento duplicado inflando o tempo bruto da próxima
+  const delPar = await supabase.from('ordem_paradas').delete().eq('ordem_id', ordemId).select('id')
+  erro('descartar paradas', delPar.error)
+  const delEv = await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId).select('id')
+  erro('descartar eventos', delEv.error)
+  const delTq = await supabase.from('ordem_tanques').delete().eq('ordem_id', ordemId).select('id')
+  erro('descartar tanques', delTq.error)
+  if ((delEv.data ?? []).length === 0)
+    throw new Error(`descartar eventos: ${SEM_LINHA} — o cancelamento ficou incompleto, avise o gestor`)
 }
