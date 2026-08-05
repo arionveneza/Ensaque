@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Conversão dos dois relatórios da SimpleAgro.
  *
  * São funções puras sobre linhas (string[][]) — a leitura do .xlsx é um
@@ -45,7 +45,33 @@ export interface ResumoPedidos {
   semReceita: Record<string, number>
   /** Embalagens sem de-para → bags. */
   embalagemDesconhecida: Record<string, number>
+  /**
+   * Status Pedido descartados → linhas e bags, contando só o que seria
+   * trabalho de TSI de verdade (tratamento real e saldo positivo).
+   *
+   * Sem esse detalhe o descarte é cego: `foraStatus` sozinho não distingue
+   * "96 cancelados, tudo certo" de "a SimpleAgro renomeou o status e eu
+   * joguei o arquivo inteiro fora".
+   */
+  porStatusFora: Record<string, { linhas: number; bags: number }>
+  /** Valores distintos de Status Financeiro vistos → bags. */
+  porStatusFinanceiro: Record<string, number>
 }
+
+/**
+ * `Integrado` é o único Status Pedido que gera trabalho.
+ *
+ * A comparação ignora caixa e acento de propósito: uma renomeação na origem
+ * (`INTEGRADO`, `integrado`) descartaria o arquivo inteiro e o painel mostraria
+ * zero demanda — indistinguível de "não há pedido". Falha calada é pior que
+ * falha barulhenta.
+ */
+const normaliza = (s: string): string =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
+
+const STATUS_VALE = 'INTEGRADO'
+/** `Não Aprovado` normaliza para `NAO APROVADO`: a igualdade exata basta. */
+const FINANCEIRO_APROVADO = 'APROVADO'
 
 export interface ResultadoPedidos {
   linhas: PedidoConvertido[]
@@ -91,19 +117,32 @@ export function converterPedidos(
     aproveitadas: 0,
     semReceita: {},
     embalagemDesconhecida: {},
+    porStatusFora: {},
+    porStatusFinanceiro: {},
   }
 
   for (const r of rows.slice(1)) {
-    if (txt(r[iStatus]) !== 'Integrado') {
+    const statusRaw = txt(r[iStatus])
+    const tratamento = txt(r[iTrat])
+    const bags = num(r[iSaldo])
+
+    if (normaliza(statusRaw) !== STATUS_VALE) {
       resumo.foraStatus++
+      // só reporta o descarte que era trabalho de TSI de verdade: cancelado
+      // de SEM TSI ou com saldo zerado é ruído, não perda
+      if (tratamento && normaliza(tratamento) !== 'SEM TSI' && bags > 0) {
+        const k = statusRaw || '(vazio)'
+        const a = resumo.porStatusFora[k] ?? { linhas: 0, bags: 0 }
+        a.linhas++
+        a.bags += bags
+        resumo.porStatusFora[k] = a
+      }
       continue
     }
-    const tratamento = txt(r[iTrat])
-    if (!tratamento || tratamento.toUpperCase() === 'SEM TSI') {
+    if (!tratamento || normaliza(tratamento) === 'SEM TSI') {
       resumo.semTsi++
       continue
     }
-    const bags = num(r[iSaldo])
     if (bags <= 0) {
       resumo.saldoZero++
       continue
@@ -121,7 +160,12 @@ export function converterPedidos(
       resumo.semReceita[tratamento] = (resumo.semReceita[tratamento] ?? 0) + bags
     }
     const cultivar = txt(r[iProduto]).split(' - ')[0].trim()
-    const aprovado = txt(r[iFin]) === 'Aprovado'
+    const finRaw = txt(r[iFin])
+    resumo.porStatusFinanceiro[finRaw || '(vazio)'] =
+      (resumo.porStatusFinanceiro[finRaw || '(vazio)'] ?? 0) + bags
+    // aprovação financeira NÃO filtra a importação: define só quem conta no
+    // saldo. O não aprovado entra visível, fora da conta
+    const aprovado = normaliza(finRaw) === FINANCEIRO_APROVADO
     const chave = [cultivar, tratamento, emb.codigo, aprovado ? 'A' : 'P'].join('|')
 
     const atual = agregado.get(chave)

@@ -355,6 +355,46 @@ export default function Ordens() {
                   {previaPedidos.resumo.semTsi} SEM TSI · {previaPedidos.resumo.saldoZero} sem saldo
                 </li>
               </ul>
+
+              {/* Só Integrado entra. Se a origem renomear o status, o arquivo
+                  todo cai aqui — melhor ver o número que descobrir depois. */}
+              {Object.keys(previaPedidos.resumo.porStatusFora).length > 0 && (
+                <details className="mt-2 text-sm">
+                  <summary className="cursor-pointer text-stone-500">
+                    {inteiro(
+                      Object.values(previaPedidos.resumo.porStatusFora)
+                        .reduce((a, v) => a + v.bags, 0),
+                    )}{' '}
+                    bg de TSI real descartados por status do pedido — ver quais
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 pl-4 text-stone-500">
+                    {Object.entries(previaPedidos.resumo.porStatusFora)
+                      .sort(([, a], [, b]) => b.bags - a.bags)
+                      .map(([status, v]) => (
+                        <li key={status}>
+                          <b>{status}</b>: {v.linhas} linha(s), {inteiro(v.bags)} bg
+                        </li>
+                      ))}
+                  </ul>
+                  <p className="mt-1 pl-4 text-xs text-stone-400">
+                    Só <b>Integrado</b> gera trabalho de TSI. Esses pedidos não entram nem como
+                    aguardando — some da programação e do balanço.
+                  </p>
+                </details>
+              )}
+
+              {previaPedidos.resumo.aproveitadas === 0 &&
+                previaPedidos.resumo.totalLinhas > 0 && (
+                  <div className="mt-3">
+                    <Aviso>
+                      <b>Nenhuma linha aproveitada em {previaPedidos.resumo.totalLinhas}.</b>{' '}
+                      Confira se o arquivo é o “Pedidos Analítico Resumido” da safra certa. Se a
+                      SimpleAgro tiver renomeado a coluna Status Pedido ou o valor Integrado, o
+                      importador precisa de ajuste — não importe por cima da carga boa.
+                    </Aviso>
+                  </div>
+                )}
+
               {Object.keys(previaPedidos.resumo.semReceita).length > 0 && (
                 <div className="mt-3">
                   <Aviso>

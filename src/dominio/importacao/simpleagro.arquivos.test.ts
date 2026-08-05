@@ -58,6 +58,30 @@ quando('conversao contra os arquivos reais de 28/07/2026', () => {
     expect(Object.keys(r.resumo.semReceita).length).toBe(22)
   })
 
+  it('pedidos: aprovacao financeira nao filtra, so define quem conta', async () => {
+    const rows = await ler(ARQ_PEDIDOS)
+    const r = converterPedidos(rows)
+    // os dois status financeiros do arquivo, ambos importados
+    expect(r.resumo.porStatusFinanceiro).toEqual({
+      Aprovado: 1018,
+      'Não Aprovado': 4674,
+    })
+  })
+
+  it('pedidos: 213 bags de TSI real ficam fora por Status Pedido', async () => {
+    const rows = await ler(ARQ_PEDIDOS)
+    const r = converterPedidos(rows)
+    // 329 linhas descartadas no total, mas só 28 eram trabalho de verdade —
+    // o resto é cancelado de SEM TSI ou saldo zerado
+    expect(r.resumo.foraStatus).toBe(329)
+    expect(r.resumo.porStatusFora).toEqual({
+      'Aguardando Aprovação': { linhas: 16, bags: 119 },
+      'Em cotação': { linhas: 5, bags: 26 },
+      Cancelado: { linhas: 4, bags: 30 },
+      Reprovado: { linhas: 3, bags: 38 },
+    })
+  })
+
   it('saldos: 844 linhas resultam em 753 lotes e 16.865 bags', async () => {
     const rows = await ler(ARQ_SALDOS)
     expect(rows.length - 1).toBe(844)

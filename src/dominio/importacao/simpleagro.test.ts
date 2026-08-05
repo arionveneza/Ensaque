@@ -121,6 +121,55 @@ describe('conversao de pedidos', () => {
     expect(r.resumo.semReceita).toEqual({ DESCONHECIDO: 40 })
   })
 
+  // Uma renomeação de status na origem descartaria o arquivo inteiro em
+  // silêncio, e o painel mostraria zero demanda como se não houvesse pedido.
+  it('reconhece o status independente de caixa e acento', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('INTEGRADO', 'APROVADO', 'X - X', 'FTZ60', 'BB5M', 10),
+      pedido('integrado', 'aprovado', 'X - X', 'FTZ60', 'BB5M', 5),
+    ])
+    expect(r.totalAprovado).toBe(15)
+    expect(r.resumo.foraStatus).toBe(0)
+  })
+
+  it('nao aprovado nao vira aprovado por descuido de acento', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'NAO APROVADO', 'X - X', 'FTZ60', 'BB5M', 40),
+    ])
+    expect(r.totalAprovado).toBe(0)
+    expect(r.totalPendente).toBe(40)
+  })
+
+  it('detalha o descarte por status, so o que era trabalho de TSI', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Aguardando Aprovação', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 119),
+      pedido('Cancelado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 30),
+      // ruído: descartado, mas não era trabalho de TSI nenhum
+      pedido('Cancelado', 'Aprovado', 'X - X', 'SEM TSI', 'BB5M', 900),
+      pedido('Cancelado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 0),
+    ])
+    expect(r.resumo.foraStatus).toBe(4)
+    expect(r.resumo.porStatusFora).toEqual({
+      'Aguardando Aprovação': { linhas: 1, bags: 119 },
+      Cancelado: { linhas: 1, bags: 30 },
+    })
+  })
+
+  it('registra os valores de status financeiro que apareceram', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10),
+      pedido('Integrado', 'Não Aprovado', 'X - X', 'FTZ60', 'BB5M', 35),
+    ])
+    expect(r.resumo.porStatusFinanceiro).toEqual({
+      Aprovado: 10,
+      'Não Aprovado': 35,
+    })
+  })
+
   it('aceita saldo com virgula decimal', () => {
     const r = converterPedidos([
       CAB_PEDIDOS,
