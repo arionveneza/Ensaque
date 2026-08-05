@@ -100,9 +100,11 @@ export function ensaquePorBagKg(
 }
 
 /**
- * Monta os tanques da ordem agrupando os itens da receita por tanque.
+ * Monta os tanques da ordem agrupando os itens da receita por destino.
  * Só existem 5 tanques: receita com mais produtos agrupa produtos no mesmo
  * tanque, e o planejado do tanque passa a ser a SOMA dos produtos dele.
+ * O destino 0 é o transferidor (pó secante) — aparece primeiro e tem
+ * pesagem e lote iguais aos tanques.
  */
 export function montaTanques(receita: Receita): TanqueOrdem[] {
   const porTanque = new Map<number, ItemReceita[]>()

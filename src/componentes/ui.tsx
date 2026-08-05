@@ -10,6 +10,10 @@ export const n = (v: number | null | undefined, casas = 1): string =>
 export const inteiro = (v: number | null | undefined): string =>
   v == null || Number.isNaN(v) ? '—' : v.toLocaleString('pt-BR')
 
+/** Destino do produto na receita: T1–T5, ou 0 = transferidor (pó secante). */
+export const rotuloTanque = (tanque: number): string =>
+  tanque === 0 ? 'Transferidor' : `T${tanque}`
+
 export const diaCurto = (iso: string | null): string =>
   !iso ? '—' : `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 

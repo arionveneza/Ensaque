@@ -73,7 +73,11 @@ export interface ProdutoQuimico {
 export interface ItemReceita {
   produtoId: string
   dose: number
-  /** 1 a 5. Mais de um produto no mesmo tanque = mistura. */
+  /**
+   * 1 a 5, ou 0 = transferidor (pó secante, que nunca vai em tanque).
+   * Mais de um produto no mesmo destino = mistura. O transferidor tem
+   * pesagem e lote de químico iguais aos tanques.
+   */
   tanque: number
 }
 

@@ -15,7 +15,7 @@ import {
   temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
-import { enderecoLote } from '@/componentes/ui'
+import { enderecoLote, rotuloTanque } from '@/componentes/ui'
 
 const num = (v: number | null | undefined, casas = 1) =>
   v == null || Number.isNaN(v)
@@ -100,7 +100,7 @@ export default function ModalOrdem({
             (l) => lotesQuimico.find((lq) => lq.id === l.lote_quimico_id)?.produto_id === i.produto_id,
           ),
       )
-      .map((i) => `T${t.tanque} — ${prods.get(i.produto_id)?.nome ?? i.produto_id}`)
+      .map((i) => `${rotuloTanque(t.tanque)} — ${prods.get(i.produto_id)?.nome ?? i.produto_id}`)
   })
 
   const podeConfirmarInicio = semPesoInicial.length === 0 && semLote.length === 0
@@ -186,7 +186,7 @@ export default function ModalOrdem({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
-                    <th className="py-2 pr-3">Tanque</th>
+                    <th className="py-2 pr-3">Destino</th>
                     <th className="py-2 pr-3">Produtos e doses</th>
                     <th className="py-2 pr-3 text-right">Planejado</th>
                     <th className="py-2 pr-3 text-right">Peso inicial</th>
@@ -209,7 +209,7 @@ export default function ModalOrdem({
                           className="border-b border-stone-100 align-top dark:border-stone-800/60"
                         >
                           <td className="py-3 pr-3 font-medium">
-                            T{t.tanque}
+                            {rotuloTanque(t.tanque)}
                             {mistura && (
                               <span className="ml-1.5 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-violet-700 dark:bg-violet-950 dark:text-violet-300">
                                 mistura
@@ -312,7 +312,7 @@ export default function ModalOrdem({
               <ul className="mt-1 list-inside list-disc">
                 {semPesoInicial.length > 0 && (
                   <li>
-                    Peso inicial em T{semPesoInicial.map((t) => t.tanque).join(', T')}
+                    Peso inicial em {semPesoInicial.map((t) => rotuloTanque(t.tanque)).join(', ')}
                   </li>
                 )}
                 {semLote.map((s) => (

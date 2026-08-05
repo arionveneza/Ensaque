@@ -120,7 +120,9 @@ create table receita_itens (
   receita_id  uuid not null references receitas(id) on delete cascade,
   produto_id  uuid not null references produtos_quimicos(id),
   dose        numeric(8,4) not null,
-  tanque      int not null check (tanque between 1 and 5),  -- >1 produto no mesmo tanque = MISTURA
+  -- 1–5 = tanque; 0 = TRANSFERIDOR (pó secante, que nunca vai em tanque).
+  -- >1 produto no mesmo destino = MISTURA
+  tanque      int not null check (tanque between 0 and 5),
   unique (receita_id, produto_id)
 );
 
@@ -230,7 +232,7 @@ create table ordem_paradas (
 create table ordem_tanques (
   id            uuid primary key default gen_random_uuid(),
   ordem_id      uuid not null references ordens(id) on delete cascade,
-  tanque        int not null check (tanque between 1 and 5),
+  tanque        int not null check (tanque between 0 and 5),  -- 0 = transferidor
   peso_inicial  numeric(10,3),                  -- obrigatório para confirmar início
   peso_final    numeric(10,3),                  -- obrigatório para confirmar finalização
   unique (ordem_id, tanque)

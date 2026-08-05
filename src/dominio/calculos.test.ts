@@ -171,6 +171,32 @@ describe('tanques e mistura', () => {
     // FTZ 0,5x40000x1,08/1000=21,6 ; MXA 8,4 ; GRF 12
     expect(pesoQuimicoTotalKg(receita6em5, PRODUTOS, 40_000)).toBeCloseTo(42, 6)
   })
+
+  // Pó secante nunca vai em tanque: destino 0 = transferidor, com pesagem
+  // e lote iguais aos tanques.
+  it('transferidor (destino 0) monta primeiro e pesa como tanque', () => {
+    const receita: Receita = {
+      id: 'R2', nome: 'COM PO',
+      itens: [
+        { produtoId: 'FTZ', dose: 0.5, tanque: 1 },
+        { produtoId: 'GRF', dose: 0.3, tanque: 0 },
+      ],
+    }
+    const tanques = montaTanques(receita)
+    expect(tanques.map((t) => t.tanque)).toEqual([0, 1])
+
+    const transferidor = consumoPorTanque(tanques, PRODUTOS, 40_000)
+      .find((c) => c.tanque === 0)!
+    // GRF: 0,3 g/kg x 40.000 / 1000 = 12 kg — planejado normal
+    expect(transferidor.planejadoKg).toBeCloseTo(12, 6)
+
+    tanques[0].pesoInicial = 20
+    tanques[0].pesoFinal = 8
+    const conferido = consumoPorTanque(tanques, PRODUTOS, 40_000)
+      .find((c) => c.tanque === 0)!
+    expect(conferido.realKg).toBeCloseTo(12, 6)
+    expect(conferido.desvioPct).toBeCloseTo(0, 6)
+  })
 })
 
 describe('tempos', () => {

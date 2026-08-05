@@ -6,7 +6,7 @@ import type { ReceitaCompleta } from '@/dados/api-gestao'
 import { capacidadeDiaT, pesoItemKg } from '@/dominio/calculos'
 import type { ProdutoQuimico, TipoParada, UnidadeDose } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
-import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n } from '@/componentes/ui'
+import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n, rotuloTanque } from '@/componentes/ui'
 
 /** Peso de referência usado só para exibir a receita numa escala legível. */
 const REFERENCIA_KG = 40_000
@@ -481,7 +481,7 @@ function TabelaReceita({ receita }: { receita: ReceitaCompleta }) {
       <p className="mb-2 text-xs text-stone-500">
         Valores para {inteiro(REFERENCIA_KG)} kg de semente.
       </p>
-      <Tabela cabecalho={['Tanque', 'Produto', '#Dose', '#Densidade', '#Peso de balança']}>
+      <Tabela cabecalho={['Destino', 'Produto', '#Dose', '#Densidade', '#Peso de balança']}>
         {[...porTanque.keys()].sort((a, b) => a - b).flatMap((tq) => {
           const itens = porTanque.get(tq)!
           return itens.map((i, idx) => {
@@ -497,7 +497,7 @@ function TabelaReceita({ receita }: { receita: ReceitaCompleta }) {
             return (
               <tr key={`${tq}-${i.produto_id}`} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5">
-                  {idx === 0 ? `T${tq}` : ''}
+                  {idx === 0 ? rotuloTanque(tq) : ''}
                   {idx === 0 && itens.length > 1 && (
                     <span className="ml-1"><Tag cor="roxo">mistura</Tag></span>
                   )}
@@ -596,13 +596,15 @@ function FormReceita({
               />
             </label>
             <label className="text-xs text-stone-500">
-              Tanque
+              Destino
               <select
                 value={it.tanque}
                 onChange={(e) => atualizar(i, { tanque: Number(e.target.value) })}
-                className={`${INPUT} mt-1 block w-20`}
+                className={`${INPUT} mt-1 block w-32`}
+                title="Pó secante nunca vai em tanque: use o Transferidor"
               >
                 {[1, 2, 3, 4, 5].map((t) => <option key={t} value={t}>T{t}</option>)}
+                <option value={0}>Transferidor</option>
               </select>
             </label>
             <button
@@ -621,7 +623,7 @@ function FormReceita({
           Adicionar produto
         </Botao>
         <span className="text-xs text-stone-500">
-          {itens.length} produto(s) em {tanquesUsados.size} tanque(s)
+          {itens.length} produto(s) em {tanquesUsados.size} destino(s)
           {itens.length > tanquesUsados.size && ' — há mistura'}
         </span>
       </div>

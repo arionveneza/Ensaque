@@ -59,6 +59,9 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 - **Mistura em tanque**: só existem 5 tanques. Receita com mais de 5 produtos agrupa produtos no
   mesmo tanque. O planejado do tanque é a **soma** dos pesos dos produtos daquele tanque, e o
   Real vs Planejado compara contra essa soma.
+- **Transferidor (destino 0)**: pó secante (grafite) nunca vai em tanque — na receita ele é
+  dosado no transferidor. Tem **pesagem (peso inicial/final) e lote de químico iguais aos
+  tanques** (decisão de 05/08/2026); só o nome muda na tela.
 
 ### Peso de ensaque
 `ensaque_por_bag = peso_do_bag_do_lote + (peso_químico_total_da_ordem ÷ bags_da_ordem)`
