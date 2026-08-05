@@ -2,7 +2,6 @@ import { Suspense, lazy, useState } from 'react'
 import { AuthProvider, useAuth } from '@/auth/AuthProvider'
 import Login from '@/telas/Login'
 import Execucao from '@/telas/Execucao'
-import type { Perfil } from '@/dominio/tipos'
 
 /**
  * A Execução entra no bundle principal por ser a tela que abre no chão de
@@ -32,23 +31,8 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'administracao', nome: 'Administração' },
 ]
 
-/**
- * Telas visíveis por perfil — espelha a matriz da especificação. O RLS no
- * banco é a defesa real; isto aqui é só a navegação.
- */
-const ACESSO: Record<Perfil, TelaId[]> = {
-  PCP: ['ordens', 'programacao', 'lotes', 'execucao', 'qualidade', 'indicadores', 'cadastros'],
-  Logistica: ['programacao', 'lotes', 'indicadores'],
-  Producao: ['programacao', 'execucao', 'indicadores'],
-  Qualidade: ['execucao', 'qualidade', 'indicadores'],
-  Gestor: [
-    'ordens', 'programacao', 'lotes', 'execucao',
-    'qualidade', 'indicadores', 'cadastros', 'administracao',
-  ],
-}
-
 function Shell() {
-  const { session, usuario, carregando, semCadastro, sair } = useAuth()
+  const { session, usuario, carregando, semCadastro, permitido, sair } = useAuth()
   const [tela, setTela] = useState<TelaId>('execucao')
 
   if (carregando) {
@@ -77,8 +61,28 @@ function Shell() {
     )
   }
 
-  const permitidas = ACESSO[usuario.perfil] ?? []
+  // A navegação obedece à matriz de permissões (Administração). Célula nunca
+  // gravada segue o padrão do perfil. Administração é hard-coded do Gestor:
+  // é a tela que conserta a matriz, não pode depender dela.
+  const permitidas = TELAS.filter((t) =>
+    t.id === 'administracao' ? usuario.perfil === 'Gestor' : permitido(t.id, 'ver'),
+  ).map((t) => t.id)
   const atual = permitidas.includes(tela) ? tela : permitidas[0]
+
+  if (permitidas.length === 0) {
+    return (
+      <div className="flex min-h-svh items-center justify-center p-6">
+        <div className="max-w-md rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <p className="font-semibold">Nenhuma tela liberada para o seu perfil</p>
+          <p className="mt-2">
+            O gestor desmarcou todas as telas do perfil <b>{usuario.perfil}</b> na matriz de
+            permissões. Peça a ele para revisar em Administração.
+          </p>
+          <button onClick={sair} className="mt-4 text-sm underline">Sair</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-svh bg-stone-50 text-stone-800 dark:bg-stone-950 dark:text-stone-200">

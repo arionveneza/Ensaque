@@ -2,33 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import * as adm from '@/dados/api-admin'
 import type { PermissaoLinha, UsuarioLinha } from '@/dados/api-admin'
 import type { Perfil } from '@/dominio/tipos'
+import {
+  ACOES_POR_RECURSO, ROTULO_ACAO, permissaoEfetiva, permitidoPadrao,
+} from '@/dominio/permissoes'
 import { useAuth } from '@/auth/AuthProvider'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio } from '@/componentes/ui'
 
 const PERFIS: Perfil[] = ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Gestor']
-
-/** Ações que fazem sentido em cada recurso — evita uma matriz cheia de célula inútil. */
-const ACOES_POR_RECURSO: Record<string, string[]> = {
-  ordens: ['ver', 'criar', 'editar', 'excluir', 'priorizar'],
-  programacao: ['ver', 'editar'],
-  lotes: ['ver', 'baixar_lote'],
-  execucao: ['ver', 'apontar'],
-  qualidade: ['ver', 'qualidade', 'agrotis'],
-  indicadores: ['ver'],
-  cadastros: ['ver', 'editar'],
-}
-
-const ROTULO_ACAO: Record<string, string> = {
-  ver: 'Ver',
-  criar: 'Criar',
-  editar: 'Editar',
-  excluir: 'Excluir',
-  priorizar: 'Priorizar',
-  baixar_lote: 'Baixar lote',
-  apontar: 'Apontar',
-  qualidade: 'Apontar qualidade',
-  agrotis: 'Lançar AGROTIS',
-}
 
 export default function Administracao() {
   const { usuario } = useAuth()
@@ -64,10 +44,15 @@ export default function Administracao() {
     }
   }
 
+  // valor EFETIVO: o que o gestor gravou manda; célula nunca gravada segue o
+  // padrão do perfil — é o que o usuário logado vê de verdade.
+  const doPerfil = permissoes.filter((p) => p.perfil === perfilSel)
   const permitido = (recurso: string, acaoNome: string) =>
-    permissoes.find(
-      (p) => p.perfil === perfilSel && p.recurso === recurso && p.acao === acaoNome,
-    )?.permitido ?? false
+    permissaoEfetiva(perfilSel, recurso, acaoNome, doPerfil)
+  const mexida = (recurso: string, acaoNome: string) => {
+    const linha = doPerfil.find((p) => p.recurso === recurso && p.acao === acaoNome)
+    return linha != null && linha.permitido !== permitidoPadrao(perfilSel, recurso, acaoNome)
+  }
 
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando administração…</p>
 
@@ -145,33 +130,61 @@ export default function Administracao() {
       <Cartao
         titulo="Matriz de permissões"
         acoes={
-          <select
-            value={perfilSel}
-            onChange={(e) => setPerfilSel(e.target.value as Perfil)}
-            className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
-          >
-            {PERFIS.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            {doPerfil.length > 0 && (
+              <Botao
+                onClick={() =>
+                  acao(async () => {
+                    if (!confirm(`Descartar os ajustes de ${perfilSel} e voltar ao padrão?`)) return
+                    await adm.restaurarPadrao(perfilSel)
+                  })
+                }
+              >
+                Restaurar padrão
+              </Botao>
+            )}
+            <select
+              value={perfilSel}
+              onChange={(e) => setPerfilSel(e.target.value as Perfil)}
+              className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+            >
+              {PERFIS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
         }
       >
         <div className="mb-3">
           <Aviso>
-            Esta matriz controla a <b>interface</b>. A proteção real é o RLS no banco, que já
-            espelha os mesmos papéis — desmarcar aqui esconde o botão, mas quem impede a operação
-            de verdade é o PostgreSQL.
+            A navegação e os botões <b>obedecem a esta matriz</b>. Célula que você nunca mexeu
+            segue o padrão do perfil; a marcação em <b>âmbar</b> é ajuste seu sobre o padrão.
+            Mudanças valem no próximo carregamento da página de quem estiver logado. A proteção
+            de verdade continua sendo o RLS no banco — esconder o botão não substitui o
+            PostgreSQL.
           </Aviso>
         </div>
 
         <Tabela cabecalho={['Recurso', 'Ações']}>
-          {adm.RECURSOS.map((recurso) => (
+          {Object.keys(ACOES_POR_RECURSO).map((recurso) => (
             <tr key={recurso} className="border-t border-stone-100 dark:border-stone-800/60">
               <td className="px-2 py-2 font-medium capitalize">{recurso}</td>
               <td className="px-2 py-2">
                 <div className="flex flex-wrap gap-3">
                   {(ACOES_POR_RECURSO[recurso] ?? ['ver']).map((a) => (
-                    <label key={a} className="flex items-center gap-1.5 text-sm">
+                    <label
+                      key={a}
+                      className={`flex items-center gap-1.5 rounded px-1 text-sm ${
+                        mexida(recurso, a)
+                          ? 'bg-amber-100 dark:bg-amber-950/60'
+                          : ''
+                      }`}
+                      title={
+                        mexida(recurso, a)
+                          ? 'Ajustado pelo gestor — difere do padrão do perfil'
+                          : undefined
+                      }
+                    >
                       <input
                         type="checkbox"
                         checked={permitido(recurso, a)}

@@ -84,6 +84,13 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 de quem a criou. Como as views ficam expostas na API, `anon` conseguiria ler a produção
 inteira. As 6 views do schema têm `security_invoker = true` — manter ao criar novas.
 
+**Permissões: linha explícita manda, célula ausente segue o padrão.** A tabela
+`perfil_permissoes` guarda só o que o gestor MEXEU; o padrão de fábrica vive em
+`src/dominio/permissoes.ts` (`MATRIZ_PADRAO`). Nunca semear a tabela inteira: o primeiro
+clique do gestor não pode virar tudo-ou-nada para o perfil. "Restaurar padrão" = apagar as
+linhas do perfil. A tela Administração é hard-coded do Gestor — é ela que conserta a matriz,
+não pode depender da matriz. Mudanças valem no próximo carregamento (a matriz é lida no login).
+
 **Comparar texto da SimpleAgro sempre normalizado.** `Integrado`, `Aprovado` e `SEM TSI` são
 comparados com caixa e acento removidos (`normaliza()` em `simpleagro.ts`). Igualdade exata
 falha **calada**: uma renomeação para `INTEGRADO` descartaria o arquivo inteiro e o painel

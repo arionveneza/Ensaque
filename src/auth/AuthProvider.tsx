@@ -8,6 +8,7 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Perfil } from '@/dominio/tipos'
+import { permissaoEfetiva, type PermissaoExplicita } from '@/dominio/permissoes'
 
 export interface UsuarioTsi {
   id: string
@@ -21,6 +22,12 @@ interface Ctx {
   carregando: boolean
   /** Autenticado no Supabase mas sem linha em tsi.usuarios: o RLS bloqueia tudo. */
   semCadastro: boolean
+  /**
+   * Permissão efetiva do usuário logado: o que o gestor gravou na matriz
+   * manda; célula nunca gravada segue o padrão do perfil. Controla a
+   * interface — a proteção real é o RLS.
+   */
+  permitido: (recurso: string, acao: string) => boolean
   sair: () => Promise<void>
 }
 
@@ -29,6 +36,7 @@ const AuthCtx = createContext<Ctx | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [usuario, setUsuario] = useState<UsuarioTsi | null>(null)
+  const [explicitas, setExplicitas] = useState<PermissaoExplicita[]>([])
   const [carregando, setCarregando] = useState(true)
   const [semCadastro, setSemCadastro] = useState(false)
 
@@ -57,11 +65,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('id, nome, perfil')
       .eq('id', session.user.id)
       .maybeSingle()
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (cancelado) return
         if (error) console.error('perfil do usuário:', error.message)
-        setUsuario((data as UsuarioTsi) ?? null)
-        setSemCadastro(!data)
+        const u = (data as UsuarioTsi) ?? null
+
+        // só o que o gestor MEXEU na matriz; o resto cai no padrão do perfil.
+        // Erro aqui não derruba o login: fica só o padrão.
+        let exp: PermissaoExplicita[] = []
+        if (u) {
+          const p = await supabase
+            .from('perfil_permissoes')
+            .select('recurso, acao, permitido')
+            .eq('perfil', u.perfil)
+          if (p.error) console.error('matriz de permissões:', p.error.message)
+          exp = (p.data ?? []) as PermissaoExplicita[]
+        }
+        if (cancelado) return
+
+        setUsuario(u)
+        setExplicitas(exp)
+        setSemCadastro(!u)
         setCarregando(false)
       })
     return () => {
@@ -69,12 +93,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [session])
 
+  const permitido = (recurso: string, acao: string): boolean =>
+    usuario ? permissaoEfetiva(usuario.perfil, recurso, acao, explicitas) : false
+
   const sair = async () => {
     await supabase.auth.signOut()
   }
 
   return (
-    <AuthCtx.Provider value={{ session, usuario, carregando, semCadastro, sair }}>
+    <AuthCtx.Provider
+      value={{ session, usuario, carregando, semCadastro, permitido, sair }}
+    >
       {children}
     </AuthCtx.Provider>
   )

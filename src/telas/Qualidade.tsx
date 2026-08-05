@@ -10,10 +10,10 @@ import {
 const VISUAIS: QualidadeVisual[] = ['Aprovado', 'Aprovado com observacao', 'Reprovado']
 
 export default function Qualidade() {
-  const { usuario } = useAuth()
+  const { usuario, permitido } = useAuth()
   const podeApontarQualidade =
-    usuario?.perfil === 'Qualidade' || usuario?.perfil === 'Gestor'
-  const podeEncerrar = usuario?.perfil === 'PCP' || usuario?.perfil === 'Gestor'
+    permitido('qualidade', 'qualidade')
+  const podeEncerrar = permitido('qualidade', 'agrotis')
 
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [apontamentos, setApontamentos] = useState<QualidadeLinha[]>([])

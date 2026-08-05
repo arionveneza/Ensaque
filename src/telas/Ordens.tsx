@@ -81,8 +81,10 @@ async function baixarModeloOrdens(
 }
 
 export default function Ordens() {
-  const { usuario } = useAuth()
-  const podeEditar = usuario?.perfil === 'PCP' || usuario?.perfil === 'Gestor'
+  const { usuario, permitido } = useAuth()
+  const podeCriar = permitido('ordens', 'criar')
+  const podeExcluir = permitido('ordens', 'excluir')
+  const podePriorizar = permitido('ordens', 'priorizar')
 
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
@@ -279,7 +281,7 @@ export default function Ordens() {
       {msg && <div className="mb-4"><Aviso gravidade="ok">{msg}</Aviso></div>}
 
       {/* ---------------- upload ---------------- */}
-      {podeEditar && (
+      {podeCriar && (
         <Cartao titulo="Carga diária" className="mb-5">
           <p className="mb-3 text-sm text-stone-500">
             O mesmo arquivo de <b>Saldos</b> alimenta dois destinos: linhas com embalagem e
@@ -587,7 +589,7 @@ export default function Ordens() {
       )}
 
       {/* ---------------- nova ordem ---------------- */}
-      {podeEditar && (
+      {podeCriar && (
         <NovaOrdemForm
           lotes={lotes}
           receitas={receitas}
@@ -651,7 +653,8 @@ export default function Ordens() {
                 key={dia}
                 dia={dia}
                 lista={lista}
-                podeEditar={!!podeEditar}
+                podeExcluir={podeExcluir}
+                podePriorizar={podePriorizar}
                 onExcluir={(id) =>
                   comErro(async () => {
                     if (!confirm('Excluir esta ordem?')) return
@@ -886,11 +889,12 @@ function Placar({
 }
 
 function FragmentoDia({
-  dia, lista, podeEditar, onExcluir, onPrioridade,
+  dia, lista, podeExcluir, podePriorizar, onExcluir, onPrioridade,
 }: {
   dia: string
   lista: OrdemVisao[]
-  podeEditar: boolean
+  podeExcluir: boolean
+  podePriorizar: boolean
   onExcluir: (id: string) => void
   onPrioridade: (id: string, p: 'Normal' | 'Urgente') => void
 }) {
@@ -925,7 +929,7 @@ function FragmentoDia({
             <td className="max-w-32 truncate px-2 py-1.5 text-stone-500">{o.cliente ?? '—'}</td>
             <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
             <td className="px-2 py-1.5 text-right whitespace-nowrap">
-              {podeEditar && pode(st, 'priorizar') && (
+              {podePriorizar && pode(st, 'priorizar') && (
                 <button
                   onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
                   className="mr-1 text-xs underline"
@@ -933,7 +937,7 @@ function FragmentoDia({
                   {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
                 </button>
               )}
-              {podeEditar && pode(st, 'excluir') && (
+              {podeExcluir && pode(st, 'excluir') && (
                 <button onClick={() => onExcluir(o.id)} className="text-xs text-red-600 underline">
                   excluir
                 </button>

@@ -30,7 +30,7 @@ const CORES_STATUS: Record<StatusEfetivo, string> = {
 }
 
 export default function Execucao() {
-  const { usuario } = useAuth()
+  const { usuario, permitido } = useAuth()
   const [dia, setDia] = useState(() => diaDeProducao(new Date()))
   const [cadastros, setCadastros] = useState<Awaited<ReturnType<typeof api.carregarCadastros>> | null>(null)
   const [ordens, setOrdens] = useState<LinhaOrdem[]>([])
@@ -39,7 +39,7 @@ export default function Execucao() {
   const [aberta, setAberta] = useState<string | null>(null)
   const [agora, setAgora] = useState(() => Date.now())
 
-  const podeApontar = usuario?.perfil === 'Producao' || usuario?.perfil === 'Gestor'
+  const podeApontar = permitido('execucao', 'apontar')
 
   const recarregar = useCallback(async () => {
     try {

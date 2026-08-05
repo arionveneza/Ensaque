@@ -26,8 +26,8 @@ const ABAS: { id: Aba; nome: string }[] = [
 ]
 
 export default function Cadastros() {
-  const { usuario } = useAuth()
-  const podeEditar = usuario?.perfil === 'PCP' || usuario?.perfil === 'Gestor'
+  const { permitido } = useAuth()
+  const podeEditar = permitido('cadastros', 'editar')
 
   const [aba, setAba] = useState<Aba>('quimicos')
   const [cad, setCad] = useState<Awaited<ReturnType<typeof api.carregarCadastros>> | null>(null)

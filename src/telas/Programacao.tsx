@@ -23,8 +23,8 @@ import {
 const HORAS_TURNOS = [10, 9.5]
 
 export default function Programacao() {
-  const { usuario } = useAuth()
-  const podeProgramar = usuario?.perfil === 'PCP' || usuario?.perfil === 'Gestor'
+  const { permitido } = useAuth()
+  const podeProgramar = permitido('programacao', 'editar')
 
   const [inicio, setInicio] = useState(() => diaDeProducao(new Date()))
   const [diaSel, setDiaSel] = useState(() => diaDeProducao(new Date()))

@@ -302,3 +302,15 @@ export async function salvarPermissao(p: PermissaoLinha): Promise<void> {
     .upsert(p, { onConflict: 'perfil,recurso,acao' })
   erro('salvar permissão', error)
 }
+
+/**
+ * Apaga tudo que o gestor mexeu para um perfil. Sem linhas explícitas, o
+ * perfil volta a seguir a matriz padrão da especificação.
+ */
+export async function restaurarPadrao(perfil: Perfil): Promise<void> {
+  const { error } = await supabase
+    .from('perfil_permissoes')
+    .delete()
+    .eq('perfil', perfil)
+  erro('restaurar padrão', error)
+}

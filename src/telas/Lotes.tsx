@@ -12,8 +12,8 @@ import {
 type Periodo = 'dia' | 'semana' | 'mes'
 
 export default function Lotes() {
-  const { usuario } = useAuth()
-  const podeBaixar = usuario?.perfil === 'Logistica' || usuario?.perfil === 'Gestor'
+  const { usuario, permitido } = useAuth()
+  const podeBaixar = permitido('lotes', 'baixar_lote')
 
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
