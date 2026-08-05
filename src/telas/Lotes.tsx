@@ -11,6 +11,17 @@ import {
 
 type Periodo = 'dia' | 'semana' | 'mes'
 
+/** Um lote com as ordens que dependem dele — o que a tela lista. */
+type LoteAgregado = {
+  lote: LoteSementeLinha
+  dependentes: OrdemVisao[]
+  abertas: OrdemVisao[]
+  bagsNecessarios: number
+  pesoT: number
+  critico: boolean
+  orfao: boolean
+}
+
 export default function Lotes() {
   const { usuario, permitido } = useAuth()
   const podeBaixar = permitido('lotes', 'baixar_lote')
@@ -53,7 +64,7 @@ export default function Lotes() {
   }, [recarregar])
 
   /** Agrega cada lote com as ordens que dependem dele. */
-  const agregado = useMemo(() => {
+  const agregado = useMemo<LoteAgregado[]>(() => {
     return lotes
       .map((l) => {
         const dependentes = ordens.filter((o) => o.lote_id === l.id)
@@ -124,7 +135,7 @@ export default function Lotes() {
         </div>
       )}
 
-      {/* -------- cards de lotes a baixar -------- */}
+      {/* -------- lista de lotes a baixar -------- */}
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
         A baixar ({aBaixar.length})
       </h3>
@@ -132,77 +143,21 @@ export default function Lotes() {
       {aBaixar.length === 0 ? (
         <Vazio>Nenhum lote pendente de baixa — todas as ordens abertas já têm lote liberado.</Vazio>
       ) : (
-        <div className="mb-6 grid gap-4 sm:grid-cols-2">
+        /* Lista, não grade de cards: com muitos lotes a tabela de ordens dentro de
+           cada card enchia a tela. Cada linha resume o lote e as ordens ficam
+           atrás do "ver ordens" — aberto só nos críticos. */
+        <div className="mb-6 divide-y divide-stone-200 overflow-hidden rounded-lg border border-stone-200 bg-white dark:divide-stone-800 dark:border-stone-800 dark:bg-stone-900">
           {aBaixar.map((a) => (
-            <Cartao
+            <LinhaLote
               key={a.lote.id}
-              titulo={`${a.lote.id} · ${a.lote.cultivar}`}
-              acoes={
-                podeBaixar ? (
-                  <Botao
-                    variante="primario"
-                    onClick={() =>
-                      comErro(() =>
-                        g.baixarLote(a.lote.id, a.bagsNecessarios, a.pesoT, usuario!.id),
-                      )
-                    }
-                  >
-                    Baixar {a.bagsNecessarios} bags
-                  </Botao>
-                ) : undefined
+              item={a}
+              podeBaixar={podeBaixar}
+              onBaixar={() =>
+                comErro(() =>
+                  g.baixarLote(a.lote.id, a.bagsNecessarios, a.pesoT, usuario!.id),
+                )
               }
-              className={a.critico ? 'border-red-300 dark:border-red-900' : ''}
-            >
-              {a.critico && (
-                <div className="mb-3">
-                  <Aviso gravidade="bloqueio">Trava ordem urgente.</Aviso>
-                </div>
-              )}
-              <dl className="mb-3 grid grid-cols-3 gap-2 text-center text-sm">
-                <div>
-                  <dt className="text-[10px] uppercase text-stone-500">Bags</dt>
-                  <dd className="num-tabular font-semibold">{a.bagsNecessarios}</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] uppercase text-stone-500">Peso</dt>
-                  <dd className="num-tabular font-semibold">{n(a.pesoT, 1)} t</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] uppercase text-stone-500">Peso/bag</dt>
-                  <dd className="num-tabular font-semibold">{n(a.lote.peso_bag_kg, 0)} kg</dd>
-                </div>
-              </dl>
-              <Tabela cabecalho={['Ordem', 'Tratamento', 'Endereço', 'Dia', '#Bags', 'Status']}>
-                {a.abertas.map((o) => (
-                  <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                    <td className="px-2 py-1.5">
-                      {o.numero}
-                      {o.prioridade === 'Urgente' && (
-                        <span className="ml-1">
-                          <Tag cor="perigo">urgente</Tag>
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5">{o.receita_nome}</td>
-                    {/* é a informação que a separação usa: onde ir buscar */}
-                    <td className="px-2 py-1.5 font-medium">
-                      {o.armazem || o.bloco || o.quadra ? (
-                        enderecoLote(o)
-                      ) : (
-                        <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
-                          sem endereço
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
-                    <td className="px-2 py-1.5">
-                      <Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag>
-                    </td>
-                  </tr>
-                ))}
-              </Tabela>
-            </Cartao>
+            />
           ))}
         </div>
       )}
@@ -386,6 +341,118 @@ export default function Lotes() {
         )}
       </Cartao>
     </Pagina>
+  )
+}
+
+/**
+ * Um lote na lista de baixa. A linha carrega o que a logística precisa para
+ * decidir e ir buscar — quantos bags, peso, endereço e urgência; a tabela de
+ * ordens dependentes só abre quando pedida.
+ */
+function LinhaLote({
+  item, podeBaixar, onBaixar,
+}: {
+  item: LoteAgregado
+  podeBaixar: boolean
+  onBaixar: () => void
+}) {
+  const { lote, abertas } = item
+  const qtd = abertas.length
+  const urgentes = abertas.filter((o) => o.prioridade === 'Urgente').length
+  // endereço é da ordem, não do lote: quase sempre é um só, e aí cabe na linha
+  const enderecos = [...new Set(abertas.map((o) => enderecoLote(o, '')).filter(Boolean))]
+  const semEndereco = abertas.filter((o) => !enderecoLote(o, '')).length
+  const primeiroDia = abertas.map((o) => o.data_prog).filter(Boolean).sort()[0]
+
+  const rot = 'text-[10px] uppercase tracking-wide text-stone-500'
+  const val = 'num-tabular font-semibold'
+
+  return (
+    <div className={`px-3 py-3 sm:px-4 ${item.critico ? 'bg-red-50/70 dark:bg-red-950/20' : ''}`}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+            <span>
+              {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
+            </span>
+            {item.critico ? (
+              <Tag cor="perigo">trava ordem urgente</Tag>
+            ) : (
+              urgentes > 0 && <Tag cor="alerta">{urgentes} urgente(s)</Tag>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+            {qtd === 1 ? '1 ordem' : `${inteiro(qtd)} ordens`}
+            {primeiroDia && <> · 1ª em {diaCurto(primeiroDia)}</>}
+            {enderecos.length === 1 && <> · {enderecos[0]}</>}
+            {enderecos.length > 1 && <> · {enderecos.length} endereços</>}
+            {semEndereco > 0 && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {' '}· {semEndereco} sem endereço
+              </span>
+            )}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+          <div className="text-right">
+            <p className={rot}>Bags</p>
+            <p className={val}>{inteiro(item.bagsNecessarios)}</p>
+          </div>
+          <div className="text-right">
+            <p className={rot}>Peso</p>
+            <p className={val}>{n(item.pesoT, 1)} t</p>
+          </div>
+          <div className="text-right">
+            <p className={rot}>Peso/bag</p>
+            <p className={val}>{n(lote.peso_bag_kg, 0)} kg</p>
+          </div>
+          {podeBaixar && (
+            <Botao variante="primario" onClick={onBaixar}>
+              Baixar {item.bagsNecessarios} bags
+            </Botao>
+          )}
+        </div>
+      </div>
+
+      <details className="mt-2" open={item.critico}>
+        <summary className="cursor-pointer py-1 text-xs text-stone-500 dark:text-stone-400">
+          {qtd === 1 ? 'ver a ordem dependente' : `ver as ${qtd} ordens dependentes`}
+        </summary>
+        <div className="mt-1">
+          <Tabela cabecalho={['Ordem', 'Tratamento', 'Endereço', 'Dia', '#Bags', 'Status']}>
+            {abertas.map((o) => (
+              <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="px-2 py-1.5">
+                  {o.numero}
+                  {o.prioridade === 'Urgente' && (
+                    <span className="ml-1">
+                      <Tag cor="perigo">urgente</Tag>
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">{o.receita_nome}</td>
+                {/* é a informação que a separação usa: onde ir buscar */}
+                <td className="px-2 py-1.5 font-medium">
+                  {o.armazem || o.bloco || o.quadra ? (
+                    enderecoLote(o)
+                  ) : (
+                    <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
+                      sem endereço
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
+                <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
+                <td className="px-2 py-1.5">
+                  <Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag>
+                </td>
+              </tr>
+            ))}
+          </Tabela>
+        </div>
+      </details>
+    </div>
   )
 }
 
