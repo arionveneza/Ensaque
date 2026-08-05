@@ -64,12 +64,18 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 ## 4. Melhorias técnicas conhecidas
 
 - **RLS × matriz da Administração — só a baixa de lote está unificada.** Desde 05/08/2026
-  a policy `pode_baixar_lote()` lê `perfil_permissoes` (linha explícita manda, ausência
+  a função `pode_baixar_lote()` lê `perfil_permissoes` (linha explícita manda, ausência
   segue o padrão), então conceder "Baixar lote" na Administração funciona para qualquer
-  perfil. As demais ações (`apontar`, `qualidade`, `lancar`…) continuam com policies de
-  perfil fixo no schema: conceder `apontar` ao PCP na tela, por exemplo, dá erro alto ao
+  perfil — e concede SÓ a operação de baixa/estorno (RPC `security definer`), não UPDATE
+  cru na tabela. As demais ações (`apontar`, `qualidade`, `lancar`…) continuam com policies
+  de perfil fixo no schema: conceder `apontar` ao PCP na tela, por exemplo, dá erro alto ao
   gravar eventos/tanques (não mais falha silenciosa). Se a operação quiser a matriz
   mandando em tudo, estender o padrão `pode_baixar_lote()` às outras ações.
+- **Transição de status de ordem segue livre para PCP/Gestor via API direta** (ex.:
+  Finalizada → Programada): pré-existente, os triggers só protegem os campos de identidade.
+  A revisão de 05/08/2026 fechou isso para a Produção (`tg_producao_so_aponta`) e para a
+  baixa de lote (`tg_baixa_so_pela_rpc`); para PCP/Gestor ficou como risco aceito — se
+  incomodar, o mesmo padrão de trigger resolve.
 
 - **Usuários da operação criados em 05/08/2026** (6 Produção, 1 Logística, 2 PCP) via script
   SQL direto no Auth + `tsi.usuarios` — o script **não está no repositório de propósito**
