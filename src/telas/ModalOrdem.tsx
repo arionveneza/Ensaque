@@ -26,7 +26,6 @@ interface Props {
   ordem: LinhaOrdem
   produtos: LinhaProduto[]
   motivos: LinhaMotivo[]
-  usuarioId: string
   podeApontar: boolean
   agora: number
   onFechar: () => void
@@ -37,7 +36,6 @@ export default function ModalOrdem({
   ordem,
   produtos,
   motivos,
-  usuarioId,
   podeApontar,
   agora,
   onFechar,
@@ -286,7 +284,7 @@ export default function ModalOrdem({
           {podeApontar && status === 'Pronto para produzir' && (
             <button
               disabled={ocupado || !podeConfirmarInicio}
-              onClick={() => acao(() => api.confirmarInicio(ordem.id, usuarioId))}
+              onClick={() => acao(() => api.confirmarInicio(ordem.id))}
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             >
               Confirmar início
@@ -326,15 +324,28 @@ export default function ModalOrdem({
             <>
               <button
                 disabled={ocupado || !podeConfirmarFim}
-                onClick={() => acao(() => api.confirmarFim(ordem.id, usuarioId))}
+                onClick={() => acao(() => api.confirmarFim(ordem.id))}
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 Confirmar finalização
               </button>
-              {/* Finalizar clicado por engano tem volta: nada é descartado */}
+              {/* Finalizar clicado por engano tem volta. Os pesos finais já
+                  digitados são descartados: a produção continua, a pesagem
+                  velha não vale mais. */}
               <button
                 disabled={ocupado}
-                onClick={() => acao(() => api.voltarParaProducao(ordem.id))}
+                onClick={() => {
+                  const digitados = ordem.ordem_tanques.filter((t) => t.peso_final != null).length
+                  if (
+                    digitados > 0 &&
+                    !confirm(
+                      `Voltar para produção descarta ${digitados} peso(s) final(is) já digitado(s) — ` +
+                        'eles serão pesados de novo no próximo Finalizar. Continuar?',
+                    )
+                  )
+                    return
+                  acao(() => api.voltarParaProducao(ordem.id))
+                }}
                 className="rounded-md border border-stone-300 px-4 py-2 text-sm font-medium disabled:opacity-40 dark:border-stone-700"
               >
                 Voltar para produção
@@ -360,7 +371,6 @@ export default function ModalOrdem({
                 acao(() =>
                   api.cancelarInicio(
                     ordem.id,
-                    usuarioId,
                     `${formataHms(t?.brutoS ?? 0)} e ${ordem.ordem_paradas.length} parada(s) descartados`,
                   ),
                 )
@@ -394,7 +404,7 @@ export default function ModalOrdem({
                           disabled={ocupado}
                           onClick={() => {
                             setEscolhendoParada(false)
-                            acao(() => api.registrarParada(ordem.id, m.id, usuarioId))
+                            acao(() => api.registrarParada(ordem.id, m.id))
                           }}
                           className="rounded-md border border-stone-300 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-stone-700"
                         >

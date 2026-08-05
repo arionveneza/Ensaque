@@ -63,19 +63,24 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 
 ## 4. Melhorias técnicas conhecidas
 
-- **RLS × matriz da Administração — só a baixa de lote está unificada.** Desde 05/08/2026
-  a função `pode_baixar_lote()` lê `perfil_permissoes` (linha explícita manda, ausência
-  segue o padrão), então conceder "Baixar lote" na Administração funciona para qualquer
-  perfil — e concede SÓ a operação de baixa/estorno (RPC `security definer`), não UPDATE
-  cru na tabela. As demais ações (`apontar`, `qualidade`, `lancar`…) continuam com policies
-  de perfil fixo no schema: conceder `apontar` ao PCP na tela, por exemplo, dá erro alto ao
-  gravar eventos/tanques (não mais falha silenciosa). Se a operação quiser a matriz
-  mandando em tudo, estender o padrão `pode_baixar_lote()` às outras ações.
-- **Transição de status de ordem segue livre para PCP/Gestor via API direta** (ex.:
-  Finalizada → Programada): pré-existente, os triggers só protegem os campos de identidade.
-  A revisão de 05/08/2026 fechou isso para a Produção (`tg_producao_so_aponta`) e para a
-  baixa de lote (`tg_baixa_so_pela_rpc`); para PCP/Gestor ficou como risco aceito — se
-  incomodar, o mesmo padrão de trigger resolve.
+- **A matriz da Administração manda no banco** (decisão de 05/08/2026, script
+  `matriz-permissoes-no-banco.sql`): a função `tem_acao(recurso, ação)` resolve a permissão
+  igual ao app — linha explícita em `perfil_permissoes` vence, ausência cai no padrão de
+  fábrica — e TODAS as policies de escrita a usam. O padrão de fábrica vive em DOIS lugares
+  que precisam andar juntos: `src/dominio/permissoes.ts` (MATRIZ_PADRAO) e o `values` dentro
+  de `tem_acao`. Mudou um, mude o outro. Fora da matriz, de propósito: a tela Administração
+  (hard-coded Gestor — é ela que conserta a matriz) e as regras de negócio (histórico
+  imutável, pesos obrigatórios, AGROTIS exige conferência), que são trigger para todo perfil.
+- **Apontamentos e baixa são RPCs transacionais** (`confirmar_inicio`, `registrar_parada`,
+  `retomar_producao`, `confirmar_fim`, `voltar_para_producao`, `cancelar_inicio`,
+  `baixar_lote`, `estornar_lote`): evento + status + descartes valem juntos ou nada muda.
+  Eventos de ordem têm unique em (ordem_id, tipo) — 'inicio' duplicado inflando tempo
+  bruto (caso 131104) não volta. Mudar status de lote fora da RPC é recusado por trigger
+  para qualquer perfil.
+- **Transição de status fora do fluxo (ex.: reabrir Finalizada) exige `ordens/editar`**
+  (trigger `tg_ordens_por_acao`) — na prática PCP/Gestor. Risco aceito e agora controlável
+  pela matriz; o trigger também confere a ação certa por grupo de coluna (apontar, priorizar,
+  programar, lançar AGROTIS, editar).
 
 - **Usuários da operação criados em 05/08/2026** (6 Produção, 1 Logística, 2 PCP) via script
   SQL direto no Auth + `tsi.usuarios` — o script **não está no repositório de propósito**

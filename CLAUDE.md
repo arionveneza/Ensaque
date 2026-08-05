@@ -102,8 +102,9 @@ registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele 
 
 Fechar a janela em qualquer etapa **não** muda o estado. `Cancelar início` descarta apontamentos
 (com auditoria) e libera a máquina — usado quando o operador inicia a ordem errada.
-`Voltar para produção` desfaz um Finalizar clicado por engano: fecha só a pesagem final,
-sem descartar nada (decisão de 05/08/2026 — antes a única saída era o Cancelar início).
+`Voltar para produção` desfaz um Finalizar clicado por engano: fecha a pesagem final e
+descarta os pesos finais já digitados — a produção continuou, então serão pesados de novo
+(decisão de 05/08/2026 — antes a única saída era o Cancelar início).
 
 ### Qualidade em 2 etapas + conferência (decisão de 05/08/2026)
 O **checklist substituiu** o Aprovado/Reprovado + amostra. Campos, iguais nas duas etapas:

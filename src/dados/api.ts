@@ -154,27 +154,15 @@ export async function salvarPesoTanque(
 }
 
 /**
- * Confirma o início: grava o evento e muda o status.
- * Os triggers do banco recusam se faltar peso inicial em algum tanque ou se
- * o lote de semente não estiver baixado — o app valida antes, mas a defesa
- * final é do banco.
+ * Confirma o início. Evento + status são UMA transação no banco (RPC):
+ * queda no meio não deixa evento órfão, e o unique index em
+ * (ordem_id, tipo) impede 'inicio' duplicado para sempre. Os triggers
+ * seguem recusando sem peso inicial ou sem o lote baixado.
+ * Requer supabase/matriz-permissoes-no-banco.sql aplicado.
  */
-export async function confirmarInicio(ordemId: string, usuarioId: string): Promise<void> {
-  const ev = await supabase
-    .from('ordem_eventos')
-    .insert({ ordem_id: ordemId, tipo: 'inicio', usuario_id: usuarioId })
-  erro('registrar início', ev.error)
-
-  const up = await supabase
-    .from('ordens')
-    .update({ status: 'Em producao' })
-    .eq('id', ordemId)
-    .select('id')
-  if (up.error || (up.data ?? []).length === 0) {
-    // desfaz o evento para não deixar início órfão de status
-    await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId).eq('tipo', 'inicio')
-    throw new Error(`confirmar início: ${up.error?.message ?? SEM_LINHA}`)
-  }
+export async function confirmarInicio(ordemId: string): Promise<void> {
+  const { error } = await supabase.rpc('confirmar_inicio', { p_ordem: ordemId })
+  erro('confirmar início', error)
 }
 
 export async function abrirPesagemFinal(ordemId: string): Promise<void> {
@@ -188,134 +176,45 @@ export async function abrirPesagemFinal(ordemId: string): Promise<void> {
 }
 
 /**
- * Desiste da finalização e volta a produzir. Não descarta nada: os pesos
- * finais já digitados ficam guardados (e travados) para a próxima tentativa.
- * Sem isto, um Finalizar clicado por engano só saía pelo Cancelar início,
- * que joga fora a ordem inteira.
+ * Desiste da finalização e volta a produzir. Os pesos finais digitados são
+ * DESCARTADOS pelo banco: a produção continuou, a pesagem velha não vale
+ * mais — sem isso um peso obsoleto validaria o próximo Confirmar sem
+ * re-pesagem. Sem este botão, um Finalizar clicado por engano só saía
+ * pelo Cancelar início, que joga fora a ordem inteira.
  */
 export async function voltarParaProducao(ordemId: string): Promise<void> {
-  const { data, error } = await supabase
-    .from('ordens')
-    .update({ fim_pendente: false })
-    .eq('id', ordemId)
-    .select('id')
+  const { error } = await supabase.rpc('voltar_para_producao', { p_ordem: ordemId })
   erro('voltar para produção', error)
-  exigeLinha('voltar para produção', data)
 }
 
-export async function confirmarFim(ordemId: string, usuarioId: string): Promise<void> {
-  // fecha parada em aberto antes de encerrar, guardando quais para poder desfazer
-  const par = await supabase
-    .from('ordem_paradas')
-    .update({ fim: new Date().toISOString() })
-    .eq('ordem_id', ordemId)
-    .is('fim', null)
-    .select('id')
-  erro('fechar parada em aberto', par.error)
-
-  const ev = await supabase
-    .from('ordem_eventos')
-    .insert({ ordem_id: ordemId, tipo: 'fim', usuario_id: usuarioId })
-  erro('registrar fim', ev.error)
-
-  const up = await supabase
-    .from('ordens')
-    .update({ status: 'Finalizada', fim_pendente: false })
-    .eq('id', ordemId)
-    .select('id')
-  if (up.error || (up.data ?? []).length === 0) {
-    // sem o status, o fim não aconteceu: apaga o evento e reabre as paradas
-    await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId).eq('tipo', 'fim')
-    const ids = (par.data ?? []).map((p) => (p as { id: string }).id)
-    if (ids.length > 0)
-      await supabase.from('ordem_paradas').update({ fim: null }).in('id', ids)
-    throw new Error(`confirmar finalização: ${up.error?.message ?? SEM_LINHA}`)
-  }
+/** Fecha paradas abertas, grava o evento e finaliza — uma transação só. */
+export async function confirmarFim(ordemId: string): Promise<void> {
+  const { error } = await supabase.rpc('confirmar_fim', { p_ordem: ordemId })
+  erro('confirmar finalização', error)
 }
 
-export async function registrarParada(
-  ordemId: string,
-  motivoId: string,
-  usuarioId: string,
-): Promise<void> {
-  const p = await supabase
-    .from('ordem_paradas')
-    .insert({ ordem_id: ordemId, motivo_id: motivoId, usuario_id: usuarioId })
-    .select('id')
-    .single()
-  erro('registrar parada', p.error)
-  const up = await supabase
-    .from('ordens')
-    .update({ status: 'Parada' })
-    .eq('id', ordemId)
-    .select('id')
-  if (up.error || (up.data ?? []).length === 0) {
-    // parada sem status é meia-verdade: descarta a parada recém-criada
-    if (p.data) await supabase.from('ordem_paradas').delete().eq('id', p.data.id)
-    throw new Error(`mudar status para Parada: ${up.error?.message ?? SEM_LINHA}`)
-  }
+export async function registrarParada(ordemId: string, motivoId: string): Promise<void> {
+  const { error } = await supabase.rpc('registrar_parada', {
+    p_ordem: ordemId,
+    p_motivo: motivoId,
+  })
+  erro('registrar parada', error)
 }
 
 export async function retomar(ordemId: string): Promise<void> {
-  const p = await supabase
-    .from('ordem_paradas')
-    .update({ fim: new Date().toISOString() })
-    .eq('ordem_id', ordemId)
-    .is('fim', null)
-    .select('id')
-  erro('fechar parada', p.error)
-  const up = await supabase
-    .from('ordens')
-    .update({ status: 'Em producao' })
-    .eq('id', ordemId)
-    .select('id')
-  if (up.error || (up.data ?? []).length === 0) {
-    // status não voltou: reabre a parada para não parar de contar o tempo
-    const ids = (p.data ?? []).map((x) => (x as { id: string }).id)
-    if (ids.length > 0)
-      await supabase.from('ordem_paradas').update({ fim: null }).in('id', ids)
-    throw new Error(`retomar produção: ${up.error?.message ?? SEM_LINHA}`)
-  }
+  const { error } = await supabase.rpc('retomar_producao', { p_ordem: ordemId })
+  erro('retomar produção', error)
 }
 
 /**
- * Cancelar início: o operador começou a ordem errada. Descarta os
- * apontamentos, devolve a ordem para Programada e libera a máquina.
- * Fica registrado quem cancelou e o que foi descartado.
+ * Cancelar início: o operador começou a ordem errada. Auditoria, volta do
+ * status e descarte de eventos/paradas/pesos numa transação só — ou o
+ * cancelamento inteiro acontece, ou nada muda.
  */
-export async function cancelarInicio(
-  ordemId: string,
-  usuarioId: string,
-  detalhe: string,
-): Promise<void> {
-  const aud = await supabase.from('ordem_auditoria').insert({
-    ordem_id: ordemId,
-    acao: 'cancelou o início',
-    detalhe,
-    usuario_id: usuarioId,
+export async function cancelarInicio(ordemId: string, detalhe: string): Promise<void> {
+  const { error } = await supabase.rpc('cancelar_inicio', {
+    p_ordem: ordemId,
+    p_detalhe: detalhe,
   })
-  erro('registrar auditoria', aud.error)
-
-  // o status volta antes de apagar os eventos: o trigger de imutabilidade
-  // só libera a ordem depois que ela deixa de estar em andamento.
-  // Se o RLS recusar aqui, parar ANTES dos deletes — senão os apontamentos
-  // seriam apagados com a ordem ainda em andamento.
-  const up = await supabase
-    .from('ordens')
-    .update({ status: 'Programada', turno_id: null, fim_pendente: false })
-    .eq('id', ordemId)
-    .select('id')
-  erro('devolver ordem para Programada', up.error)
-  exigeLinha('devolver ordem para Programada', up.data)
-
-  // os deletes também devolvem as linhas: descarte recusado não pode passar
-  // batido, senão sobra evento duplicado inflando o tempo bruto da próxima
-  const delPar = await supabase.from('ordem_paradas').delete().eq('ordem_id', ordemId).select('id')
-  erro('descartar paradas', delPar.error)
-  const delEv = await supabase.from('ordem_eventos').delete().eq('ordem_id', ordemId).select('id')
-  erro('descartar eventos', delEv.error)
-  const delTq = await supabase.from('ordem_tanques').delete().eq('ordem_id', ordemId).select('id')
-  erro('descartar tanques', delTq.error)
-  if ((delEv.data ?? []).length === 0)
-    throw new Error(`descartar eventos: ${SEM_LINHA} — o cancelamento ficou incompleto, avise o gestor`)
+  erro('cancelar início', error)
 }

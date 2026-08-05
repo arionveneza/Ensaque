@@ -228,9 +228,9 @@ export async function criarLote(l: {
  * valer juntas. Antes eram duas chamadas: quando o RLS recusava a segunda,
  * sobrava lote Baixado sem movimento (baixa fantasma que liberava produção
  * sem separação física). A RPC roda as duas numa transação só; quem decide
- * quem pode é `pode_baixar_lote()`, que lê a matriz da Administração.
- * Requer supabase/baixa-atomica-e-rls-apontamento.sql e o endurecimento
- * endurece-rls-baixa-e-ordens.sql aplicados.
+ * quem pode é a matriz da Administração, via `tem_acao()` no banco.
+ * Requer supabase/baixa-atomica-e-rls-apontamento.sql e
+ * matriz-permissoes-no-banco.sql aplicados.
  */
 export async function baixarLote(loteId: string, bags: number, pesoT: number): Promise<void> {
   const { error } = await supabase.rpc('baixar_lote', {
