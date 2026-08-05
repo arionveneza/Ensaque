@@ -12,7 +12,10 @@ import {
 } from '@/dominio/importacao/ordens'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
 import { useRealtime } from '@/dados/useRealtime'
-import { analisaDemanda, podeCriarOrdem } from '@/dominio/balanco'
+import {
+  analisaDemanda, bagsFaltando, bagsSobrando, podeCriarOrdem, resumoBalanco,
+  situacaoDemanda, type SituacaoDemanda,
+} from '@/dominio/balanco'
 import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -541,43 +544,7 @@ export default function Ordens() {
       )}
 
       {/* ---------------- painel de demanda ---------------- */}
-      <Cartao titulo="Demanda × Estoque × Planejado" className="mb-5">
-        {balanco.length === 0 ? (
-          <Vazio>Nenhuma carga de demanda importada ainda.</Vazio>
-        ) : (
-          <Tabela
-            cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Pedido', '#Aguardando',
-              '#Estoque', '#Planejado', '#Saldo', '']}
-          >
-            {balanco
-              .slice()
-              .sort((a, b) => b.saldo - a.saldo)
-              .map((b, i) => (
-                <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-1.5">{b.cultivar}</td>
-                  <td className="px-2 py-1.5">{b.tratamento}</td>
-                  <td className="px-2 py-1.5">{b.embalagem}</td>
-                  <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.pedido_aprovado)}</td>
-                  <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
-                    {inteiro(b.pedido_pendente)}
-                  </td>
-                  <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.estoque_pa)}</td>
-                  <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.ordens_abertas)}</td>
-                  <td
-                    className={`num-tabular px-2 py-1.5 text-right font-semibold ${
-                      b.saldo > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400'
-                    }`}
-                  >
-                    {inteiro(b.saldo)}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    {!b.receita_cadastrada && <Tag cor="alerta">receita não cadastrada</Tag>}
-                  </td>
-                </tr>
-              ))}
-          </Tabela>
-        )}
-      </Cartao>
+      <PainelDemanda balanco={balanco} />
 
       {/* ---------------- lista de ordens ---------------- */}
       <Cartao
@@ -641,6 +608,201 @@ export default function Ordens() {
         )}
       </Cartao>
     </Pagina>
+  )
+}
+
+/**
+ * Demanda × Estoque × Planejado.
+ *
+ * O `saldo` sozinho engana: positivo é trabalho a fazer, negativo é bag que vai
+ * sobrar sem comprador. São leituras opostas, então a tabela rotula a situação
+ * de cada linha e o topo resume os dois totais separados.
+ */
+function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
+  const [filtro, setFiltro] = useState<'tudo' | SituacaoDemanda | 'sem-receita'>('tudo')
+
+  const resumo = useMemo(() => resumoBalanco(balanco), [balanco])
+
+  const linhas = useMemo(() => {
+    const lista =
+      filtro === 'tudo'
+        ? balanco
+        : filtro === 'sem-receita'
+          ? balanco.filter((b) => !b.receita_cadastrada)
+          : balanco.filter((b) => situacaoDemanda(b) === filtro)
+    // maior descoberto primeiro; ao filtrar sobra, o maior excesso vem no topo
+    return lista
+      .slice()
+      .sort((a, b) => (filtro === 'tudo' ? b.saldo - a.saldo : a.saldo - b.saldo))
+  }, [balanco, filtro])
+
+  const semReceita = balanco.filter((b) => !b.receita_cadastrada).length
+  const chips: { id: typeof filtro; texto: string; ativo: boolean }[] = [
+    { id: 'tudo', texto: `Tudo (${balanco.length})`, ativo: true },
+    { id: 'descoberto', texto: `Falta produzir (${resumo.combosFaltando})`, ativo: resumo.combosFaltando > 0 },
+    { id: 'sobra', texto: `Vai sobrar (${resumo.combosSobrando})`, ativo: resumo.combosSobrando > 0 },
+    { id: 'sem-pedido', texto: `Sem pedido (${resumo.combosSemPedido})`, ativo: resumo.combosSemPedido > 0 },
+    { id: 'sem-receita', texto: `Sem receita (${semReceita})`, ativo: semReceita > 0 },
+  ]
+
+  return (
+    <Cartao titulo="Demanda × Estoque × Planejado" className="mb-5">
+      {balanco.length === 0 ? (
+        <Vazio>
+          Nenhuma carga de demanda importada ainda. Suba o relatório
+          “Pedidos Analítico Resumido” e a exportação de “Saldos” da SimpleAgro no botão
+          Importar planilha acima.
+        </Vazio>
+      ) : (
+        <>
+          {/* totais: falta produzir vs vai sobrar */}
+          <div className="mb-3 grid gap-2 sm:grid-cols-3">
+            <Placar
+              rotulo="Falta produzir"
+              valor={resumo.faltando}
+              detalhe={`${resumo.combosFaltando} combinação(ões) sem cobertura`}
+              cor="neutro"
+            />
+            <Placar
+              rotulo="Vai sobrar"
+              valor={resumo.sobrando}
+              detalhe={
+                resumo.sobrando > 0
+                  ? `${resumo.combosSobrando} combinação(ões) acima do pedido`
+                  : 'nada acima do pedido aprovado'
+              }
+              cor={resumo.sobrando > 0 ? 'alerta' : 'ok'}
+            />
+            <Placar
+              rotulo="Sem pedido nenhum"
+              valor={resumo.semPedido}
+              detalhe={
+                resumo.semPedido > 0
+                  ? `${resumo.combosSemPedido} combinação(ões) em estoque ou programadas`
+                  : 'tudo tem pedido aprovado'
+              }
+              cor={resumo.semPedido > 0 ? 'perigo' : 'ok'}
+            />
+          </div>
+
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {chips
+              .filter((c) => c.ativo)
+              .map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setFiltro(c.id)}
+                  className={`rounded border px-2 py-1 text-xs ${
+                    filtro === c.id
+                      ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                      : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  {c.texto}
+                </button>
+              ))}
+          </div>
+
+          {linhas.length === 0 ? (
+            <Vazio>Nenhuma combinação nesse filtro.</Vazio>
+          ) : (
+            <Tabela
+              cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Pedido', '#Aguardando',
+                '#Estoque', '#Planejado', '#Falta', '#Sobra', 'Situação']}
+            >
+              {linhas.map((b, i) => {
+                const s = situacaoDemanda(b)
+                const falta = bagsFaltando(b)
+                const sobra = bagsSobrando(b)
+                return (
+                  <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+                    <td className="px-2 py-1.5">{b.cultivar}</td>
+                    <td className="px-2 py-1.5">{b.tratamento}</td>
+                    <td className="px-2 py-1.5">{b.embalagem}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.pedido_aprovado)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
+                      {inteiro(b.pedido_pendente)}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.estoque_pa)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.ordens_abertas)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                      {falta > 0 ? inteiro(falta) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td
+                      className={`num-tabular px-2 py-1.5 text-right font-semibold ${
+                        sobra > 0 ? 'text-amber-600 dark:text-amber-400' : ''
+                      }`}
+                    >
+                      {sobra > 0 ? inteiro(sobra) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1.5">
+                      <Tag cor={COR_SITUACAO[s]}>{ROTULO_SITUACAO[s]}</Tag>
+                      {!b.receita_cadastrada && (
+                        <span className="ml-1">
+                          <Tag cor="alerta">sem receita</Tag>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </Tabela>
+          )}
+
+          <p className="mt-2 text-xs text-stone-500">
+            Pedido aprovado − estoque de produto acabado − ordens abertas. Ordem lançada no
+            AGROTIS sai da conta e volta como estoque no próximo upload. Pedido aguardando
+            aprovação financeira aparece, mas não cobre nada.
+          </p>
+        </>
+      )}
+    </Cartao>
+  )
+}
+
+const ROTULO_SITUACAO: Record<SituacaoDemanda, string> = {
+  descoberto: 'falta produzir',
+  coberto: 'coberto',
+  sobra: 'vai sobrar',
+  'sem-pedido': 'sem pedido',
+}
+
+const COR_SITUACAO: Record<SituacaoDemanda, 'neutro' | 'ok' | 'alerta' | 'perigo' | 'info'> = {
+  descoberto: 'info',
+  coberto: 'ok',
+  sobra: 'alerta',
+  'sem-pedido': 'perigo',
+}
+
+function Placar({
+  rotulo, valor, detalhe, cor,
+}: {
+  rotulo: string
+  valor: number
+  detalhe: string
+  cor: 'neutro' | 'ok' | 'alerta' | 'perigo'
+}) {
+  const borda = {
+    neutro: 'border-stone-200 dark:border-stone-800',
+    ok: 'border-emerald-200 dark:border-emerald-900',
+    alerta: 'border-amber-300 dark:border-amber-800',
+    perigo: 'border-red-300 dark:border-red-800',
+  }[cor]
+  const numero = {
+    neutro: 'text-stone-800 dark:text-stone-100',
+    ok: 'text-emerald-700 dark:text-emerald-400',
+    alerta: 'text-amber-700 dark:text-amber-400',
+    perigo: 'text-red-700 dark:text-red-400',
+  }[cor]
+  return (
+    <div className={`rounded border px-3 py-2 ${borda}`}>
+      <p className="text-xs text-stone-500">{rotulo}</p>
+      <p className={`num-tabular text-xl font-semibold ${numero}`}>
+        {inteiro(valor)} <span className="text-xs font-normal text-stone-500">bg</span>
+      </p>
+      <p className="text-xs text-stone-500">{detalhe}</p>
+    </div>
   )
 }
 

@@ -152,3 +152,78 @@ export function analisaDemanda(
 export function podeCriarOrdem(analise: AnaliseDemanda): boolean {
   return !analise.avisos.some((a) => a.bloqueia)
 }
+
+// ================================================================
+// Leitura do balanço: o que falta produzir e o que vai sobrar
+// ================================================================
+
+/**
+ * O `saldo` do balanço é ambíguo para quem olha a tabela: positivo é demanda
+ * ainda descoberta (trabalho a fazer), negativo é bag que vai sobrar no
+ * estoque sem comprador. São situações opostas e a segunda é a que ninguém
+ * quer descobrir depois de tratar.
+ */
+export type SituacaoDemanda = 'descoberto' | 'coberto' | 'sobra' | 'sem-pedido'
+
+/** O recorte do balanço que classifica a situação — vem da v_balanco_demanda. */
+export interface LinhaBalanco {
+  pedido_aprovado: number
+  estoque_pa: number
+  ordens_abertas: number
+  saldo: number
+}
+
+/**
+ * `sem-pedido` é separado de `sobra` de propósito: sobra é excesso sobre um
+ * pedido que existe, enquanto sem-pedido é produzir ou estocar algo que
+ * ninguém comprou — 100% de excesso, e o caso mais grave.
+ */
+export function situacaoDemanda(l: LinhaBalanco): SituacaoDemanda {
+  if (l.pedido_aprovado <= 0)
+    return l.estoque_pa + l.ordens_abertas > 0 ? 'sem-pedido' : 'coberto'
+  if (l.saldo > 0) return 'descoberto'
+  if (l.saldo < 0) return 'sobra'
+  return 'coberto'
+}
+
+/** Bags que faltam produzir para cobrir o pedido aprovado. */
+export const bagsFaltando = (l: LinhaBalanco): number => Math.max(0, l.saldo)
+
+/** Bags que passam do pedido aprovado: estoque + programado que vai sobrar. */
+export const bagsSobrando = (l: LinhaBalanco): number => Math.max(0, -l.saldo)
+
+export interface ResumoBalanco {
+  /** Combinações e bags que faltam produzir. */
+  faltando: number
+  combosFaltando: number
+  /** Combinações e bags que vão sobrar, incluindo as sem pedido nenhum. */
+  sobrando: number
+  combosSobrando: number
+  /** Subconjunto do que sobra: sem nenhum pedido aprovado. */
+  semPedido: number
+  combosSemPedido: number
+}
+
+/**
+ * Totais do painel. O que sobra soma tudo que passa do pedido, e as linhas sem
+ * pedido nenhum aparecem também no próprio contador — é o mesmo bag contado nos
+ * dois lugares, de propósito, porque um é o total e o outro é o alerta.
+ */
+export function resumoBalanco(linhas: LinhaBalanco[]): ResumoBalanco {
+  const r: ResumoBalanco = {
+    faltando: 0, combosFaltando: 0,
+    sobrando: 0, combosSobrando: 0,
+    semPedido: 0, combosSemPedido: 0,
+  }
+  for (const l of linhas) {
+    const falta = bagsFaltando(l)
+    const sobra = bagsSobrando(l)
+    if (falta > 0) { r.faltando += falta; r.combosFaltando++ }
+    if (sobra > 0) { r.sobrando += sobra; r.combosSobrando++ }
+    if (situacaoDemanda(l) === 'sem-pedido') {
+      r.semPedido += l.estoque_pa + l.ordens_abertas
+      r.combosSemPedido++
+    }
+  }
+  return r
+}
