@@ -1,7 +1,7 @@
 # Pendências
 
 Estado do projeto e o que falta, para retomar sem depender da memória de ninguém.
-Atualizado em 05/08/2026.
+Atualizado em 05/08/2026 (noite — correções de RLS e baixa atômica).
 
 ## Onde o sistema está
 
@@ -63,6 +63,14 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 
 ## 4. Melhorias técnicas conhecidas
 
+- **RLS × matriz da Administração — só a baixa de lote está unificada.** Desde 05/08/2026
+  a policy `pode_baixar_lote()` lê `perfil_permissoes` (linha explícita manda, ausência
+  segue o padrão), então conceder "Baixar lote" na Administração funciona para qualquer
+  perfil. As demais ações (`apontar`, `qualidade`, `lancar`…) continuam com policies de
+  perfil fixo no schema: conceder `apontar` ao PCP na tela, por exemplo, dá erro alto ao
+  gravar eventos/tanques (não mais falha silenciosa). Se a operação quiser a matriz
+  mandando em tudo, estender o padrão `pode_baixar_lote()` às outras ações.
+
 - **Usuários da operação criados em 05/08/2026** (6 Produção, 1 Logística, 2 PCP) via script
   SQL direto no Auth + `tsi.usuarios` — o script **não está no repositório de propósito**
   (repo público; contém logins e senha inicial). Todos entraram com a **mesma senha inicial**,
@@ -80,6 +88,17 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 ---
 
 ## Armadilhas já pagas — não repetir
+
+**UPDATE/DELETE barrado pelo RLS afeta 0 linhas SEM erro.** O app seguia adiante achando
+que gravou: a Produção inteira apontava no vácuo (não havia policy de update em `ordens`),
+o Cancelar início nunca apagava os eventos (sem policy de delete — sobrou `inicio` duplicado
+inflando o tempo bruto da 131104) e a baixa de lote pelo PCP gravou o status sem o movimento
+(lote SV0101036060345, reparado). Regra desde 05/08/2026: todo update/delete de apontamento
+pede as linhas de volta (`.select()`) e trata 0 linhas como recusa (`exigeLinha` em
+`api.ts`); escritas que precisam valer juntas vão em RPC transacional
+(`baixar_lote`/`estornar_lote` em `supabase/baixa-atomica-e-rls-apontamento.sql`, aplicado
+em 05/08/2026). Ao criar policy nova, testar com o perfil que NÃO pode: o sintoma de policy
+faltando é sucesso silencioso, não erro.
 
 **Lote de químico saiu do escopo em 05/08/2026.** As tabelas `lotes_quimico` e
 `ordem_tanque_lotes` foram removidas, junto do cadastro, da escolha na ordem e da trava de
