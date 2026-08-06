@@ -11,11 +11,13 @@ import {
   consumoPorTanque,
   ensaquePorBagKg,
   formataHms,
+  montaTanques,
   pesoQuimicoTotalKg,
   temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
-import { enderecoLote, rotuloTanque } from '@/componentes/ui'
+import { diaCurto, enderecoLote, rotuloTanque } from '@/componentes/ui'
+import { imprimirOrdemProducao } from '@/lib/exportar'
 
 const num = (v: number | null | undefined, casas = 1) =>
   v == null || Number.isNaN(v)
@@ -84,6 +86,59 @@ export default function ModalOrdem({
     }
   }
 
+  /**
+   * A folha de papel que acompanha a ordem: mesma informação da tela, com
+   * quadros em branco para o operador anotar os pesos à caneta. O planejado
+   * sai da RECEITA (não dos tanques montados) para poder imprimir antes do
+   * Iniciar, que é quando a folha vai para o chão de fábrica.
+   */
+  function imprimir() {
+    const itens = ordem.receitas.receita_itens.map((i) => ({
+      produtoId: i.produto_id,
+      dose: i.dose,
+      tanque: i.tanque,
+    }))
+    let planejadoPorTanque = new Map<number, number>()
+    try {
+      const cons = consumoPorTanque(montaTanques({ id: ordem.receita_id, nome: ordem.receitas.nome, itens }), prods, kg)
+      planejadoPorTanque = new Map(cons.map((c) => [c.tanque, c.planejadoKg]))
+    } catch {
+      // densidade faltando: imprime com traço, igual à tela
+    }
+    const tanquesOrdenados = [...new Set(itens.map((i) => i.tanque))].sort((a, b) => a - b)
+    imprimirOrdemProducao({
+      numero: ordem.numero,
+      cultivar: ordem.cultivar,
+      receita: ordem.receitas.nome,
+      embalagem: ordem.embalagem,
+      bags: ordem.bags,
+      loteId: ordem.lote_id,
+      endereco: ordem.armazem || ordem.bloco || ordem.quadra ? enderecoLote(ordem) : null,
+      cliente: ordem.cliente,
+      observacao: ordem.observacao,
+      maquina: ordem.maquina_id,
+      dia: ordem.data_prog ? diaCurto(ordem.data_prog) : null,
+      urgente: ordem.prioridade === 'Urgente',
+      pesoSementeT: num(kg / 1000, 2),
+      quimicoTotalKg: quimicoTotal == null ? '—' : num(quimicoTotal),
+      pesoBagKg: num(ordem.lotes_semente.peso_bag_kg, 0),
+      ensaqueBagKg:
+        quimicoTotal == null
+          ? '—'
+          : num(ensaquePorBagKg(ordem.lotes_semente.peso_bag_kg, quimicoTotal, ordem.bags), 1),
+      tanques: tanquesOrdenados.map((tq) => ({
+        destino: rotuloTanque(tq),
+        produtos: itens
+          .filter((i) => i.tanque === tq)
+          .map((i) => {
+            const p = prods.get(i.produtoId)
+            return `${p?.nome ?? i.produtoId} · ${num(i.dose, 2)} ${p?.unidade ?? ''}`
+          }),
+        planejadoKg: planejadoPorTanque.has(tq) ? num(planejadoPorTanque.get(tq)) : '—',
+      })),
+    })
+  }
+
   // ---- validações antes de confirmar (o banco também barra, via trigger) ----
   const semPesoInicial = ordem.ordem_tanques.filter((t) => t.peso_inicial == null)
   const semPesoFinal = ordem.ordem_tanques.filter((t) => t.peso_final == null)
@@ -110,12 +165,21 @@ export default function ModalOrdem({
               )}
             </p>
           </div>
-          <button
-            onClick={onFechar}
-            className="rounded-md px-3 py-1.5 text-sm text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
-          >
-            Fechar
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={imprimir}
+              title="Folha da ordem para o apontamento manual no chão de fábrica"
+              className="rounded-md border border-stone-300 px-3 py-1.5 text-sm dark:border-stone-700"
+            >
+              Imprimir
+            </button>
+            <button
+              onClick={onFechar}
+              className="rounded-md px-3 py-1.5 text-sm text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+            >
+              Fechar
+            </button>
+          </div>
         </header>
 
         <div className="p-5">

@@ -116,9 +116,14 @@ describe('peso de balanca a partir da dose', () => {
 })
 
 describe('ensaque', () => {
-  it('soma ao peso do bag a parcela de quimico por bag', () => {
-    // 100 kg de quimico distribuidos em 40 bags = 2,5 kg por bag
-    expect(ensaquePorBagKg(855, 100, 40)).toBeCloseTo(857.5, 6)
+  it('soma ao peso do bag a margem de 0,5% e a parcela de quimico por bag', () => {
+    // 855 kg de bag + 0,5% (4,275) + 100 kg de quimico em 40 bags (2,5)
+    expect(ensaquePorBagKg(855, 100, 40)).toBeCloseTo(861.775, 6)
+  })
+
+  it('a margem incide so no peso do bag, nao no quimico', () => {
+    // sem quimico: 1000 * 1,005
+    expect(ensaquePorBagKg(1000, 0, 10)).toBeCloseTo(1005, 6)
   })
 
   it('ordem sem bags e erro, nao divisao por zero', () => {

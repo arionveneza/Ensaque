@@ -67,7 +67,10 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   densidade) continua — é dele que sai o peso de balança.
 
 ### Peso de ensaque
-`ensaque_por_bag = peso_do_bag_do_lote + (peso_químico_total_da_ordem ÷ bags_da_ordem)`
+`ensaque_por_bag = peso_do_bag_do_lote × 1,005 + (peso_químico_total_da_ordem ÷ bags_da_ordem)`
+
+O ×1,005 é a **margem de meio por cento sobre o peso do bag** (decisão de 05/08/2026);
+a margem não incide sobre a parcela de químico.
 
 ---
 

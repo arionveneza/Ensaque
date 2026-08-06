@@ -87,8 +87,14 @@ export function pesoQuimicoTotalKg(
 }
 
 /**
+ * Margem do ensaque sobre o peso do bag (decisão de 05/08/2026):
+ * cada bag leva +0,5% do peso do bag além da parcela de químico.
+ */
+export const MARGEM_ENSAQUE = 0.005
+
+/**
  * Peso de ensaque por bag:
- *   peso_do_bag_do_lote + (peso_químico_total_da_ordem ÷ bags_da_ordem)
+ *   peso_do_bag_do_lote × (1 + margem) + (peso_químico_total_da_ordem ÷ bags_da_ordem)
  */
 export function ensaquePorBagKg(
   pesoBagLoteKg: number,
@@ -96,7 +102,7 @@ export function ensaquePorBagKg(
   bags: number,
 ): number {
   if (bags <= 0) throw new Error('Ordem sem bags: ensaque indefinido.')
-  return pesoBagLoteKg + pesoQuimicoTotalKg / bags
+  return pesoBagLoteKg * (1 + MARGEM_ENSAQUE) + pesoQuimicoTotalKg / bags
 }
 
 /**
