@@ -61,6 +61,8 @@ export interface LinhaOrdem {
   }
   ordem_eventos: { tipo: 'inicio' | 'fim'; ts: string }[]
   ordem_paradas: { id: string; motivo_id: string; inicio: string; fim: string | null }[]
+  /** Só para o aviso do Cancelar início: quantos testes serão descartados. */
+  qualidade_checks: { id: string }[]
   ordem_tanques: {
     id: string
     tanque: number
@@ -77,7 +79,8 @@ const SELECT_ORDEM = `
   receitas ( nome, receita_itens ( produto_id, dose, tanque ) ),
   ordem_eventos ( tipo, ts ),
   ordem_paradas ( id, motivo_id, inicio, fim ),
-  ordem_tanques ( id, tanque, peso_inicial, peso_final )
+  ordem_tanques ( id, tanque, peso_inicial, peso_final ),
+  qualidade_checks ( id )
 `
 
 function erro(contexto: string, e: { message: string } | null): never | void {

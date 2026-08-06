@@ -480,6 +480,26 @@ end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_ordem_imutavel before update or delete on ordens
   for each row execute function fn_ordem_imutavel();
 
+-- quem decide se a ordem pode sumir é a HISTÓRIA, não o status: o Cancelar
+-- início devolve o rótulo 'Programada', e sem esta trava uma ordem com testes
+-- de qualidade voltava a ser excluível em cascata (decisão de 05/08/2026).
+-- Tanques/pesos sem confirmação não bloqueiam (preparação é descartável);
+-- auditoria também não (ordem cancelada continua excluível).
+create or replace function fn_ordem_sem_historia() returns trigger as $$
+begin
+  if exists (select 1 from qualidade_checks  q where q.ordem_id = old.id)
+     or exists (select 1 from ordem_conferencias c where c.ordem_id = old.id)
+     or exists (select 1 from ordem_eventos  e where e.ordem_id = old.id)
+     or exists (select 1 from ordem_paradas  p where p.ordem_id = old.id) then
+    raise exception
+      'Ordem % tem historia (producao/qualidade/conferencia) e nao pode ser excluida',
+      old.numero;
+  end if;
+  return old;
+end $$ language plpgsql set search_path = tsi, public;
+create trigger tg_ordem_sem_historia before delete on ordens
+  for each row execute function fn_ordem_sem_historia();
+
 -- turno derivado do horário real do início (até 17:30 = T1)
 create or replace function fn_turno_do_inicio() returns trigger as $$
 begin

@@ -449,12 +449,17 @@ export default function ModalOrdem({
               disabled={ocupado}
               onClick={() => {
                 const t = tempos
+                const testes = ordem.qualidade_checks.length
                 if (
                   !confirm(
                     `Cancelar o início da ordem ${ordem.numero}?\n\n` +
                       `Serão descartados ${formataHms(t?.brutoS ?? 0)} de tempo apontado, ` +
-                      `${ordem.ordem_paradas.length} parada(s) e os pesos de tanque.\n\n` +
-                      'A ordem volta para Programada e a máquina fica livre. ' +
+                      `${ordem.ordem_paradas.length} parada(s) e os pesos de tanque.\n` +
+                      (testes > 0
+                        ? `\n⚠ ATENÇÃO: ${testes} TESTE(S) DE QUALIDADE já apontado(s) ` +
+                          'nesta ordem serão APAGADOS junto.\n'
+                        : '') +
+                      '\nA ordem volta para Programada e a máquina fica livre. ' +
                       'Esta ação fica registrada no histórico.',
                   )
                 )
@@ -462,7 +467,9 @@ export default function ModalOrdem({
                 acao(() =>
                   api.cancelarInicio(
                     ordem.id,
-                    `${formataHms(t?.brutoS ?? 0)} e ${ordem.ordem_paradas.length} parada(s) descartados`,
+                    `${formataHms(t?.brutoS ?? 0)}, ${ordem.ordem_paradas.length} parada(s)` +
+                      (testes > 0 ? ` e ${testes} teste(s) de qualidade` : '') +
+                      ' descartados',
                   ),
                 )
               }}

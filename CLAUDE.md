@@ -93,6 +93,12 @@ aguardando; se `Baixado` → pronto.
 **Regra de ouro:** antes de iniciar, tudo é editável; depois que a produção toca a ordem, ela é
 registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele lote já foi iniciada.
 
+**Excluir exige ordem virgem** (decisão de 05/08/2026): além do status, o banco recusa excluir
+ordem com **qualquer história** — evento de produção, parada, teste de qualidade ou conferência
+(trigger `tg_ordem_sem_historia`). Sem isso, o Cancelar início "lavava" o status e uma ordem
+com testes de qualidade voltava a ser excluível em cascata, sem rastro. Tanques montados/pesos
+digitados sem confirmação **não** bloqueiam (preparação é descartável); auditoria também não.
+
 **Chave anti-duplicidade da ordem:** `nº ordem + cultivar + tratamento + embalagem`.
 
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
@@ -107,7 +113,9 @@ registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele 
    **PCP digita na tela AGROTIS** — o lançamento exige todos os pesos (trigger).
 
 Fechar a janela em qualquer etapa **não** muda o estado. `Cancelar início` descarta apontamentos
-(com auditoria) e libera a máquina — usado quando o operador inicia a ordem errada.
+(com auditoria) e libera a máquina — usado quando o operador inicia a ordem errada. Se a ordem
+já tem **testes de qualidade em processo**, o aviso diz quantos e eles são **apagados junto**
+(decisão de 05/08/2026) — teste órfão em ordem "nunca produzida" seria corrupção de dado.
 `Voltar para produção` desfaz um Finalizar clicado por engano: fecha a pesagem final e
 descarta os pesos finais já digitados — a produção continuou, então serão pesados de novo
 (decisão de 05/08/2026 — antes a única saída era o Cancelar início).

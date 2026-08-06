@@ -63,6 +63,16 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 
 ## 4. Melhorias técnicas conhecidas
 
+- **`schema.sql` não contém a camada de RLS/RPC nova.** As policies via `tem_acao`, as RPCs
+  transacionais e os triggers de 05/08/2026 vivem nos scripts `baixa-atomica-*`,
+  `matriz-permissoes-*`, `quantidade-produzida` e `exclusao-exige-ordem-virgem` (a ordem de
+  aplicação é essa). O schema.sql recebeu só as partes estruturais (colunas, triggers de
+  validação). Um dia vale consolidar tudo nele; até lá, banco novo = schema.sql + os 4 scripts.
+- **Status `Cancelada` (anular ordem que já produziu) não existe.** Excluir agora é só para
+  ordem virgem; se a operação precisar tirar da programação uma ordem com história (refugo,
+  erro grave), o caminho seria um status que preserva tempos/consumos/qualidade fora do
+  balanço. Escopo novo — só fazer se a operação pedir.
+
 - **A matriz da Administração manda no banco** (decisão de 05/08/2026, script
   `matriz-permissoes-no-banco.sql`): a função `tem_acao(recurso, ação)` resolve a permissão
   igual ao app — linha explícita em `perfil_permissoes` vence, ausência cai no padrão de
