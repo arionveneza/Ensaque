@@ -7,7 +7,8 @@ import type { OrdemVisao, ParadaDetalhe, ParadaLinha, TempoOrdem } from '@/dados
 import { formataHms } from '@/dominio/calculos'
 import { exportarXlsx } from '@/lib/exportar'
 import {
-  Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, diaCurto, exportarCsv, n, somaDias,
+  Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, diaCurto, exportarCsv,
+  n, somaDias,
 } from '@/componentes/ui'
 
 type Janela = 'dia' | 'semana' | 'mes'
@@ -375,10 +376,13 @@ export default function Indicadores() {
               <Botao
                 onClick={() =>
                   exportarCsv('producao-por-ordem', [
-                    ['Ordem', 'Máquina', 'Dia', 'Turno', 'Peso (t)', 'Planejado (s)',
-                      'Bruto (s)', 'Líquido (s)', 'Paradas (s)'],
+                    ['Ordem', 'Máquina', 'Dia', 'Turno', 'Início', 'Fim', 'Peso (t)',
+                      'Planejado (s)', 'Bruto (s)', 'Líquido (s)', 'Paradas (s)'],
                     ...tempos.map((t) => [
                       t.numero, t.maquina_id, t.data_prog ?? '', t.turno_id ?? '',
+                      // data e hora completas no arquivo: é lá que se audita
+                      new Date(t.ini).toLocaleString('pt-BR'),
+                      t.fim ? new Date(t.fim).toLocaleString('pt-BR') : 'em andamento',
                       t.peso_t, Math.round(t.planejado_s), Math.round(t.bruto_s),
                       Math.round(t.liquido_s), Math.round(t.paradas_s),
                     ]),
@@ -390,8 +394,8 @@ export default function Indicadores() {
             }
           >
             <Tabela
-              cabecalho={['Ordem', 'Máq.', 'Turno', '#Peso', '#Planejado', '#Bruto',
-                '#Líquido', '#Paradas', 'Aderência']}
+              cabecalho={['Ordem', 'Máq.', 'Turno', 'Início', 'Fim', '#Peso', '#Planejado',
+                '#Bruto', '#Líquido', '#Paradas', 'Aderência']}
             >
               {tempos.map((t) => {
                 const aderencia =
@@ -401,6 +405,18 @@ export default function Indicadores() {
                     <td className="px-2 py-1.5 font-medium">{t.numero}</td>
                     <td className="px-2 py-1.5">{t.maquina_id}</td>
                     <td className="px-2 py-1.5">{t.turno_id ?? '—'}</td>
+                    <td className="num-tabular px-2 py-1.5 whitespace-nowrap">
+                      {dataHoraCurta(t.ini)}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 whitespace-nowrap">
+                      {t.fim ? (
+                        dataHoraCurta(t.fim)
+                      ) : (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                          em andamento
+                        </span>
+                      )}
+                    </td>
                     <td className="num-tabular px-2 py-1.5 text-right">{n(Number(t.peso_t), 1)} t</td>
                     <td className="num-tabular px-2 py-1.5 text-right">{formataHms(Number(t.planejado_s))}</td>
                     <td className="num-tabular px-2 py-1.5 text-right">{formataHms(Number(t.bruto_s))}</td>

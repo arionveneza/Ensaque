@@ -110,6 +110,21 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 
 ## Armadilhas já pagas — não repetir
 
+**Horário de apontamento é SEMPRE do servidor.** O relógio do navegador do chão de fábrica
+não é confiável: em 05/08/2026 a ordem 131104 ficou com uma parada cujo `fim` (gravado com
+`new Date()` no cliente) era ~2 h ANTES do `inicio` (default `now()`, servidor) — duração
+negativa, e o líquido (2h23) saiu maior que o bruto (26 min), estragando aderência e
+disponibilidade. Hoje todo horário de apontamento nasce dentro das RPCs (`now()`), há
+`check (fim is null or fim >= inicio)` em `ordem_paradas`, e tanto a view `v_ordem_tempos`
+quanto `temposOrdem` em `calculos.ts` usam `greatest(0, …)`/`Math.max(0, …)`. Ainda vêm do
+cliente, por serem informativos e não entrarem em cálculo de duração: `ordem_conferencias.ts`,
+`prioridade_em` e `agrotis_em` — se algum dia entrarem em conta, mover para o servidor.
+
+**Aba em segundo plano congela o cronômetro.** Sleeping tabs / modo de eficiência do Edge (e o
+throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo decorrido
+parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no
+`visibilitychange`/`focus` — ao criar outra tela com cronômetro, repetir o padrão.
+
 **UPDATE/DELETE barrado pelo RLS afeta 0 linhas SEM erro.** O app seguia adiante achando
 que gravou: a Produção inteira apontava no vácuo (não havia policy de update em `ordens`),
 o Cancelar início nunca apagava os eventos (sem policy de delete — sobrou `inicio` duplicado

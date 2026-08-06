@@ -18,6 +18,18 @@ export const diaCurto = (iso: string | null): string =>
   !iso ? '—' : `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 
 /**
+ * "05/08 14:32" — timestamp do banco em horário local. O dia vai junto de
+ * propósito: o turno 2 cruza a meia-noite, e só a hora seria ambígua.
+ */
+export const dataHoraCurta = (iso: string | null): string => {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const p2 = (v: number) => String(v).padStart(2, '0')
+  return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`
+}
+
+/**
  * Endereço do lote em uma linha: "ARMAZEM C · BL01 · QD04".
  * Aceita endereço parcial — a logística às vezes só sabe o armazém.
  */

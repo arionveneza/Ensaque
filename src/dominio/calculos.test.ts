@@ -221,6 +221,21 @@ describe('tempos', () => {
     expect(temposOrdem(base(), MOTIVOS, 0)).toBeNull()
   })
 
+  it('parada com fim antes do inicio conta zero, nao negativo', () => {
+    // caso real: inicio veio do relogio do servidor e fim do navegador,
+    // 2h atrasado -> duracao negativa fazia o liquido superar o bruto
+    const o = base()
+    o.eventos = [
+      { tipo: 'inicio', ts: 0 },
+      { tipo: 'fim', ts: 1_575 * 1000 },
+    ]
+    o.paradas = [{ motivoId: 'N1', inicio: 47 * 1000, fim: -7_009 * 1000 }]
+    const t = temposOrdem(o, MOTIVOS, 0)!
+    expect(t.paradasS).toBe(0)
+    expect(t.liquidoS).toBe(1_575)
+    expect(t.liquidoS).toBeLessThanOrEqual(t.brutoS)
+  })
+
   it('liquido desconta todas as paradas', () => {
     const o = base()
     o.eventos = [

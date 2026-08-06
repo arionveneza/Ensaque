@@ -551,6 +551,9 @@ export interface TempoOrdem {
   maquina_id: string
   data_prog: string | null
   turno_id: number | null
+  /** Horário real do apontamento de início; `fim` fica null enquanto roda. */
+  ini: string
+  fim: string | null
   peso_t: number
   bruto_s: number
   paradas_s: number

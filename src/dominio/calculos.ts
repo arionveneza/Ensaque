@@ -201,7 +201,9 @@ export function temposOrdem(
   let planejadasS = 0
   let naoPlanejadasS = 0
   for (const parada of ordem.paradas) {
-    const duracao = ((parada.fim ?? agora) - parada.inicio) / 1000
+    // nunca negativa: relógios diferentes (cliente x servidor) já geraram
+    // parada com fim ANTES do início, e o líquido saía maior que o bruto
+    const duracao = Math.max(0, ((parada.fim ?? agora) - parada.inicio) / 1000)
     const motivo = motivos.get(parada.motivoId)
     if (!motivo) throw new Error(`Motivo de parada ${parada.motivoId} não cadastrado.`)
     if (motivo.tipo === 'Planejada') planejadasS += duracao

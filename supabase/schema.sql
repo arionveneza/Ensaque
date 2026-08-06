@@ -220,7 +220,11 @@ create table ordem_paradas (
   motivo_id uuid not null references motivos_parada(id),
   inicio    timestamptz not null default now(),
   fim       timestamptz,
-  usuario_id uuid references usuarios(id)
+  usuario_id uuid references usuarios(id),
+  -- relogio do navegador ja gravou fim ANTES do inicio (servidor), e o
+  -- liquido saiu maior que o bruto. Horario de apontamento e sempre do
+  -- servidor, dentro das RPCs; esta trava garante (05/08/2026).
+  constraint parada_fim_apos_inicio check (fim is null or fim >= inicio)
 );
 
 -- 1 linha por TANQUE usado na ordem (mistura = vários produtos no mesmo tanque)
@@ -323,17 +327,18 @@ with ev as (
   from ordem_eventos group by 1),
 par as (
   select p.ordem_id,
-    sum(extract(epoch from (coalesce(p.fim, now()) - p.inicio)))                                    as par_total,
-    sum(extract(epoch from (coalesce(p.fim, now()) - p.inicio))) filter (where m.tipo='Planejada')   as par_plan,
-    sum(extract(epoch from (coalesce(p.fim, now()) - p.inicio))) filter (where m.tipo='Nao planejada') as par_nplan
+    sum(greatest(0, extract(epoch from (coalesce(p.fim, now()) - p.inicio))))                                    as par_total,
+    sum(greatest(0, extract(epoch from (coalesce(p.fim, now()) - p.inicio)))) filter (where m.tipo='Planejada')   as par_plan,
+    sum(greatest(0, extract(epoch from (coalesce(p.fim, now()) - p.inicio)))) filter (where m.tipo='Nao planejada') as par_nplan
   from ordem_paradas p join motivos_parada m on m.id = p.motivo_id group by 1)
 select o.id as ordem_id, o.numero, o.maquina_id, o.data_prog, o.turno_id, o.peso_t,
   ev.ini, ev.fim,
-  extract(epoch from (coalesce(ev.fim, now()) - ev.ini))                     as bruto_s,
+  greatest(0, extract(epoch from (coalesce(ev.fim, now()) - ev.ini)))        as bruto_s,
   coalesce(par.par_total,0)                                                  as paradas_s,
   coalesce(par.par_plan,0)                                                   as paradas_plan_s,
   coalesce(par.par_nplan,0)                                                  as paradas_nplan_s,
-  extract(epoch from (coalesce(ev.fim, now()) - ev.ini)) - coalesce(par.par_total,0) as liquido_s,
+  greatest(0, extract(epoch from (coalesce(ev.fim, now()) - ev.ini))
+              - coalesce(par.par_total,0))                                   as liquido_s,
   o.peso_t / m.capacidade_th * 3600                                          as planejado_s
 from v_ordens o
 join maquinas m on m.id = o.maquina_id

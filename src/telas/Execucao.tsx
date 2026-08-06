@@ -78,6 +78,27 @@ export default function Execucao() {
     return () => clearInterval(t)
   }, [temAndamento])
 
+  /**
+   * Aba em segundo plano tem o timer congelado pelo navegador (sleeping
+   * tabs / modo de eficiência do Edge, throttling do Chrome): o cronômetro
+   * parava e só "acordava" na próxima interação. Ao voltar para a aba,
+   * resincroniza o relógio E os dados — o websocket do realtime dorme
+   * junto, então a tela pode ter perdido apontamentos de outro usuário.
+   */
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState !== 'visible') return
+      setAgora(Date.now())
+      void recarregar()
+    }
+    document.addEventListener('visibilitychange', resync)
+    window.addEventListener('focus', resync)
+    return () => {
+      document.removeEventListener('visibilitychange', resync)
+      window.removeEventListener('focus', resync)
+    }
+  }, [recarregar])
+
   const motivos = useMemo(() => mapaMotivos(cadastros?.motivos ?? []), [cadastros])
 
   const porMaquina = useCallback(
