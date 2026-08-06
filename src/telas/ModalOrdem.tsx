@@ -16,7 +16,7 @@ import {
   temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
-import { diaCurto, enderecoLote, rotuloTanque } from '@/componentes/ui'
+import { Aviso, diaCurto, enderecoLote, rotuloTanque } from '@/componentes/ui'
 import { imprimirOrdemProducao } from '@/lib/exportar'
 
 const num = (v: number | null | undefined, casas = 1) =>
@@ -239,6 +239,23 @@ export default function ModalOrdem({
                 valor={tempos.dispOperacional == null ? '—' : `${num(tempos.dispOperacional * 100)}%`}
               />
             </dl>
+          )}
+
+          {/* Ordem que começou ANTES de o tanque virar escolha da ordem: a
+              distribuição dela vivia na receita e não foi preservada. Dizer
+              isso é melhor que mostrar tanque vazio com planejado zero, que
+              pareceria erro de apontamento. */}
+          {emAndamento && ordem.ordem_produtos.length === 0 &&
+            ordem.receitas.receita_itens.length > 0 && (
+            <div className="mb-5">
+              <Aviso>
+                <b>Distribuição não registrada.</b> Esta ordem começou antes de o tanque passar
+                a ser informado por ordem, então não se sabe qual produto foi em qual tanque —
+                por isso o planejado aparece zerado abaixo. Os pesos apontados continuam
+                válidos e a ordem pode ser finalizada normalmente; só a comparação Real vs
+                Planejado não fecha nesta.
+              </Aviso>
+            </div>
           )}
 
           {/* -------- distribuição: o operador define o tanque de cada produto -------- */}
