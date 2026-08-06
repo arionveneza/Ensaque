@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import * as adm from '@/dados/api-admin'
@@ -6,6 +6,7 @@ import type { ReceitaCompleta } from '@/dados/api-gestao'
 import { capacidadeDiaT, pesoItemKg } from '@/dominio/calculos'
 import type { ProdutoQuimico, TipoParada, UnidadeDose } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
+import { useRascunho } from '@/lib/useRascunho'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n, rotuloTanque } from '@/componentes/ui'
 
 /** Peso de referência usado só para exibir a receita numa escala legível. */
@@ -456,16 +457,29 @@ function FormReceita({
   onSalvar: (nome: string, itens: adm.ItemReceitaEdicao[]) => void
   onCancelar: () => void
 }) {
-  const [nome, setNome] = useState(inicialNome)
-  const [itens, setItens] = useState<ItemReceitaForm[]>(
-    inicialItens.length > 0
-      ? inicialItens.map((i) => ({
-          produto_id: i.produto_id,
-          doseTxt: String(i.dose).replace('.', ','),
-          tanque: i.tanque,
-        }))
-      : [{ produto_id: '', doseTxt: '', tanque: 1 }],
+  // sobrevive a sair da tela ou trocar de aba — a navegação desmonta o
+  // componente e o React descartaria a receita inteira digitada
+  const inicial = useMemo(
+    () => ({
+      nome: inicialNome,
+      itens:
+        inicialItens.length > 0
+          ? inicialItens.map((i) => ({
+              produto_id: i.produto_id,
+              doseTxt: String(i.dose).replace('.', ','),
+              tanque: i.tanque,
+            }))
+          : [{ produto_id: '', doseTxt: '', tanque: 1 }],
+    }),
+    [inicialNome, inicialItens],
   )
+  const { valor, definir, limpar, recuperado } = useRascunho(
+    inicialNome ? `receita.${inicialNome}` : 'receita.nova',
+    inicial,
+  )
+  const { nome, itens } = valor
+  const setNome = (v: string) => definir({ nome: v })
+  const setItens = (v: ItemReceitaForm[]) => definir({ itens: v })
 
   const atualizar = (i: number, campo: Partial<ItemReceitaForm>) =>
     setItens(itens.map((it, idx) => (idx === i ? { ...it, ...campo } : it)))
@@ -476,6 +490,14 @@ function FormReceita({
 
   return (
     <div>
+      {recuperado && (
+        <div className="mb-3">
+          <Aviso>
+            <b>Rascunho recuperado.</b> A receita que você estava montando foi restaurada.{' '}
+            <button onClick={limpar} className="underline">descartar</button>
+          </Aviso>
+        </div>
+      )}
       <label className="text-xs text-stone-500">
         Nome da receita (código do comercial)
         <input value={nome} onChange={(e) => setNome(e.target.value)} className={`${INPUT} mt-1 block w-64`} />
@@ -544,7 +566,7 @@ function FormReceita({
         <Botao
           variante="primario"
           disabled={!nome.trim() || itens.some((i) => !i.produto_id || !(doseNumero(i.doseTxt) > 0))}
-          onClick={() =>
+          onClick={() => {
             onSalvar(
               nome,
               itens.map((i) => ({
@@ -553,7 +575,8 @@ function FormReceita({
                 tanque: i.tanque,
               })),
             )
-          }
+            limpar() // gravou: o rascunho não serve mais
+          }}
         >
           Salvar receita
         </Botao>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
@@ -12,6 +12,7 @@ import {
   converterOrdens, ehPlanilhaDeOrdens, type ResultadoOrdens,
 } from '@/dominio/importacao/ordens'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
+import { useRascunho } from '@/lib/useRascunho'
 import { useRealtime } from '@/dados/useRealtime'
 import {
   analisaDemanda, bagsFaltando, bagsSobrando, podeCriarOrdem, resumoBalanco,
@@ -1065,21 +1066,38 @@ function NovaOrdemForm({
   onCriada: (msg: string) => void
 }) {
   const editando = ordem ?? null
-  const [aberto, setAberto] = useState(editando != null)
-  const [numero, setNumero] = useState(editando?.numero ?? '')
-  const [loteId, setLoteId] = useState(editando?.lote_id ?? '')
-  const [receitaId, setReceitaId] = useState(editando?.receita_id ?? '')
-  const [embalagem, setEmbalagem] = useState(
-    editando?.embalagem ?? embalagens[0]?.codigo ?? '',
+
+  // O que foi digitado sobrevive a sair da tela: a navegação desmonta o
+  // componente e o React descartaria tudo. Chave por ordem na edição, para
+  // dois rascunhos não se misturarem.
+  const inicial = useMemo(
+    () => ({
+      numero: editando?.numero ?? '',
+      loteId: editando?.lote_id ?? '',
+      receitaId: editando?.receita_id ?? '',
+      embalagem: editando?.embalagem ?? embalagens[0]?.codigo ?? '',
+      bags: editando?.bags ?? 0,
+      cliente: editando?.cliente ?? '',
+      observacao: editando?.observacao ?? '',
+      armazem: editando?.armazem ?? '',
+      bloco: editando?.bloco ?? '',
+      quadra: editando?.quadra ?? '',
+      maquinaId: editando?.maquina_id ?? '',
+      dataProg: editando?.data_prog ?? '',
+    }),
+    [editando, embalagens],
   )
-  const [bags, setBags] = useState(editando?.bags ?? 0)
-  const [cliente, setCliente] = useState(editando?.cliente ?? '')
-  const [observacao, setObservacao] = useState(editando?.observacao ?? '')
-  const [armazem, setArmazem] = useState(editando?.armazem ?? '')
-  const [bloco, setBloco] = useState(editando?.bloco ?? '')
-  const [quadra, setQuadra] = useState(editando?.quadra ?? '')
-  const [maquinaId, setMaquinaId] = useState(editando?.maquina_id ?? '')
-  const [dataProg, setDataProg] = useState(editando?.data_prog ?? '')
+  const chaveRascunho = editando ? `ordem.${editando.id}` : 'ordem.nova'
+  const { valor: f, definir, limpar, recuperado } = useRascunho(chaveRascunho, inicial)
+  const {
+    numero, loteId, receitaId, embalagem, bags, cliente, observacao,
+    armazem, bloco, quadra, maquinaId, dataProg,
+  } = f
+
+  // rascunho com nº digitado reabre o formulário sozinho — senão o trabalho
+  // ficaria escondido atrás do botão "Nova ordem". O contexto que sobra depois
+  // de gravar (lote, endereço) não conta: não é trabalho pendente.
+  const [aberto, setAberto] = useState(editando != null || f.numero.trim() !== '')
   const [buscaLote, setBuscaLote] = useState('')
   const [buscaTrat, setBuscaTrat] = useState('')
   const [erro, setErro] = useState<string | null>(null)
@@ -1149,9 +1167,22 @@ function NovaOrdemForm({
       className="mb-5"
     >
       {erro && <Erro>{erro}</Erro>}
+
+      {recuperado && (
+        <div className="mb-3">
+          <Aviso>
+            <b>Rascunho recuperado.</b> O que você tinha digitado antes de sair da tela foi
+            restaurado.{' '}
+            <button onClick={limpar} className="underline">
+              descartar e começar do zero
+            </button>
+          </Aviso>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-3">
         <Campo rotulo="Nº da ordem">
-          <input value={numero} onChange={(e) => setNumero(e.target.value)} className={INPUT} />
+          <input value={numero} onChange={(e) => definir({ numero: e.target.value })} className={INPUT} />
         </Campo>
         <Campo rotulo="Lote de semente">
           <input
@@ -1160,7 +1191,7 @@ function NovaOrdemForm({
             placeholder="filtrar por lote ou cultivar…"
             className={`${INPUT} mb-1`}
           />
-          <select value={loteId} onChange={(e) => setLoteId(e.target.value)} className={INPUT}>
+          <select value={loteId} onChange={(e) => definir({ loteId: e.target.value })} className={INPUT}>
             <option value="">
               {lotesFiltrados.length === 0
                 ? 'nenhum lote nesse filtro'
@@ -1180,7 +1211,7 @@ function NovaOrdemForm({
             placeholder="filtrar por receita…"
             className={`${INPUT} mb-1`}
           />
-          <select value={receitaId} onChange={(e) => setReceitaId(e.target.value)} className={INPUT}>
+          <select value={receitaId} onChange={(e) => definir({ receitaId: e.target.value })} className={INPUT}>
             <option value="">
               {receitasFiltradas.length === 0
                 ? 'nenhuma receita nesse filtro'
@@ -1192,7 +1223,7 @@ function NovaOrdemForm({
           </select>
         </Campo>
         <Campo rotulo="Embalagem">
-          <select value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} className={INPUT}>
+          <select value={embalagem} onChange={(e) => definir({ embalagem: e.target.value })} className={INPUT}>
             {embalagens.map((e) => (
               <option key={e.codigo} value={e.codigo}>{e.codigo}</option>
             ))}
@@ -1201,7 +1232,7 @@ function NovaOrdemForm({
         <Campo rotulo="Bags">
           <input
             type="number" min={1} value={bags || ''}
-            onChange={(e) => setBags(Number(e.target.value))} className={INPUT}
+            onChange={(e) => definir({ bags: Number(e.target.value) })} className={INPUT}
           />
         </Campo>
         <Campo rotulo="Peso resultante">
@@ -1210,17 +1241,17 @@ function NovaOrdemForm({
           </p>
         </Campo>
         <Campo rotulo="Cliente (opcional)">
-          <input value={cliente} onChange={(e) => setCliente(e.target.value)} className={INPUT} />
+          <input value={cliente} onChange={(e) => definir({ cliente: e.target.value })} className={INPUT} />
         </Campo>
         <Campo rotulo="Observação de processo">
           <input
-            value={observacao} onChange={(e) => setObservacao(e.target.value)}
+            value={observacao} onChange={(e) => definir({ observacao: e.target.value })}
             placeholder="ex.: SEM GRAFITE" className={INPUT}
           />
         </Campo>
         <Campo rotulo="Máquina e dia (opcional)">
           <div className="flex gap-2">
-            <select value={maquinaId} onChange={(e) => setMaquinaId(e.target.value)} className={INPUT}>
+            <select value={maquinaId} onChange={(e) => definir({ maquinaId: e.target.value })} className={INPUT}>
               <option value="">pool</option>
               {maquinas.map((m) => (
                 <option key={m.id} value={m.id}>{m.nome}</option>
@@ -1228,7 +1259,7 @@ function NovaOrdemForm({
             </select>
             <input
               type="date" value={dataProg}
-              onChange={(e) => setDataProg(e.target.value)} className={INPUT}
+              onChange={(e) => definir({ dataProg: e.target.value })} className={INPUT}
             />
           </div>
         </Campo>
@@ -1238,7 +1269,7 @@ function NovaOrdemForm({
               <p className="text-xs text-stone-500">Armazém</p>
               <input
                 value={armazem}
-                onChange={(e) => setArmazem(e.target.value.toUpperCase())}
+                onChange={(e) => definir({ armazem: e.target.value.toUpperCase() })}
                 placeholder="ex.: ARMAZEM C"
                 title="Armazém — onde buscar o lote para esta ordem"
                 className={INPUT}
@@ -1248,7 +1279,7 @@ function NovaOrdemForm({
               <p className="text-xs text-stone-500">Bloco</p>
               <input
                 value={bloco}
-                onChange={(e) => setBloco(e.target.value.toUpperCase())}
+                onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
                 placeholder="BL01"
                 className={INPUT}
               />
@@ -1257,7 +1288,7 @@ function NovaOrdemForm({
               <p className="text-xs text-stone-500">Quadra</p>
               <input
                 value={quadra}
-                onChange={(e) => setQuadra(e.target.value.toUpperCase())}
+                onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
                 placeholder="QD04"
                 className={INPUT}
               />
@@ -1313,12 +1344,14 @@ function NovaOrdemForm({
               }
               if (editando) {
                 await g.atualizarOrdem(editando.id, dados)
+                limpar() // gravou: o rascunho desta ordem não serve mais
                 onCriada(`Ordem ${dados.numero} atualizada.`)
                 aoFechar?.()
               } else {
                 await g.criarOrdem(dados)
-                setNumero(''); setBags(0); setCliente(''); setObservacao('')
-                // endereço costuma repetir entre ordens do mesmo lote: mantém preenchido
+                // limpa só o que é da ordem; endereço, lote e receita costumam
+                // repetir na próxima e ficam preenchidos
+                definir({ numero: '', bags: 0, cliente: '', observacao: '' })
                 onCriada(`Ordem criada.`)
               }
             } catch (e) {

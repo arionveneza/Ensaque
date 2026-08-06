@@ -125,6 +125,14 @@ throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo
 parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no
 `visibilitychange`/`focus` — ao criar outra tela com cronômetro, repetir o padrão.
 
+**Trocar de tela DESMONTA o componente e apaga o formulário.** O App renderiza
+`{atual === 'ordens' && <Ordens />}`: sair de Ordens para ver um lote destrói todo o estado
+local, e o PCP perdia a ordem digitada pela metade (relatado em 06/08/2026). Formulário longo
+usa `useRascunho` (`src/lib/useRascunho.ts`), que persiste no localStorage e restaura na
+montagem — sobrevive também a F5, a fechar a aba e ao tablet dormindo. Ao criar formulário
+novo, usar o hook e **chamar `limpar()` depois de gravar**, senão o próximo abre com o
+rascunho velho. Já cobertos: nova ordem, edição de ordem e receita.
+
 **UPDATE/DELETE barrado pelo RLS afeta 0 linhas SEM erro.** O app seguia adiante achando
 que gravou: a Produção inteira apontava no vácuo (não havia policy de update em `ordens`),
 o Cancelar início nunca apagava os eventos (sem policy de delete — sobrou `inicio` duplicado
