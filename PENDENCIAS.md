@@ -61,6 +61,21 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 - **Capacidade variável:** 12 t/h é global. Varia por receita ou embalagem?
 - **Horário previsto por ordem** e **painel modo TV**: sugeridos, não feitos.
 
+## 3b. Pronto no código, esperando publicação (06/08/2026)
+
+O GitHub abriu incidente crítico de Actions/Pages às 15:22 de 06/08/2026
+(stspg.io/rcz3fcm83sff): build sempre verde, publicação em timeout. O site no ar é o
+build `index-VzwpdTnD.js`. Assim que o serviço voltar, publicar e conferir:
+
+- [ ] aba "Lotes a baixar" renomeada para **Logística**
+- [ ] **princípios ativos** no cadastro de químico (vários por produto, com concentração e
+      classe própria)
+- [ ] perfil **Direção** (só leitura) no seletor da Administração
+- [ ] aviso de "distribuição não registrada" na ordem iniciada antes da migração
+
+Nada disso bloqueia a operação — o app no ar funciona e o banco pode receber os SQLs
+correspondentes antes, porque todos são aditivos.
+
 ## 4. Melhorias técnicas conhecidas
 
 - **`schema.sql` não contém a camada de RLS/RPC nova.** As policies via `tem_acao`, as RPCs
