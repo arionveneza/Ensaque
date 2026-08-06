@@ -102,9 +102,10 @@ export default function Lotes() {
   const aConferir = ordens.filter(
     (o) => FINALIZADAS.includes(o.status_efetivo) && !conferenciaDe(o.id),
   )
+  // a contagem fecha contra o que a produção declarou; o esperado é o fallback
   const divergentes = ordens.filter((o) => {
     const c = conferenciaDe(o.id)
-    return c != null && c.bags_contados !== o.bags
+    return c != null && c.bags_contados !== (o.bags_produzidos ?? o.bags)
   })
 
   async function comErro(fn: () => Promise<void>) {
@@ -213,7 +214,7 @@ export default function Lotes() {
             <Aviso gravidade="bloqueio">
               <b>{divergentes.length} divergência(s) na contagem:</b>{' '}
               {divergentes
-                .map((o) => `${o.numero} (esperado ${o.bags}, contado ${conferenciaDe(o.id)!.bags_contados})`)
+                .map((o) => `${o.numero} (produzido ${o.bags_produzidos ?? `${o.bags} planejado`}, contado ${conferenciaDe(o.id)!.bags_contados})`)
                 .join(' · ')}
             </Aviso>
           </div>
@@ -453,8 +454,11 @@ function LinhaLote({
 }
 
 /**
- * A contagem física de uma ordem finalizada. O campo já vem com o esperado
- * preenchido — o operador só corrige se a contagem der diferente.
+ * A contagem física de uma ordem finalizada. O campo começa VAZIO de
+ * propósito (decisão de 05/08/2026): a logística informa a quantidade
+ * produzida que contou, sem ver um número pré-preenchido para confirmar
+ * no automático. A divergência compara com o que a produção declarou ao
+ * finalizar (bags_produzidos) — ou com o planejado, se faltar.
  */
 function LinhaConferencia({
   ordem, podeConferir, onConferir,
@@ -463,11 +467,12 @@ function LinhaConferencia({
   podeConferir: boolean
   onConferir: (bags: number, obs: string | null) => void
 }) {
-  const [bags, setBags] = useState(String(ordem.bags))
+  const [bags, setBags] = useState('')
   const [obs, setObs] = useState('')
   const contados = parseInt(bags, 10)
   const valido = Number.isFinite(contados) && contados >= 0
-  const diverge = valido && contados !== ordem.bags
+  const referencia = ordem.bags_produzidos ?? ordem.bags
+  const diverge = valido && contados !== referencia
 
   return (
     <div className="rounded-md border border-stone-200 p-3 dark:border-stone-700">
@@ -478,19 +483,23 @@ function LinhaConferencia({
             <Tag cor={corDoStatus(ordem.status_efetivo)}>{ordem.status_efetivo}</Tag>
           </p>
           <p className="text-xs text-stone-500">
-            {ordem.receita_nome} · lote {ordem.lote_id} · esperado <b>{ordem.bags} bg</b> ·{' '}
-            {n(ordem.peso_t, 1)} t
+            {ordem.receita_nome} · lote {ordem.lote_id} · esperado <b>{ordem.bags} bg</b>
+            {ordem.bags_produzidos != null && (
+              <> · produzido <b>{ordem.bags_produzidos} bg</b></>
+            )}{' '}
+            · {n(ordem.peso_t, 1)} t
           </p>
         </div>
         {podeConferir && (
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-sm">
-              contados
+              qtd. produzida
               <input
                 type="number"
                 min={0}
                 value={bags}
                 onChange={(e) => setBags(e.target.value)}
+                placeholder="contar"
                 className={`w-20 rounded-md border px-2 py-1.5 text-right text-sm dark:bg-stone-800 ${
                   diverge
                     ? 'border-amber-500 dark:border-amber-600'
@@ -516,8 +525,9 @@ function LinhaConferencia({
       </div>
       {diverge && (
         <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
-          Divergência: {contados} contados para {ordem.bags} esperados
-          ({contados > ordem.bags ? '+' : ''}{contados - ordem.bags} bg).
+          Divergência: {contados} contados para {referencia}{' '}
+          {ordem.bags_produzidos != null ? 'produzidos' : 'esperados'} (
+          {contados > referencia ? '+' : ''}{contados - referencia} bg).
         </p>
       )}
     </div>

@@ -192,6 +192,8 @@ create table ordens (
   turno_id      int references turnos(id),       -- DERIVADO do horário do início
   status        status_ordem not null default 'Programada',
   fim_pendente  boolean not null default false,  -- etapa de pesagem final aberta
+  bags_produzidos int check (bags_produzidos is null or bags_produzidos > 0),
+                  -- informado pela producao ao confirmar a finalizacao (05/08/2026)
   origem        text not null default 'replicada', -- 'replicada'|'digitacao'|'importacao'
   agrotis_num   text,                            -- nº do lançamento no AGROTIS
   agrotis_por   uuid references usuarios(id),
@@ -422,14 +424,19 @@ end $$ language plpgsql set search_path = tsi, public;
 create trigger tg_valida_inicio before update on ordens
   for each row execute function fn_valida_inicio();
 
--- não finalizar sem peso final
+-- não finalizar sem peso inicial e sem a quantidade produzida.
+-- O peso FINAL saiu daqui (decisão de 05/08/2026): o operador anota no papel
+-- e o PCP digita na tela AGROTIS — o lançamento é que exige (fn_valida_agrotis).
 create or replace function fn_valida_fim() returns trigger as $$
 declare falta int;
 begin
   if new.status = 'Finalizada' and old.status <> 'Finalizada' then
     select count(*) into falta from ordem_tanques t
-      where t.ordem_id = new.id and (t.peso_inicial is null or t.peso_final is null);
-    if falta > 0 then raise exception 'Peso inicial/final pendente em % tanque(s)', falta; end if;
+      where t.ordem_id = new.id and t.peso_inicial is null;
+    if falta > 0 then raise exception 'Peso inicial pendente em % tanque(s)', falta; end if;
+    if new.bags_produzidos is null then
+      raise exception 'Informe a quantidade produzida (bags) para finalizar';
+    end if;
   end if;
   return new;
 end $$ language plpgsql set search_path = tsi, public;
@@ -747,10 +754,17 @@ end $$ language plpgsql security definer set search_path = tsi, public;
 -- AGROTIS exige a conferência da logística: a qualidade final já é garantida
 -- pelo fluxo de status, mas a conferência não muda status — cadeado próprio.
 create or replace function fn_valida_agrotis() returns trigger as $$
+declare falta int;
 begin
   if new.status = 'Apontada' and old.status is distinct from 'Apontada' then
     if not exists (select 1 from ordem_conferencias c where c.ordem_id = new.id) then
       raise exception 'Lancamento no AGROTIS exige a conferencia de estoque da logistica';
+    end if;
+    -- pesos finais sao digitados pelo PCP na propria tela AGROTIS (05/08/2026)
+    select count(*) into falta from ordem_tanques t
+      where t.ordem_id = new.id and t.peso_final is null;
+    if falta > 0 then
+      raise exception 'Lancamento no AGROTIS exige o peso final de todos os tanques (% pendente(s))', falta;
     end if;
   end if;
   return new;

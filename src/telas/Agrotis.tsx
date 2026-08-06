@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as g from '@/dados/api-gestao'
-import type { ChecklistQualidade, OrdemEtapasLinha } from '@/dados/api-gestao'
+import type { ChecklistQualidade, OrdemEtapasLinha, TanqueLinha } from '@/dados/api-gestao'
+import { salvarPesoTanque } from '@/dados/api'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, diaCurto, n,
+  Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, diaCurto, n, rotuloTanque,
 } from '@/componentes/ui'
 
 /**
  * Encerramento no AGROTIS — etapa do PCP, a última da régua.
  *
  * Pré-requisitos: qualidade final apontada E conferência de estoque da
- * logística. O nº do lançamento é obrigatório e torna a ordem registro
- * definitivo ('Apontada'). O banco valida os dois de novo (trigger).
+ * logística. É AQUI que o PCP digita os pesos finais dos tanques, lendo
+ * da folha impressa da ordem (decisão de 05/08/2026) — o lançamento só
+ * libera com todos preenchidos. O nº do lançamento é obrigatório e torna
+ * a ordem registro definitivo ('Apontada'). O banco revalida tudo (triggers).
  */
 export default function Agrotis() {
   const { usuario, permitido } = useAuth()
@@ -20,6 +23,7 @@ export default function Agrotis() {
 
   const [ordens, setOrdens] = useState<OrdemEtapasLinha[]>([])
   const [checks, setChecks] = useState<ChecklistQualidade[]>([])
+  const [tanques, setTanques] = useState<TanqueLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -27,6 +31,10 @@ export default function Agrotis() {
     const [o, c] = await Promise.all([g.listarOrdensEtapas(), g.listarChecksQualidade()])
     setOrdens(o)
     setChecks(c)
+    const prontasIds = o
+      .filter((x) => x.status_efetivo === 'Qualidade apontada' && x.conferida)
+      .map((x) => x.id)
+    setTanques(await g.listarTanquesDeOrdens(prontasIds))
   }, [])
 
   useEffect(() => {
@@ -88,6 +96,8 @@ export default function Agrotis() {
           <div className="space-y-3">
             {prontas.map((o) => {
               const f = checkFinal(o.id)
+              const tqs = tanques.filter((t) => t.ordem_id === o.id)
+              const semPesoFinal = tqs.filter((t) => t.peso_final == null)
               return (
                 <div key={o.id} className="rounded-md border border-stone-200 p-3 dark:border-stone-700">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -106,19 +116,52 @@ export default function Agrotis() {
                             </Tag>
                           </>
                         )}
-                        <Tag cor={o.bags_contados === o.bags ? 'ok' : 'alerta'}>
+                        <Tag cor={o.bags_produzidos != null ? 'neutro' : 'alerta'}>
+                          produzido: {o.bags_produzidos ?? '—'} bg
+                        </Tag>
+                        <Tag
+                          cor={o.bags_contados === (o.bags_produzidos ?? o.bags) ? 'ok' : 'alerta'}
+                        >
                           conferido: {o.bags_contados} bg
                         </Tag>
                       </p>
                     </div>
                     {podeLancar && (
                       <FormLancamento
+                        podeLancar={semPesoFinal.length === 0}
+                        motivo={
+                          semPesoFinal.length > 0
+                            ? `Falta o peso final em ${semPesoFinal
+                                .map((t) => rotuloTanque(t.tanque))
+                                .join(', ')}`
+                            : undefined
+                        }
                         onLancar={(numero) =>
                           comErro(() => g.apontarAgrotis(o.id, numero, usuario!.id))
                         }
                       />
                     )}
                   </div>
+
+                  {/* pesos finais, transcritos da folha impressa da ordem */}
+                  {podeLancar && tqs.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                      {tqs.map((t) => (
+                        <PesoFinalTanque
+                          key={t.id}
+                          tanque={t}
+                          onSalvar={(v) =>
+                            comErro(() => salvarPesoTanque(t.id, 'peso_final', v))
+                          }
+                        />
+                      ))}
+                      {semPesoFinal.length > 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          Transcreva da folha da ordem — o lançamento só libera com todos.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -173,7 +216,13 @@ export default function Agrotis() {
   )
 }
 
-function FormLancamento({ onLancar }: { onLancar: (numero: string) => void }) {
+function FormLancamento({
+  onLancar, podeLancar, motivo,
+}: {
+  onLancar: (numero: string) => void
+  podeLancar: boolean
+  motivo?: string
+}) {
   const [numero, setNumero] = useState('')
   return (
     <div className="flex items-center gap-2">
@@ -183,9 +232,47 @@ function FormLancamento({ onLancar }: { onLancar: (numero: string) => void }) {
         placeholder="nº do lançamento"
         className="w-40 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
       />
-      <Botao variante="primario" disabled={!numero.trim()} onClick={() => onLancar(numero)}>
+      <Botao
+        variante="primario"
+        disabled={!numero.trim() || !podeLancar}
+        titulo={motivo}
+        onClick={() => onLancar(numero)}
+      >
         Lançar
       </Botao>
     </div>
+  )
+}
+
+/** Peso final de um tanque, digitado pelo PCP a partir da folha da ordem. */
+function PesoFinalTanque({
+  tanque, onSalvar,
+}: {
+  tanque: TanqueLinha
+  onSalvar: (v: number | null) => void
+}) {
+  const [texto, setTexto] = useState(
+    tanque.peso_final == null ? '' : String(tanque.peso_final),
+  )
+  return (
+    <label className="text-xs text-stone-500 dark:text-stone-400">
+      {rotuloTanque(tanque.tanque)}
+      <span className="mx-1 text-stone-400">
+        ini {tanque.peso_inicial == null ? '—' : n(tanque.peso_inicial, 1)}
+      </span>
+      <input
+        inputMode="decimal"
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={() => {
+          const limpo = texto.replace(',', '.').trim()
+          const v = limpo === '' ? null : Number(limpo)
+          if (v != null && Number.isNaN(v)) return
+          if (v !== tanque.peso_final) onSalvar(v)
+        }}
+        placeholder="final"
+        className="num-tabular ml-1 w-20 rounded-md border border-stone-300 px-2 py-1.5 text-right text-sm dark:border-stone-700 dark:bg-stone-800"
+      />
+    </label>
   )
 }

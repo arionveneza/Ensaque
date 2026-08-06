@@ -46,6 +46,8 @@ export default function ModalOrdem({
   const [erro, setErro] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [escolhendoParada, setEscolhendoParada] = useState(false)
+  // obrigatória na finalização; em branco de propósito — nada de pré-preencher
+  const [qtdProduzida, setQtdProduzida] = useState('')
 
   const prods = useMemo(() => mapaProdutos(produtos), [produtos])
   const mots = useMemo(() => mapaMotivos(motivos), [motivos])
@@ -141,10 +143,12 @@ export default function ModalOrdem({
 
   // ---- validações antes de confirmar (o banco também barra, via trigger) ----
   const semPesoInicial = ordem.ordem_tanques.filter((t) => t.peso_inicial == null)
-  const semPesoFinal = ordem.ordem_tanques.filter((t) => t.peso_final == null)
 
   const podeConfirmarInicio = semPesoInicial.length === 0
-  const podeConfirmarFim = semPesoFinal.length === 0
+  // peso final NÃO trava mais a finalização (o PCP digita no AGROTIS);
+  // o que trava é a quantidade produzida
+  const bagsProduzidos = parseInt(qtdProduzida, 10)
+  const podeConfirmarFim = Number.isFinite(bagsProduzidos) && bagsProduzidos >= 1
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8">
@@ -239,7 +243,12 @@ export default function ModalOrdem({
                     <th className="py-2 pr-3">Produtos e doses</th>
                     <th className="py-2 pr-3 text-right">Planejado</th>
                     <th className="py-2 pr-3 text-right">Peso inicial</th>
-                    <th className="py-2 pr-3 text-right">Peso final</th>
+                    <th
+                      className="py-2 pr-3 text-right"
+                      title="Opcional aqui — o PCP digita os pesos finais na tela AGROTIS"
+                    >
+                      Peso final*
+                    </th>
                     <th className="py-2 pr-3 text-right">Real</th>
                     <th className="py-2 text-right">Desvio</th>
                   </tr>
@@ -322,6 +331,13 @@ export default function ModalOrdem({
             </div>
           )}
 
+          {ordem.fim_pendente && (
+            <p className="mt-3 text-xs text-stone-500 dark:text-stone-400">
+              * Peso final é opcional aqui: o operador anota na folha impressa e o PCP
+              digita na tela AGROTIS — o lançamento exige todos os pesos.
+            </p>
+          )}
+
           {/* pendências que impedem confirmar */}
           {ordem.ordem_tanques.length > 0 && !emAndamento && !podeConfirmarInicio && (
             <div className="mt-4 rounded-md bg-stone-50 px-4 py-3 text-sm text-stone-600 dark:bg-stone-800/50 dark:text-stone-300">
@@ -386,9 +402,20 @@ export default function ModalOrdem({
 
           {podeApontar && emAndamento && ordem.fim_pendente && (
             <>
+              <label className="flex items-center gap-1.5 text-sm">
+                Produzido
+                <input
+                  inputMode="numeric"
+                  value={qtdProduzida}
+                  onChange={(e) => setQtdProduzida(e.target.value)}
+                  placeholder="bags"
+                  className="num-tabular w-20 rounded-md border border-stone-300 px-2 py-2 text-right dark:border-stone-700 dark:bg-stone-800"
+                />
+              </label>
               <button
                 disabled={ocupado || !podeConfirmarFim}
-                onClick={() => acao(() => api.confirmarFim(ordem.id))}
+                title={podeConfirmarFim ? undefined : 'Informe a quantidade produzida (bags)'}
+                onClick={() => acao(() => api.confirmarFim(ordem.id, bagsProduzidos))}
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 Confirmar finalização

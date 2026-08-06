@@ -38,6 +38,8 @@ export interface OrdemVisao {
   peso_t: number
   peso_bag_kg: number
   agrotis_num: string | null
+  /** Informado pela produção ao confirmar a finalização. */
+  bags_produzidos: number | null
 }
 
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
@@ -487,6 +489,26 @@ export interface OrdemEtapasLinha extends OrdemVisao {
   tem_qualidade_final: boolean
   conferida: boolean
   bags_contados: number | null
+}
+
+/** Tanques das ordens, para o PCP digitar os pesos finais na tela AGROTIS. */
+export interface TanqueLinha {
+  id: string
+  ordem_id: string
+  tanque: number
+  peso_inicial: number | null
+  peso_final: number | null
+}
+
+export async function listarTanquesDeOrdens(ordemIds: string[]): Promise<TanqueLinha[]> {
+  if (ordemIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('ordem_tanques')
+    .select('id, ordem_id, tanque, peso_inicial, peso_final')
+    .in('ordem_id', ordemIds)
+    .order('tanque')
+  erro('tanques das ordens', error)
+  return (data ?? []) as TanqueLinha[]
 }
 
 export async function listarOrdensEtapas(): Promise<OrdemEtapasLinha[]> {

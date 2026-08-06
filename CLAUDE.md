@@ -101,7 +101,10 @@ registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele 
 3. **Confirmar início** → grava o evento, define o turno, ocupa a máquina.
 4. Durante a produção o **peso final está travado**.
 5. **Finalizar** apenas *libera* a pesagem final. **Não** finaliza.
-6. Operador informa pesos finais → **Confirmar finalização** → grava o fim.
+6. **Confirmar finalização** exige a **quantidade produzida (bags)** — campo em branco,
+   sem pré-preenchimento (vai para `ordens.bags_produzidos`). Peso final é **opcional**
+   aqui (decisão de 05/08/2026): o operador anota na **folha impressa da ordem** e o
+   **PCP digita na tela AGROTIS** — o lançamento exige todos os pesos (trigger).
 
 Fechar a janela em qualquer etapa **não** muda o estado. `Cancelar início` descarta apontamentos
 (com auditoria) e libera a máquina — usado quando o operador inicia a ordem errada.
@@ -118,8 +121,10 @@ padrão) · observação. Em processo tem ainda a **origem da amostra (BOWL/BAG)
 - **Em processo**: com a ordem `Em produção`/`Parada`. Vários registros por ordem, com hora
   (histórico). Não muda status.
 - **Final**: com a ordem `Finalizada`. Um registro por ordem → status `Qualidade apontada`.
-- **Conferência de estoque (Logística)**: para ordens finalizadas, registra os **bags contados**
-  fisicamente (compara com o esperado). **É pré-requisito do AGROTIS** (trigger no banco).
+- **Conferência de estoque (Logística)**: para ordens finalizadas, a logística informa a
+  **quantidade produzida que contou** — campo em branco, obrigatório, sem pré-preenchimento
+  (contagem cega, decisão de 05/08/2026). A divergência compara com o **produzido** declarado
+  pela produção (fallback: esperado). **É pré-requisito do AGROTIS** (trigger no banco).
 - **Visão geral (tela Etapas)**: régua por ordem — Produção → Q. processo → Q. final →
   Conferência → AGROTIS.
 

@@ -47,6 +47,7 @@ export interface LinhaOrdem {
   turno_id: number | null
   status: StatusPersistido
   fim_pendente: boolean
+  bags_produzidos: number | null
   lotes_semente: {
     id: string
     cultivar: string
@@ -71,7 +72,7 @@ export interface LinhaOrdem {
 const SELECT_ORDEM = `
   id, numero, cultivar, receita_id, embalagem, bags, lote_id, cliente, observacao,
   armazem, bloco, quadra,
-  prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente,
+  prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente, bags_produzidos,
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status ),
   receitas ( nome, receita_itens ( produto_id, dose, tanque ) ),
   ordem_eventos ( tipo, ts ),
@@ -187,9 +188,17 @@ export async function voltarParaProducao(ordemId: string): Promise<void> {
   erro('voltar para produção', error)
 }
 
-/** Fecha paradas abertas, grava o evento e finaliza — uma transação só. */
-export async function confirmarFim(ordemId: string): Promise<void> {
-  const { error } = await supabase.rpc('confirmar_fim', { p_ordem: ordemId })
+/**
+ * Fecha paradas abertas, grava o evento e finaliza — uma transação só.
+ * A quantidade produzida é obrigatória (decisão de 05/08/2026); o peso
+ * final dos tanques deixou de ser exigido aqui — o PCP digita na tela
+ * AGROTIS, e o lançamento é que cobra todos.
+ */
+export async function confirmarFim(ordemId: string, bagsProduzidos: number): Promise<void> {
+  const { error } = await supabase.rpc('confirmar_fim', {
+    p_ordem: ordemId,
+    p_bags_produzidos: bagsProduzidos,
+  })
   erro('confirmar finalização', error)
 }
 

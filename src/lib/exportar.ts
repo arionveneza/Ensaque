@@ -148,6 +148,8 @@ export function imprimirOrdemProducao(o: OrdemImpressao): void {
   const campo = (rotulo: string, valor: Celula) =>
     `<div class="campo"><span>${esc(rotulo)}</span><b>${esc(valor) || '—'}</b></div>`
 
+  // só o que se preenche à caneta: peso inicial e final. Execução, paradas
+  // e o consumo real são apontados/calculados no sistema — não vão no papel.
   const linhasTanques = o.tanques
     .map(
       (t) => `<tr>
@@ -156,13 +158,8 @@ export function imprimirOrdemProducao(o: OrdemImpressao): void {
         <td class="num">${esc(t.planejadoKg)}</td>
         <td class="mao"></td>
         <td class="mao"></td>
-        <td class="mao"></td>
       </tr>`,
     )
-    .join('')
-
-  const linhasParadas = Array.from({ length: 4 })
-    .map(() => '<tr><td class="mao"></td><td class="mao"></td><td class="mao"></td></tr>')
     .join('')
 
   const html = `<!doctype html>
@@ -222,26 +219,13 @@ ${o.observacao ? `<div class="obs"><b>Observação de processo:</b> ${esc(o.obse
 <h2>Tanques — receita e pesagem</h2>
 <table>
   <thead><tr>
-    <th style="width:12%">Destino</th>
+    <th style="width:13%">Destino</th>
     <th>Produtos e doses</th>
-    <th style="width:12%">Planejado (kg)</th>
-    <th style="width:14%">Peso inicial (kg)</th>
-    <th style="width:14%">Peso final (kg)</th>
-    <th style="width:12%">Real (kg)</th>
+    <th style="width:14%">Planejado (kg)</th>
+    <th style="width:18%">Peso inicial (kg)</th>
+    <th style="width:18%">Peso final (kg)</th>
   </tr></thead>
   <tbody>${linhasTanques}</tbody>
-</table>
-
-<h2>Execução</h2>
-<table>
-  <thead><tr><th>Início (data/hora)</th><th>Fim (data/hora)</th><th>Turno</th></tr></thead>
-  <tbody><tr><td class="mao"></td><td class="mao"></td><td class="mao"></td></tr></tbody>
-</table>
-
-<h2>Paradas</h2>
-<table>
-  <thead><tr><th>Motivo</th><th style="width:22%">Início</th><th style="width:22%">Fim</th></tr></thead>
-  <tbody>${linhasParadas}</tbody>
 </table>
 
 <div class="linha-ass">
