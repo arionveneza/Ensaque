@@ -3,6 +3,7 @@ import * as g from '@/dados/api-gestao'
 import type { LoteSementeLinha, MovimentoLote, OrdemVisao } from '@/dados/api-gestao'
 import { jaIniciada, podeEstornarLote } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
+import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
@@ -62,6 +63,10 @@ export default function Lotes() {
     setCarregando(true)
     recarregar().finally(() => setCarregando(false))
   }, [recarregar])
+
+  // era a única tela de operação sem realtime: a logística não via a ordem
+  // finalizar (para conferir) nem a baixa feita em outro computador
+  useRealtime(['lotes_semente', 'lote_movimentos', 'ordens', 'ordem_conferencias'], recarregar)
 
   /** Agrega cada lote com as ordens que dependem dele. */
   const agregado = useMemo<LoteAgregado[]>(() => {
