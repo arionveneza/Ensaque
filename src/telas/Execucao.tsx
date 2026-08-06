@@ -100,15 +100,13 @@ export default function Execucao() {
 
   const motivos = useMemo(() => mapaMotivos(cadastros?.motivos ?? []), [cadastros])
 
+  // mesma ordem do quadro da Programação: a sequência manda, e só ela — o
+  // operador precisa ver a fila exatamente como o PCP a deixou
   const porMaquina = useCallback(
     (m: string) =>
       ordens
         .filter((o) => o.maquina_id === m)
-        .sort(
-          (a, b) =>
-            (a.prioridade === 'Urgente' ? 0 : 1) - (b.prioridade === 'Urgente' ? 0 : 1) ||
-            (a.seq ?? 999) - (b.seq ?? 999),
-        ),
+        .sort((a, b) => (a.seq ?? 9999) - (b.seq ?? 9999) || a.numero.localeCompare(b.numero)),
     [ordens],
   )
 

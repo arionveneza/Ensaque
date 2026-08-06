@@ -17,11 +17,33 @@ export interface OrdemProgramavel {
   maquinaId: string | null
   dataProg: string | null
   seq: number | null
+  /**
+   * A produção já tocou a ordem: não se move, mas continua ocupando a
+   * capacidade e a numeração do dia dela. Só a cascata precisa saber.
+   */
+  iniciada?: boolean
 }
 
 export interface MaquinaCapacidade {
   id: string
   capacidadeDiaT: number
+}
+
+/**
+ * Capacidade em toneladas de uma máquina num dia. É função, e não número
+ * fixo, porque nem todo dia roda os dois turnos — sábado costuma ter um só
+ * e domingo nenhum (tabela `dias_producao`).
+ */
+export type CapacidadeDia = (maquinaId: string, dia: string) => number
+
+const capacidadeFixa =
+  (maquinas: MaquinaCapacidade[]): CapacidadeDia =>
+  (id) =>
+    maquinas.find((m) => m.id === id)?.capacidadeDiaT ?? 0
+
+/** Horas de operação de um dia com `turnos` turnos (0, 1 ou 2). */
+export function horasDoDia(turnos: number, horasPorTurno: readonly number[]): number {
+  return horasPorTurno.slice(0, Math.max(0, turnos)).reduce((a, h) => a + h, 0)
 }
 
 /** Número de trocas de receita numa sequência — proxy direto de setups. */
@@ -59,12 +81,14 @@ export function melhorSlot(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dias: string[],
+  capDia?: CapacidadeDia,
 ): Slot | null {
+  const cap = capDia ?? capacidadeFixa(maquinas)
   for (const dia of dias) {
     const candidatas = maquinas
       .map((m) => {
         const carga = toneladasDa(ordens, m.id, dia)
-        return { m, carga, livre: m.capacidadeDiaT - carga }
+        return { m, carga, livre: cap(m.id, dia) - carga }
       })
       .filter((c) => c.livre >= ordem.pesoT)
       .map((c) => {
@@ -117,6 +141,7 @@ export function autoProgramar(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dias: string[],
+  capDia?: CapacidadeDia,
 ): ResultadoAutoProgramacao {
   const fila = ordens
     .filter((o) => !o.maquinaId)
@@ -134,7 +159,7 @@ export function autoProgramar(
   const naoCouberam: OrdemProgramavel[] = []
 
   for (const ordem of fila) {
-    const slot = melhorSlot(ordem, estado, maquinas, dias)
+    const slot = melhorSlot(ordem, estado, maquinas, dias, capDia)
     if (!slot) {
       naoCouberam.push(ordem)
       continue
@@ -204,8 +229,10 @@ export function rebalancearDia(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dia: string,
+  capDia?: CapacidadeDia,
 ): Desbalanceamento | null {
   if (maquinas.length < 2) return null
+  const cap = capDia ?? capacidadeFixa(maquinas)
 
   const cargas = maquinas
     .map((m) => ({ m, ton: toneladasDa(ordens, m.id, dia) }))
@@ -232,7 +259,7 @@ export function rebalancearDia(
 
   const movidas: Atribuicao[] = []
   let transferido = 0
-  let livreDestino = vazia.m.capacidadeDiaT - vazia.ton
+  let livreDestino = cap(vazia.m.id, dia) - vazia.ton
   const noDestino = ordens.filter(
     (o) => o.maquinaId === vazia.m.id && o.dataProg === dia,
   )
@@ -257,6 +284,122 @@ export function rebalancearDia(
   return { dia, origem: cheia.m.id, destino: vazia.m.id, ordensMovidas: movidas }
 }
 
+export interface MovimentoCascata {
+  ordem: OrdemProgramavel
+  deDia: string | null
+  paraDia: string
+  seq: number
+}
+
+export interface ResultadoCascata {
+  movimentos: MovimentoCascata[]
+  /** Não coube em nenhum dia do horizonte — fica onde está. */
+  naoCouberam: OrdemProgramavel[]
+  /** Sozinha já estoura o dia inteiro: foi alocada mesmo assim. */
+  excedem: OrdemProgramavel[]
+}
+
+/**
+ * Empurra para frente o que ficou para trás.
+ *
+ * O caso real: programaram 10 ordens para hoje, a produção fez 5, e as outras
+ * 5 precisam virar as PRIMEIRAS de amanhã — o que por sua vez pode não deixar
+ * as de amanhã caberem, e essas viram as primeiras de depois de amanhã, e
+ * assim por diante. Fazer isso na mão é reprogramar dezenas de ordens uma a
+ * uma.
+ *
+ * Duas regras que o algoritmo respeita e valem mais que compactar bem:
+ *
+ * 1. **Nada anda para trás.** Uma ordem só entra na fila no dia dela ou
+ *    depois. Sem isso a cascata "puxaria" ordem da semana que vem para
+ *    amanhã só porque sobrou espaço, bagunçando o combinado com o comercial.
+ * 2. **A fila não fura.** Quando uma ordem não cabe no dia, todas as
+ *    seguintes também esperam — não se procura uma menor para preencher o
+ *    buraco. A sequência é compromisso, não um jogo de encaixe.
+ *
+ * Ordens já iniciadas não se movem: continuam ocupando capacidade e
+ * numeração do dia delas. Dia com 0 turnos não recebe nada, e o que estava
+ * marcado nele é empurrado junto.
+ */
+export function reprogramarCascata(
+  ordens: OrdemProgramavel[],
+  maquinas: MaquinaCapacidade[],
+  dias: string[],
+  apartirDe: string,
+  capDia?: CapacidadeDia,
+): ResultadoCascata {
+  const cap = capDia ?? capacidadeFixa(maquinas)
+  const destinos = dias.filter((d) => d > apartirDe).sort()
+  const movimentos: MovimentoCascata[] = []
+  const naoCouberam: OrdemProgramavel[] = []
+  const excedem: OrdemProgramavel[] = []
+  if (destinos.length === 0) return { movimentos, naoCouberam, excedem }
+  const ultimo = destinos[destinos.length - 1]
+
+  const naFila = (a: OrdemProgramavel, b: OrdemProgramavel) =>
+    (a.prioridade === 'Urgente' ? 0 : 1) - (b.prioridade === 'Urgente' ? 0 : 1) ||
+    (a.seq ?? 999) - (b.seq ?? 999)
+
+  for (const m of maquinas) {
+    const daMaquina = ordens.filter((o) => o.maquinaId === m.id && o.dataProg)
+    const fixas = daMaquina.filter((o) => o.iniciada)
+    // além do horizonte não se mexe: já estão no lugar que o PCP combinou
+    const moveis = daMaquina.filter((o) => !o.iniciada && o.dataProg! <= ultimo)
+
+    // o que já estava atrasado entra na frente de tudo, do mais velho ao mais novo
+    let espera = moveis
+      .filter((o) => o.dataProg! <= apartirDe)
+      .sort((a, b) => a.dataProg!.localeCompare(b.dataProg!) || naFila(a, b))
+
+    for (const dia of destinos) {
+      const doDia = moveis.filter((o) => o.dataProg === dia).sort(naFila)
+      const capacidade = cap(m.id, dia)
+      if (capacidade <= 0) {
+        // dia sem produção: não recebe nada e devolve o que tinha para a fila
+        espera = [...espera, ...doDia]
+        continue
+      }
+      const fixasDoDia = fixas.filter((o) => o.dataProg === dia)
+      let livre = capacidade - fixasDoDia.reduce((a, o) => a + o.pesoT, 0)
+      let seq = fixasDoDia.reduce((mx, o) => Math.max(mx, o.seq ?? 0), 0)
+
+      const fila = [...espera, ...doDia]
+      espera = []
+      let travou = false
+      for (const o of fila) {
+        if (travou) {
+          espera.push(o)
+          continue
+        }
+        if (o.pesoT <= livre) {
+          movimentos.push({ ordem: o, deDia: o.dataProg, paraDia: dia, seq: ++seq })
+          livre -= o.pesoT
+          continue
+        }
+        // maior que o dia inteiro e ninguém à frente: vai assim mesmo, senão
+        // travaria a fila para sempre e nada mais seria reprogramado
+        if (seq === 0 && o.pesoT > capacidade) {
+          movimentos.push({ ordem: o, deDia: o.dataProg, paraDia: dia, seq: ++seq })
+          excedem.push(o)
+          continue
+        }
+        travou = true
+        espera.push(o)
+      }
+    }
+    naoCouberam.push(...espera)
+  }
+
+  return {
+    // quem terminou no mesmo dia e na mesma posição não precisa ir ao banco
+    movimentos: movimentos.filter(
+      (mv) => mv.paraDia !== mv.ordem.dataProg || mv.seq !== mv.ordem.seq,
+    ),
+    naoCouberam,
+    excedem,
+  }
+}
+
 export interface ItemChecklist {
   gravidade: 'bloqueio' | 'alerta'
   mensagem: string
@@ -267,7 +410,9 @@ export function checklistDoDia(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dia: string,
+  capDia?: CapacidadeDia,
 ): ItemChecklist[] {
+  const cap = capDia ?? capacidadeFixa(maquinas)
   const itens: ItemChecklist[] = []
   const doDia = ordens.filter((o) => o.dataProg === dia && o.maquinaId)
 
@@ -284,7 +429,17 @@ export function checklistDoDia(
 
   for (const m of maquinas) {
     const ton = toneladasDa(ordens, m.id, dia)
-    const pct = m.capacidadeDiaT > 0 ? (ton / m.capacidadeDiaT) * 100 : 0
+    const capacidade = cap(m.id, dia)
+    if (capacidade <= 0) {
+      if (ton > 0) {
+        itens.push({
+          gravidade: 'bloqueio',
+          mensagem: `${m.id} tem ${ton.toFixed(1)} t programadas num dia marcado como sem produção.`,
+        })
+      }
+      continue
+    }
+    const pct = (ton / capacidade) * 100
     if (pct > 100) {
       itens.push({
         gravidade: 'bloqueio',

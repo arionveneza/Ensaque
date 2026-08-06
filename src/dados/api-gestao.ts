@@ -183,6 +183,64 @@ export async function aplicarAtribuicoes(
 }
 
 // ================================================================
+// Calendário — turnos de cada dia
+// ================================================================
+
+/** Uma exceção do calendário. Dia sem linha aqui roda os 2 turnos. */
+export interface DiaProducao {
+  data: string
+  turnos: number
+  observacao: string | null
+}
+
+/**
+ * Só as exceções, no período pedido. Devolve lista vazia — em vez de
+ * estourar — se a tabela ainda não existir no banco: o front vai ao ar antes
+ * do SQL, e a Programação inteira não pode depender disso para abrir.
+ */
+export async function listarDiasProducao(de: string, ate: string): Promise<DiaProducao[]> {
+  const { data, error } = await supabase
+    .from('dias_producao')
+    .select('data, turnos, observacao')
+    .gte('data', de)
+    .lte('data', ate)
+  if (error) {
+    if (error.code === '42P01' || error.message.includes('dias_producao')) return []
+    erro('calendário de turnos', error)
+  }
+  return (data ?? []) as DiaProducao[]
+}
+
+/**
+ * Define quantos turnos um dia roda. Dois turnos é o padrão, então marcar
+ * um dia como 2 APAGA a exceção em vez de gravá-la — o calendário guarda só
+ * o que foge da regra e não vira um registro por dia do ano.
+ */
+export async function definirTurnosDoDia(
+  data: string,
+  turnos: number,
+  usuarioId: string,
+  observacao?: string | null,
+): Promise<void> {
+  if (turnos === 2 && !observacao) {
+    const { error } = await supabase.from('dias_producao').delete().eq('data', data)
+    erro('limpar turnos do dia', error)
+    return
+  }
+  const { error } = await supabase.from('dias_producao').upsert(
+    {
+      data,
+      turnos,
+      observacao: observacao ?? null,
+      alterado_em: new Date().toISOString(),
+      alterado_por: usuarioId,
+    },
+    { onConflict: 'data' },
+  )
+  erro('definir turnos do dia', error)
+}
+
+// ================================================================
 // Lotes de semente
 // ================================================================
 

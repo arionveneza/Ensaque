@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   autoProgramar,
   checklistDoDia,
+  horasDoDia,
   melhorSlot,
   otimizarSequencia,
   rebalancearDia,
+  reprogramarCascata,
   toneladasDa,
   trocasDeReceita,
   type MaquinaCapacidade,
@@ -214,6 +216,163 @@ describe('rebalancear o dia', () => {
       ord({ maquinaId: 'TSI2', dataProg: DIAS[0], pesoT: 50 }),
     ]
     expect(rebalancearDia(ordens, MAQUINAS, DIAS[0])).toBeNull()
+  })
+})
+
+describe('horas do dia por turnos', () => {
+  const H = [10, 9.5]
+  it('dois turnos somam 19,5 h', () => expect(horasDoDia(2, H)).toBe(19.5))
+  it('um turno é só o primeiro', () => expect(horasDoDia(1, H)).toBe(10))
+  it('sem turno não produz', () => expect(horasDoDia(0, H)).toBe(0))
+})
+
+describe('reprogramar em cascata', () => {
+  // 5 dias corridos; capacidade padrão de 234 t/dia em cada máquina
+  const D = ['2026-08-06', '2026-08-07', '2026-08-08', '2026-08-09', '2026-08-10']
+  const hoje = D[0]
+
+  it('empurra o que sobrou de hoje para a frente da fila de amanha', () => {
+    const ordens = [
+      ord({ id: 'feita', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 30, iniciada: true }),
+      ord({ id: 'sobrou', maquinaId: 'TSI1', dataProg: hoje, seq: 2, pesoT: 30 }),
+      ord({ id: 'amanha', maquinaId: 'TSI1', dataProg: D[1], seq: 1, pesoT: 30 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    const sobrou = r.movimentos.find((m) => m.ordem.id === 'sobrou')!
+    const amanha = r.movimentos.find((m) => m.ordem.id === 'amanha')
+    expect(sobrou.paraDia).toBe(D[1])
+    expect(sobrou.seq).toBe(1)
+    // a de amanhã cede a vez, mas continua no mesmo dia (cabe)
+    expect(amanha?.paraDia ?? D[1]).toBe(D[1])
+    expect(amanha!.seq).toBe(2)
+  })
+
+  it('a ordem ja iniciada nao se move nem perde a posicao', () => {
+    const ordens = [
+      ord({ id: 'feita', maquinaId: 'TSI1', dataProg: hoje, seq: 1, iniciada: true }),
+      ord({ id: 'sobrou', maquinaId: 'TSI1', dataProg: hoje, seq: 2 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    expect(r.movimentos.some((m) => m.ordem.id === 'feita')).toBe(false)
+  })
+
+  it('o que nao cabe no dia transborda para o seguinte', () => {
+    // 234 t por dia: cabem 2 ordens de 100 t (a terceira daria 300)
+    const ordens = Array.from({ length: 5 }, (_, i) =>
+      ord({ id: `g${i}`, maquinaId: 'TSI1', dataProg: hoje, seq: i + 1, pesoT: 100 }),
+    )
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    const dia = (id: string) => r.movimentos.find((m) => m.ordem.id === id)!.paraDia
+    const seq = (id: string) => r.movimentos.find((m) => m.ordem.id === id)!.seq
+    expect([dia('g0'), dia('g1')]).toEqual([D[1], D[1]])
+    expect([dia('g2'), dia('g3')]).toEqual([D[2], D[2]])
+    expect(dia('g4')).toBe(D[3])
+    // cada dia recomeça a numeração em 1
+    expect([seq('g0'), seq('g1'), seq('g2'), seq('g4')]).toEqual([1, 2, 1, 1])
+  })
+
+  it('nao fura a fila: ordem pequena nao passa na frente da que nao coube', () => {
+    const ordens = [
+      ord({ id: 'grande', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 200 }),
+      ord({ id: 'media', maquinaId: 'TSI1', dataProg: hoje, seq: 2, pesoT: 100 }),
+      ord({ id: 'pequena', maquinaId: 'TSI1', dataProg: hoje, seq: 3, pesoT: 10 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    const dia = (id: string) => r.movimentos.find((m) => m.ordem.id === id)!.paraDia
+    // a pequena caberia junto com a grande (200 + 10 <= 234), mas espera a média
+    expect(dia('grande')).toBe(D[1])
+    expect(dia('media')).toBe(D[2])
+    expect(dia('pequena')).toBe(D[2])
+  })
+
+  it('nunca puxa uma ordem para antes do dia dela', () => {
+    const ordens = [
+      ord({ id: 'longe', maquinaId: 'TSI1', dataProg: D[4], seq: 1, pesoT: 10 }),
+      ord({ id: 'hoje', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 10 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    expect(r.movimentos.some((m) => m.ordem.id === 'longe')).toBe(false)
+  })
+
+  it('dia sem turno nao recebe nada e devolve o que tinha', () => {
+    const semDomingo = (_m: string, dia: string) => (dia === D[1] ? 0 : 234)
+    const ordens = [
+      ord({ id: 'a', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 10 }),
+      ord({ id: 'b', maquinaId: 'TSI1', dataProg: D[1], seq: 1, pesoT: 10 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje, semDomingo)
+    for (const mv of r.movimentos) expect(mv.paraDia).not.toBe(D[1])
+    expect(r.movimentos.find((m) => m.ordem.id === 'a')!.paraDia).toBe(D[2])
+    expect(r.movimentos.find((m) => m.ordem.id === 'b')!.paraDia).toBe(D[2])
+  })
+
+  it('um turno so reduz a capacidade e transborda mais cedo', () => {
+    const umTurno = (_m: string, dia: string) => (dia === D[1] ? 120 : 234)
+    const ordens = [
+      ord({ id: 'a', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 100 }),
+      ord({ id: 'b', maquinaId: 'TSI1', dataProg: hoje, seq: 2, pesoT: 100 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje, umTurno)
+    expect(r.movimentos.find((m) => m.ordem.id === 'a')!.paraDia).toBe(D[1])
+    expect(r.movimentos.find((m) => m.ordem.id === 'b')!.paraDia).toBe(D[2])
+  })
+
+  it('cada maquina cascateia sozinha', () => {
+    const ordens = [
+      ord({ id: 't1', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 10 }),
+      ord({ id: 't2', maquinaId: 'TSI2', dataProg: hoje, seq: 1, pesoT: 10 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    expect(r.movimentos.find((m) => m.ordem.id === 't1')!.paraDia).toBe(D[1])
+    expect(r.movimentos.find((m) => m.ordem.id === 't2')!.paraDia).toBe(D[1])
+    expect(r.movimentos.every((m) => m.seq === 1)).toBe(true)
+  })
+
+  it('atraso de dias anteriores entra na frente', () => {
+    const ordens = [
+      ord({ id: 'atrasada', maquinaId: 'TSI1', dataProg: '2026-08-01', seq: 5, pesoT: 10 }),
+      ord({ id: 'de hoje', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 10 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    expect(r.movimentos.find((m) => m.ordem.id === 'atrasada')!.seq).toBe(1)
+    expect(r.movimentos.find((m) => m.ordem.id === 'de hoje')!.seq).toBe(2)
+  })
+
+  it('urgente lidera a fila do proprio dia', () => {
+    const ordens = [
+      ord({ id: 'normal', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 10 }),
+      ord({ id: 'urg', maquinaId: 'TSI1', dataProg: hoje, seq: 2, pesoT: 10, prioridade: 'Urgente' }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    expect(r.movimentos.find((m) => m.ordem.id === 'urg')!.seq).toBe(1)
+  })
+
+  it('ordem maior que o dia inteiro vai assim mesmo, sinalizada', () => {
+    const ordens = [
+      ord({ id: 'gigante', maquinaId: 'TSI1', dataProg: hoje, seq: 1, pesoT: 300 }),
+      ord({ id: 'atras', maquinaId: 'TSI1', dataProg: hoje, seq: 2, pesoT: 10 }),
+    ]
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    expect(r.excedem.map((o) => o.id)).toEqual(['gigante'])
+    // e a fila não trava por causa dela
+    expect(r.movimentos.find((m) => m.ordem.id === 'atras')).toBeDefined()
+    expect(r.naoCouberam).toHaveLength(0)
+  })
+
+  it('sem dia seguinte no horizonte, nada se move', () => {
+    const ordens = [ord({ maquinaId: 'TSI1', dataProg: hoje, seq: 1 })]
+    const r = reprogramarCascata(ordens, MAQUINAS, [hoje], hoje)
+    expect(r.movimentos).toHaveLength(0)
+  })
+
+  it('o que nao cabe no horizonte fica onde esta', () => {
+    const ordens = Array.from({ length: 10 }, (_, i) =>
+      ord({ id: `x${i}`, maquinaId: 'TSI1', dataProg: hoje, seq: i + 1, pesoT: 200 }),
+    )
+    const r = reprogramarCascata(ordens, MAQUINAS, D, hoje)
+    // 4 dias de destino, uma de 200 t por dia
+    expect(r.movimentos).toHaveLength(4)
+    expect(r.naoCouberam).toHaveLength(6)
   })
 })
 

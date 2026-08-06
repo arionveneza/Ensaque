@@ -35,6 +35,11 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 - **Dia de produção** = 07:30 até 03:00 do dia seguinte. O turno 2 cruza a meia-noite e pertence
   ao dia que começou.
 - Capacidade/dia por máquina = 12 t/h × 19,5 h = **234 t**.
+- **Quantos turnos cada dia roda é do calendário** (decisão de 06/08/2026): nem todo dia tem os
+  dois. A tabela `dias_producao` guarda **só a exceção** — dia sem linha roda 2 turnos (234 t);
+  `turnos = 1` vale 10 h (120 t) e `turnos = 0` é dia sem produção, que não recebe programação.
+  Sem isso um sábado de um turno só aparecia com metade da ocupação real e a programação
+  automática enfiava ordem que não caberia. Editável na linha **Turnos** do plano semanal.
 
 ### Embalagens
 | Código app | Código comercial (SimpleAgro) | Sementes | Fator peso |
@@ -168,10 +173,25 @@ disponibilidade como se fosse falha.
 
 ### Ocupação
 ```
-capacidade_dia_máquina = 12 t/h × 19,5 h = 234 t
+horas_do_dia           = Σ das horas dos turnos que o dia roda (2 → 19,5 · 1 → 10 · 0 → 0)
+capacidade_dia_máquina = 12 t/h × horas_do_dia          (234 t no dia cheio)
 ocupação = Σ peso das ordens da máquina no dia ÷ capacidade_dia
 ```
-Alerta >85% (âmbar) e >100% (vermelho, com opção de rebalancear).
+Alerta >85% (âmbar) e >100% (vermelho, com opção de rebalancear). Dia de 0 turnos com ordem
+programada é **bloqueio** no checklist.
+
+### Reprogramação em cascata
+Empurra para a frente o que não foi feito, a partir de um dia escolhido. Duas regras valem mais
+que compactar bem (decisão de 06/08/2026):
+- **Nada anda para trás** — uma ordem só entra na fila no dia dela ou depois; a cascata nunca
+  puxa ordem da semana que vem para amanhã só porque sobrou espaço.
+- **A fila não fura** — quando uma ordem não cabe no dia, as seguintes esperam junto; não se
+  procura uma menor para preencher o buraco. Sequência é compromisso, não jogo de encaixe.
+
+Ordem já iniciada não se move e continua ocupando capacidade e numeração do dia dela; dia de 0
+turnos não recebe nada e devolve o que tinha para a fila. Ordem maior que um dia inteiro é
+alocada mesmo assim, sinalizada — senão travaria a cascata para sempre. **Sempre com prévia
+antes de gravar**: mexe em dezenas de ordens de uma vez.
 
 ### Balanço de demanda (por cultivar + tratamento + embalagem)
 ```
@@ -281,10 +301,15 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 1. **Ordens** — inclusão por digitação e importação (Excel), filtros (busca livre, dia, status, máquina,
    cultivar, tratamento, lote), agrupamento dia→máquina com subtotais, coluna Seq, painel
    Demanda × Estoque × Planejado, upload diário, atalhos para a SimpleAgro, impressão e export .xlsx.
-2. **Programação & Ocupação** — plano semanal navegável (máquina × dia, % ocupação), quadro do dia
-   com 1 célula por máquina, arrastar-e-soltar (inclusive sobre outra ordem para posicionar na
-   sequência), ▲▼, **Programar automaticamente** (urgentes → lote baixado → agrupa cultivar+tratamento),
-   **Encaixar**, **Rebalancear**, **Otimizar sequência**, **Checklist do dia**.
+2. **Programação & Ocupação** — plano semanal navegável (máquina × dia, % ocupação, linha de
+   **turnos do dia**), quadro do dia com 1 célula por máquina, arrastar-e-soltar (sobre outra
+   ordem para posicionar na sequência; sobre uma célula da semana para trocar de dia/máquina;
+   sobre o pool para desprogramar), botão **mover** com selects para tablet — arrastar não
+   funciona em tela de toque —, ▲▼, **Programar automaticamente** (urgentes → lote baixado →
+   agrupa cultivar+tratamento), **Encaixar**, **Rebalancear**, **Otimizar sequência**,
+   **Reprogramar cascata**, **Checklist do dia**.
+   A fila é exibida **só pela sequência gravada** — urgência é etiqueta, não reordena sozinha,
+   senão arrastar uma ordem normal para o topo parecia não funcionar.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.
