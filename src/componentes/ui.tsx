@@ -118,17 +118,17 @@ export function Botao({
 }) {
   const estilo =
     variante === 'primario'
-      ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900'
+      ? 'bg-emerald-700 text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500'
       : variante === 'perigo'
-        ? 'border border-red-300 text-red-700 dark:border-red-800 dark:text-red-400'
-        : 'border border-stone-300 dark:border-stone-700'
+        ? 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
+        : 'border border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
   return (
     <button
       type={tipo}
       title={titulo}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${estilo}`}
+      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:pointer-events-none disabled:opacity-40 ${estilo}`}
     >
       {children}
     </button>
@@ -151,7 +151,9 @@ export function Tag({
     roxo: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
   }
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${cores[cor]}`}>
+    <span
+      className={`inline-block rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cores[cor]}`}
+    >
       {children}
     </span>
   )

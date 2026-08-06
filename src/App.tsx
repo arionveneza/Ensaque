@@ -90,29 +90,42 @@ function Shell() {
 
   return (
     <div className="min-h-svh bg-stone-50 text-stone-800 dark:bg-stone-950 dark:text-stone-200">
-      <header className="border-b border-stone-200 bg-white print:hidden dark:border-stone-800 dark:bg-stone-900">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-3 px-6 py-4">
-          <h1 className="text-xl font-semibold tracking-tight">TSI</h1>
-          <p className="text-sm text-stone-500 dark:text-stone-400">Sementes Veneza</p>
-          <div className="ml-auto flex items-baseline gap-3 text-sm">
-            <span className="text-stone-600 dark:text-stone-300">
-              {usuario.nome} · <span className="text-stone-400">{usuario.perfil}</span>
+      {/* fixo no topo: no tablet do chão de fábrica a navegação fica sempre à mão */}
+      <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/95 backdrop-blur print:hidden dark:border-stone-800 dark:bg-stone-900/95">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 pt-3 sm:px-6">
+          {/* marca: bloco esmeralda no lugar de logo — trocar quando houver arte */}
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-700 text-sm font-bold tracking-tight text-white dark:bg-emerald-600">
+              TSI
             </span>
-            <button onClick={sair} className="text-stone-500 underline underline-offset-2">
+            <div className="leading-tight">
+              <h1 className="text-sm font-semibold">Tratamento Industrial de Sementes</h1>
+              <p className="text-xs text-stone-500 dark:text-stone-400">Sementes Veneza</p>
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            <span className="hidden text-stone-600 sm:inline dark:text-stone-300">
+              {usuario.nome} ·{' '}
+              <span className="text-emerald-700 dark:text-emerald-400">{usuario.perfil}</span>
+            </span>
+            <button
+              onClick={sair}
+              className="rounded-md border border-stone-300 px-3 py-1.5 text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+            >
               Sair
             </button>
           </div>
         </div>
-        <nav className="mx-auto max-w-6xl px-6 pb-3">
-          <ul className="flex flex-wrap gap-2">
+        <nav className="scroll-oculto mx-auto max-w-6xl overflow-x-auto px-4 sm:px-6">
+          <ul className="flex gap-1 py-2">
             {TELAS.filter((t) => permitidas.includes(t.id)).map((t) => (
               <li key={t.id}>
                 <button
                   onClick={() => setTela(t.id)}
-                  className={`rounded-md border px-3 py-1.5 text-sm ${
+                  className={`rounded-md px-3 py-2 text-sm whitespace-nowrap transition-colors ${
                     atual === t.id
-                      ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                      : 'border-stone-200 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+                      ? 'bg-emerald-700 font-semibold text-white dark:bg-emerald-600'
+                      : 'text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800'
                   }`}
                 >
                   {t.nome}

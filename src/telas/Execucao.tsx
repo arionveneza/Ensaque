@@ -188,15 +188,16 @@ export default function Execucao() {
           <table className="w-full text-sm">
             <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500 dark:bg-stone-800/50 dark:text-stone-400">
               <tr>
-                <th className="px-3 py-2">Seq</th>
-                <th className="px-3 py-2">Ordem</th>
-                <th className="px-3 py-2">Cultivar</th>
-                <th className="px-3 py-2">Tratamento</th>
-                <th className="px-3 py-2">Lote</th>
-                <th className="px-3 py-2 text-right">Bags</th>
-                <th className="px-3 py-2 text-right">Peso</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2"></th>
+                <th className="px-2 py-2 lg:px-3">Seq</th>
+                <th className="px-2 py-2 lg:px-3">Ordem</th>
+                {/* no tablet o botão de ação vale mais que o cultivar (que o modal mostra) */}
+                <th className="hidden px-3 py-2 lg:table-cell">Cultivar</th>
+                <th className="px-2 py-2 lg:px-3">Tratamento</th>
+                <th className="px-2 py-2 lg:px-3">Lote</th>
+                <th className="px-2 py-2 lg:px-3 text-right">Bags</th>
+                <th className="px-2 py-2 lg:px-3 text-right">Peso</th>
+                <th className="px-2 py-2 lg:px-3">Status</th>
+                <th className="px-2 py-2 lg:px-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -260,10 +261,12 @@ function FragmentoMaquina({
   return (
     <>
       <tr className="bg-stone-100/70 dark:bg-stone-800/40">
-        <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide">
+        {/* colSpan 5 + célula fantasma: acompanha a coluna Cultivar, que some em tela estreita */}
+        <td colSpan={5} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide lg:px-3">
           {nome}
         </td>
-        <td className="num-tabular px-3 py-1.5 text-right text-xs font-semibold">
+        <td className="hidden lg:table-cell" />
+        <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold lg:px-3">
           {num(totalT, 1)} t
         </td>
         <td colSpan={2}></td>
@@ -275,8 +278,8 @@ function FragmentoMaquina({
             key={o.id}
             className="border-t border-stone-100 hover:bg-stone-50 dark:border-stone-800/60 dark:hover:bg-stone-800/30"
           >
-            <td className="px-3 py-2 text-stone-400">{o.seq ?? '—'}</td>
-            <td className="px-3 py-2 font-medium">
+            <td className="px-2 py-2 text-stone-400 lg:px-3">{o.seq ?? '—'}</td>
+            <td className="px-2 py-2 font-medium lg:px-3">
               {o.numero}
               {o.prioridade === 'Urgente' && (
                 <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:bg-red-950 dark:text-red-300">
@@ -284,23 +287,25 @@ function FragmentoMaquina({
                 </span>
               )}
             </td>
-            <td className="px-3 py-2">{o.cultivar}</td>
-            <td className="px-3 py-2">{o.receitas.nome}</td>
-            <td className="px-3 py-2 font-medium">{o.lote_id}</td>
-            <td className="num-tabular px-3 py-2 text-right">{o.bags}</td>
-            <td className="num-tabular px-3 py-2 text-right">
+            <td className="hidden px-3 py-2 lg:table-cell">{o.cultivar}</td>
+            <td className="px-2 py-2 lg:px-3">{o.receitas.nome}</td>
+            <td className="px-2 py-2 font-medium lg:px-3">{o.lote_id}</td>
+            <td className="num-tabular px-2 py-2 text-right lg:px-3">{o.bags}</td>
+            <td className="num-tabular px-2 py-2 text-right whitespace-nowrap lg:px-3">
               {num(pesoOrdemKg(o) / 1000, 1)} t
             </td>
-            <td className="px-3 py-2">
-              <span className={`rounded px-2 py-0.5 text-xs font-medium ${CORES_STATUS[status]}`}>
+            <td className="px-2 py-2 lg:px-3">
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${CORES_STATUS[status]}`}
+              >
                 {status}
               </span>
             </td>
-            <td className="px-3 py-2 text-right whitespace-nowrap">
+            <td className="px-2 py-2 text-right whitespace-nowrap lg:px-3">
               {podeApontar && status === 'Pronto para produzir' && (
                 <button
                   onClick={() => onIniciar(o)}
-                  className="rounded-md bg-stone-900 px-3 py-1 text-xs font-medium text-white dark:bg-stone-100 dark:text-stone-900"
+                  className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                 >
                   Iniciar
                 </button>
@@ -308,7 +313,7 @@ function FragmentoMaquina({
               {(o.ordem_tanques.length > 0 || status !== 'Pronto para produzir') && (
                 <button
                   onClick={() => onAbrir(o.id)}
-                  className="ml-1.5 rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-700"
+                  className="ml-1.5 rounded-md border border-stone-300 px-4 py-2 text-sm transition-colors hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
                 >
                   Abrir
                 </button>
@@ -321,6 +326,11 @@ function FragmentoMaquina({
   )
 }
 
+/**
+ * O painel que fica aberto no tablet do chão de fábrica o turno inteiro.
+ * O decorrido é o número-herói (legível a distância de braço), a barra
+ * compara com o planejado e a parada atual grita em vermelho.
+ */
 function CardMaquina({
   maquina,
   ordens,
@@ -339,72 +349,150 @@ function CardMaquina({
   const atual = ordens.find((o) => o.status === 'Em producao' || o.status === 'Parada')
   const parada = atual?.ordem_paradas.find((p) => !p.fim)
   const motivoAtual = parada ? motivosLista.find((m) => m.id === parada.motivo_id) : null
+  const emParada = atual?.status === 'Parada'
 
   const tempos = atual ? temposOrdem(paraOrdemDominio(atual), motivos, agora) : null
   const planejado = atual
     ? tempoPlanejadoS(pesoOrdemKg(atual) / 1000, maquina.capacidade_th)
     : null
+  const progresso =
+    tempos && planejado ? Math.min(100, (tempos.brutoS / planejado) * 100) : null
+  const estourou = tempos != null && planejado != null && tempos.brutoS > planejado
+
+  // máquina livre: aponta a próxima da fila para o operador não precisar caçar
+  const proxima =
+    !atual &&
+    ordens.find(
+      (o) => statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status) === 'Pronto para produzir',
+    )
 
   return (
     <div
-      className={`rounded-lg border p-4 ${
+      className={`overflow-hidden rounded-xl border shadow-sm ${
         !atual
           ? 'border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900'
-          : atual.status === 'Parada'
+          : emParada
             ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/30'
-            : 'border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30'
+            : 'border-emerald-300 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30'
       }`}
     >
-      <div className="flex items-baseline justify-between">
-        <h3 className="font-semibold text-stone-900 dark:text-stone-100">{maquina.nome}</h3>
+      <div className="flex items-center justify-between gap-2 px-4 pt-3">
+        <div className="flex items-center gap-2.5">
+          <h3 className="text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100">
+            {maquina.nome}
+          </h3>
+          {atual ? (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                emParada
+                  ? 'bg-red-600 text-white'
+                  : 'bg-emerald-600 text-white'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full bg-white ${emParada ? 'animate-pulse' : ''}`}
+              />
+              {emParada ? 'PARADA' : 'EM PRODUÇÃO'}
+            </span>
+          ) : (
+            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-500 dark:bg-stone-800 dark:text-stone-400">
+              LIVRE
+            </span>
+          )}
+        </div>
         <span className="text-xs text-stone-500 dark:text-stone-400">
           {maquina.capacidade_th} t/h · {maquina.qtd_tanques} tanques
         </span>
       </div>
 
       {!atual ? (
-        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
-          Livre — nenhuma ordem em andamento.
-        </p>
+        <div className="px-4 pt-4 pb-5">
+          {proxima ? (
+            <>
+              <p className="text-sm text-stone-500 dark:text-stone-400">Próxima da fila</p>
+              <button
+                onClick={() => onAbrir(proxima.id)}
+                className="mt-1 text-left text-base font-semibold text-stone-900 underline-offset-4 transition-colors hover:underline dark:text-stone-100"
+              >
+                {proxima.numero} · {proxima.cultivar} · {proxima.receitas.nome}
+              </button>
+              <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+                Lote {proxima.lote_id} · {proxima.bags} bags ·{' '}
+                {num(pesoOrdemKg(proxima) / 1000, 1)} t — pronto para produzir
+              </p>
+            </>
+          ) : (
+            <p className="py-2 text-sm text-stone-500 dark:text-stone-400">
+              Nenhuma ordem em andamento nem pronta na fila.
+            </p>
+          )}
+        </div>
       ) : (
         <>
-          <button
-            onClick={() => onAbrir(atual.id)}
-            className="mt-2 text-left text-sm font-medium text-stone-900 underline-offset-2 hover:underline dark:text-stone-100"
-          >
-            Ordem {atual.numero} · {atual.cultivar} · {atual.receitas.nome}
-          </button>
-          <p className="text-xs text-stone-500 dark:text-stone-400">
-            Lote {atual.lote_id} · {atual.bags} bags · {num(pesoOrdemKg(atual) / 1000, 1)} t
-          </p>
+          <div className="px-4 pt-1">
+            <button
+              onClick={() => onAbrir(atual.id)}
+              className="text-left text-sm font-semibold text-stone-900 underline-offset-4 transition-colors hover:underline dark:text-stone-100"
+            >
+              {atual.numero} · {atual.cultivar} · {atual.receitas.nome}
+            </button>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Lote {atual.lote_id} · {atual.bags} bags · {num(pesoOrdemKg(atual) / 1000, 1)} t
+            </p>
+          </div>
 
-          <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
-            <div>
+          {/* o número que se lê do outro lado da máquina */}
+          <div className="mt-2 px-4 text-center">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-stone-500">
+              Decorrido
+            </p>
+            <p
+              className={`num-tabular text-4xl font-bold tracking-tight ${
+                emParada
+                  ? 'text-red-700 dark:text-red-400'
+                  : 'text-stone-900 dark:text-stone-100'
+              }`}
+            >
+              {tempos ? formataHms(tempos.brutoS) : '—'}
+            </p>
+            {progresso != null && (
+              <div className="mx-auto mt-2 h-1.5 max-w-64 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+                <div
+                  className={`h-full rounded-full transition-[width] duration-1000 ${
+                    estourou ? 'bg-red-500' : 'bg-emerald-600'
+                  }`}
+                  style={{ width: `${progresso}%` }}
+                />
+              </div>
+            )}
+          </div>
+
+          <dl className="mt-3 grid grid-cols-2 gap-px border-t border-stone-200/70 bg-stone-200/70 dark:border-stone-800 dark:bg-stone-800">
+            <div className="bg-white/70 px-4 py-2 text-center dark:bg-stone-900/60">
               <dt className="text-[10px] uppercase tracking-wide text-stone-500">Planejado</dt>
-              <dd className="num-tabular text-sm font-medium">
+              <dd className={`num-tabular text-sm font-semibold ${estourou ? 'text-red-700 dark:text-red-400' : ''}`}>
                 {planejado == null ? '—' : formataHms(planejado)}
               </dd>
             </div>
-            <div>
-              <dt className="text-[10px] uppercase tracking-wide text-stone-500">Decorrido</dt>
-              <dd className="num-tabular text-sm font-medium">
-                {tempos ? formataHms(tempos.brutoS) : '—'}
-              </dd>
-            </div>
-            <div>
+            <div className="bg-white/70 px-4 py-2 text-center dark:bg-stone-900/60">
               <dt className="text-[10px] uppercase tracking-wide text-stone-500">Paradas</dt>
-              <dd className="num-tabular text-sm font-medium">
+              <dd className="num-tabular text-sm font-semibold">
                 {tempos ? formataHms(tempos.paradasS) : '—'}
               </dd>
             </div>
           </dl>
 
           {parada && (
-            <p className="mt-3 rounded-md bg-red-100 px-3 py-2 text-xs text-red-800 dark:bg-red-950/60 dark:text-red-300">
-              <b>Parada agora:</b> {motivoAtual?.descricao ?? '—'} (
-              {motivoAtual?.tipo === 'Planejada' ? 'planejada' : 'não planejada'}) há{' '}
-              {formataHms((agora - new Date(parada.inicio).getTime()) / 1000)}
-            </p>
+            <div className="flex items-center gap-2 bg-red-600 px-4 py-2.5 text-sm text-white">
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-white" />
+              <span className="min-w-0 truncate">
+                <b>{motivoAtual?.descricao ?? 'Parada'}</b>{' '}
+                ({motivoAtual?.tipo === 'Planejada' ? 'planejada' : 'não planejada'})
+              </span>
+              <span className="num-tabular ml-auto shrink-0 font-semibold">
+                {formataHms((agora - new Date(parada.inicio).getTime()) / 1000)}
+              </span>
+            </div>
           )}
         </>
       )}
