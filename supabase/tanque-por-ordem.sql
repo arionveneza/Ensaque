@@ -138,8 +138,66 @@ end $$ language plpgsql security definer set search_path = tsi, public;
 
 -- ------------------------------------------------------------
 -- 5. A receita deixa de ter tanque
+--
+-- Duas views leem `receita_itens.tanque` e precisam sair antes da coluna.
+-- Recriadas logo abaixo lendo o tanque de `ordem_produtos`.
 -- ------------------------------------------------------------
+drop view if exists v_ordem_tanque_consumo;
+drop view if exists v_ordem_itens_planejado;
+
 alter table receita_itens drop column if exists tanque;
+
+-- O tanque agora vem da escolha do operador. Produto ainda sem destino não
+-- aparece — igual ao domínio, que só monta tanque do que foi destinado.
+--
+-- A conta da unidade também estava velha aqui: testava só `= 'ml/kg'`, então
+-- produto em ml/100kg caía no ramo de grama — 100× errado e sem densidade.
+-- Agora o prefixo decide se usa densidade e o sufixo decide a base (1 ou 100).
+create view v_ordem_itens_planejado as
+select o.id as ordem_id, op.tanque, ri.produto_id, pq.codigo, pq.nome, pq.unidade,
+       pq.densidade, ri.dose,
+       case when pq.unidade::text like 'ml%'
+            then ri.dose * o.peso_kg * coalesce(pq.densidade,1) / 1000.0
+            else ri.dose * o.peso_kg / 1000.0
+       end / (case when pq.unidade::text like '%/100kg' then 100 else 1 end)
+         as peso_planejado_kg,
+       case when pq.unidade::text like 'ml%'
+            then ri.dose * o.peso_kg / 1000.0
+                 / (case when pq.unidade::text like '%/100kg' then 100 else 1 end)
+       end as volume_planejado_l
+from v_ordens o
+join receita_itens ri on ri.receita_id = o.receita_id
+join ordem_produtos op on op.ordem_id = o.id and op.produto_id = ri.produto_id
+join produtos_quimicos pq on pq.id = ri.produto_id;
+
+-- Real vs Planejado por tanque (mistura = soma dos produtos do tanque)
+create view v_ordem_tanque_consumo as
+select ot.ordem_id, ot.tanque, ot.peso_inicial, ot.peso_final,
+       p.planejado_kg,
+       case when ot.peso_inicial is not null and ot.peso_final is not null
+            then greatest(0, ot.peso_inicial - ot.peso_final) end as real_kg,
+       case when ot.peso_inicial is not null and ot.peso_final is not null and p.planejado_kg > 0
+            then (greatest(0, ot.peso_inicial - ot.peso_final) - p.planejado_kg)
+                 / p.planejado_kg * 100 end as desvio_pct
+from ordem_tanques ot
+join (select ordem_id, tanque, sum(peso_planejado_kg) as planejado_kg
+      from v_ordem_itens_planejado group by 1,2) p
+  on p.ordem_id = ot.ordem_id and p.tanque = ot.tanque;
+
+-- view recriada volta sem security_invoker: sem isto ela roda com os
+-- privilégios de quem criou e passa por cima do RLS
+alter view v_ordem_itens_planejado set (security_invoker = true);
+alter view v_ordem_tanque_consumo  set (security_invoker = true);
+
+-- ------------------------------------------------------------
+-- 5b. Densidade obrigatória para QUALQUER dose em ml
+--
+-- O check antigo era `unidade <> 'ml/kg'`, então produto em ml/100kg
+-- passava sem densidade — o app validava, o banco não.
+-- ------------------------------------------------------------
+alter table produtos_quimicos drop constraint if exists dens_obrigatoria;
+alter table produtos_quimicos add constraint dens_obrigatoria
+  check (unidade::text not like 'ml%' or densidade is not null);
 
 -- ------------------------------------------------------------
 -- 6. Realtime
@@ -156,4 +214,10 @@ select 'receita_itens ainda tem tanque (deve ser 0)', count(*)::text
  where table_schema='tsi' and table_name='receita_itens' and column_name='tanque'
 union all
 select 'policies em ordem_produtos', count(*)::text
-  from pg_policies where schemaname='tsi' and tablename='ordem_produtos';
+  from pg_policies where schemaname='tsi' and tablename='ordem_produtos'
+union all
+select 'views com security_invoker (deve ser 2)', count(*)::text
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname='tsi' and c.relkind='v'
+   and c.relname in ('v_ordem_itens_planejado','v_ordem_tanque_consumo')
+   and c.reloptions::text like '%security_invoker=true%';

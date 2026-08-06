@@ -98,7 +98,11 @@ create table produtos_quimicos (
   unidade     unidade_dose not null,
   densidade   numeric(6,3),                     -- g/ml — obrigatório quando unidade='ml/kg'
   ativo       boolean not null default true,
-  constraint dens_obrigatoria check (unidade <> 'ml/kg' or densidade is not null)
+  -- QUALQUER dose em ml precisa de densidade para virar peso de balança:
+  -- cobre ml/kg e ml/100kg (o teste antigo só citava ml/kg e deixava
+  -- ml/100kg gravar sem densidade)
+  constraint dens_obrigatoria
+    check (unidade::text not like 'ml%' or densidade is not null)
 );
 
 -- receita: NOME = código do comercial (FTZ60, V&P, DER + LMT...)
@@ -237,6 +241,42 @@ create table ordem_tanques (
   unique (ordem_id, tanque)
 );
 
+-- destino de cada produto NESTA ordem: 1–5 = tanque, 0 = transferidor.
+-- A chave (ordem, produto) garante um destino só por produto. O tanque não
+-- fica na receita porque a distribuição muda de ordem para ordem.
+create table ordem_produtos (
+  ordem_id   uuid not null references ordens(id) on delete cascade,
+  produto_id uuid not null references produtos_quimicos(id),
+  tanque     int  not null check (tanque between 0 and 5),
+  primary key (ordem_id, produto_id)
+);
+create index on ordem_produtos (ordem_id);
+
+-- cria o tanque quando passa a ser usado e remove o que ficou sem produto
+create or replace function definir_tanque_produto(
+  p_ordem uuid, p_produto uuid, p_tanque int   -- null = desfaz a escolha
+) returns void as $$
+begin
+  if (select status from tsi.ordens where id = p_ordem)
+     not in ('Nao programada','Programada') then
+    raise exception 'A ordem ja foi iniciada: a distribuicao nao pode mudar';
+  end if;
+  if p_tanque is null then
+    delete from tsi.ordem_produtos where ordem_id = p_ordem and produto_id = p_produto;
+  else
+    insert into tsi.ordem_produtos (ordem_id, produto_id, tanque)
+    values (p_ordem, p_produto, p_tanque)
+    on conflict (ordem_id, produto_id) do update set tanque = excluded.tanque;
+    insert into tsi.ordem_tanques (ordem_id, tanque)
+    values (p_ordem, p_tanque)
+    on conflict (ordem_id, tanque) do nothing;
+  end if;
+  delete from tsi.ordem_tanques t
+   where t.ordem_id = p_ordem
+     and not exists (select 1 from tsi.ordem_produtos op
+                      where op.ordem_id = p_ordem and op.tanque = t.tanque);
+end $$ language plpgsql security definer set search_path = tsi, public;
+
 create table ordem_qualidade (
   ordem_id    uuid primary key references ordens(id) on delete cascade,
   visual      qualidade_visual not null,
@@ -290,18 +330,24 @@ join lotes_semente ls on ls.id = o.lote_id
 join receitas r       on r.id = o.receita_id;
 
 -- peso de balança planejado por item de receita, para uma ordem
+-- O tanque vem da escolha do operador (ordem_produtos), não da receita.
+-- Produto ainda sem destino não aparece — igual ao domínio.
+-- O prefixo da unidade decide se usa densidade; o sufixo, a base (1 ou 100).
 create or replace view v_ordem_itens_planejado as
-select o.id as ordem_id, ri.tanque, ri.produto_id, pq.codigo, pq.nome, pq.unidade,
+select o.id as ordem_id, op.tanque, ri.produto_id, pq.codigo, pq.nome, pq.unidade,
        pq.densidade, ri.dose,
-       case when pq.unidade = 'ml/kg'
+       case when pq.unidade::text like 'ml%'
             then ri.dose * o.peso_kg * coalesce(pq.densidade,1) / 1000.0
             else ri.dose * o.peso_kg / 1000.0
-       end as peso_planejado_kg,
-       case when pq.unidade = 'ml/kg'
-            then ri.dose * o.peso_kg / 1000.0 else null
+       end / (case when pq.unidade::text like '%/100kg' then 100 else 1 end)
+         as peso_planejado_kg,
+       case when pq.unidade::text like 'ml%'
+            then ri.dose * o.peso_kg / 1000.0
+                 / (case when pq.unidade::text like '%/100kg' then 100 else 1 end)
        end as volume_planejado_l
 from v_ordens o
 join receita_itens ri on ri.receita_id = o.receita_id
+join ordem_produtos op on op.ordem_id = o.id and op.produto_id = ri.produto_id
 join produtos_quimicos pq on pq.id = ri.produto_id;
 
 -- Real vs Planejado por tanque (mistura = soma dos produtos do tanque)
@@ -526,6 +572,7 @@ alter table ordens              enable row level security;
 alter table ordem_eventos       enable row level security;
 alter table ordem_paradas       enable row level security;
 alter table ordem_tanques       enable row level security;
+alter table ordem_produtos      enable row level security;
 alter table ordem_qualidade     enable row level security;
 alter table lotes_semente       enable row level security;
 alter table pedidos_venda       enable row level security;
@@ -548,6 +595,7 @@ create policy ler_est    on estoque_pa for select using (meu_perfil() is not nul
 create policy ler_ev     on ordem_eventos for select using (meu_perfil() is not null);
 create policy ler_par    on ordem_paradas for select using (meu_perfil() is not null);
 create policy ler_tq     on ordem_tanques for select using (meu_perfil() is not null);
+create policy ler_op     on ordem_produtos for select using (meu_perfil() is not null);
 create policy ler_qual   on ordem_qualidade for select using (meu_perfil() is not null);
 create policy ler_mov    on lote_movimentos for select using (meu_perfil() is not null);
 
@@ -579,6 +627,8 @@ create policy prod_ev on ordem_eventos for insert with check (meu_perfil() in ('
 create policy prod_par on ordem_paradas for all
   using (meu_perfil() in ('Producao','Gestor')) with check (meu_perfil() in ('Producao','Gestor'));
 create policy prod_tq on ordem_tanques for all
+  using (meu_perfil() in ('Producao','Gestor')) with check (meu_perfil() in ('Producao','Gestor'));
+create policy prod_op on ordem_produtos for all
   using (meu_perfil() in ('Producao','Gestor')) with check (meu_perfil() in ('Producao','Gestor'));
 
 -- Qualidade/Gestor
