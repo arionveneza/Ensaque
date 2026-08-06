@@ -15,7 +15,7 @@ import {
   pesoQuimicoTotalKg,
   temposOrdem,
 } from '@/dominio/calculos'
-import { statusEfetivo } from '@/dominio/status'
+import { jaIniciada, statusEfetivo } from '@/dominio/status'
 import { Aviso, diaCurto, enderecoLote, rotuloTanque } from '@/componentes/ui'
 import { imprimirOrdemProducao } from '@/lib/exportar'
 
@@ -56,6 +56,12 @@ export default function ModalOrdem({
   const kg = pesoOrdemKg(ordem)
   const status = statusEfetivo(dominio, ordem.lotes_semente.status)
   const emAndamento = status === 'Em producao' || status === 'Parada'
+  /**
+   * A produção já tocou a ordem — inclui Finalizada e além. Distribuição e
+   * peso inicial travam AQUI, não em `emAndamento`: usar `emAndamento`
+   * destravava tudo de novo depois de finalizar, e a ordem virou histórico.
+   */
+  const tocada = jaIniciada(status)
   const tempos = temposOrdem(dominio, mots, agora)
 
   const consumos = useMemo(
@@ -259,7 +265,7 @@ export default function ModalOrdem({
           )}
 
           {/* -------- distribuição: o operador define o tanque de cada produto -------- */}
-          {!emAndamento && (
+          {!tocada && (
             <div className="mb-5">
               <h3 className="mb-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
                 Distribuição dos produtos
@@ -386,8 +392,9 @@ export default function ModalOrdem({
                           <td className="py-3 pr-3 text-right">
                             <PesoInput
                               valor={t.peso_inicial}
-                              // peso inicial trava assim que a produção começa
-                              travado={!podeApontar || emAndamento || ocupado}
+                              // trava assim que a produção começa e NÃO destrava
+                              // depois: ordem iniciada é registro histórico
+                              travado={!podeApontar || tocada || ocupado}
                               onSalvar={(v) => acao(() => api.salvarPesoTanque(t.id, 'peso_inicial', v))}
                             />
                           </td>
@@ -432,11 +439,17 @@ export default function ModalOrdem({
             </p>
           )}
 
-          {/* pendências que impedem confirmar */}
-          {ordem.ordem_tanques.length > 0 && !emAndamento && !podeConfirmarInicio && (
+          {/* pendências que impedem confirmar — só antes de iniciar */}
+          {!tocada && !podeConfirmarInicio && (
             <div className="mt-4 rounded-md bg-stone-50 px-4 py-3 text-sm text-stone-600 dark:bg-stone-800/50 dark:text-stone-300">
               <p className="font-medium">Para confirmar o início falta:</p>
               <ul className="mt-1 list-inside list-disc">
+                {semDestino.length > 0 && (
+                  <li>
+                    Tanque de{' '}
+                    {semDestino.map((i) => prods.get(i.produto_id)?.nome ?? i.produto_id).join(', ')}
+                  </li>
+                )}
                 {semPesoInicial.length > 0 && (
                   <li>
                     Peso inicial em {semPesoInicial.map((t) => rotuloTanque(t.tanque)).join(', ')}

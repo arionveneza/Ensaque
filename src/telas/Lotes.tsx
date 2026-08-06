@@ -100,6 +100,10 @@ export default function Lotes() {
   const aBaixar = agregado.filter((a) => a.lote.status === 'Em estoque' && a.abertas.length > 0)
   const orfaos = agregado.filter((a) => a.orfao)
   const criticos = agregado.filter((a) => a.critico)
+  // Baixado e AINDA com ordem: some das duas listas acima, e era o único
+  // caminho para desfazer uma baixa errada — sem isto o lote baixado por
+  // engano ficava invisível, sem botão de estorno em lugar nenhum.
+  const baixados = agregado.filter((a) => a.lote.status === 'Baixado' && !a.orfao)
 
   // etapa da logística: conferir fisicamente o estoque das finalizadas
   const FINALIZADAS = ['Finalizada', 'Qualidade apontada', 'Apontada']
@@ -197,6 +201,58 @@ export default function Lotes() {
                         onClick={() =>
                           comErro(() => g.estornarLote(a.lote.id, a.lote.bags_disp ?? 0))
                         }
+                      >
+                        Estornar
+                      </Botao>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </Tabela>
+        </Cartao>
+      )}
+
+      {/* -------- baixados, para desfazer baixa errada -------- */}
+      {baixados.length > 0 && (
+        <Cartao titulo={`Baixados (${baixados.length})`} className="mb-6">
+          <p className="mb-3 text-sm text-stone-500">
+            Lotes já liberados para a produção. O <b>estorno</b> desfaz uma baixa feita por
+            engano — só enquanto <b>nenhuma</b> ordem do lote tiver sido iniciada; depois disso
+            o lote já virou consumo e o histórico não se desfaz.
+          </p>
+          <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Ordens', '']}>
+            {baixados.map((a) => {
+              const permissao = podeEstornarLote(
+                a.dependentes.map((o) => ({ status: o.status_efetivo as StatusEfetivo })),
+              )
+              return (
+                <tr key={a.lote.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                  <td className="px-2 py-2 font-medium">{a.lote.id}</td>
+                  <td className="px-2 py-2">{a.lote.cultivar}</td>
+                  <td className="num-tabular px-2 py-2 text-right">
+                    {n(a.lote.peso_bag_kg, 0)} kg
+                  </td>
+                  <td className="px-2 py-2 text-xs text-stone-500">
+                    {a.dependentes.length} ordem(ns)
+                    {a.abertas.length < a.dependentes.length && (
+                      <span className="ml-1">
+                        <Tag cor="neutro">
+                          {a.dependentes.length - a.abertas.length} já iniciada(s)
+                        </Tag>
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    {podeBaixar && (
+                      <Botao
+                        variante="perigo"
+                        disabled={!permissao.permitido}
+                        titulo={permissao.motivo}
+                        onClick={() => {
+                          if (!confirm(`Estornar a baixa do lote ${a.lote.id}?`)) return
+                          comErro(() => g.estornarLote(a.lote.id, a.lote.bags_disp ?? 0))
+                        }}
                       >
                         Estornar
                       </Botao>

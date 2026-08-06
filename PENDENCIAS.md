@@ -144,6 +144,17 @@ throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo
 parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no
 `visibilitychange`/`focus` — ao criar outra tela com cronômetro, repetir o padrão.
 
+**Coluna nova em `ordens` precisa entrar em `fn_ordens_por_acao`.** O gatilho tem a lista
+`ignorar` com as colunas cobertas por checagem específica; o que sobra cai na regra final e
+exige `ordens/editar`. Em 06/08/2026 `bags_produzidos` nasceu sem entrar na lista e
+**finalizar ordem virou ação de administrador** — a Produção parou de conseguir fechar
+ordem, com a mensagem "Editar a ordem exige a acao Editar". Ao acrescentar coluna em
+`ordens`, decidir a qual ação ela pertence e colocá-la nos dois lugares.
+
+**Trava de edição usa `jaIniciada`, não `emAndamento`.** `emAndamento` é só
+`Em producao`/`Parada` — usá-lo para travar destrava tudo de novo quando a ordem chega em
+`Finalizada`. Foi o que deixou mudar tanque e peso inicial de ordem já produzida.
+
 **Validação de início só vale na transição de início.** `fn_valida_inicio` dispara em
 `before update on ordens`, e `Em producao` é alcançado por TRÊS caminhos: `confirmar_inicio`
 (de `Nao programada`/`Programada`), `retomar_producao` (de `Parada`) e `voltar_para_producao`.
