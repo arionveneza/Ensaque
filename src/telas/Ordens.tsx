@@ -233,7 +233,12 @@ export default function Ordens() {
               exportarXlsx(
                 'ordens',
                 [
-                  { titulo: 'Dia', largura: 12 }, { titulo: 'Máquina', largura: 10 },
+                  { titulo: 'Dia', largura: 12 },
+                  // o dia original e a contagem respondem "para quando isto
+                  // estava programado?" depois de uma cascata
+                  { titulo: 'Dia original', largura: 12 },
+                  { titulo: 'Reprogramada', largura: 12, tipo: 'numero', casas: 0 },
+                  { titulo: 'Máquina', largura: 10 },
                   { titulo: 'Seq', largura: 6, tipo: 'numero', casas: 0 },
                   { titulo: 'Ordem', largura: 14 }, { titulo: 'Cultivar', largura: 18 },
                   { titulo: 'Tratamento', largura: 20 }, { titulo: 'Embalagem', largura: 12 },
@@ -245,7 +250,10 @@ export default function Ordens() {
                   { titulo: 'Cliente', largura: 28 }, { titulo: 'Status', largura: 20 },
                 ],
                 filtradas.map((o) => [
-                  o.data_prog ?? '', o.maquina_id ?? '', o.seq, o.numero, o.cultivar,
+                  o.data_prog ?? '',
+                  o.data_prog_original ?? '',
+                  o.reprogramacoes ?? 0,
+                  o.maquina_id ?? '', o.seq, o.numero, o.cultivar,
                   o.receita_nome, o.embalagem, o.lote_id,
                   o.armazem ?? '', o.bloco ?? '', o.quadra ?? '',
                   o.bags, o.peso_t, o.cliente ?? '', o.status_efetivo,
@@ -1006,6 +1014,14 @@ function FragmentoDia({
             <td className="px-2 py-1.5 font-medium">
               {o.numero}
               {o.prioridade === 'Urgente' && <span className="ml-1"><Tag cor="perigo">urgente</Tag></span>}
+              {!!o.reprogramacoes && o.reprogramacoes > 0 && (
+                <span
+                  className="ml-1 cursor-help text-[10px] font-normal text-amber-700 dark:text-amber-400"
+                  title={`Reprogramada ${o.reprogramacoes}× — estava para ${diaCurto(o.data_prog_original ?? null)}`}
+                >
+                  ↷{o.reprogramacoes}
+                </span>
+              )}
             </td>
             <td className="px-2 py-1.5">{o.cultivar}</td>
             <td className="px-2 py-1.5">{o.receita_nome}</td>

@@ -40,6 +40,11 @@ export interface OrdemVisao {
   agrotis_num: string | null
   /** Informado pela produção ao confirmar a finalização. */
   bags_produzidos: number | null
+  /** Primeiro dia em que a ordem foi programada — não muda depois. */
+  data_prog_original?: string | null
+  /** Quantas vezes mudou de dia. */
+  reprogramacoes?: number | null
+  reprogramada_em?: string | null
 }
 
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
@@ -186,43 +191,54 @@ export async function aplicarAtribuicoes(
 // Calendário — turnos de cada dia
 // ================================================================
 
-/** Uma exceção do calendário. Dia sem linha aqui roda os 2 turnos. */
+/** Uma exceção do calendário. Dia sem linha aqui roda os dois turnos. */
 export interface DiaProducao {
   data: string
-  turnos: number
+  turno1: boolean
+  turno2: boolean
   observacao: string | null
 }
 
 /**
- * Só as exceções, no período pedido. Devolve lista vazia — em vez de
- * estourar — se a tabela ainda não existir no banco: o front vai ao ar antes
- * do SQL, e a Programação inteira não pode depender disso para abrir.
+ * Só as exceções, no período pedido.
+ *
+ * Duas tolerâncias de propósito: devolve lista vazia se a tabela ainda não
+ * existir (o front vai ao ar antes do SQL, e a Programação não pode depender
+ * disso para abrir) e entende o formato antigo, em que a coluna guardava a
+ * QUANTIDADE de turnos em vez de quais — assim a tela funciona na janela
+ * entre publicar o front e rodar a migração.
  */
 export async function listarDiasProducao(de: string, ate: string): Promise<DiaProducao[]> {
   const { data, error } = await supabase
     .from('dias_producao')
-    .select('data, turnos, observacao')
+    .select('*')
     .gte('data', de)
     .lte('data', ate)
   if (error) {
     if (error.code === '42P01' || error.message.includes('dias_producao')) return []
     erro('calendário de turnos', error)
   }
-  return (data ?? []) as DiaProducao[]
+  return (data ?? []).map((d: Record<string, unknown>) => ({
+    data: d.data as string,
+    turno1: 'turno1' in d ? Boolean(d.turno1) : Number(d.turnos ?? 2) >= 1,
+    turno2: 'turno2' in d ? Boolean(d.turno2) : Number(d.turnos ?? 2) >= 2,
+    observacao: (d.observacao as string) ?? null,
+  }))
 }
 
 /**
- * Define quantos turnos um dia roda. Dois turnos é o padrão, então marcar
- * um dia como 2 APAGA a exceção em vez de gravá-la — o calendário guarda só
+ * Define quais turnos um dia roda. Rodar os dois é o padrão, então marcar
+ * um dia assim APAGA a exceção em vez de gravá-la — o calendário guarda só
  * o que foge da regra e não vira um registro por dia do ano.
  */
 export async function definirTurnosDoDia(
   data: string,
-  turnos: number,
+  turno1: boolean,
+  turno2: boolean,
   usuarioId: string,
   observacao?: string | null,
 ): Promise<void> {
-  if (turnos === 2 && !observacao) {
+  if (turno1 && turno2 && !observacao) {
     const { error } = await supabase.from('dias_producao').delete().eq('data', data)
     erro('limpar turnos do dia', error)
     return
@@ -230,7 +246,8 @@ export async function definirTurnosDoDia(
   const { error } = await supabase.from('dias_producao').upsert(
     {
       data,
-      turnos,
+      turno1,
+      turno2,
       observacao: observacao ?? null,
       alterado_em: new Date().toISOString(),
       alterado_por: usuarioId,
@@ -238,6 +255,31 @@ export async function definirTurnosDoDia(
     { onConflict: 'data' },
   )
   erro('definir turnos do dia', error)
+}
+
+/** Histórico de mudanças de dia/máquina de uma ordem. */
+export interface ReprogramacaoLinha {
+  id: string
+  ordem_id: string
+  de_dia: string | null
+  para_dia: string | null
+  de_maquina: string | null
+  para_maquina: string | null
+  ts: string
+}
+
+export async function listarReprogramacoes(ordemId?: string): Promise<ReprogramacaoLinha[]> {
+  let q = supabase
+    .from('ordem_reprogramacoes')
+    .select('id, ordem_id, de_dia, para_dia, de_maquina, para_maquina, ts')
+    .order('ts', { ascending: false })
+  if (ordemId) q = q.eq('ordem_id', ordemId)
+  const { data, error } = await q.limit(500)
+  if (error) {
+    if (error.code === '42P01' || error.message.includes('ordem_reprogramacoes')) return []
+    erro('histórico de reprogramação', error)
+  }
+  return (data ?? []) as ReprogramacaoLinha[]
 }
 
 // ================================================================

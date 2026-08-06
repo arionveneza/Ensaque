@@ -35,11 +35,13 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 - **Dia de produção** = 07:30 até 03:00 do dia seguinte. O turno 2 cruza a meia-noite e pertence
   ao dia que começou.
 - Capacidade/dia por máquina = 12 t/h × 19,5 h = **234 t**.
-- **Quantos turnos cada dia roda é do calendário** (decisão de 06/08/2026): nem todo dia tem os
-  dois. A tabela `dias_producao` guarda **só a exceção** — dia sem linha roda 2 turnos (234 t);
-  `turnos = 1` vale 10 h (120 t) e `turnos = 0` é dia sem produção, que não recebe programação.
-  Sem isso um sábado de um turno só aparecia com metade da ocupação real e a programação
-  automática enfiava ordem que não caberia. Editável na linha **Turnos** do plano semanal.
+- **Quais turnos cada dia roda é do calendário** (decisão de 06/08/2026): nem todo dia tem os
+  dois, e importa saber **qual** — só 1º são 10 h (120 t), só 2º são 9h30 (114 t). A tabela
+  `dias_producao` (`turno1`/`turno2` booleanos) guarda **só a exceção**: dia sem linha roda os
+  dois (234 t). Nenhum dos dois = sem produção, e o dia não recebe programação. Sem isso um
+  sábado de um turno só aparecia com metade da ocupação real e a programação automática
+  enfiava ordem que não caberia. Editável na linha **Turnos** do plano semanal; o cadastro de
+  máquinas mostra a capacidade de cada turno e a do dia.
 
 ### Embalagens
 | Código app | Código comercial (SimpleAgro) | Sementes | Fator peso |
@@ -188,10 +190,19 @@ que compactar bem (decisão de 06/08/2026):
 - **A fila não fura** — quando uma ordem não cabe no dia, as seguintes esperam junto; não se
   procura uma menor para preencher o buraco. Sequência é compromisso, não jogo de encaixe.
 
-Ordem já iniciada não se move e continua ocupando capacidade e numeração do dia dela; dia de 0
-turnos não recebe nada e devolve o que tinha para a fila. Ordem maior que um dia inteiro é
+Ordem já iniciada não se move e continua ocupando capacidade e numeração do dia dela; dia sem
+turno não recebe nada e devolve o que tinha para a fila. Ordem maior que um dia inteiro é
 alocada mesmo assim, sinalizada — senão travaria a cascata para sempre. **Sempre com prévia
 antes de gravar**: mexe em dezenas de ordens de uma vez.
+
+### Histórico de reprogramação
+Mudar o dia de uma ordem **não apaga de onde ela veio** (decisão de 06/08/2026 — antes
+apagava). `ordens.data_prog_original` guarda o primeiro dia programado e nunca muda;
+`reprogramacoes` conta quantas vezes o dia mudou; a tabela `ordem_reprogramacoes` registra
+cada movimento (de/para dia, de/para máquina, quem e quando), inclusive as mudanças que são só
+de máquina. Tudo por gatilho no banco — não dá para reprogramar por fora e escapar do
+registro. Aparece no relatório de ordens (colunas *Dia original* e *Reprogramada*) e na marca
+`↷n` ao lado do número da ordem.
 
 ### Balanço de demanda (por cultivar + tratamento + embalagem)
 ```

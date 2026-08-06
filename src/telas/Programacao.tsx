@@ -11,8 +11,10 @@ import {
   otimizarSequencia,
   rebalancearDia,
   reprogramarCascata,
+  rotuloTurnos,
   type CapacidadeDia,
   type OrdemProgramavel,
+  type TurnosDoDia,
 } from '@/dominio/programacao'
 import { useRealtime } from '@/dados/useRealtime'
 import { jaIniciada } from '@/dominio/status'
@@ -27,11 +29,15 @@ const HORAS_TURNOS = [10, 9.5]
 /** Até onde a cascata pode empurrar. */
 const DIAS_CASCATA = 30
 
-const ROTULO_TURNOS: Record<number, string> = {
-  2: '2 turnos',
-  1: '1 turno',
-  0: 'sem produção',
-}
+/** As quatro combinações possíveis, com o código que vai no `select`. */
+const OPCOES_TURNO: { valor: string; rotulo: string; turnos: TurnosDoDia }[] = [
+  { valor: '12', rotulo: '1º e 2º turno', turnos: { t1: true, t2: true } },
+  { valor: '1', rotulo: 'só 1º turno', turnos: { t1: true, t2: false } },
+  { valor: '2', rotulo: 'só 2º turno', turnos: { t1: false, t2: true } },
+  { valor: '0', rotulo: 'sem produção', turnos: { t1: false, t2: false } },
+]
+
+const codigoTurnos = (t: TurnosDoDia) => `${t.t1 ? '1' : ''}${t.t2 ? '2' : ''}` || '0'
 
 /** Onde a ordem arrastada vai cair: célula e posição na fila (null = no fim). */
 type Alvo = { maq: string; dia: string; pos: number | null } | null
@@ -111,7 +117,10 @@ export default function Programacao() {
 
   /** Turnos que o dia roda. Sem exceção cadastrada, roda os dois. */
   const turnosDoDia = useCallback(
-    (dia: string) => calendario.find((c) => c.data === dia)?.turnos ?? 2,
+    (dia: string): TurnosDoDia => {
+      const c = calendario.find((x) => x.data === dia)
+      return c ? { t1: c.turno1, t2: c.turno2 } : { t1: true, t2: true }
+    },
     [calendario],
   )
 
@@ -467,30 +476,36 @@ export default function Programacao() {
                 </td>
                 {dias.map((d) => {
                   const t = turnosDoDia(d)
+                  const cheio = t.t1 && t.t2
                   return (
                     <td key={d} className="px-1 py-1.5 text-center">
                       {podeProgramar ? (
                         <select
-                          value={t}
-                          onChange={(e) =>
+                          value={codigoTurnos(t)}
+                          onChange={(e) => {
+                            const op = OPCOES_TURNO.find((x) => x.valor === e.target.value)!
                             comErro(() =>
-                              g.definirTurnosDoDia(d, Number(e.target.value), usuario!.id),
+                              g.definirTurnosDoDia(d, op.turnos.t1, op.turnos.t2, usuario!.id),
                             )
-                          }
-                          title="Quantos turnos esta máquina roda neste dia — muda a capacidade e a ocupação"
+                          }}
+                          title="Quais turnos rodam neste dia — 1º tem 10 h, 2º tem 9h30, e isso muda a capacidade"
                           className={`w-full rounded border px-1 py-1 text-xs dark:bg-stone-800 ${
-                            t === 2
+                            cheio
                               ? 'border-stone-200 text-stone-500 dark:border-stone-700'
                               : 'border-amber-400 font-medium text-amber-700 dark:border-amber-700 dark:text-amber-400'
                           }`}
                         >
-                          <option value={2}>2 turnos</option>
-                          <option value={1}>1 turno</option>
-                          <option value={0}>sem produção</option>
+                          {OPCOES_TURNO.map((op) => (
+                            <option key={op.valor} value={op.valor}>
+                              {op.rotulo}
+                            </option>
+                          ))}
                         </select>
                       ) : (
-                        <span className={`text-xs ${t === 2 ? 'text-stone-400' : 'font-medium text-amber-700 dark:text-amber-400'}`}>
-                          {ROTULO_TURNOS[t]}
+                        <span
+                          className={`text-xs ${cheio ? 'text-stone-400' : 'font-medium text-amber-700 dark:text-amber-400'}`}
+                        >
+                          {rotuloTurnos(t)}
                         </span>
                       )}
                     </td>
@@ -550,7 +565,7 @@ export default function Programacao() {
                 ) : (
                   <>
                     {n(o.ton, 1)} t de {n(o.cap, 0)} t · {n(o.pct, 0)}% de ocupação ·{' '}
-                    {ROTULO_TURNOS[turnosDoDia(diaSel)]}
+                    {rotuloTurnos(turnosDoDia(diaSel))}
                   </>
                 )}
               </p>
@@ -868,7 +883,8 @@ function PreviaCascata({
           <h2 className="text-base font-semibold">Reprogramar em cascata</h2>
           <p className="mt-0.5 text-sm text-stone-500">
             {resultado.movimentos.length} ordem(ns) mudam de lugar a partir de{' '}
-            {diaCurto(apartirDe)}. Ordens já iniciadas ficam onde estão.
+            {diaCurto(apartirDe)}. Ordens já iniciadas ficam onde estão. O dia em que cada uma
+            estava programada continua guardado — aparece no relatório de ordens.
           </p>
         </header>
 

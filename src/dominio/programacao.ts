@@ -41,9 +41,27 @@ const capacidadeFixa =
   (id) =>
     maquinas.find((m) => m.id === id)?.capacidadeDiaT ?? 0
 
-/** Horas de operação de um dia com `turnos` turnos (0, 1 ou 2). */
-export function horasDoDia(turnos: number, horasPorTurno: readonly number[]): number {
-  return horasPorTurno.slice(0, Math.max(0, turnos)).reduce((a, h) => a + h, 0)
+/**
+ * Quais turnos um dia roda. Importa saber QUAL, não quantos: um dia só de
+ * 2º turno tem 9h30, um só de 1º tem 10h — capacidades diferentes.
+ */
+export interface TurnosDoDia {
+  t1: boolean
+  t2: boolean
+}
+
+export const DIA_CHEIO: TurnosDoDia = { t1: true, t2: true }
+
+/** Horas de operação de um dia, somando só os turnos que ele roda. */
+export function horasDoDia(turnos: TurnosDoDia, horasPorTurno: readonly number[]): number {
+  return (turnos.t1 ? (horasPorTurno[0] ?? 0) : 0) + (turnos.t2 ? (horasPorTurno[1] ?? 0) : 0)
+}
+
+export function rotuloTurnos(t: TurnosDoDia): string {
+  if (t.t1 && t.t2) return '1º e 2º turno'
+  if (t.t1) return 'só 1º turno'
+  if (t.t2) return 'só 2º turno'
+  return 'sem produção'
 }
 
 /** Número de trocas de receita numa sequência — proxy direto de setups. */

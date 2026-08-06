@@ -221,9 +221,11 @@ describe('rebalancear o dia', () => {
 
 describe('horas do dia por turnos', () => {
   const H = [10, 9.5]
-  it('dois turnos somam 19,5 h', () => expect(horasDoDia(2, H)).toBe(19.5))
-  it('um turno é só o primeiro', () => expect(horasDoDia(1, H)).toBe(10))
-  it('sem turno não produz', () => expect(horasDoDia(0, H)).toBe(0))
+  it('os dois turnos somam 19,5 h', () => expect(horasDoDia({ t1: true, t2: true }, H)).toBe(19.5))
+  it('só o 1º turno tem 10 h', () => expect(horasDoDia({ t1: true, t2: false }, H)).toBe(10))
+  // o que distingue este modelo do anterior, que só contava quantos turnos
+  it('só o 2º turno tem 9,5 h', () => expect(horasDoDia({ t1: false, t2: true }, H)).toBe(9.5))
+  it('sem turno não produz', () => expect(horasDoDia({ t1: false, t2: false }, H)).toBe(0))
 })
 
 describe('reprogramar em cascata', () => {

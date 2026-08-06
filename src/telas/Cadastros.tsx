@@ -744,17 +744,29 @@ function AbaMaquinas({
   acao: Acao
 }) {
   const horas = turnos.map((t) => Number(t.horas))
+  // a capacidade de cada turno é a coluna que o PCP usa quando o dia roda um
+  // turno só — a soma sozinha não dizia quanto rende um sábado de 1º turno
+  const cabecalho = [
+    'Máquina',
+    '#Capacidade (t/h)',
+    '#Tanques',
+    ...turnos.map((t) => `#${t.nome} (${n(Number(t.horas), 1)} h)`),
+    '#Cap. dia',
+    '',
+  ]
   return (
     <>
       <Cartao titulo="Máquinas e capacidade" className="mb-5">
-        <Tabela cabecalho={['Máquina', '#Capacidade (t/h)', '#Tanques', '#Cap. dia', '']}>
+        <Tabela cabecalho={cabecalho}>
           {maquinas.map((m) => (
             <LinhaMaquinaEdit key={m.id} maquina={m} horas={horas} podeEditar={podeEditar} acao={acao} />
           ))}
         </Tabela>
         <p className="mt-3 text-xs text-stone-500">
-          A capacidade do dia é a capacidade horária multiplicada pelas horas dos dois turnos.
-          Mudá-la altera o cálculo de ocupação e o tempo planejado de toda ordem futura.
+          A capacidade de cada turno é a capacidade horária multiplicada pelas horas daquele
+          turno; a do dia é a soma dos dois. Um dia que roda um turno só rende apenas a coluna
+          correspondente — quais turnos cada dia roda é definido na tela de Programação.
+          Mudar a capacidade horária altera a ocupação e o tempo planejado de toda ordem futura.
         </p>
       </Cartao>
 
@@ -792,6 +804,11 @@ function LinhaMaquinaEdit({
         <td className="px-2 py-2 font-medium">{maquina.nome}</td>
         <td className="num-tabular px-2 py-2 text-right">{n(maquina.capacidade_th, 1)}</td>
         <td className="num-tabular px-2 py-2 text-right">{maquina.qtd_tanques}</td>
+        {horas.map((h, i) => (
+          <td key={i} className="num-tabular px-2 py-2 text-right text-stone-600 dark:text-stone-300">
+            {n(maquina.capacidade_th * h, 0)} t
+          </td>
+        ))}
         <td className="num-tabular px-2 py-2 text-right font-semibold">
           {n(capacidadeDiaT(maquina.capacidade_th, horas), 0)} t
         </td>
@@ -806,6 +823,9 @@ function LinhaMaquinaEdit({
       <td className="px-2 py-2"><input value={nome} onChange={(e) => setNome(e.target.value)} className={`${INPUT} w-28`} /></td>
       <td className="px-2 py-2 text-right"><input value={cap} onChange={(e) => setCap(e.target.value)} className={`${INPUT} w-20 text-right`} /></td>
       <td className="px-2 py-2 text-right"><input value={tanques} onChange={(e) => setTanques(e.target.value)} className={`${INPUT} w-16 text-right`} /></td>
+      {horas.map((_, i) => (
+        <td key={i} />
+      ))}
       <td />
       <td className="px-2 py-2 text-right whitespace-nowrap">
         <button
