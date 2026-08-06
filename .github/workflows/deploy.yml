@@ -32,9 +32,12 @@ on:
 permissions:
   contents: write
 
-# um deploy por vez; não cancela o que já está publicando
+# Um build por vez. O nome NÃO pode ser "pages": esse grupo é o mesmo que o
+# workflow interno "pages build and deployment" usa, e grupos de concorrência
+# valem para o repositório inteiro — em 06/08/2026 os dois disputaram o grupo
+# e o GitHub cancelou este run antes de ele começar.
 concurrency:
-  group: pages
+  group: build-tsi
   cancel-in-progress: false
 
 jobs:

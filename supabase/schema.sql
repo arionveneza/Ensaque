@@ -117,9 +117,8 @@ create table receita_itens (
   receita_id  uuid not null references receitas(id) on delete cascade,
   produto_id  uuid not null references produtos_quimicos(id),
   dose        numeric(8,4) not null,
-  -- 1–5 = tanque; 0 = TRANSFERIDOR (pó secante, que nunca vai em tanque).
-  -- >1 produto no mesmo destino = MISTURA
-  tanque      int not null check (tanque between 0 and 5),
+  -- o TANQUE não está aqui de propósito: a distribuição varia de ordem para
+  -- ordem, então quem informa é o operador (ver ordem_produtos)
   unique (receita_id, produto_id)
 );
 
@@ -253,10 +252,17 @@ create table ordem_produtos (
 create index on ordem_produtos (ordem_id);
 
 -- cria o tanque quando passa a ser usado e remove o que ficou sem produto
+-- SECURITY DEFINER precisa de guarda própria, senão qualquer perfil chama a
+-- RPC direto e mexe na distribuição. Aqui o teste é por perfil porque
+-- schema.sql roda antes de matriz-permissoes-no-banco.sql, que é quem cria
+-- tem_acao — esse script depois substitui esta função pela versão definitiva.
 create or replace function definir_tanque_produto(
   p_ordem uuid, p_produto uuid, p_tanque int   -- null = desfaz a escolha
 ) returns void as $$
 begin
+  if meu_perfil() not in ('Producao','Gestor') then
+    raise exception 'Perfil sem permissao para apontar producao';
+  end if;
   if (select status from tsi.ordens where id = p_ordem)
      not in ('Nao programada','Programada') then
     raise exception 'A ordem ja foi iniciada: a distribuicao nao pode mudar';
@@ -271,8 +277,11 @@ begin
     values (p_ordem, p_tanque)
     on conflict (ordem_id, tanque) do nothing;
   end if;
+  -- tanque sem produto sai, MENOS se já tem peso digitado: leitura de
+  -- balança é dado do operador, não some como efeito colateral
   delete from tsi.ordem_tanques t
    where t.ordem_id = p_ordem
+     and t.peso_inicial is null and t.peso_final is null
      and not exists (select 1 from tsi.ordem_produtos op
                       where op.ordem_id = p_ordem and op.tanque = t.tanque);
 end $$ language plpgsql security definer set search_path = tsi, public;
@@ -456,12 +465,25 @@ create unique index ordem_unica_por_maquina
   on ordens (maquina_id)
   where status in ('Em producao','Parada');
 
--- não iniciar sem peso inicial em todos os tanques e sem o lote de semente
--- baixado (o controle de lote de QUÍMICO saiu do escopo em 05/08/2026)
+-- Não iniciar sem a distribuição definida, sem peso inicial em todos os
+-- tanques e sem o lote de semente baixado. (Lote de QUÍMICO saiu do escopo
+-- em 05/08/2026.)
+--
+-- O `in ('Nao programada','Programada')` é essencial: é de onde o
+-- confirmar_inicio sobe. Testar `<> 'Em producao'` pegaria também o
+-- retomar_producao (vem de 'Parada') e o voltar_para_producao, travando
+-- ordem já em andamento numa exigência que só faz sentido no início.
 create or replace function fn_valida_inicio() returns trigger as $$
 declare falta int;
 begin
-  if new.status = 'Em producao' and old.status <> 'Em producao' then
+  if new.status = 'Em producao' and old.status in ('Nao programada','Programada') then
+    select count(*) into falta
+      from receita_itens ri
+     where ri.receita_id = new.receita_id
+       and not exists (select 1 from ordem_produtos op
+                        where op.ordem_id = new.id and op.produto_id = ri.produto_id);
+    if falta > 0 then raise exception 'Falta definir o tanque de % produto(s)', falta; end if;
+
     select count(*) into falta from ordem_tanques t
       where t.ordem_id = new.id and t.peso_inicial is null;
     if falta > 0 then raise exception 'Peso inicial pendente em % tanque(s)', falta; end if;

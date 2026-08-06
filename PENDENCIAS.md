@@ -67,7 +67,11 @@ Nenhuma é problema de código; todas dependem de definição da operação.
   transacionais e os triggers de 05/08/2026 vivem nos scripts `baixa-atomica-*`,
   `matriz-permissoes-*`, `quantidade-produzida` e `exclusao-exige-ordem-virgem` (a ordem de
   aplicação é essa). O schema.sql recebeu só as partes estruturais (colunas, triggers de
-  validação). Um dia vale consolidar tudo nele; até lá, banco novo = schema.sql + os 4 scripts.
+  validação). Um dia vale consolidar tudo nele; até lá, **banco novo = schema.sql + estes
+  5 scripts, nesta ordem**: `matriz-permissoes-no-banco` → `baixa-atomica-e-rls-apontamento`
+  → `quantidade-produzida` → `exclusao-exige-ordem-virgem` → `tanque-por-ordem`.
+  Cuidado ao reaplicar `schema.sql` sobre banco existente: as funções são `create or
+  replace`, então ele **rebaixa** as versões que os scripts depois melhoraram.
 - **Status `Cancelada` (anular ordem que já produziu) não existe.** Excluir agora é só para
   ordem virgem; se a operação precisar tirar da programação uma ordem com história (refugo,
   erro grave), o caminho seria um status que preserva tempos/consumos/qualidade fora do
@@ -124,6 +128,19 @@ cliente, por serem informativos e não entrarem em cálculo de duração: `ordem
 throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo decorrido
 parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no
 `visibilitychange`/`focus` — ao criar outra tela com cronômetro, repetir o padrão.
+
+**Validação de início só vale na transição de início.** `fn_valida_inicio` dispara em
+`before update on ordens`, e `Em producao` é alcançado por TRÊS caminhos: `confirmar_inicio`
+(de `Nao programada`/`Programada`), `retomar_producao` (de `Parada`) e `voltar_para_producao`.
+Testar `old.status <> 'Em producao'` pega os três — em 06/08/2026 isso travou o retomar de
+ordem em andamento que não tinha `ordem_produtos`, e a única saída pela tela seria o Cancelar
+início, que apaga tempo e testes de qualidade. Sempre escopar com
+`old.status in ('Nao programada','Programada')`.
+
+**Leitura de balança não some como efeito colateral.** `definir_tanque_produto` remove o
+tanque que ficou sem produto, mas nunca um que já tenha `peso_inicial`/`peso_final` — o
+operador digitou aquilo olhando a balança. Vale a regra geral: apagar dado apontado só por
+ação explícita de quem apontou.
 
 **O tanque é da ORDEM, não da receita** (06/08/2026). `receita_itens` tem só produto e dose; o
 destino de cada produto fica em `ordem_produtos`, escolhido pelo operador ao preparar. Não

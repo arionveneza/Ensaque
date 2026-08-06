@@ -252,8 +252,8 @@ export default function ModalOrdem({
                 <b>Distribuição não registrada.</b> Esta ordem começou antes de o tanque passar
                 a ser informado por ordem, então não se sabe qual produto foi em qual tanque —
                 por isso o planejado aparece zerado abaixo. Os pesos apontados continuam
-                válidos e a ordem pode ser finalizada normalmente; só a comparação Real vs
-                Planejado não fecha nesta.
+                válidos; parar, retomar e finalizar funcionam normalmente. Só a comparação
+                Real vs Planejado não fecha nesta ordem.
               </Aviso>
             </div>
           )}

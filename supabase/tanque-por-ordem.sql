@@ -71,10 +71,12 @@ begin
     on conflict (ordem_id, tanque) do nothing;
   end if;
 
-  -- tanque que ficou sem produto deixa de existir (leva junto a pesagem
-  -- porventura digitada nele — sem produto não há o que pesar)
+  -- tanque que ficou sem produto sai — MENOS se já tem peso digitado.
+  -- Leitura de balança é dado do operador: some só se ele apagar.
   delete from tsi.ordem_tanques t
    where t.ordem_id = p_ordem
+     and t.peso_inicial is null
+     and t.peso_final is null
      and not exists (
        select 1 from tsi.ordem_produtos op
         where op.ordem_id = p_ordem and op.tanque = t.tanque);
@@ -84,10 +86,13 @@ end $$ language plpgsql security definer set search_path = tsi, public;
 -- 3. Não iniciar sem TODOS os produtos com destino definido.
 -- Mantém as checagens que já existiam (peso inicial, lote baixado).
 -- ------------------------------------------------------------
+-- O `in ('Nao programada','Programada')` é essencial: é de onde o
+-- confirmar_inicio sobe. Testar `<> 'Em producao'` pegaria também o
+-- retomar_producao (vem de 'Parada'), travando ordem em andamento.
 create or replace function fn_valida_inicio() returns trigger as $$
 declare falta int;
 begin
-  if new.status = 'Em producao' and old.status <> 'Em producao' then
+  if new.status = 'Em producao' and old.status in ('Nao programada','Programada') then
     select count(*) into falta
       from receita_itens ri
      where ri.receita_id = new.receita_id
