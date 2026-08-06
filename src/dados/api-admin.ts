@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { Perfil, TipoParada, UnidadeDose } from '@/dominio/tipos'
+import type { ClasseAgronomica, Perfil, TipoParada, UnidadeDose } from '@/dominio/tipos'
 
 /**
  * Edição de cadastros e administração de perfis.
@@ -73,6 +73,29 @@ export interface ProdutoEdicao {
   unidade: UnidadeDose
   densidade: number | null
   ativo?: boolean
+  /** Princípios ativos: substituição total a cada gravação. */
+  principios?: PrincipioEdicao[]
+}
+
+export interface PrincipioEdicao {
+  nome: string
+  concentracao: number | null
+  unidade_conc: 'g/L' | 'g/kg' | '%'
+  classe: ClasseAgronomica
+}
+
+export interface PrincipioLinha extends PrincipioEdicao {
+  id: string
+  produto_id: string
+}
+
+export async function listarPrincipios(): Promise<PrincipioLinha[]> {
+  const { data, error } = await supabase
+    .from('produto_principios')
+    .select('id, produto_id, nome, concentracao, unidade_conc, classe')
+    .order('nome')
+  erro('princípios ativos', error)
+  return (data ?? []) as PrincipioLinha[]
 }
 
 export async function salvarProduto(p: ProdutoEdicao): Promise<void> {
@@ -92,10 +115,42 @@ export async function salvarProduto(p: ProdutoEdicao): Promise<void> {
     densidade: emMl ? p.densidade : null,
     ativo: p.ativo ?? true,
   }
-  const { error } = p.id
-    ? await supabase.from('produtos_quimicos').update(registro).eq('id', p.id)
-    : await supabase.from('produtos_quimicos').insert(registro)
-  erro('salvar produto químico', error)
+  let id = p.id
+  if (id) {
+    const up = await supabase.from('produtos_quimicos').update(registro).eq('id', id)
+    erro('salvar produto químico', up.error)
+  } else {
+    const ins = await supabase
+      .from('produtos_quimicos')
+      .insert(registro)
+      .select('id')
+      .single()
+    erro('criar produto químico', ins.error)
+    id = (ins.data as { id: string }).id
+  }
+
+  // princípios ativos: substituição total, como nos itens da receita —
+  // é mais simples e não deixa órfão de edição anterior
+  if (p.principios) {
+    const del = await supabase.from('produto_principios').delete().eq('produto_id', id)
+    erro('limpar princípios ativos', del.error)
+    const validos = p.principios.filter((x) => x.nome.trim() !== '')
+    if (validos.length > 0) {
+      const insP = await supabase.from('produto_principios').insert(
+        validos.map((x) => ({
+          produto_id: id,
+          nome: x.nome.trim(),
+          concentracao: x.concentracao,
+          unidade_conc: x.unidade_conc,
+          classe: x.classe,
+        })),
+      )
+      if (insP.error?.code === '23505') {
+        throw new Error('O mesmo princípio ativo aparece duas vezes neste produto.')
+      }
+      erro('gravar princípios ativos', insP.error)
+    }
+  }
 }
 
 export async function excluirProduto(id: string): Promise<void> {

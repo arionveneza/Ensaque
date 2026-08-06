@@ -127,8 +127,8 @@ export default function Lotes() {
 
   return (
     <Pagina
-      titulo="Lotes a baixar"
-      descricao="A baixa é do lote, não da ordem: baixar um lote libera todas as ordens que dependem dele."
+      titulo="Logística"
+      descricao="Baixa de lote e conferência de estoque. A baixa é do lote, não da ordem: baixar um lote libera todas as ordens que dependem dele."
     >
       {erro && <Erro>{erro}</Erro>}
 

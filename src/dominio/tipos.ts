@@ -6,7 +6,9 @@
  * mas nunca são persistidos na coluna status.
  */
 
-export type Perfil = 'PCP' | 'Logistica' | 'Producao' | 'Qualidade' | 'Gestor'
+/** `Direcao` é somente leitura: enxerga tudo e exporta, não altera nada. */
+export type Perfil =
+  | 'PCP' | 'Logistica' | 'Producao' | 'Qualidade' | 'Direcao' | 'Gestor'
 
 /**
  * As bulas de TSI costumam expressar a dose por 100 kg de semente; algumas
@@ -59,6 +61,27 @@ export interface Embalagem {
   sementes: number
   /** peso_bag = PMS × fatorPeso */
   fatorPeso: number
+}
+
+export type ClasseAgronomica =
+  | 'Fungicida' | 'Inseticida' | 'Biologico' | 'Nematicida' | 'Inoculante' | 'Outros'
+
+export const CLASSES_AGRONOMICAS: ClasseAgronomica[] = [
+  'Fungicida', 'Inseticida', 'Biologico', 'Nematicida', 'Inoculante', 'Outros',
+]
+
+/**
+ * Princípio ativo de um produto. Um produto pode ter vários (produto
+ * combinado), e cada um tem a própria classe — é comum um mesmo produto
+ * juntar fungicida e inseticida.
+ */
+export interface PrincipioAtivo {
+  id: string
+  nome: string
+  /** Concentração na formulação; a unidade vem da ficha (g/L, g/kg ou %). */
+  concentracao: number | null
+  unidadeConc: 'g/L' | 'g/kg' | '%'
+  classe: ClasseAgronomica
 }
 
 export interface ProdutoQuimico {

@@ -4,7 +4,10 @@ import * as g from '@/dados/api-gestao'
 import * as adm from '@/dados/api-admin'
 import type { ReceitaCompleta } from '@/dados/api-gestao'
 import { capacidadeDiaT, pesoItemKg } from '@/dominio/calculos'
-import type { ProdutoQuimico, TipoParada, UnidadeDose } from '@/dominio/tipos'
+import {
+  CLASSES_AGRONOMICAS,
+  type ClasseAgronomica, type ProdutoQuimico, type TipoParada, type UnidadeDose,
+} from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import { useRascunho } from '@/lib/useRascunho'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n } from '@/componentes/ui'
@@ -36,15 +39,17 @@ export default function Cadastros() {
   const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[]>([])
   const [turnos, setTurnos] = useState<g.TurnoLinha[]>([])
   const [lotes, setLotes] = useState<g.LoteSementeLinha[]>([])
+  const [principios, setPrincipios] = useState<adm.PrincipioLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
   const recarregar = useCallback(async () => {
-    const [c, r, e, t, l] = await Promise.all([
+    const [c, r, e, t, l, pa] = await Promise.all([
       api.carregarCadastros(), g.listarReceitas(), g.listarEmbalagens(),
-      g.listarTurnos(), g.listarLotes(),
+      g.listarTurnos(), g.listarLotes(), adm.listarPrincipios(),
     ])
     setCad(c); setReceitas(r); setEmbalagens(e); setTurnos(t); setLotes(l)
+    setPrincipios(pa)
   }, [])
 
   useEffect(() => {
@@ -95,6 +100,7 @@ export default function Cadastros() {
       {aba === 'quimicos' && (
         <AbaQuimicos
           produtos={cad?.produtos ?? []}
+          principios={principios}
           podeEditar={!!podeEditar}
           acao={acao}
         />
@@ -135,9 +141,10 @@ type Acao = (fn: () => Promise<void>) => Promise<void>
 // ================================================================
 
 function AbaQuimicos({
-  produtos, podeEditar, acao,
+  produtos, principios, podeEditar, acao,
 }: {
   produtos: api.LinhaProduto[]
+  principios: adm.PrincipioLinha[]
   podeEditar: boolean
   acao: Acao
 }) {
@@ -181,13 +188,16 @@ function AbaQuimicos({
             />
           </div>
         )}
-        <Tabela cabecalho={['Produto', 'Código', 'Unidade', '#Densidade', '']}>
-          {produtos.map((p) =>
-            editando === p.id ? (
+        <Tabela cabecalho={['Produto', 'Código', 'Unidade', '#Densidade',
+          'Princípios ativos', '']}>
+          {produtos.map((p) => {
+            const doProduto = principios.filter((x) => x.produto_id === p.id)
+            return editando === p.id ? (
               <tr key={p.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td colSpan={5} className="px-2 py-3">
+                <td colSpan={6} className="px-2 py-3">
                   <FormProduto
                     inicial={p}
+                    inicialPrincipios={doProduto}
                     onSalvar={(x) =>
                       acao(async () => { await adm.salvarProduto({ ...x, id: p.id }); setEditando(null) })
                     }
@@ -209,6 +219,22 @@ function AbaQuimicos({
                     `${n(p.densidade, 3)} g/ml`
                   )}
                 </td>
+                <td className="px-2 py-2">
+                  {doProduto.length === 0 ? (
+                    <span className="text-xs text-stone-400">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {doProduto.map((a) => (
+                        <span key={a.id} title={`${a.nome} · ${a.classe}`}>
+                          <Tag cor={COR_CLASSE[a.classe] ?? 'neutro'}>
+                            {a.nome}
+                            {a.concentracao != null && ` ${n(a.concentracao, 0)} ${a.unidade_conc}`}
+                          </Tag>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </td>
                 <td className="px-2 py-2 text-right">
                   {podeEditar && (
                     <button onClick={() => setEditando(p.id)} className="text-xs underline">
@@ -217,18 +243,40 @@ function AbaQuimicos({
                   )}
                 </td>
               </tr>
-            ),
-          )}
+            )
+          })}
         </Tabela>
       </Cartao>
     </>
   )
 }
 
+/** Linha do princípio ativo no formulário — concentração como texto por causa da vírgula. */
+interface PrincipioForm {
+  nome: string
+  concTxt: string
+  unidade_conc: 'g/L' | 'g/kg' | '%'
+  classe: ClasseAgronomica
+}
+
+const PRINCIPIO_VAZIO: PrincipioForm = {
+  nome: '', concTxt: '', unidade_conc: 'g/L', classe: 'Fungicida',
+}
+
+const COR_CLASSE: Record<string, 'ok' | 'alerta' | 'info' | 'roxo' | 'perigo' | 'neutro'> = {
+  Fungicida: 'info',
+  Inseticida: 'perigo',
+  Biologico: 'ok',
+  Nematicida: 'roxo',
+  Inoculante: 'alerta',
+  Outros: 'neutro',
+}
+
 function FormProduto({
-  inicial, onSalvar, onCancelar,
+  inicial, inicialPrincipios = [], onSalvar, onCancelar,
 }: {
   inicial?: api.LinhaProduto
+  inicialPrincipios?: adm.PrincipioLinha[]
   onSalvar: (p: adm.ProdutoEdicao) => void
   onCancelar: () => void
 }) {
@@ -239,24 +287,50 @@ function FormProduto({
       // produto novo nasce em ml/100kg: é a base que as bulas de TSI usam
       unidade: (inicial?.unidade ?? 'ml/100kg') as UnidadeDose,
       densidade: inicial?.densidade?.toString() ?? '',
+      principios:
+        inicialPrincipios.length > 0
+          ? inicialPrincipios.map((x) => ({
+              nome: x.nome,
+              concTxt: x.concentracao == null ? '' : String(x.concentracao).replace('.', ','),
+              unidade_conc: x.unidade_conc,
+              classe: x.classe,
+            }))
+          : [PRINCIPIO_VAZIO],
     }),
-    [inicial],
+    [inicial, inicialPrincipios],
   )
   const { valor, definir, limpar } = useRascunho(
     inicial ? `produto.${inicial.id}` : 'produto.novo',
     inicialForm,
   )
-  const { codigo, nome, unidade, densidade } = valor
+  const { codigo, nome, unidade, densidade, principios } = valor
   const setCodigo = (v: string) => definir({ codigo: v })
   const setNome = (v: string) => definir({ nome: v })
   const setUnidade = (v: UnidadeDose) => definir({ unidade: v })
   const setDensidade = (v: string) => definir({ densidade: v })
+  const setPrincipios = (v: PrincipioForm[]) => definir({ principios: v })
+  const atualizaPrincipio = (i: number, campo: Partial<PrincipioForm>) =>
+    setPrincipios(principios.map((p, idx) => (idx === i ? { ...p, ...campo } : p)))
 
   const emMl = unidade.startsWith('ml')
   const dens = densidade.trim() === '' ? null : Number(densidade.replace(',', '.'))
   const faltaDensidade = emMl && (dens == null || !(dens > 0))
 
+  const principiosParaSalvar = () =>
+    principios
+      .filter((p) => p.nome.trim() !== '')
+      .map((p) => {
+        const c = parseFloat(p.concTxt.trim().replace(',', '.'))
+        return {
+          nome: p.nome.trim(),
+          concentracao: Number.isFinite(c) ? c : null,
+          unidade_conc: p.unidade_conc,
+          classe: p.classe,
+        }
+      })
+
   return (
+    <div>
     <div className="flex flex-wrap items-end gap-2">
       <label className="text-xs text-stone-500">
         Código
@@ -290,18 +364,102 @@ function FormProduto({
           className={`${INPUT} mt-1 block w-32 disabled:opacity-50`}
         />
       </label>
+    </div>
+
+    {/* ---------------- princípios ativos ---------------- */}
+    <div className="mt-4 border-t border-stone-200 pt-3 dark:border-stone-700">
+      <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+        Princípios ativos
+      </p>
+      <p className="mb-2 text-xs text-stone-500">
+        Um produto pode ter vários — cada um com a própria classe, porque é comum o mesmo
+        produto juntar fungicida e inseticida. Copie nome e concentração da bula.
+      </p>
+      <div className="space-y-2">
+        {principios.map((pa, i) => (
+          <div key={i} className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-stone-500">
+              Princípio ativo
+              <input
+                value={pa.nome}
+                onChange={(e) => atualizaPrincipio(i, { nome: e.target.value })}
+                placeholder="ex.: Tiametoxam"
+                className={`${INPUT} mt-1 block w-52`}
+              />
+            </label>
+            <label className="text-xs text-stone-500">
+              Concentração
+              <div className="mt-1 flex gap-1">
+                <input
+                  value={pa.concTxt}
+                  onChange={(e) => atualizaPrincipio(i, { concTxt: e.target.value })}
+                  placeholder="ex.: 350"
+                  inputMode="decimal"
+                  className={`${INPUT} w-24 text-right`}
+                />
+                <select
+                  value={pa.unidade_conc}
+                  onChange={(e) =>
+                    atualizaPrincipio(i, {
+                      unidade_conc: e.target.value as PrincipioForm['unidade_conc'],
+                    })
+                  }
+                  className={`${INPUT} w-20`}
+                >
+                  <option value="g/L">g/L</option>
+                  <option value="g/kg">g/kg</option>
+                  <option value="%">%</option>
+                </select>
+              </div>
+            </label>
+            <label className="text-xs text-stone-500">
+              Classe
+              <select
+                value={pa.classe}
+                onChange={(e) =>
+                  atualizaPrincipio(i, { classe: e.target.value as ClasseAgronomica })
+                }
+                className={`${INPUT} mt-1 block w-36`}
+              >
+                {CLASSES_AGRONOMICAS.map((c) => (
+                  <option key={c} value={c}>{c === 'Biologico' ? 'Biológico' : c}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={() => setPrincipios(principios.filter((_, idx) => idx !== i))}
+              disabled={principios.length === 1}
+              className="pb-1.5 text-xs text-red-600 underline disabled:opacity-30"
+            >
+              remover
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2">
+        <Botao onClick={() => setPrincipios([...principios, PRINCIPIO_VAZIO])}>
+          Adicionar princípio ativo
+        </Botao>
+      </div>
+    </div>
+
+    <div className="mt-4 flex gap-2">
       <Botao
         variante="primario"
         disabled={!codigo.trim() || !nome.trim() || faltaDensidade}
         titulo={faltaDensidade ? `Produto em ${unidade} exige densidade da FISPQ` : undefined}
         onClick={() => {
-          onSalvar({ codigo, nome, unidade, densidade: dens })
+          onSalvar({
+            codigo, nome, unidade, densidade: dens,
+            principios: principiosParaSalvar(),
+          })
           limpar()
         }}
       >
         Salvar
       </Botao>
       <Botao onClick={onCancelar}>Cancelar</Botao>
+    </div>
     </div>
   )
 }

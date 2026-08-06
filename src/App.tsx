@@ -25,7 +25,7 @@ type TelaId =
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
   { id: 'programacao', nome: 'Programação' },
-  { id: 'lotes', nome: 'Lotes a baixar' },
+  { id: 'lotes', nome: 'Logística' },
   { id: 'execucao', nome: 'Execução' },
   { id: 'qualidade', nome: 'Qualidade' },
   { id: 'agrotis', nome: 'AGROTIS' },

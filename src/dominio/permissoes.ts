@@ -72,6 +72,22 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     etapas: ['ver'],
     indicadores: ['ver'],
   },
+  /**
+   * Direção enxerga a operação inteira e exporta relatório, mas não altera
+   * nada: só a ação `ver` em cada recurso. Exportar não é ação própria —
+   * quem vê a tela baixa o .xlsx dela.
+   */
+  Direcao: {
+    ordens: ['ver'],
+    programacao: ['ver'],
+    lotes: ['ver'],
+    execucao: ['ver'],
+    qualidade: ['ver'],
+    agrotis: ['ver'],
+    etapas: ['ver'],
+    indicadores: ['ver'],
+    cadastros: ['ver'],
+  },
   Gestor: { ...ACOES_POR_RECURSO },
 }
 

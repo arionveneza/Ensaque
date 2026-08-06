@@ -38,8 +38,27 @@ describe('matriz padrao', () => {
   })
 
   it('a visao geral de etapas todo perfil ve', () => {
-    for (const p of ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Gestor'] as const)
+    for (const p of ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Direcao', 'Gestor'] as const)
       expect(permitidoPadrao(p, 'etapas', 'ver')).toBe(true)
+  })
+
+  // Direcao acompanha a operacao inteira sem poder mexer em nada
+  it('Direcao ve todas as telas de operacao', () => {
+    for (const r of ['ordens', 'programacao', 'lotes', 'execucao', 'qualidade',
+      'agrotis', 'etapas', 'indicadores', 'cadastros'])
+      expect(permitidoPadrao('Direcao', r, 'ver')).toBe(true)
+  })
+
+  it('Direcao NAO tem nenhuma acao de escrita', () => {
+    const escrita = Object.entries(ACOES_POR_RECURSO).flatMap(([recurso, acoes]) =>
+      acoes.filter((a) => a !== 'ver').map((a) => [recurso, a] as const),
+    )
+    // se um dia alguem acrescentar acao ao padrao da Direcao, este teste pega
+    for (const [recurso, acao] of escrita)
+      expect(
+        permitidoPadrao('Direcao', recurso, acao),
+        `Direcao nao pode ${acao} em ${recurso}`,
+      ).toBe(false)
   })
 
   it('Gestor tem todas as acoes de todos os recursos', () => {

@@ -9,7 +9,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { useRascunho } from '@/lib/useRascunho'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio } from '@/componentes/ui'
 
-const PERFIS: Perfil[] = ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Gestor']
+const PERFIS: Perfil[] = ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Direcao', 'Gestor']
 
 export default function Administracao() {
   const { usuario } = useAuth()
@@ -306,6 +306,7 @@ const DESCRICAO_PERFIL: Record<Perfil, string> = {
   Logistica: 'Vê Programação, Lotes e Indicadores; é quem baixa e estorna lote de semente.',
   Producao: 'Vê Programação, Execução e Indicadores; aponta início, paradas, fim e os pesos de tanque.',
   Qualidade: 'Vê Execução, Qualidade e Indicadores; aponta a avaliação visual e a retirada de amostra.',
+  Direcao: 'Somente leitura: enxerga todas as telas da operação e baixa os relatórios, sem alterar nada.',
   Gestor: 'Vê tudo, inclusive Administração. Use com parcimônia.',
 }
 
