@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import type { LoteSementeLinha, MovimentoLote, OrdemVisao } from '@/dados/api-gestao'
 import { jaIniciada, podeEstornarLote } from '@/dominio/status'
@@ -30,6 +31,7 @@ export default function Lotes() {
 
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
+  const [maquinas, setMaquinas] = useState<api.LinhaMaquina[]>([])
   const [movimentos, setMovimentos] = useState<MovimentoLote[]>([])
   const [conferencias, setConferencias] = useState<g.ConferenciaLinha[]>([])
   const [periodo, setPeriodo] = useState<Periodo>('semana')
@@ -63,6 +65,19 @@ export default function Lotes() {
     setCarregando(true)
     recarregar().finally(() => setCarregando(false))
   }, [recarregar])
+
+  // só para traduzir maquina_id em nome nos cartões; cadastro não muda no turno
+  useEffect(() => {
+    api
+      .carregarCadastros()
+      .then((c) => setMaquinas(c.maquinas))
+      .catch(() => {})
+  }, [])
+
+  const nomeMaquina = useCallback(
+    (id: string | null) => (id ? (maquinas.find((m) => m.id === id)?.nome ?? id) : null),
+    [maquinas],
+  )
 
   // era a única tela de operação sem realtime: a logística não via a ordem
   // finalizar (para conferir) nem a baixa feita em outro computador
@@ -162,6 +177,7 @@ export default function Lotes() {
               key={a.lote.id}
               item={a}
               podeBaixar={podeBaixar}
+              nomeMaquina={nomeMaquina}
               onBaixar={() =>
                 comErro(() => g.baixarLote(a.lote.id, a.bagsNecessarios, a.pesoT))
               }
@@ -408,10 +424,11 @@ export default function Lotes() {
  * ordens dependentes só abre quando pedida.
  */
 function LinhaLote({
-  item, podeBaixar, onBaixar,
+  item, podeBaixar, nomeMaquina, onBaixar,
 }: {
   item: LoteAgregado
   podeBaixar: boolean
+  nomeMaquina: (id: string | null) => string | null
   onBaixar: () => void
 }) {
   const { lote, abertas } = item
@@ -421,6 +438,9 @@ function LinhaLote({
   const enderecos = [...new Set(abertas.map((o) => enderecoLote(o, '')).filter(Boolean))]
   const semEndereco = abertas.filter((o) => !enderecoLote(o, '')).length
   const primeiroDia = abertas.map((o) => o.data_prog).filter(Boolean).sort()[0]
+  // para onde levar depois de baixar: a(s) máquina(s) das ordens dependentes
+  const destinos = [...new Set(abertas.map((o) => nomeMaquina(o.maquina_id)).filter(Boolean))] as string[]
+  const semMaquina = abertas.filter((o) => !o.maquina_id).length
 
   const rot = 'text-[10px] uppercase tracking-wide text-stone-500'
   const val = 'num-tabular font-semibold'
@@ -442,6 +462,10 @@ function LinhaLote({
           <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
             {qtd === 1 ? '1 ordem' : `${inteiro(qtd)} ordens`}
             {primeiroDia && <> · 1ª em {diaCurto(primeiroDia)}</>}
+            {destinos.length > 0 && (
+              <> · <span className="font-medium text-stone-700 dark:text-stone-300">{destinos.join(' e ')}</span></>
+            )}
+            {semMaquina > 0 && <> · {semMaquina} sem máquina</>}
             {enderecos.length === 1 && <> · {enderecos[0]}</>}
             {enderecos.length > 1 && <> · {enderecos.length} endereços</>}
             {semEndereco > 0 && (
@@ -478,7 +502,7 @@ function LinhaLote({
           {qtd === 1 ? 'ver a ordem dependente' : `ver as ${qtd} ordens dependentes`}
         </summary>
         <div className="mt-1">
-          <Tabela cabecalho={['Ordem', 'Tratamento', 'Endereço', 'Dia', '#Bags', 'Status']}>
+          <Tabela cabecalho={['Ordem', 'Tratamento', 'Máquina', 'Endereço', 'Dia', '#Bags', 'Status']}>
             {abertas.map((o) => (
               <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5">
@@ -490,6 +514,7 @@ function LinhaLote({
                   )}
                 </td>
                 <td className="px-2 py-1.5">{o.receita_nome}</td>
+                <td className="px-2 py-1.5">{nomeMaquina(o.maquina_id) ?? '—'}</td>
                 {/* é a informação que a separação usa: onde ir buscar */}
                 <td className="px-2 py-1.5 font-medium">
                   {o.armazem || o.bloco || o.quadra ? (

@@ -13,6 +13,7 @@ import {
   formataHms,
   montaTanques,
   pesoQuimicoTotalKg,
+  tempoPlanejadoS,
   temposOrdem,
 } from '@/dominio/calculos'
 import { jaIniciada, statusEfetivo } from '@/dominio/status'
@@ -30,6 +31,8 @@ interface Props {
   motivos: LinhaMotivo[]
   podeApontar: boolean
   agora: number
+  /** Capacidade (t/h) da máquina da ordem — dá o tempo planejado do quadro. */
+  capacidadeTh?: number | null
   onFechar: () => void
   onMudou: () => Promise<void>
 }
@@ -40,6 +43,7 @@ export default function ModalOrdem({
   motivos,
   podeApontar,
   agora,
+  capacidadeTh,
   onFechar,
   onMudou,
 }: Props) {
@@ -63,6 +67,7 @@ export default function ModalOrdem({
    */
   const tocada = jaIniciada(status)
   const tempos = temposOrdem(dominio, mots, agora)
+  const planejadoS = capacidadeTh ? tempoPlanejadoS(kg / 1000, capacidadeTh) : null
 
   const consumos = useMemo(
     () => (dominio.tanques.length ? consumoPorTanque(dominio.tanques, prods, kg) : []),
@@ -236,7 +241,11 @@ export default function ModalOrdem({
           </dl>
 
           {tempos && (
-            <dl className="mb-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            <dl className="mb-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+              <Info
+                rotulo="Tempo planejado"
+                valor={planejadoS == null ? '—' : formataHms(planejadoS)}
+              />
               <Info rotulo="Tempo bruto" valor={formataHms(tempos.brutoS)} />
               <Info rotulo="Tempo líquido" valor={formataHms(tempos.liquidoS)} />
               <Info rotulo="Paradas" valor={formataHms(tempos.paradasS)} />

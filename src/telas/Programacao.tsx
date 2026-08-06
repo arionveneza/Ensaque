@@ -113,6 +113,23 @@ export default function Programacao() {
     [ordens],
   )
 
+  /**
+   * Reescreve o seq como posição na fila (1..n) de TODAS as ordens ainda
+   * móveis da célula — não só da ordem mexida. Gravar "quantos já estão + 1"
+   * colidia com buracos e duplicatas herdadas (3, 3, 4, 7, 7, 7 na Execução):
+   * ordem que sai não renumerava ninguém, e a próxima entrada repetia número.
+   * Ordens já iniciadas ocupam a posição delas na fila, mas ficam de fora da
+   * gravação — o banco recusa reprogramar ordem tocada pela produção.
+   */
+  const renumerar = useCallback(
+    (maq: string, dia: string, fila: OrdemVisao[]) =>
+      fila
+        .map((o, i) => ({ o, seq: i + 1 }))
+        .filter(({ o }) => !jaIniciada(o.status_efetivo as StatusEfetivo))
+        .map(({ o, seq }) => ({ ordemId: o.id, maquinaId: maq, dia, seq })),
+    [],
+  )
+
   const ocupacaoCelula = useCallback(
     (maq: string, dia: string) => {
       const cap = capacidades.find((c) => c.id === maq)?.capacidadeDiaT ?? 0
@@ -302,8 +319,31 @@ export default function Programacao() {
                 onDrop={() =>
                   arrastando &&
                   comErro(async () => {
-                    await g.reprogramar(arrastando, m.id, diaSel, lista.length + 1)
+                    const movida = [...ordens, ...pool].find((x) => x.id === arrastando)
                     setArrastando(null)
+                    if (!movida) return
+                    // destino: fila atual sem a movida (se já estava) + movida no fim
+                    const atribuicoes = renumerar(m.id, diaSel, [
+                      ...lista.filter((x) => x.id !== movida.id),
+                      movida,
+                    ])
+                    // a célula de onde a ordem saiu fecha o buraco na numeração
+                    if (
+                      movida.maquina_id &&
+                      movida.data_prog &&
+                      (movida.maquina_id !== m.id || movida.data_prog !== diaSel)
+                    ) {
+                      atribuicoes.push(
+                        ...renumerar(
+                          movida.maquina_id,
+                          movida.data_prog,
+                          celula(movida.maquina_id, movida.data_prog).filter(
+                            (x) => x.id !== movida.id,
+                          ),
+                        ),
+                      )
+                    }
+                    await g.aplicarAtribuicoes(atribuicoes)
                   })
                 }
                 className="min-h-24 space-y-1.5 rounded-md border border-dashed border-stone-300 p-2 dark:border-stone-700"
@@ -340,9 +380,9 @@ export default function Programacao() {
                               disabled={idx === 0}
                               onClick={() =>
                                 comErro(async () => {
-                                  const anterior = lista[idx - 1]
-                                  await g.reprogramar(ord.id, m.id, diaSel, idx)
-                                  await g.reprogramar(anterior.id, m.id, diaSel, idx + 1)
+                                  const fila = [...lista]
+                                  ;[fila[idx - 1], fila[idx]] = [fila[idx], fila[idx - 1]]
+                                  await g.aplicarAtribuicoes(renumerar(m.id, diaSel, fila))
                                 })
                               }
                               className="text-xs leading-none disabled:opacity-20"
@@ -353,9 +393,9 @@ export default function Programacao() {
                               disabled={idx === lista.length - 1}
                               onClick={() =>
                                 comErro(async () => {
-                                  const proxima = lista[idx + 1]
-                                  await g.reprogramar(ord.id, m.id, diaSel, idx + 2)
-                                  await g.reprogramar(proxima.id, m.id, diaSel, idx + 1)
+                                  const fila = [...lista]
+                                  ;[fila[idx], fila[idx + 1]] = [fila[idx + 1], fila[idx]]
+                                  await g.aplicarAtribuicoes(renumerar(m.id, diaSel, fila))
                                 })
                               }
                               className="text-xs leading-none disabled:opacity-20"
@@ -408,8 +448,12 @@ export default function Programacao() {
                             )
                             return
                           }
-                          const jaNoSlot = celula(slot.maquinaId, slot.dia).length
-                          await g.reprogramar(o.id, slot.maquinaId, slot.dia, jaNoSlot + 1)
+                          await g.aplicarAtribuicoes(
+                            renumerar(slot.maquinaId, slot.dia, [
+                              ...celula(slot.maquinaId, slot.dia),
+                              o,
+                            ]),
+                          )
                           setDiaSel(slot.dia)
                         })
                       }

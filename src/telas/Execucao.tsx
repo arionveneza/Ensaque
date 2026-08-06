@@ -216,6 +216,7 @@ export default function Execucao() {
                   podeApontar={!!podeApontar}
                   onIniciar={iniciar}
                   onAbrir={setAberta}
+                  numerada={false}
                 />
               )}
             </tbody>
@@ -230,6 +231,9 @@ export default function Execucao() {
           motivos={cadastros.motivos}
           podeApontar={!!podeApontar}
           agora={agora}
+          capacidadeTh={
+            cadastros.maquinas.find((m) => m.id === ordemAberta.maquina_id)?.capacidade_th ?? null
+          }
           onFechar={() => setAberta(null)}
           onMudou={recarregar}
         />
@@ -244,12 +248,15 @@ function FragmentoMaquina({
   podeApontar,
   onIniciar,
   onAbrir,
+  numerada = true,
 }: {
   nome: string
   lista: LinhaOrdem[]
   podeApontar: boolean
   onIniciar: (o: LinhaOrdem) => void
   onAbrir: (id: string) => void
+  /** O pool não tem sequência de execução — mostra traço no lugar. */
+  numerada?: boolean
 }) {
   const totalT = lista.reduce((a, o) => a + pesoOrdemKg(o) / 1000, 0)
   return (
@@ -265,14 +272,17 @@ function FragmentoMaquina({
         </td>
         <td colSpan={2}></td>
       </tr>
-      {lista.map((o) => {
+      {lista.map((o, idx) => {
         const status = statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status)
         return (
           <tr
             key={o.id}
             className="border-t border-stone-100 hover:bg-stone-50 dark:border-stone-800/60 dark:hover:bg-stone-800/30"
           >
-            <td className="px-2 py-2 text-stone-400 lg:px-3">{o.seq ?? '—'}</td>
+            {/* posição na fila, não o seq gravado: o seq herdou duplicata e
+                buraco de reprogramações antigas (3,3,4,7...), e o que o
+                operador precisa é a ordem de execução — igual à Programação */}
+            <td className="px-2 py-2 text-stone-400 lg:px-3">{numerada ? idx + 1 : '—'}</td>
             <td className="px-2 py-2 font-medium lg:px-3">
               {o.numero}
               {o.prioridade === 'Urgente' && (
@@ -353,12 +363,14 @@ function CardMaquina({
     tempos && planejado ? Math.min(100, (tempos.brutoS / planejado) * 100) : null
   const estourou = tempos != null && planejado != null && tempos.brutoS > planejado
 
-  // máquina livre: aponta a próxima da fila para o operador não precisar caçar
-  const proxima =
-    !atual &&
-    ordens.find(
-      (o) => statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status) === 'Pronto para produzir',
-    )
+  // máquina livre: NÃO aponta a próxima — a sequência é sugestão do PCP, e é
+  // o operador quem decide qual ordem vai entrar (pedido da operação, 06/08)
+  const prontas = !atual
+    ? ordens.filter(
+        (o) =>
+          statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status) === 'Pronto para produzir',
+      ).length
+    : 0
 
   return (
     <div
@@ -401,25 +413,11 @@ function CardMaquina({
 
       {!atual ? (
         <div className="px-4 pt-4 pb-5">
-          {proxima ? (
-            <>
-              <p className="text-sm text-stone-500 dark:text-stone-400">Próxima da fila</p>
-              <button
-                onClick={() => onAbrir(proxima.id)}
-                className="mt-1 text-left text-base font-semibold text-stone-900 underline-offset-4 transition-colors hover:underline dark:text-stone-100"
-              >
-                {proxima.numero} · {proxima.cultivar} · {proxima.receitas.nome}
-              </button>
-              <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
-                Lote {proxima.lote_id} · {proxima.bags} bags ·{' '}
-                {num(pesoOrdemKg(proxima) / 1000, 1)} t — pronto para produzir
-              </p>
-            </>
-          ) : (
-            <p className="py-2 text-sm text-stone-500 dark:text-stone-400">
-              Nenhuma ordem em andamento nem pronta na fila.
-            </p>
-          )}
+          <p className="py-2 text-sm text-stone-500 dark:text-stone-400">
+            {prontas > 0
+              ? `${prontas} ${prontas === 1 ? 'ordem pronta' : 'ordens prontas'} para produzir — escolha na lista abaixo e toque em Iniciar.`
+              : 'Nenhuma ordem em andamento nem pronta na fila.'}
+          </p>
         </div>
       ) : (
         <>

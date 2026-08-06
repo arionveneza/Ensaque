@@ -139,18 +139,21 @@ export function autoProgramar(
       naoCouberam.push(ordem)
       continue
     }
-    const jaNoSlot = estado.filter(
+    const noSlot = estado.filter(
       (o) => o.maquinaId === slot.maquinaId && o.dataProg === slot.dia,
-    ).length
+    )
+    // maior seq existente, não contagem: numa célula com buraco (2, 4) a
+    // contagem daria 2 e a nova ordem entraria como 3ª duplicando depois
+    const seqNova = Math.max(noSlot.length, ...noSlot.map((o) => o.seq ?? 0)) + 1
     const alvo = estado.find((o) => o.id === ordem.id)!
     alvo.maquinaId = slot.maquinaId
     alvo.dataProg = slot.dia
-    alvo.seq = jaNoSlot + 1
+    alvo.seq = seqNova
     atribuicoes.push({
       ordemId: ordem.id,
       maquinaId: slot.maquinaId,
       dia: slot.dia,
-      seq: jaNoSlot + 1,
+      seq: seqNova,
     })
   }
 
@@ -230,9 +233,11 @@ export function rebalancearDia(
   const movidas: Atribuicao[] = []
   let transferido = 0
   let livreDestino = vazia.m.capacidadeDiaT - vazia.ton
-  const jaNoDestino = ordens.filter(
+  const noDestino = ordens.filter(
     (o) => o.maquinaId === vazia.m.id && o.dataProg === dia,
-  ).length
+  )
+  // maior seq existente, não contagem — mesma razão do autoProgramar
+  const base = Math.max(noDestino.length, ...noDestino.map((o) => o.seq ?? 0))
 
   for (const o of candidatas) {
     // parar antes de inverter o desbalanceamento
@@ -244,7 +249,7 @@ export function rebalancearDia(
       ordemId: o.id,
       maquinaId: vazia.m.id,
       dia,
-      seq: jaNoDestino + movidas.length + 1,
+      seq: base + movidas.length + 1,
     })
   }
 
