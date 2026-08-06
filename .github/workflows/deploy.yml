@@ -3,7 +3,13 @@ name: Testar e publicar
 # Publica o TSI no GitHub Pages. A pilha é só GitHub + Supabase:
 # o GitHub guarda o código e serve o app, o Supabase guarda os dados.
 #
-# Configuração necessária: apenas Settings → Pages → Source: "GitHub Actions".
+# Configuração necessária: Settings → Pages → Source: "Deploy from a branch",
+# branch `gh-pages`, pasta `/ (root)`.
+#
+# A publicação vai por PUSH na branch gh-pages, não pelo actions/deploy-pages:
+# em 06/08/2026 o passo "Publicar" do deploy-pages falhou três vezes seguidas
+# com testes e build verdes, segurando uma correção urgente no ar. O caminho
+# por branch usa só git — se o push funciona, a publicação funciona.
 #
 # Os valores do Supabase estão abaixo, em texto claro, de propósito. A chave
 # `anon` é PÚBLICA por natureza: ela vai dentro do bundle que qualquer pessoa
@@ -22,11 +28,9 @@ on:
   # permite publicar manualmente pela aba Actions
   workflow_dispatch:
 
-# só o necessário para publicar no Pages
+# escrever na branch gh-pages
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 # um deploy por vez; não cancela o que já está publicando
 concurrency:
@@ -58,9 +62,6 @@ jobs:
     name: Build e publicação
     needs: testar
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,14 +72,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Configurar Pages
-        id: pages
-        uses: actions/configure-pages@v5
-
       - name: Build
         env:
           # project site fica em /<repo>/ — sem isso os assets dão 404
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          BASE_PATH: /Ensaque/
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://ztwmrhfloelqxhhpdmoz.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0d21yaGZsb2VscXhoaHBkbW96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNDc0MDEsImV4cCI6MjEwMDgyMzQwMX0.zKMPGKFMY5RU7o_BihOcZqChfNXX-B4Hi8IuF9nYuo8' }}
         run: npm run build
@@ -88,10 +85,9 @@ jobs:
       - name: Fallback de rota
         run: cp dist/index.html dist/404.html
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Publicar na branch gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: dist
-
-      - name: Publicar
-        id: deploy
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
