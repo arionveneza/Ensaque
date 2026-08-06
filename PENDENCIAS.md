@@ -61,20 +61,25 @@ Nenhuma é problema de código; todas dependem de definição da operação.
 - **Capacidade variável:** 12 t/h é global. Varia por receita ou embalagem?
 - **Horário previsto por ordem** e **painel modo TV**: sugeridos, não feitos.
 
-## 3b. Pronto no código, esperando publicação (06/08/2026)
+## 3b. Publicação — resolvido pela Cloudflare (06/08/2026)
 
 O GitHub abriu incidente crítico de Actions/Pages às 15:22 de 06/08/2026
-(stspg.io/rcz3fcm83sff): build sempre verde, publicação em timeout. O site no ar é o
-build `index-VzwpdTnD.js`. Assim que o serviço voltar, publicar e conferir:
+(stspg.io/rcz3fcm83sff): build sempre verde, publicação em timeout por horas. A saída foi
+publicar na **Cloudflare Workers**, que clona o repositório e constrói na infraestrutura
+dela, sem passar pelo GitHub Actions.
 
-- [ ] aba "Lotes a baixar" renomeada para **Logística**
-- [ ] **princípios ativos** no cadastro de químico (vários por produto, com concentração e
-      classe própria)
-- [ ] perfil **Direção** (só leitura) no seletor da Administração
-- [ ] aviso de "distribuição não registrada" na ordem iniciada antes da migração
+**Endereço em produção: https://ensaque.arion-pereira.workers.dev** (raiz, sem `/Ensaque/`
+— ver `wrangler.jsonc`). Publica sozinha a cada push no `main`, ~2 min.
 
-Nada disso bloqueia a operação — o app no ar funciona e o banco pode receber os SQLs
-correspondentes antes, porque todos são aditivos.
+O endereço antigo do GitHub Pages (`arionveneza.github.io/Ensaque`) continua servindo um
+build **velho** enquanto o incidente não fecha. Decisão pendente: desligar o Pages ou manter
+os dois; e eventual domínio próprio (`tsi.sementesveneza.com.br`).
+
+### SQL pendente de execução
+- [ ] `supabase/turnos-por-dia.sql` — tabela `dias_producao`. **Aditivo e opcional**: sem
+      ele a Programação assume 2 turnos em todo dia (comportamento antigo) e só falha se
+      alguém tentar marcar um dia diferente. `listarDiasProducao` engole o erro de tabela
+      inexistente de propósito, para o front poder ir ao ar antes do banco.
 
 ## 4. Melhorias técnicas conhecidas
 
@@ -128,6 +133,28 @@ correspondentes antes, porque todos são aditivos.
 ---
 
 ## Armadilhas já pagas — não repetir
+
+**Ordenar a fila por urgência DEPOIS de gravar a sequência faz o arraste parecer quebrado.**
+O quadro da Programação ordenava por `(urgente, seq)`. Arrastar uma ordem normal para o topo
+gravava `seq = 1` certinho, e a tela continuava mostrando a urgente em cima — o usuário via
+"não moveu". Hoje Programação e Execução ordenam **só por `seq`**; urgência é etiqueta, e
+quem reordena por urgência é o "Otimizar sequência", quando pedido. Regra geral: se a tela
+permite ordenar à mão, nenhuma outra regra pode reordenar por cima.
+
+**`dragover` dispara a cada pixel.** Um `setState` por evento repinta o quadro inteiro
+durante o arraste e dá a sensação de travamento. O `marcarAlvo` da Programação compara antes
+de trocar o estado e devolve a mesma referência quando nada mudou, para o React desistir do
+render.
+
+**Arrastar-e-soltar de HTML não existe em tela de toque.** O quadro é usado em tablet, onde
+os eventos `drag*` simplesmente não disparam — sem uma alternativa por botão (o "mover", com
+selects de máquina, dia e posição), a tela fica inutilizável lá, e ninguém reporta isso como
+bug porque parece "o tablet que não pega".
+
+**Capacidade do dia não é constante.** Desde 06/08/2026 ela vem de `capDia(maquina, dia)`,
+que consulta os turnos daquele dia (`dias_producao`). Ao criar cálculo novo que envolva
+capacidade, receber a função — não multiplicar por 234 nem por `capacidadeDiaT`, que é só o
+padrão de dia cheio usado como fallback.
 
 **Horário de apontamento é SEMPRE do servidor.** O relógio do navegador do chão de fábrica
 não é confiável: em 05/08/2026 a ordem 131104 ficou com uma parada cujo `fim` (gravado com
