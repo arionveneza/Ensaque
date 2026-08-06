@@ -57,8 +57,10 @@ export interface LinhaOrdem {
   }
   receitas: {
     nome: string
-    receita_itens: { produto_id: string; dose: number; tanque: number }[]
+    receita_itens: { produto_id: string; dose: number }[]
   }
+  /** Destino escolhido pelo operador nesta ordem: 1–5 ou 0 = transferidor. */
+  ordem_produtos: { produto_id: string; tanque: number }[]
   ordem_eventos: { tipo: 'inicio' | 'fim'; ts: string }[]
   ordem_paradas: { id: string; motivo_id: string; inicio: string; fim: string | null }[]
   /** Só para o aviso do Cancelar início: quantos testes serão descartados. */
@@ -76,7 +78,8 @@ const SELECT_ORDEM = `
   armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente, bags_produzidos,
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status ),
-  receitas ( nome, receita_itens ( produto_id, dose, tanque ) ),
+  receitas ( nome, receita_itens ( produto_id, dose ) ),
+  ordem_produtos ( produto_id, tanque ),
   ordem_eventos ( tipo, ts ),
   ordem_paradas ( id, motivo_id, inicio, fim ),
   ordem_tanques ( id, tanque, peso_inicial, peso_final ),
@@ -128,19 +131,22 @@ export async function carregarOrdens(dia: string): Promise<LinhaOrdem[]> {
   return (data ?? []) as unknown as LinhaOrdem[]
 }
 
-/** Prepara os tanques da receita. NÃO inicia — o cronômetro só corre no confirmar. */
-export async function prepararTanques(
+/**
+ * Define o destino de um produto nesta ordem (1–5 ou 0 = transferidor;
+ * null desfaz). Vai por RPC porque uma escolha mexe em duas tabelas: cria o
+ * tanque quando ele passa a ser usado e remove o que ficou sem produto.
+ */
+export async function definirTanqueProduto(
   ordemId: string,
-  tanques: number[],
+  produtoId: string,
+  tanque: number | null,
 ): Promise<void> {
-  if (tanques.length === 0) return
-  const { error } = await supabase
-    .from('ordem_tanques')
-    .upsert(
-      tanques.map((tanque) => ({ ordem_id: ordemId, tanque })),
-      { onConflict: 'ordem_id,tanque', ignoreDuplicates: true },
-    )
-  erro('preparar tanques', error)
+  const { error } = await supabase.rpc('definir_tanque_produto', {
+    p_ordem: ordemId,
+    p_produto: produtoId,
+    p_tanque: tanque,
+  })
+  erro('definir tanque do produto', error)
 }
 
 export async function salvarPesoTanque(

@@ -98,16 +98,25 @@ export default function ModalOrdem({
     const itens = ordem.receitas.receita_itens.map((i) => ({
       produtoId: i.produto_id,
       dose: i.dose,
-      tanque: i.tanque,
     }))
+    // a folha sai com a distribuição que o operador escolheu nesta ordem
+    const alocacao = ordem.ordem_produtos.map((op) => ({
+      produtoId: op.produto_id,
+      tanque: op.tanque,
+    }))
+    const destinoDe = new Map(alocacao.map((a) => [a.produtoId, a.tanque]))
     let planejadoPorTanque = new Map<number, number>()
     try {
-      const cons = consumoPorTanque(montaTanques({ id: ordem.receita_id, nome: ordem.receitas.nome, itens }), prods, kg)
+      const cons = consumoPorTanque(
+        montaTanques({ id: ordem.receita_id, nome: ordem.receitas.nome, itens }, alocacao),
+        prods,
+        kg,
+      )
       planejadoPorTanque = new Map(cons.map((c) => [c.tanque, c.planejadoKg]))
     } catch {
       // densidade faltando: imprime com traço, igual à tela
     }
-    const tanquesOrdenados = [...new Set(itens.map((i) => i.tanque))].sort((a, b) => a - b)
+    const tanquesOrdenados = [...new Set(alocacao.map((a) => a.tanque))].sort((a, b) => a - b)
     imprimirOrdemProducao({
       numero: ordem.numero,
       cultivar: ordem.cultivar,
@@ -131,7 +140,7 @@ export default function ModalOrdem({
       tanques: tanquesOrdenados.map((tq) => ({
         destino: rotuloTanque(tq),
         produtos: itens
-          .filter((i) => i.tanque === tq)
+          .filter((i) => destinoDe.get(i.produtoId) === tq)
           .map((i) => {
             const p = prods.get(i.produtoId)
             return `${p?.nome ?? i.produtoId} · ${num(i.dose, 2)} ${p?.unidade ?? ''}`
@@ -143,8 +152,12 @@ export default function ModalOrdem({
 
   // ---- validações antes de confirmar (o banco também barra, via trigger) ----
   const semPesoInicial = ordem.ordem_tanques.filter((t) => t.peso_inicial == null)
+  const semDestino = ordem.receitas.receita_itens.filter(
+    (i) => !ordem.ordem_produtos.some((op) => op.produto_id === i.produto_id),
+  )
 
-  const podeConfirmarInicio = semPesoInicial.length === 0
+  const podeConfirmarInicio =
+    semDestino.length === 0 && ordem.ordem_tanques.length > 0 && semPesoInicial.length === 0
   // peso final NÃO trava mais a finalização (o PCP digita no AGROTIS);
   // o que trava é a quantidade produzida
   const bagsProduzidos = parseInt(qtdProduzida, 10)
@@ -228,11 +241,68 @@ export default function ModalOrdem({
             </dl>
           )}
 
+          {/* -------- distribuição: o operador define o tanque de cada produto -------- */}
+          {!emAndamento && (
+            <div className="mb-5">
+              <h3 className="mb-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
+                Distribuição dos produtos
+              </h3>
+              <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+                A receita traz produto e dose; o <b>tanque muda a cada ordem</b>, então é você
+                quem informa. Dois produtos no mesmo tanque = mistura, e o planejado passa a ser
+                a soma deles.
+              </p>
+              <div className="space-y-1.5">
+                {ordem.receitas.receita_itens.map((i) => {
+                  const p = prods.get(i.produto_id)
+                  const atual = ordem.ordem_produtos.find((op) => op.produto_id === i.produto_id)
+                  return (
+                    <div
+                      key={i.produto_id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 dark:border-stone-800"
+                    >
+                      <span className="text-sm">
+                        {p?.nome ?? i.produto_id}{' '}
+                        <span className="text-stone-500">
+                          · {num(i.dose, 2)} {p?.unidade}
+                        </span>
+                      </span>
+                      <select
+                        disabled={!podeApontar || ocupado}
+                        value={atual ? String(atual.tanque) : ''}
+                        onChange={(e) =>
+                          acao(() =>
+                            api.definirTanqueProduto(
+                              ordem.id,
+                              i.produto_id,
+                              e.target.value === '' ? null : Number(e.target.value),
+                            ),
+                          )
+                        }
+                        className={`rounded border px-2 py-1 text-sm disabled:opacity-60 dark:bg-stone-800 ${
+                          atual
+                            ? 'border-stone-300 dark:border-stone-700'
+                            : 'border-amber-400 dark:border-amber-700'
+                        }`}
+                      >
+                        <option value="">escolha o tanque…</option>
+                        {[1, 2, 3, 4, 5].map((t) => (
+                          <option key={t} value={t}>T{t}</option>
+                        ))}
+                        <option value={0}>Transferidor</option>
+                      </select>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ---------------- tanques ---------------- */}
           {ordem.ordem_tanques.length === 0 ? (
             <p className="rounded-md bg-stone-50 px-4 py-6 text-center text-sm text-stone-500 dark:bg-stone-800/50 dark:text-stone-400">
-              Os tanques ainda não foram montados. Clique em <b>Iniciar</b> para preparar a
-              ordem — o cronômetro só começa no <b>Confirmar início</b>.
+              Nenhum tanque montado ainda — escolha o destino dos produtos acima. O cronômetro
+              só começa no <b>Confirmar início</b>.
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -259,7 +329,14 @@ export default function ModalOrdem({
                     .sort((a, b) => a.tanque - b.tanque)
                     .map((t) => {
                       const c = consumos.find((x) => x.tanque === t.tanque)
-                      const itens = ordem.receitas.receita_itens.filter((i) => i.tanque === t.tanque)
+                      const doTanque = new Set(
+                        ordem.ordem_produtos
+                          .filter((op) => op.tanque === t.tanque)
+                          .map((op) => op.produto_id),
+                      )
+                      const itens = ordem.receitas.receita_itens.filter((i) =>
+                        doTanque.has(i.produto_id),
+                      )
                       const mistura = itens.length > 1
                       return (
                         <tr

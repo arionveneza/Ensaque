@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import {
   capacidadeDiaT,
   consumoPorTanque,
   diaDeProducao,
   ensaquePorBagKg,
   montaTanques,
+  produtosSemDestino,
   ocupacao,
   pesoBagKg,
   pesoItemKg,
@@ -64,27 +65,27 @@ describe('peso do bag', () => {
 describe('peso de balanca a partir da dose', () => {
   it('ml/kg multiplica pela densidade', () => {
     // 0,60 ml/kg x 40.000 kg x 1,08 / 1000 = 25,92 kg
-    expect(pesoItemKg({ produtoId: 'FTZ', dose: 0.6, tanque: 1 }, FTZ, 40_000))
+    expect(pesoItemKg({ produtoId: 'FTZ', dose: 0.6 }, FTZ, 40_000))
       .toBeCloseTo(25.92, 6)
   })
 
   it('g/kg nao usa densidade: a dose ja e peso', () => {
     // 0,50 g/kg x 40.000 kg / 1000 = 20 kg
-    expect(pesoItemKg({ produtoId: 'GRF', dose: 0.5, tanque: 4 }, GRF, 40_000))
+    expect(pesoItemKg({ produtoId: 'GRF', dose: 0.5 }, GRF, 40_000))
       .toBeCloseTo(20, 6)
   })
 
   it('recusa produto em ml/kg sem densidade, em vez de assumir 1', () => {
     const semDensidade: ProdutoQuimico = { ...FTZ, densidade: null }
     expect(() =>
-      pesoItemKg({ produtoId: 'FTZ', dose: 0.6, tanque: 1 }, semDensidade, 40_000),
+      pesoItemKg({ produtoId: 'FTZ', dose: 0.6 }, semDensidade, 40_000),
     ).toThrow(/densidade/i)
   })
 
   it('volume so existe para ml/kg', () => {
-    expect(volumeItemL({ produtoId: 'FTZ', dose: 0.6, tanque: 1 }, FTZ, 40_000))
+    expect(volumeItemL({ produtoId: 'FTZ', dose: 0.6 }, FTZ, 40_000))
       .toBeCloseTo(24, 6)
-    expect(volumeItemL({ produtoId: 'GRF', dose: 0.5, tanque: 4 }, GRF, 40_000))
+    expect(volumeItemL({ produtoId: 'GRF', dose: 0.5 }, GRF, 40_000))
       .toBeNull()
   })
 
@@ -92,25 +93,25 @@ describe('peso de balanca a partir da dose', () => {
   // escrita nas duas bases tem que dar o MESMO peso de balança.
   it('ml/100kg divide por 100: 60 ml/100kg equivale a 0,6 ml/kg', () => {
     const ftz100: ProdutoQuimico = { ...FTZ, unidade: 'ml/100kg' }
-    expect(pesoItemKg({ produtoId: 'FTZ', dose: 60, tanque: 1 }, ftz100, 40_000))
+    expect(pesoItemKg({ produtoId: 'FTZ', dose: 60 }, ftz100, 40_000))
       .toBeCloseTo(25.92, 6)
-    expect(volumeItemL({ produtoId: 'FTZ', dose: 60, tanque: 1 }, ftz100, 40_000))
+    expect(volumeItemL({ produtoId: 'FTZ', dose: 60 }, ftz100, 40_000))
       .toBeCloseTo(24, 6)
   })
 
   it('g/100kg divide por 100: 50 g/100kg equivale a 0,5 g/kg', () => {
     const grf100: ProdutoQuimico = { ...GRF, unidade: 'g/100kg' }
-    expect(pesoItemKg({ produtoId: 'GRF', dose: 50, tanque: 4 }, grf100, 40_000))
+    expect(pesoItemKg({ produtoId: 'GRF', dose: 50 }, grf100, 40_000))
       .toBeCloseTo(20, 6)
     // dose em gramas segue sem volume
-    expect(volumeItemL({ produtoId: 'GRF', dose: 50, tanque: 4 }, grf100, 40_000))
+    expect(volumeItemL({ produtoId: 'GRF', dose: 50 }, grf100, 40_000))
       .toBeNull()
   })
 
   it('ml/100kg sem densidade tambem e recusado', () => {
     const semDensidade: ProdutoQuimico = { ...FTZ, unidade: 'ml/100kg', densidade: null }
     expect(() =>
-      pesoItemKg({ produtoId: 'FTZ', dose: 60, tanque: 1 }, semDensidade, 40_000),
+      pesoItemKg({ produtoId: 'FTZ', dose: 60 }, semDensidade, 40_000),
     ).toThrow(/densidade/i)
   })
 })
@@ -135,20 +136,45 @@ describe('tanques e mistura', () => {
   const receita6em5: Receita = {
     id: 'R6', nome: 'CORTEVA COMPLETO',
     itens: [
-      { produtoId: 'FTZ', dose: 0.5, tanque: 1 },
-      { produtoId: 'MXA', dose: 0.2, tanque: 3 },
-      { produtoId: 'GRF', dose: 0.3, tanque: 3 }, // mistura no tanque 3
+      { produtoId: 'FTZ', dose: 0.5 },
+      { produtoId: 'MXA', dose: 0.2 },
+      { produtoId: 'GRF', dose: 0.3 },
     ],
   }
 
+  // a receita traz produto e dose; o TANQUE vem da escolha do operador
+  const ALOC = [
+    { produtoId: 'FTZ', tanque: 1 },
+    { produtoId: 'MXA', tanque: 3 },
+    { produtoId: 'GRF', tanque: 3 }, // mistura no tanque 3
+  ]
+
   it('agrupa produtos do mesmo tanque em uma linha', () => {
-    const tanques = montaTanques(receita6em5)
+    const tanques = montaTanques(receita6em5, ALOC)
     expect(tanques.map((t) => t.tanque)).toEqual([1, 3])
     expect(tanques[1].itens).toHaveLength(2)
   })
 
+  it('a MESMA receita distribuida de outro jeito monta outros tanques', () => {
+    const outra = [
+      { produtoId: 'FTZ', tanque: 2 },
+      { produtoId: 'MXA', tanque: 2 },
+      { produtoId: 'GRF', tanque: 0 },
+    ]
+    const tanques = montaTanques(receita6em5, outra)
+    expect(tanques.map((t) => t.tanque)).toEqual([0, 2])
+    expect(tanques.find((t) => t.tanque === 2)!.itens).toHaveLength(2)
+  })
+
+  it('produto sem destino escolhido nao entra em tanque nenhum', () => {
+    const parcial = [{ produtoId: 'FTZ', tanque: 1 }]
+    expect(montaTanques(receita6em5, parcial).map((t) => t.tanque)).toEqual([1])
+    expect(produtosSemDestino(receita6em5, parcial).sort()).toEqual(['GRF', 'MXA'])
+    expect(produtosSemDestino(receita6em5, ALOC)).toEqual([])
+  })
+
   it('planejado do tanque com mistura e a SOMA dos produtos', () => {
-    const tanques = montaTanques(receita6em5)
+    const tanques = montaTanques(receita6em5, ALOC)
     const consumo = consumoPorTanque(tanques, PRODUTOS, 40_000)
     const t3 = consumo.find((c) => c.tanque === 3)!
     // MXA: 0,2 x 40000 x 1,05 / 1000 = 8,4 ; GRF: 0,3 x 40000 / 1000 = 12
@@ -156,7 +182,7 @@ describe('tanques e mistura', () => {
   })
 
   it('real e peso inicial menos final, e o desvio compara com a soma', () => {
-    const tanques = montaTanques(receita6em5)
+    const tanques = montaTanques(receita6em5, ALOC)
     tanques[1].pesoInicial = 100
     tanques[1].pesoFinal = 79.6 // consumo real de 20,4 = exatamente o planejado
     const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
@@ -165,7 +191,7 @@ describe('tanques e mistura', () => {
   })
 
   it('sem pesagem fechada nao inventa real nem desvio', () => {
-    const tanques = montaTanques(receita6em5)
+    const tanques = montaTanques(receita6em5, ALOC)
     tanques[1].pesoInicial = 100
     const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
     expect(t3.realKg).toBeNull()
@@ -183,11 +209,14 @@ describe('tanques e mistura', () => {
     const receita: Receita = {
       id: 'R2', nome: 'COM PO',
       itens: [
-        { produtoId: 'FTZ', dose: 0.5, tanque: 1 },
-        { produtoId: 'GRF', dose: 0.3, tanque: 0 },
+        { produtoId: 'FTZ', dose: 0.5 },
+        { produtoId: 'GRF', dose: 0.3 },
       ],
     }
-    const tanques = montaTanques(receita)
+    const tanques = montaTanques(receita, [
+      { produtoId: 'FTZ', tanque: 1 },
+      { produtoId: 'GRF', tanque: 0 },
+    ])
     expect(tanques.map((t) => t.tanque)).toEqual([0, 1])
 
     const transferidor = consumoPorTanque(tanques, PRODUTOS, 40_000)

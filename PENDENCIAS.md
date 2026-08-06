@@ -125,6 +125,14 @@ throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo
 parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no
 `visibilitychange`/`focus` — ao criar outra tela com cronômetro, repetir o padrão.
 
+**O tanque é da ORDEM, não da receita** (06/08/2026). `receita_itens` tem só produto e dose; o
+destino de cada produto fica em `ordem_produtos`, escolhido pelo operador ao preparar. Não
+devolver a coluna `tanque` à receita — a distribuição muda a cada ordem.
+`montaTanques(receita, alocacao)` monta os tanques a partir dessa escolha, e o tanque só passa
+a existir quando algum produto é destinado a ele (RPC `definir_tanque_produto` cria e remove).
+`cancelar_inicio` descarta a distribuição junto com os tanques. Aplicar
+`supabase/tanque-por-ordem.sql` **depois** de `matriz-permissoes-no-banco.sql` (usa `tem_acao`).
+
 **Trocar de tela DESMONTA o componente e apaga o formulário.** O App renderiza
 `{atual === 'ordens' && <Ordens />}`: sair de Ordens para ver um lote destrói todo o estado
 local, e o PCP perdia a ordem digitada pela metade (relatado em 06/08/2026). Formulário longo

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+﻿import { supabase } from '@/lib/supabase'
 import type { TipoParada, UnidadeDose } from '@/dominio/tipos'
 import type { PedidoConvertido, EstoquePaConvertido, LoteConvertido } from '@/dominio/importacao/simpleagro'
 
@@ -677,7 +677,6 @@ export interface ReceitaCompleta {
   receita_itens: {
     produto_id: string
     dose: number
-    tanque: number
     produtos_quimicos: {
       codigo: string
       nome: string
@@ -691,7 +690,7 @@ export async function listarReceitas(): Promise<ReceitaCompleta[]> {
   const { data, error } = await supabase
     .from('receitas')
     .select(
-      'id, nome, ativa, receita_itens ( produto_id, dose, tanque, produtos_quimicos ( codigo, nome, unidade, densidade ) )',
+      'id, nome, ativa, receita_itens ( produto_id, dose, produtos_quimicos ( codigo, nome, unidade, densidade ) )',
     )
     .order('nome')
   erro('receitas', error)

@@ -56,12 +56,14 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   - volume (L) = dose × peso_semente_kg / 1000 (informativo, só ml/kg)
 - Nome da receita = **código do comercial** (FTZ60, V&P, DER + LMT, FTZ ELITE…) — língua única
   entre comercial e produção, sem tabela de-para.
-- **Mistura em tanque**: só existem 5 tanques. Receita com mais de 5 produtos agrupa produtos no
-  mesmo tanque. O planejado do tanque é a **soma** dos pesos dos produtos daquele tanque, e o
-  Real vs Planejado compara contra essa soma.
-- **Transferidor (destino 0)**: pó secante (grafite) nunca vai em tanque — na receita ele é
-  dosado no transferidor. Tem **pesagem (peso inicial/final) igual aos tanques**
-  (decisão de 05/08/2026); só o nome muda na tela.
+- **A receita NÃO define o tanque** (decisão de 06/08/2026): ela é só **produto + dose**. A
+  distribuição varia de ordem para ordem, então quem informa o destino de cada produto é o
+  **operador**, ao preparar a ordem, antes dos pesos (tabela `ordem_produtos`).
+- **Mistura em tanque**: só existem 5 tanques. Receita com mais de 5 produtos obriga o operador
+  a juntar produtos num tanque. O planejado do tanque é a **soma** dos pesos dos produtos que
+  ele colocou lá, e o Real vs Planejado compara contra essa soma.
+- **Transferidor (destino 0)**: pó secante (grafite) nunca vai em tanque — o operador escolhe
+  "Transferidor" em vez de T1–T5. Tem **pesagem (peso inicial/final) igual aos tanques**.
 - **Lote de químico está FORA do escopo** (decisão de 05/08/2026): não há cadastro de lote de
   químico, escolha na ordem nem trava no início. O cadastro de **produtos** químicos (com
   densidade) continua — é dele que sai o peso de balança.
@@ -102,8 +104,10 @@ digitados sem confirmação **não** bloqueiam (preparação é descartável); a
 **Chave anti-duplicidade da ordem:** `nº ordem + cultivar + tratamento + embalagem`.
 
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
-1. **Iniciar** apenas *prepara*: monta os tanques da receita e abre a ordem. **Não** inicia o cronômetro.
-2. Operador informa o **peso inicial de cada tanque** (obrigatório).
+1. **Iniciar** apenas *abre* a ordem para preparação. **Não** inicia o cronômetro.
+2. Operador escolhe o **tanque de cada produto** (T1–T5 ou Transferidor) e informa o **peso
+   inicial de cada tanque** — ambos obrigatórios. O tanque só existe depois que algum produto
+   é destinado a ele.
 3. **Confirmar início** → grava o evento, define o turno, ocupa a máquina.
 4. Durante a produção o **peso final está travado**.
 5. **Finalizar** apenas *libera* a pesagem final. **Não** finaliza.

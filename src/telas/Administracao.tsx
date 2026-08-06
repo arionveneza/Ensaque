@@ -6,6 +6,7 @@ import {
   ACOES_POR_RECURSO, ROTULO_ACAO, permissaoEfetiva, permitidoPadrao,
 } from '@/dominio/permissoes'
 import { useAuth } from '@/auth/AuthProvider'
+import { useRascunho } from '@/lib/useRascunho'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio } from '@/componentes/ui'
 
 const PERFIS: Perfil[] = ['PCP', 'Logistica', 'Producao', 'Qualidade', 'Gestor']
@@ -221,9 +222,13 @@ function FormNovoUsuario({
   onSalvar: (u: { id: string; nome: string; perfil: Perfil; ativo: boolean }) => void
   onCancelar: () => void
 }) {
-  const [id, setId] = useState('')
-  const [nome, setNome] = useState('')
-  const [perfil, setPerfil] = useState<Perfil>('Producao')
+  const { valor, definir, limpar } = useRascunho('usuario.novo', {
+    id: '', nome: '', perfil: 'Producao' as Perfil,
+  })
+  const { id, nome, perfil } = valor
+  const setId = (v: string) => definir({ id: v })
+  const setNome = (v: string) => definir({ nome: v })
+  const setPerfil = (v: Perfil) => definir({ perfil: v })
 
   const idLimpo = id.trim()
   const idValido = UUID.test(idLimpo)
@@ -282,7 +287,10 @@ function FormNovoUsuario({
         <Botao
           variante="primario"
           disabled={!idValido || !nome.trim()}
-          onClick={() => onSalvar({ id: idLimpo, nome: nome.trim(), perfil, ativo: true })}
+          onClick={() => {
+            onSalvar({ id: idLimpo, nome: nome.trim(), perfil, ativo: true })
+            limpar()
+          }}
         >
           Cadastrar
         </Botao>

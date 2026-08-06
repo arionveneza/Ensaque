@@ -70,14 +70,23 @@ export interface ProdutoQuimico {
   densidade: number | null
 }
 
+/**
+ * Item da receita: produto e dose. O TANQUE não está aqui de propósito —
+ * a distribuição varia de ordem para ordem, então quem informa é o operador
+ * ao preparar a ordem (decisão de 05/08/2026).
+ */
 export interface ItemReceita {
   produtoId: string
   dose: number
-  /**
-   * 1 a 5, ou 0 = transferidor (pó secante, que nunca vai em tanque).
-   * Mais de um produto no mesmo destino = mistura. O transferidor pesa
-   * igual aos tanques.
-   */
+}
+
+/**
+ * Destino escolhido pelo operador nesta ordem: 1–5 = tanque, 0 =
+ * transferidor (pó secante, que nunca vai em tanque). Mais de um produto
+ * no mesmo destino = mistura.
+ */
+export interface AlocacaoProduto {
+  produtoId: string
   tanque: number
 }
 

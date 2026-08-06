@@ -105,10 +105,10 @@ export async function excluirProduto(id: string): Promise<void> {
 
 // ---------------- receitas ----------------
 
+/** A receita é produto + dose; o tanque é escolhido na ordem, pelo operador. */
 export interface ItemReceitaEdicao {
   produto_id: string
   dose: number
-  tanque: number
 }
 
 export async function salvarReceita(
@@ -118,10 +118,6 @@ export async function salvarReceita(
 ): Promise<string> {
   if (!nome.trim()) throw new Error('A receita precisa de um nome — use o código do comercial.')
   if (itens.length === 0) throw new Error('A receita precisa de ao menos um produto.')
-  const tanques = new Set(itens.map((i) => i.tanque))
-  if ([...tanques].some((t) => t < 1 || t > 5)) {
-    throw new Error('Só existem 5 tanques: os produtos precisam ficar entre T1 e T5.')
-  }
   if (itens.some((i) => !(i.dose > 0))) {
     throw new Error('Toda dose precisa ser maior que zero.')
   }

@@ -7,6 +7,7 @@
  */
 
 import type {
+  AlocacaoProduto,
   Embalagem,
   ItemReceita,
   MotivoParada,
@@ -106,18 +107,25 @@ export function ensaquePorBagKg(
 }
 
 /**
- * Monta os tanques da ordem agrupando os itens da receita por destino.
- * Só existem 5 tanques: receita com mais produtos agrupa produtos no mesmo
- * tanque, e o planejado do tanque passa a ser a SOMA dos produtos dele.
- * O destino 0 é o transferidor (pó secante) — aparece primeiro e tem
- * pesagem e lote iguais aos tanques.
+ * Monta os tanques da ordem agrupando os itens da receita pelo destino que
+ * o OPERADOR escolheu. Produto sem destino ainda não entra em tanque nenhum.
+ *
+ * Só existem 5 tanques: mais de um produto no mesmo destino é mistura, e o
+ * planejado do tanque passa a ser a SOMA dos produtos dele. O destino 0 é o
+ * transferidor (pó secante) — aparece primeiro e pesa como os tanques.
  */
-export function montaTanques(receita: Receita): TanqueOrdem[] {
+export function montaTanques(
+  receita: Receita,
+  alocacao: AlocacaoProduto[],
+): TanqueOrdem[] {
+  const destino = new Map(alocacao.map((a) => [a.produtoId, a.tanque]))
   const porTanque = new Map<number, ItemReceita[]>()
   for (const item of receita.itens) {
-    const atual = porTanque.get(item.tanque)
+    const tanque = destino.get(item.produtoId)
+    if (tanque == null) continue
+    const atual = porTanque.get(tanque)
     if (atual) atual.push(item)
-    else porTanque.set(item.tanque, [item])
+    else porTanque.set(tanque, [item])
   }
   return [...porTanque.keys()]
     .sort((a, b) => a - b)
@@ -127,6 +135,17 @@ export function montaTanques(receita: Receita): TanqueOrdem[] {
       pesoInicial: null,
       pesoFinal: null,
     }))
+}
+
+/** Produtos da receita que o operador ainda não destinou a nenhum tanque. */
+export function produtosSemDestino(
+  receita: Receita,
+  alocacao: AlocacaoProduto[],
+): string[] {
+  const destinados = new Set(alocacao.map((a) => a.produtoId))
+  return receita.itens
+    .filter((i) => !destinados.has(i.produtoId))
+    .map((i) => i.produtoId)
 }
 
 export interface ConsumoTanque {

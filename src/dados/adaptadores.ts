@@ -1,5 +1,7 @@
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from './api'
-import type { MotivoParada, Ordem, ProdutoQuimico, Receita } from '@/dominio/tipos'
+import type {
+  AlocacaoProduto, MotivoParada, Ordem, ProdutoQuimico, Receita,
+} from '@/dominio/tipos'
 
 /**
  * Converte as linhas do banco nos tipos do domínio, para que os cálculos já
@@ -31,17 +33,23 @@ export function paraOrdemDominio(l: LinhaOrdem): Ordem {
       inicio: ms(p.inicio),
       fim: p.fim ? ms(p.fim) : null,
     })),
+    // o produto entra no tanque que o OPERADOR escolheu nesta ordem
     tanques: l.ordem_tanques
       .slice()
       .sort((a, b) => a.tanque - b.tanque)
-      .map((t) => ({
-        tanque: t.tanque,
-        itens: l.receitas.receita_itens
-          .filter((i) => i.tanque === t.tanque)
-          .map((i) => ({ produtoId: i.produto_id, dose: i.dose, tanque: i.tanque })),
-        pesoInicial: t.peso_inicial,
-        pesoFinal: t.peso_final,
-      })),
+      .map((t) => {
+        const doTanque = new Set(
+          l.ordem_produtos.filter((op) => op.tanque === t.tanque).map((op) => op.produto_id),
+        )
+        return {
+          tanque: t.tanque,
+          itens: l.receitas.receita_itens
+            .filter((i) => doTanque.has(i.produto_id))
+            .map((i) => ({ produtoId: i.produto_id, dose: i.dose })),
+          pesoInicial: t.peso_inicial,
+          pesoFinal: t.peso_final,
+        }
+      }),
   }
 }
 
@@ -52,10 +60,12 @@ export function paraReceitaDominio(l: LinhaOrdem): Receita {
     itens: l.receitas.receita_itens.map((i) => ({
       produtoId: i.produto_id,
       dose: i.dose,
-      tanque: i.tanque,
     })),
   }
 }
+
+export const alocacaoDaOrdem = (l: LinhaOrdem): AlocacaoProduto[] =>
+  l.ordem_produtos.map((op) => ({ produtoId: op.produto_id, tanque: op.tanque }))
 
 export const mapaProdutos = (linhas: LinhaProduto[]): Map<string, ProdutoQuimico> =>
   new Map(
@@ -75,9 +85,5 @@ export const mapaMotivos = (linhas: LinhaMotivo[]): Map<string, MotivoParada> =>
   new Map(
     linhas.map((m) => [m.id, { id: m.id, descricao: m.descricao, tipo: m.tipo }]),
   )
-
-/** Tanques da receita, na ordem, para preparar a ordem antes de iniciar. */
-export const tanquesDaReceita = (l: LinhaOrdem): number[] =>
-  [...new Set(l.receitas.receita_itens.map((i) => i.tanque))].sort((a, b) => a - b)
 
 export const pesoOrdemKg = (l: LinhaOrdem): number => l.bags * l.lotes_semente.peso_bag_kg

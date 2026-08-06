@@ -5,7 +5,6 @@ import {
   mapaMotivos,
   paraOrdemDominio,
   pesoOrdemKg,
-  tanquesDaReceita,
 } from '@/dados/adaptadores'
 import { diaDeProducao, formataHms, tempoPlanejadoS, temposOrdem } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
@@ -113,17 +112,12 @@ export default function Execucao() {
     [ordens],
   )
 
-  async function iniciar(o: LinhaOrdem) {
-    try {
-      setErro(null)
-      // "Iniciar" apenas PREPARA: monta os tanques e abre a ordem.
-      // O cronômetro só dispara no Confirmar início.
-      await api.prepararTanques(o.id, tanquesDaReceita(o))
-      await recarregar()
-      setAberta(o.id)
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : String(e))
-    }
+  // "Iniciar" apenas ABRE a ordem para preparação: o operador escolhe o
+  // tanque de cada produto e informa os pesos. O cronômetro só dispara no
+  // Confirmar início.
+  function iniciar(o: LinhaOrdem) {
+    setErro(null)
+    setAberta(o.id)
   }
 
   if (carregando) {

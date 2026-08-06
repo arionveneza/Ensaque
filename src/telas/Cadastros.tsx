@@ -7,7 +7,7 @@ import { capacidadeDiaT, pesoItemKg } from '@/dominio/calculos'
 import type { ProdutoQuimico, TipoParada, UnidadeDose } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import { useRascunho } from '@/lib/useRascunho'
-import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n, rotuloTanque } from '@/componentes/ui'
+import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n } from '@/componentes/ui'
 
 /** Peso de referência usado só para exibir a receita numa escala legível. */
 const REFERENCIA_KG = 40_000
@@ -232,11 +232,25 @@ function FormProduto({
   onSalvar: (p: adm.ProdutoEdicao) => void
   onCancelar: () => void
 }) {
-  const [codigo, setCodigo] = useState(inicial?.codigo ?? '')
-  const [nome, setNome] = useState(inicial?.nome ?? '')
-  // produto novo nasce em ml/100kg: é a base que as bulas de TSI usam
-  const [unidade, setUnidade] = useState<UnidadeDose>(inicial?.unidade ?? 'ml/100kg')
-  const [densidade, setDensidade] = useState(inicial?.densidade?.toString() ?? '')
+  const inicialForm = useMemo(
+    () => ({
+      codigo: inicial?.codigo ?? '',
+      nome: inicial?.nome ?? '',
+      // produto novo nasce em ml/100kg: é a base que as bulas de TSI usam
+      unidade: (inicial?.unidade ?? 'ml/100kg') as UnidadeDose,
+      densidade: inicial?.densidade?.toString() ?? '',
+    }),
+    [inicial],
+  )
+  const { valor, definir, limpar } = useRascunho(
+    inicial ? `produto.${inicial.id}` : 'produto.novo',
+    inicialForm,
+  )
+  const { codigo, nome, unidade, densidade } = valor
+  const setCodigo = (v: string) => definir({ codigo: v })
+  const setNome = (v: string) => definir({ nome: v })
+  const setUnidade = (v: UnidadeDose) => definir({ unidade: v })
+  const setDensidade = (v: string) => definir({ densidade: v })
 
   const emMl = unidade.startsWith('ml')
   const dens = densidade.trim() === '' ? null : Number(densidade.replace(',', '.'))
@@ -280,7 +294,10 @@ function FormProduto({
         variante="primario"
         disabled={!codigo.trim() || !nome.trim() || faltaDensidade}
         titulo={faltaDensidade ? `Produto em ${unidade} exige densidade da FISPQ` : undefined}
-        onClick={() => onSalvar({ codigo, nome, unidade, densidade: dens })}
+        onClick={() => {
+          onSalvar({ codigo, nome, unidade, densidade: dens })
+          limpar()
+        }}
       >
         Salvar
       </Botao>
@@ -365,7 +382,7 @@ function AbaReceitas({
                 produtos={produtos}
                 inicialNome={r.nome}
                 inicialItens={r.receita_itens.map((i) => ({
-                  produto_id: i.produto_id, dose: i.dose, tanque: i.tanque,
+                  produto_id: i.produto_id, dose: i.dose,
                 }))}
                 onSalvar={(nome, itens) =>
                   acao(async () => { await adm.salvarReceita(nome, itens, r.id); setEditando(null) })
@@ -383,49 +400,35 @@ function AbaReceitas({
 }
 
 function TabelaReceita({ receita }: { receita: ReceitaCompleta }) {
-  const porTanque = new Map<number, typeof receita.receita_itens>()
-  for (const i of receita.receita_itens) {
-    const atual = porTanque.get(i.tanque)
-    if (atual) atual.push(i)
-    else porTanque.set(i.tanque, [i])
-  }
   return (
     <>
       <p className="mb-2 text-xs text-stone-500">
-        Valores para {inteiro(REFERENCIA_KG)} kg de semente.
+        Valores para {inteiro(REFERENCIA_KG)} kg de semente. O <b>tanque de cada produto</b> é
+        escolhido pelo operador ao preparar a ordem.
       </p>
-      <Tabela cabecalho={['Destino', 'Produto', '#Dose', '#Densidade', '#Peso de balança']}>
-        {[...porTanque.keys()].sort((a, b) => a - b).flatMap((tq) => {
-          const itens = porTanque.get(tq)!
-          return itens.map((i, idx) => {
-            const q = i.produtos_quimicos
-            const produto: ProdutoQuimico = {
-              id: i.produto_id, codigo: q.codigo, nome: q.nome,
-              unidade: q.unidade, densidade: q.densidade,
-            }
-            let peso: number | null = null
-            try {
-              peso = pesoItemKg({ produtoId: i.produto_id, dose: i.dose, tanque: tq }, produto, REFERENCIA_KG)
-            } catch { peso = null }
-            return (
-              <tr key={`${tq}-${i.produto_id}`} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5">
-                  {idx === 0 ? rotuloTanque(tq) : ''}
-                  {idx === 0 && itens.length > 1 && (
-                    <span className="ml-1"><Tag cor="roxo">mistura</Tag></span>
-                  )}
-                </td>
-                <td className="px-2 py-1.5">{q.nome}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{n(i.dose, 2)} {q.unidade}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">
-                  {q.densidade == null ? '—' : `${n(q.densidade, 3)} g/ml`}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right font-medium">
-                  {peso == null ? <span className="text-red-600">densidade ausente</span> : `${n(peso, 1)} kg`}
-                </td>
-              </tr>
-            )
-          })
+      <Tabela cabecalho={['Produto', '#Dose', '#Densidade', '#Peso de balança']}>
+        {receita.receita_itens.map((i) => {
+          const q = i.produtos_quimicos
+          const produto: ProdutoQuimico = {
+            id: i.produto_id, codigo: q.codigo, nome: q.nome,
+            unidade: q.unidade, densidade: q.densidade,
+          }
+          let peso: number | null = null
+          try {
+            peso = pesoItemKg({ produtoId: i.produto_id, dose: i.dose }, produto, REFERENCIA_KG)
+          } catch { peso = null }
+          return (
+            <tr key={i.produto_id} className="border-t border-stone-100 dark:border-stone-800/60">
+              <td className="px-2 py-1.5">{q.nome}</td>
+              <td className="num-tabular px-2 py-1.5 text-right">{n(i.dose, 2)} {q.unidade}</td>
+              <td className="num-tabular px-2 py-1.5 text-right">
+                {q.densidade == null ? '—' : `${n(q.densidade, 3)} g/ml`}
+              </td>
+              <td className="num-tabular px-2 py-1.5 text-right font-medium">
+                {peso == null ? <span className="text-red-600">densidade ausente</span> : `${n(peso, 1)} kg`}
+              </td>
+            </tr>
+          )
         })}
       </Tabela>
     </>
@@ -440,7 +443,6 @@ function TabelaReceita({ receita }: { receita: ReceitaCompleta }) {
 interface ItemReceitaForm {
   produto_id: string
   doseTxt: string
-  tanque: number
 }
 
 const doseNumero = (txt: string): number => {
@@ -467,9 +469,8 @@ function FormReceita({
           ? inicialItens.map((i) => ({
               produto_id: i.produto_id,
               doseTxt: String(i.dose).replace('.', ','),
-              tanque: i.tanque,
             }))
-          : [{ produto_id: '', doseTxt: '', tanque: 1 }],
+          : [{ produto_id: '', doseTxt: '' }],
     }),
     [inicialNome, inicialItens],
   )
@@ -484,7 +485,6 @@ function FormReceita({
   const atualizar = (i: number, campo: Partial<ItemReceitaForm>) =>
     setItens(itens.map((it, idx) => (idx === i ? { ...it, ...campo } : it)))
 
-  const tanquesUsados = new Set(itens.map((i) => i.tanque))
   const unidadeDe = (produtoId: string) =>
     produtos.find((p) => p.id === produtoId)?.unidade
 
@@ -529,18 +529,6 @@ function FormReceita({
                 className={`${INPUT} mt-1 block w-24 text-right`}
               />
             </label>
-            <label className="text-xs text-stone-500">
-              Destino
-              <select
-                value={it.tanque}
-                onChange={(e) => atualizar(i, { tanque: Number(e.target.value) })}
-                className={`${INPUT} mt-1 block w-32`}
-                title="Pó secante nunca vai em tanque: use o Transferidor"
-              >
-                {[1, 2, 3, 4, 5].map((t) => <option key={t} value={t}>T{t}</option>)}
-                <option value={0}>Transferidor</option>
-              </select>
-            </label>
             <button
               onClick={() => setItens(itens.filter((_, idx) => idx !== i))}
               disabled={itens.length === 1}
@@ -553,12 +541,12 @@ function FormReceita({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Botao onClick={() => setItens([...itens, { produto_id: '', doseTxt: '', tanque: 1 }])}>
+        <Botao onClick={() => setItens([...itens, { produto_id: '', doseTxt: '' }])}>
           Adicionar produto
         </Botao>
         <span className="text-xs text-stone-500">
-          {itens.length} produto(s) em {tanquesUsados.size} destino(s)
-          {itens.length > tanquesUsados.size && ' — há mistura'}
+          {itens.length} produto(s) — o <b>tanque</b> é informado pelo operador na ordem,
+          porque a distribuição muda a cada uma.
         </span>
       </div>
 
@@ -572,7 +560,6 @@ function FormReceita({
               itens.map((i) => ({
                 produto_id: i.produto_id,
                 dose: doseNumero(i.doseTxt),
-                tanque: i.tanque,
               })),
             )
             limpar() // gravou: o rascunho não serve mais
@@ -1021,13 +1008,18 @@ function FormNovoLote({
     bags_disp: number
   }) => void
 }) {
-  const [id, setId] = useState('')
-  const [cultivar, setCultivar] = useState('')
-  const [tratamento, setTratamento] = useState('SEM TSI')
-  const [pms, setPms] = useState('')
-  const [fator, setFator] = useState(5)
-  const [pesoBag, setPesoBag] = useState('')
-  const [bags, setBags] = useState('')
+  const { valor, definir, limpar } = useRascunho('lote.novo', {
+    id: '', cultivar: '', tratamento: 'SEM TSI',
+    pms: '', fator: 5, pesoBag: '', bags: '',
+  })
+  const { id, cultivar, tratamento, pms, fator, pesoBag, bags } = valor
+  const setId = (v: string) => definir({ id: v })
+  const setCultivar = (v: string) => definir({ cultivar: v })
+  const setTratamento = (v: string) => definir({ tratamento: v })
+  const setPms = (v: string) => definir({ pms: v })
+  const setFator = (v: number) => definir({ fator: v })
+  const setPesoBag = (v: string) => definir({ pesoBag: v })
+  const setBags = (v: string) => definir({ bags: v })
 
   const pmsNum = parseFloat(pms.replace(',', '.'))
   const sugestao = Number.isFinite(pmsNum) && pmsNum > 0 ? Math.round(pmsNum * fator) : null
@@ -1118,7 +1110,7 @@ function FormNovoLote({
         <Botao
           variante="primario"
           disabled={!valido}
-          onClick={() =>
+          onClick={() => {
             onSalvar({
               id: id.trim(),
               cultivar: cultivar.trim(),
@@ -1127,7 +1119,8 @@ function FormNovoLote({
               peso_bag_kg: pesoNum,
               bags_disp: bagsNum,
             })
-          }
+            limpar()
+          }}
         >
           Cadastrar lote
         </Botao>
