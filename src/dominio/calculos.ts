@@ -134,6 +134,7 @@ export function montaTanques(
       itens: porTanque.get(tanque)!,
       pesoInicial: null,
       pesoFinal: null,
+      abastecidoKg: 0,
     }))
 }
 
@@ -153,8 +154,10 @@ export interface ConsumoTanque {
   /** Soma dos pesos de balança dos produtos do tanque (mistura inclusa). */
   planejadoKg: number
   volumeL: number
-  /** peso inicial − peso final; null enquanto a pesagem não fechou. */
+  /** inicial + abastecido − final; null enquanto a pesagem não fechou. */
   realKg: number | null
+  /** O que foi acrescentado depois do peso inicial (0 quando não houve). */
+  abastecidoKg: number
   desvioPct: number | null
 }
 
@@ -173,15 +176,21 @@ export function consumoPorTanque(
       planejadoKg += pesoItemKg(item, produto, pesoSementeKg)
       volumeL += volumeItemL(item, produto, pesoSementeKg) ?? 0
     }
+    /**
+     * O produto pode acabar no meio da ordem e ser completado: 100 kg no
+     * início, mais 100 durante, 50 sobrando no fim = 150 consumidos. Só
+     * `inicial − final` daria 50 e a ordem apareceria como economia recorde.
+     */
+    const abastecidoKg = t.abastecidoKg ?? 0
     const realKg =
       t.pesoInicial != null && t.pesoFinal != null
-        ? Math.max(0, t.pesoInicial - t.pesoFinal)
+        ? Math.max(0, t.pesoInicial + abastecidoKg - t.pesoFinal)
         : null
     const desvioPct =
       realKg == null || planejadoKg === 0
         ? null
         : ((realKg - planejadoKg) / planejadoKg) * 100
-    return { tanque: t.tanque, planejadoKg, volumeL, realKg, desvioPct }
+    return { tanque: t.tanque, planejadoKg, volumeL, realKg, abastecidoKg, desvioPct }
   })
 }
 

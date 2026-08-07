@@ -48,6 +48,10 @@ export function paraOrdemDominio(l: LinhaOrdem): Ordem {
             .map((i) => ({ produtoId: i.produto_id, dose: i.dose })),
           pesoInicial: t.peso_inicial,
           pesoFinal: t.peso_final,
+          abastecidoKg: (t.ordem_tanque_abastecimentos ?? []).reduce(
+            (a, x) => a + Number(x.peso_kg),
+            0,
+          ),
         }
       }),
   }

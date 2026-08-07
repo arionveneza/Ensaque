@@ -487,6 +487,8 @@ export interface ChecklistQualidade {
   observacao: string | null
   inspetor_id: string | null
   ts: string
+  /** Caminhos no bucket `qualidade` — até 3, só na etapa final. */
+  fotos: string[]
 }
 
 export interface DadosChecklist {
@@ -496,15 +498,78 @@ export interface DadosChecklist {
   umidadeOk: boolean
   poOk: boolean
   observacao: string | null
+  /** Arquivos escolhidos na tela; viram caminhos no Storage ao salvar. */
+  fotos?: File[]
 }
 
 export async function listarChecksQualidade(): Promise<ChecklistQualidade[]> {
   const { data, error } = await supabase
     .from('qualidade_checks')
-    .select('id, ordem_id, etapa, origem, recobrimento, umidade_ok, po_ok, observacao, inspetor_id, ts')
+    .select('id, ordem_id, etapa, origem, recobrimento, umidade_ok, po_ok, observacao, inspetor_id, ts, fotos')
     .order('ts', { ascending: false })
-  erro('checklists de qualidade', error)
-  return (data ?? []) as ChecklistQualidade[]
+  if (error) {
+    // a coluna `fotos` nasceu depois: sem ela a tela inteira deixaria de abrir
+    if (error.message.includes('fotos')) {
+      const r = await supabase
+        .from('qualidade_checks')
+        .select('id, ordem_id, etapa, origem, recobrimento, umidade_ok, po_ok, observacao, inspetor_id, ts')
+        .order('ts', { ascending: false })
+      erro('checklists de qualidade', r.error)
+      return ((r.data ?? []) as ChecklistQualidade[]).map((c) => ({ ...c, fotos: [] }))
+    }
+    erro('checklists de qualidade', error)
+  }
+  return ((data ?? []) as ChecklistQualidade[]).map((c) => ({ ...c, fotos: c.fotos ?? [] }))
+}
+
+const BUCKET_FOTOS = 'qualidade'
+
+/**
+ * Sobe as fotos e devolve os caminhos.
+ *
+ * As imagens saem da câmera do tablet com vários MB; sem reduzir, uma ordem
+ * com 3 fotos ocuparia mais que todo o resto do banco e o envio travaria na
+ * rede do galpão. O redimensionamento é feito no navegador, antes de subir.
+ */
+export async function enviarFotosQualidade(ordemId: string, fotos: File[]): Promise<string[]> {
+  const caminhos: string[] = []
+  for (const [i, arquivo] of fotos.entries()) {
+    const blob = await reduzirImagem(arquivo)
+    // sem o índice, duas fotos do mesmo segundo se sobrescreveriam
+    const caminho = `${ordemId}/${Date.now()}-${i}.jpg`
+    const { error } = await supabase.storage
+      .from(BUCKET_FOTOS)
+      .upload(caminho, blob, { contentType: 'image/jpeg', upsert: false })
+    if (error) throw new Error(`enviar foto ${i + 1}: ${error.message}`)
+    caminhos.push(caminho)
+  }
+  return caminhos
+}
+
+/** O bucket é privado: a imagem só abre por link assinado, que expira. */
+export async function urlFotoQualidade(caminho: string): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET_FOTOS)
+    .createSignedUrl(caminho, 3600)
+  if (error) return null
+  return data?.signedUrl ?? null
+}
+
+/** Redimensiona para no máximo 1600 px e recomprime em JPEG. */
+async function reduzirImagem(arquivo: File, maxLado = 1600, qualidade = 0.8): Promise<Blob> {
+  const bitmap = await createImageBitmap(arquivo)
+  const escala = Math.min(1, maxLado / Math.max(bitmap.width, bitmap.height))
+  const w = Math.round(bitmap.width * escala)
+  const h = Math.round(bitmap.height * escala)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return arquivo
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  bitmap.close()
+  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', qualidade))
+  return blob ?? arquivo
 }
 
 /** Em processo: vários por ordem, cada verificação vira um registro com hora. */
@@ -536,12 +601,16 @@ export async function apontarQualidadeFinal(
   ordemId: string,
   d: DadosChecklist,
 ): Promise<void> {
+  // as fotos sobem ANTES: se o envio falhar, nada é gravado e o inspetor
+  // repete o teste inteiro em vez de ficar com um registro sem imagem
+  const fotos = d.fotos?.length ? await enviarFotosQualidade(ordemId, d.fotos) : []
   const { error } = await supabase.rpc('apontar_qualidade_final', {
     p_ordem: ordemId,
     p_recobrimento: d.recobrimento,
     p_umidade_ok: d.umidadeOk,
     p_po_ok: d.poOk,
     p_obs: d.observacao,
+    p_fotos: fotos,
   })
   erro('apontar qualidade final', error)
 }

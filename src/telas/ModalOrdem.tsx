@@ -347,6 +347,12 @@ export default function ModalOrdem({
                     <th className="py-2 pr-3 text-right">Peso inicial</th>
                     <th
                       className="py-2 pr-3 text-right"
+                      title="O que foi acrescentado durante a ordem, quando o produto acabou"
+                    >
+                      Abastecido
+                    </th>
+                    <th
+                      className="py-2 pr-3 text-right"
                       title="Opcional aqui — o PCP digita os pesos finais na tela AGROTIS"
                     >
                       Peso final*
@@ -405,6 +411,18 @@ export default function ModalOrdem({
                               // depois: ordem iniciada é registro histórico
                               travado={!podeApontar || tocada || ocupado}
                               onSalvar={(v) => acao(() => api.salvarPesoTanque(t.id, 'peso_inicial', v))}
+                            />
+                          </td>
+                          {/* O produto acaba no meio da ordem e o operador
+                              completa: sem registrar isso, o consumo real
+                              (inicial − final) sairia menor que o verdadeiro
+                              e a ordem apareceria como economia que não houve. */}
+                          <td className="py-3 pr-3 text-right">
+                            <Abastecimentos
+                              lancamentos={t.ordem_tanque_abastecimentos ?? []}
+                              podeAbastecer={podeApontar && emAndamento && !ocupado}
+                              onAbastecer={(v) => acao(() => api.abastecerTanque(t.id, v))}
+                              onApagar={(id) => acao(() => api.apagarAbastecimento(id))}
                             />
                           </td>
                           <td className="py-3 pr-3 text-right">
@@ -661,6 +679,108 @@ function Info({
       >
         {valor}
       </dd>
+    </div>
+  )
+}
+
+/**
+ * Os abastecimentos de um tanque: o total, a lista do que foi colocado e o
+ * campo para acrescentar mais.
+ *
+ * Cada carga é uma linha com hora, não um número acumulado, porque "quantas
+ * vezes precisou completar" é o que denuncia tanque pequeno demais para a
+ * receita — informação que um total sozinho apaga.
+ */
+function Abastecimentos({
+  lancamentos, podeAbastecer, onAbastecer, onApagar,
+}: {
+  lancamentos: { id: string; peso_kg: number; ts: string }[]
+  podeAbastecer: boolean
+  onAbastecer: (kg: number) => void
+  onApagar: (id: string) => void
+}) {
+  const [aberto, setAberto] = useState(false)
+  const [txt, setTxt] = useState('')
+  const total = lancamentos.reduce((a, x) => a + Number(x.peso_kg), 0)
+  const valor = Number(txt.replace(',', '.'))
+  const valido = Number.isFinite(valor) && valor > 0
+
+  function confirmar() {
+    if (!valido) return
+    onAbastecer(valor)
+    setTxt('')
+    setAberto(false)
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {total > 0 && (
+        <span className="num-tabular font-medium text-stone-700 dark:text-stone-300">
+          +{num(total)} kg
+        </span>
+      )}
+      {lancamentos.length > 0 && (
+        <ul className="text-[10px] leading-tight text-stone-500 dark:text-stone-400">
+          {lancamentos
+            .slice()
+            .sort((a, b) => a.ts.localeCompare(b.ts))
+            .map((l) => (
+              <li key={l.id} className="whitespace-nowrap">
+                {num(Number(l.peso_kg))} kg ·{' '}
+                {new Date(l.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                {podeAbastecer && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`Apagar o abastecimento de ${num(Number(l.peso_kg))} kg?`)) {
+                        onApagar(l.id)
+                      }
+                    }}
+                    title="Apagar este lançamento"
+                    className="ml-1 text-red-600 hover:underline dark:text-red-400"
+                  >
+                    ×
+                  </button>
+                )}
+              </li>
+            ))}
+        </ul>
+      )}
+      {podeAbastecer &&
+        (aberto ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={txt}
+              onChange={(e) => setTxt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmar()
+                if (e.key === 'Escape') {
+                  setTxt('')
+                  setAberto(false)
+                }
+              }}
+              placeholder="kg"
+              className="w-16 rounded-md border border-stone-300 px-2 py-1 text-right text-sm dark:border-stone-700 dark:bg-stone-800"
+            />
+            <button
+              disabled={!valido}
+              onClick={confirmar}
+              className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              ok
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAberto(true)}
+            title="O produto acabou e foi colocado mais no tanque"
+            className="rounded-md border border-stone-300 px-2 py-0.5 text-xs text-stone-600 hover:bg-stone-100 dark:border-stone-600 dark:text-stone-300 dark:hover:bg-stone-800"
+          >
+            + abastecer
+          </button>
+        ))}
+      {!podeAbastecer && total === 0 && <span className="text-stone-400">—</span>}
     </div>
   )
 }

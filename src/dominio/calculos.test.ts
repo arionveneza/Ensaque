@@ -190,6 +190,39 @@ describe('tanques e mistura', () => {
     expect(t3.desvioPct).toBeCloseTo(0, 6)
   })
 
+  // O caso real: o pó secante acaba no meio da ordem e o operador completa.
+  // 100 no início + 100 durante − 50 sobrando = 150 consumidos. O cálculo
+  // antigo (inicial − final) daria 50 e a ordem viraria economia recorde.
+  it('abastecimento no meio da ordem entra no consumo real', () => {
+    const tanques = montaTanques(receita6em5, ALOC)
+    tanques[1].pesoInicial = 100
+    tanques[1].abastecidoKg = 100
+    tanques[1].pesoFinal = 50
+    const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
+    expect(t3.realKg).toBeCloseTo(150, 6)
+    expect(t3.abastecidoKg).toBe(100)
+  })
+
+  it('sem abastecimento o consumo continua inicial menos final', () => {
+    const tanques = montaTanques(receita6em5, ALOC)
+    tanques[1].pesoInicial = 100
+    tanques[1].pesoFinal = 79.6
+    const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
+    expect(t3.realKg).toBeCloseTo(20.4, 6)
+    expect(t3.abastecidoKg).toBe(0)
+  })
+
+  // abastecer e terminar com MAIS do que começou é possível: completou perto
+  // do fim. O consumo continua positivo — o que não pode é virar negativo.
+  it('terminar acima do inicial nao quebra o consumo', () => {
+    const tanques = montaTanques(receita6em5, ALOC)
+    tanques[1].pesoInicial = 20
+    tanques[1].abastecidoKg = 100
+    tanques[1].pesoFinal = 90
+    const t3 = consumoPorTanque(tanques, PRODUTOS, 40_000).find((c) => c.tanque === 3)!
+    expect(t3.realKg).toBeCloseTo(30, 6)
+  })
+
   it('sem pesagem fechada nao inventa real nem desvio', () => {
     const tanques = montaTanques(receita6em5, ALOC)
     tanques[1].pesoInicial = 100

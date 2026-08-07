@@ -71,6 +71,12 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   ele colocou lá, e o Real vs Planejado compara contra essa soma.
 - **Transferidor (destino 0)**: pó secante (grafite) nunca vai em tanque — o operador escolhe
   "Transferidor" em vez de T1–T5. Tem **pesagem (peso inicial/final) igual aos tanques**.
+- **Reabastecimento durante a ordem** (decisão de 07/08/2026): o produto acaba no meio e o
+  operador completa o tanque. O consumo real deixa de ser `inicial − final` e passa a ser
+  **`inicial + Σ abastecimentos − final`** — 100 kg de início, mais 100 durante, 50 sobrando
+  = 150 consumidos, não 50. Cada carga vira uma linha em `ordem_tanque_abastecimentos`, com
+  hora e autor: o total é derivável, mas *quantas vezes precisou completar* não — e é isso
+  que denuncia tanque pequeno demais para a receita. Só com a ordem `Em produção`/`Parada`.
 - **Lote de químico está FORA do escopo** (decisão de 05/08/2026): não há cadastro de lote de
   químico, escolha na ordem nem trava no início. O cadastro de **produtos** químicos (com
   densidade) continua — é dele que sai o peso de balança.
@@ -140,6 +146,12 @@ padrão) · observação. Em processo tem ainda a **origem da amostra (BOWL/BAG)
 - **Em processo**: com a ordem `Em produção`/`Parada`. Vários registros por ordem, com hora
   (histórico). Não muda status.
 - **Final**: com a ordem `Finalizada`. Um registro por ordem → status `Qualidade apontada`.
+  Aceita **até 3 fotos** (decisão de 07/08/2026), guardadas no bucket privado `qualidade` do
+  Storage — a linha do teste só guarda o caminho. As imagens são reduzidas a 1600 px no
+  navegador antes de subir: foto de tablet tem vários MB e travaria o envio na rede do galpão.
+- **Ver os testes de uma ordem concluída**: a linha da tela Qualidade expande e mostra os
+  testes em processo, o final e as fotos. Antes só o relatório `.xlsx` mostrava isso, e
+  conferir uma reclamação exigia baixar a planilha inteira.
 - **Conferência de estoque (Logística)**: para ordens finalizadas, a logística informa a
   **quantidade produzida que contou** — campo em branco, obrigatório, sem pré-preenchimento
   (contagem cega, decisão de 05/08/2026). A divergência compara com o **produzido** declarado

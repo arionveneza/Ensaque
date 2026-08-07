@@ -70,6 +70,8 @@ export interface LinhaOrdem {
     tanque: number
     peso_inicial: number | null
     peso_final: number | null
+    /** O que foi acrescentado ao tanque durante a ordem (produto acabou). */
+    ordem_tanque_abastecimentos: { id: string; peso_kg: number; ts: string }[]
   }[]
 }
 
@@ -82,7 +84,8 @@ const SELECT_ORDEM = `
   ordem_produtos ( produto_id, tanque ),
   ordem_eventos ( tipo, ts ),
   ordem_paradas ( id, motivo_id, inicio, fim ),
-  ordem_tanques ( id, tanque, peso_inicial, peso_final ),
+  ordem_tanques ( id, tanque, peso_inicial, peso_final,
+                  ordem_tanque_abastecimentos ( id, peso_kg, ts ) ),
   qualidade_checks ( id )
 `
 
@@ -147,6 +150,30 @@ export async function definirTanqueProduto(
     p_tanque: tanque,
   })
   erro('definir tanque do produto', error)
+}
+
+/**
+ * Registra o que foi acrescentado ao tanque com a ordem já rodando — o
+ * produto acabou e o operador completou. Vai por RPC porque o consumo real
+ * depende disto: `inicial − final` sozinho contaria só a última carga.
+ */
+export async function abastecerTanque(tanqueId: string, pesoKg: number): Promise<void> {
+  const { error } = await supabase.rpc('abastecer_tanque', {
+    p_tanque: tanqueId,
+    p_peso: pesoKg,
+  })
+  erro('abastecer tanque', error)
+}
+
+/** Desfaz um abastecimento digitado errado. */
+export async function apagarAbastecimento(id: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('ordem_tanque_abastecimentos')
+    .delete()
+    .eq('id', id)
+    .select('id')
+  erro('apagar abastecimento', error)
+  exigeLinha('apagar abastecimento', data)
 }
 
 export async function salvarPesoTanque(

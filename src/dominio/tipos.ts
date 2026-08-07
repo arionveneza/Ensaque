@@ -152,6 +152,12 @@ export interface TanqueOrdem {
   itens: ItemReceita[]
   pesoInicial: number | null
   pesoFinal: number | null
+  /**
+   * Soma do que foi acrescentado ao tanque durante a ordem. O produto acaba
+   * no meio e o operador completa: sem isto o consumo (inicial − final) sai
+   * menor que o real e o Real vs Planejado aponta economia que não houve.
+   */
+  abastecidoKg: number
 }
 
 export interface Ordem {
