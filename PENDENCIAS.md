@@ -68,17 +68,26 @@ O GitHub abriu incidente crítico de Actions/Pages às 15:22 de 06/08/2026
 publicar na **Cloudflare Workers**, que clona o repositório e constrói na infraestrutura
 dela, sem passar pelo GitHub Actions.
 
-**Endereço em produção: https://ensaque.arion-pereira.workers.dev** (raiz, sem `/Ensaque/`
-— ver `wrangler.jsonc`). Publica sozinha a cada push no `main`, ~2 min.
+**Endereço em produção: https://tsi.veneza.app.br** (raiz, sem `/Ensaque/` — ver
+`wrangler.jsonc`). Publica sozinha a cada push no `main`, ~2 min.
+
+O domínio `veneza.app.br` passou a ter o DNS na Cloudflare em 07/08/2026 (nameservers
+`huxley`/`ulla`, trocados no Registro.br). Foi preciso porque domínio próprio em Worker
+exige a zona na Cloudflare — CNAME apontando para `workers.dev` a partir de DNS externo não
+funciona. O DNSSEC do Registro.br saiu junto, e a **Central de aplicativos** que roda no
+apex (`veneza.app.br`, GitHub Pages, seis módulos) continuou intocada: os 4 registros A e o
+CNAME do `www` foram copiados iguais e ficaram em **DNS only** (nuvem cinza) — em laranja a
+Cloudflare entraria no caminho e quebraria a renovação do certificado do GitHub.
+
+O endereço `ensaque.arion-pereira.workers.dev` continua servindo o mesmo Worker, mas
+redireciona (301) para o definitivo — ver `worker/index.ts`.
 
 **O GitHub não publica mais** (decisão de 06/08/2026, depois que o incidente fechou e o
 Pages continuou servindo o build pré-incidente). `.github/workflows/testes.yml` só roda
 testes, lint e build de verificação; o job `publicar` está no histórico do arquivo caso um
 dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireciona
-`arionveneza.github.io/Ensaque` para a Cloudflare — desligar o Pages faria o endereço
-antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
-
-Pendente: domínio próprio (`tsi.sementesveneza.com.br`) apontando para a Cloudflare.
+`arionveneza.github.io/Ensaque` para `tsi.veneza.app.br` — desligar o Pages faria o
+endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
 - [ ] `supabase/turnos-por-dia.sql` — tabela `dias_producao`. **Aditivo e opcional**: sem

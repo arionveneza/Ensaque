@@ -1,21 +1,33 @@
 {
   // Publicação na Cloudflare (Workers com assets estáticos).
   //
-  // Existe como alternativa ao GitHub Pages, adotada em 06/08/2026 durante um
-  // incidente crítico de Actions/Pages que segurou a publicação por horas.
   // A Cloudflare clona o repositório e constrói na infraestrutura dela, sem
-  // passar pelo GitHub Actions — por isso funciona mesmo com o Pages fora.
+  // passar pelo GitHub Actions. Adotada em 06/08/2026 durante um incidente
+  // crítico de Actions/Pages que segurou a publicação por horas, e mantida
+  // como caminho definitivo no dia seguinte: menos elos, menos lugares para
+  // travar. O GitHub só roda testes (.github/workflows/testes.yml).
   //
-  // O site aqui fica na RAIZ do domínio, então BASE_PATH não deve ser
-  // definido no build da Cloudflare (o vite.config cai em '/' sozinho).
-  // No GitHub Pages continua valendo BASE_PATH=/Ensaque/, porque lá é um
-  // "project site" servido em subpasta.
+  // ENDEREÇO DE PRODUÇÃO: https://tsi.veneza.app.br
+  // O domínio próprio foi ligado em 07/08/2026 pelo painel (Worker →
+  // Settings → Domains & Routes). Não é declarado aqui de propósito: o
+  // registro no painel já existe, e declarar rota em config faz o deploy
+  // falhar se a zona sair do ar por qualquer motivo — o que derrubaria a
+  // publicação junto.
+  //
+  // O site fica na RAIZ do domínio, então BASE_PATH não deve ser definido no
+  // build da Cloudflare (o vite.config cai em '/' sozinho).
   "name": "ensaque",
   "compatibility_date": "2025-01-01",
+
+  // O Worker existe só para redirecionar o endereço antigo (workers.dev);
+  // todo o resto vem do binding de assets. Ver worker/index.ts.
+  "main": "worker/index.ts",
+
   "assets": {
     "directory": "./dist",
-    // o app é uma SPA: endereço desconhecido devolve o index em vez de 404,
-    // que é o mesmo papel do dist/404.html no GitHub Pages
-    "not_found_handling": "single-page-application"
+    // o app é uma SPA: endereço desconhecido devolve o index em vez de 404
+    "not_found_handling": "single-page-application",
+    // com `main` presente, o Worker precisa do binding para servir os assets
+    "binding": "ASSETS"
   }
 }
