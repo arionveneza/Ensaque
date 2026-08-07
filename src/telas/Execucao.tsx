@@ -259,13 +259,17 @@ function FragmentoMaquina({
   const totalT = lista.reduce((a, o) => a + pesoOrdemKg(o) / 1000, 0)
   return (
     <>
-      <tr className="bg-stone-100/70 dark:bg-stone-800/40">
+      <tr className="bg-stone-100 dark:bg-stone-800/60">
         {/* colSpan 5 + célula fantasma: acompanha a coluna Cultivar, que some em tela estreita */}
-        <td colSpan={5} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide lg:px-3">
-          {nome}
+        <td colSpan={5} className="px-2 py-2 lg:px-3">
+          {/* a grade é longa e rolada: a faixa da máquina é a referência de
+              onde o operador está na lista, então precisa saltar aos olhos */}
+          <span className="border-l-4 border-stone-400 pl-2 text-base font-bold tracking-tight text-stone-900 dark:border-stone-500 dark:text-stone-100">
+            {nome}
+          </span>
         </td>
         <td className="hidden lg:table-cell" />
-        <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold lg:px-3">
+        <td className="num-tabular px-2 py-2 text-right text-sm font-bold lg:px-3">
           {num(totalT, 1)} t
         </td>
         <td colSpan={2}></td>
@@ -380,31 +384,38 @@ function CardMaquina({
             : 'border-emerald-300 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30'
       }`}
     >
-      <div className="flex items-center justify-between gap-2 px-4 pt-3">
-        <div className="flex items-center gap-2.5">
-          <h3 className="text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100">
+      {/* O nome da máquina é o que identifica o cartão a distância, no tablet
+          preso na coluna: precisa ser lido antes de qualquer outra coisa —
+          por isso ocupa a linha inteira, em corpo grande, com o estado logo
+          abaixo. Antes disputava espaço com a etiqueta de status em text-lg
+          e sumia no meio do cartão. */}
+      <div className="flex items-start justify-between gap-3 px-4 pt-3">
+        <div className="min-w-0">
+          <h3 className="text-3xl font-bold leading-none tracking-tight text-stone-900 dark:text-stone-100">
             {maquina.nome}
           </h3>
-          {atual ? (
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                emParada
-                  ? 'bg-red-600 text-white'
-                  : 'bg-emerald-600 text-white'
-              }`}
-            >
+          <div className="mt-1.5">
+            {atual ? (
               <span
-                className={`h-1.5 w-1.5 rounded-full bg-white ${emParada ? 'animate-pulse' : ''}`}
-              />
-              {emParada ? 'PARADA' : 'EM PRODUÇÃO'}
-            </span>
-          ) : (
-            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-500 dark:bg-stone-800 dark:text-stone-400">
-              LIVRE
-            </span>
-          )}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  emParada
+                    ? 'bg-red-600 text-white'
+                    : 'bg-emerald-600 text-white'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full bg-white ${emParada ? 'animate-pulse' : ''}`}
+                />
+                {emParada ? 'PARADA' : 'EM PRODUÇÃO'}
+              </span>
+            ) : (
+              <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-500 dark:bg-stone-800 dark:text-stone-400">
+                LIVRE
+              </span>
+            )}
+          </div>
         </div>
-        <span className="text-xs text-stone-500 dark:text-stone-400">
+        <span className="shrink-0 pt-1 text-right text-xs text-stone-500 dark:text-stone-400">
           {maquina.capacidade_th} t/h · {maquina.qtd_tanques} tanques
         </span>
       </div>
