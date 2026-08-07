@@ -372,6 +372,60 @@ export async function listarMovimentos(desde: string): Promise<MovimentoLote[]> 
 }
 
 // ================================================================
+// Expedição: carregamentos agendados (montagem de carga)
+// ================================================================
+
+export interface CarregamentoBanco {
+  id: string
+  carga: number
+  status: string
+  data: string | null
+  pedido: string | null
+  cliente: string | null
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  bags: number
+  transportadora: string | null
+  motorista: string | null
+  placa: string | null
+  importado_em: string
+}
+
+/**
+ * Devolve vazio se a tabela ainda não existir: o front vai ao ar antes do
+ * SQL, e a tela precisa abrir para mostrar o aviso de "rode o script".
+ */
+export async function listarCarregamentos(): Promise<CarregamentoBanco[]> {
+  const { data, error } = await supabase
+    .from('carregamentos')
+    .select('*')
+    .order('data', { ascending: true, nullsFirst: false })
+  if (error) {
+    if (error.code === '42P01' || error.message.includes('carregamentos')) return []
+    erro('carregamentos', error)
+  }
+  return (data ?? []) as CarregamentoBanco[]
+}
+
+/**
+ * Substituição total, como pedidos e saldos: o arquivo é a foto do dia, e
+ * misturar duas fotos duplicaria os agendamentos que aparecem nas duas.
+ */
+export async function substituirCarregamentos(
+  linhas: Omit<CarregamentoBanco, 'id' | 'importado_em'>[],
+  usuarioId: string,
+): Promise<void> {
+  const del = await supabase.from('carregamentos').delete().gte('carga', 0)
+  erro('limpar carregamentos anteriores', del.error)
+  if (linhas.length === 0) return
+  const { error } = await supabase
+    .from('carregamentos')
+    .insert(linhas.map((l) => ({ ...l, importado_por: usuarioId })))
+  erro('gravar carregamentos', error)
+}
+
+// ================================================================
 // Demanda: pedidos e estoque de produto acabado
 // ================================================================
 
@@ -385,6 +439,22 @@ export interface BalancoLinha {
   ordens_abertas: number
   saldo: number
   receita_cadastrada: boolean
+}
+
+/** Estoque de produto acabado (tratado) da carga vigente, linha a linha. */
+export interface EstoquePaLinha {
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  bags: number
+}
+
+export async function listarEstoquePa(): Promise<EstoquePaLinha[]> {
+  const { data, error } = await supabase
+    .from('estoque_pa')
+    .select('cultivar, tratamento, embalagem, bags')
+  erro('estoque de produto acabado', error)
+  return (data ?? []) as EstoquePaLinha[]
 }
 
 export async function listarBalanco(): Promise<BalancoLinha[]> {

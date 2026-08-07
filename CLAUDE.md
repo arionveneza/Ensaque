@@ -342,6 +342,16 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 6. **Indicadores** — produção por máquina e turno, relatório por ordem (planejado vs realizado bruto e
    líquido), produção por período (dia/semana/mês/geral) com tempo parado, Pareto de paradas
    separando planejada de não planejada, export .xlsx.
+6b. **Expedição** (07/08/2026) — upload do relatório **montagem de carga** da SimpleAgro
+   (substituição total; colunas achadas pelo nome). Carregamentos agendados com filtros por
+   período/status/cultivar/tratamento/embalagem e busca por cliente; **saldo dinâmico** por
+   combinação contra o período filtrado: `SEM TSI` cruza com os **lotes** por cultivar (semente
+   branca), tratamento real cruza com **estoque PA + ordens abertas programadas até a data fim**
+   (ordem sem dia só conta sem filtro de data). "Finalizado" começa fora do filtro — o caminhão
+   já saiu e o upload seguinte de saldos já desconta; contar de novo dobraria a falta. Também
+   lista os **pedidos de venda** (agregados por combinação — cliente não é guardado no upload)
+   com filtro de liberação financeira. Recurso `expedicao` (ver/importar): PCP e Logística
+   importam, Direção vê.
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 

@@ -22,6 +22,7 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   etapas: ['ver'],
   indicadores: ['ver'],
   cadastros: ['ver', 'editar'],
+  expedicao: ['ver', 'importar'],
 }
 
 export const ROTULO_ACAO: Record<string, string> = {
@@ -35,6 +36,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   apontar: 'Apontar',
   qualidade: 'Apontar qualidade',
   lancar: 'Lançar no AGROTIS',
+  importar: 'Importar planilha',
 }
 
 /**
@@ -53,12 +55,15 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     etapas: ['ver'],
     indicadores: ['ver'],
     cadastros: ['ver', 'editar'],
+    expedicao: ['ver', 'importar'],
   },
   Logistica: {
     programacao: ['ver'],
     lotes: ['ver', 'baixar_lote', 'conferir'],
     etapas: ['ver'],
     indicadores: ['ver'],
+    // os carregamentos são agenda da logística tanto quanto do PCP
+    expedicao: ['ver', 'importar'],
   },
   Producao: {
     programacao: ['ver'],
@@ -87,6 +92,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     etapas: ['ver'],
     indicadores: ['ver'],
     cadastros: ['ver'],
+    expedicao: ['ver'],
   },
   Gestor: { ...ACOES_POR_RECURSO },
 }

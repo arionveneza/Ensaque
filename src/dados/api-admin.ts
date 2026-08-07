@@ -297,6 +297,7 @@ export interface PermissaoLinha {
 
 export const RECURSOS = [
   'ordens', 'programacao', 'lotes', 'execucao', 'qualidade', 'indicadores', 'cadastros',
+  'expedicao',
 ] as const
 
 export const ACOES = [
