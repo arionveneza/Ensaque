@@ -4,6 +4,7 @@ import {
   ehRelatorioMontagemCarga,
   normalizaLinhasXlsx,
   saldosExpedicao,
+  situacaoSaldo,
   type CarregamentoLinha,
 } from './expedicao'
 import type { Linha as LinhaXlsx } from './importacao/simpleagro'
@@ -269,6 +270,56 @@ describe('saldo dinamico da expedicao', () => {
       '2026-08-07',
     )
     expect(r[0].deficitPrazo).toBe(10)
+  })
+
+  // "atende" é reservado a estoque FÍSICO: bag programado não é bag no galpão
+  it('coberta so por producao futura fica aguardando, nao atende', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10 })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-08-09' }],
+      '2026-08-07',
+    )
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].deficitPrazo).toBe(0)
+    expect(situacaoSaldo(r[0])).toBe('aguardando-producao')
+  })
+
+  it('estoque parcial + producao no prazo tambem e aguardando', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10 })],
+      [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 6 }],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 4, dataProg: '2026-08-09' }],
+      '2026-08-07',
+    )
+    expect(situacaoSaldo(r[0])).toBe('aguardando-producao')
+  })
+
+  it('so o estoque fisico cobrindo tudo vira atende', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10 })],
+      [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10 }],
+      [],
+    )
+    expect(situacaoSaldo(r[0])).toBe('atende')
+  })
+
+  it('a hierarquia: falta > adiantar > aguardando', () => {
+    const base = { cultivar: 'X', tratamento: 'T', embalagem: 'BG5M', producaoPrevista: 0, semTsi: false }
+    expect(situacaoSaldo({ ...base, agendado: 10, estoque: 0, deficitPrazo: 10, saldo: -5 })).toBe('falta')
+    expect(situacaoSaldo({ ...base, agendado: 10, estoque: 0, deficitPrazo: 10, saldo: 0 })).toBe('adiantar')
+    expect(situacaoSaldo({ ...base, agendado: 10, estoque: 12, deficitPrazo: 0, saldo: 2 })).toBe('atende')
+  })
+
+  it('SEM TSI sem lote suficiente continua sendo falta, nao aguardando', () => {
+    const r = saldosExpedicao(
+      [carreg({ bags: 10 })],
+      [{ cultivar: 'NEO700 I2X', bags: 4 }],
+      [], [],
+    )
+    expect(situacaoSaldo(r[0])).toBe('falta')
   })
 
   it('fracao de bag nao inventa falta por erro de ponto flutuante', () => {

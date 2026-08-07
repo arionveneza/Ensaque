@@ -373,3 +373,18 @@ export function saldosExpedicao(
   // faltas primeiro: é a linha que muda a semana de alguém
   return [...linhas.values()].sort((a, b) => a.saldo - b.saldo)
 }
+
+export type SituacaoSaldo = 'falta' | 'adiantar' | 'aguardando-producao' | 'atende'
+
+/**
+ * O rótulo da linha. **"Atende" é reservado a estoque físico**: combinação
+ * coberta só por produção futura fica em "aguardando produção" mesmo com
+ * tudo no prazo — bag programado não é bag no galpão, e a tela dizia
+ * "atende" para material que ainda nem existia (pedido do PCP, 07/08/2026).
+ */
+export function situacaoSaldo(s: SaldoExpedicao): SituacaoSaldo {
+  if (s.saldo < 0) return 'falta'
+  if (s.deficitPrazo > 0) return 'adiantar'
+  if (!s.semTsi && s.estoque < s.agendado) return 'aguardando-producao'
+  return 'atende'
+}

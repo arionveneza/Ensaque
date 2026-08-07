@@ -7,6 +7,7 @@ import {
   ehRelatorioMontagemCarga,
   normalizaLinhasXlsx,
   saldosExpedicao,
+  situacaoSaldo,
   SEM_TSI,
 } from '@/dominio/expedicao'
 import { EMBALAGEM_DEPARA } from '@/dominio/importacao/simpleagro'
@@ -139,8 +140,9 @@ export default function Expedicao() {
     [filtrados, lotes, estoquePa, ordens],
   )
 
-  const faltas = saldos.filter((s) => s.saldo < 0)
-  const precisamAdiantar = saldos.filter((s) => s.saldo >= 0 && s.deficitPrazo > 0)
+  const faltas = saldos.filter((s) => situacaoSaldo(s) === 'falta')
+  const precisamAdiantar = saldos.filter((s) => situacaoSaldo(s) === 'adiantar')
+  const aguardando = saldos.filter((s) => situacaoSaldo(s) === 'aguardando-producao')
 
   const opcoes = useMemo(
     () => ({
@@ -351,10 +353,23 @@ export default function Expedicao() {
               </Aviso>
             </div>
           )}
-          {faltas.length === 0 && precisamAdiantar.length === 0 && filtrados.length > 0 && (
+          {aguardando.length > 0 && (
+            <div className="mb-5">
+              <Aviso gravidade="alerta">
+                <b>{aguardando.length} combinação(ões) sem estoque pronto</b> — dependem de
+                produção programada (no prazo):{' '}
+                {aguardando
+                  .map((s) => `${s.cultivar} · ${s.tratamento} (${inteiro(s.agendado - s.estoque)} bg a produzir)`)
+                  .join(' — ')}.
+                O caminhão só carrega se essas ordens rodarem.
+              </Aviso>
+            </div>
+          )}
+          {faltas.length === 0 && precisamAdiantar.length === 0 && aguardando.length === 0 &&
+            filtrados.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="ok">
-                O estoque {ate ? `atende os carregamentos até ${diaCurto(ate)}` : 'atende tudo que está agendado'}.
+                O estoque físico {ate ? `atende os carregamentos até ${diaCurto(ate)}` : 'atende tudo que está agendado'}.
               </Aviso>
             </div>
           )}
@@ -371,22 +386,23 @@ export default function Expedicao() {
                 <Tabela cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Agendado',
                   '#Estoque', '#Prod. prevista', '#Saldo', '']}>
                   {saldos.map((s) => {
-                    const precisaAdiantar = s.saldo >= 0 && s.deficitPrazo > 0
+                    const situacao = situacaoSaldo(s)
                     // embalagem que o app não conhece nunca casa com o estoque:
                     // a "falta" seria artefato do de-para, não falta real
                     const embDesconhecida = !s.semTsi && !EMBALAGENS_APP.has(s.embalagem)
+                    const fundo = embDesconhecida
+                      ? 'bg-amber-50/60 dark:bg-amber-950/20'
+                      : situacao === 'falta'
+                        ? 'bg-red-50/60 dark:bg-red-950/20'
+                        : situacao === 'adiantar'
+                          ? 'bg-amber-50/60 dark:bg-amber-950/20'
+                          : situacao === 'aguardando-producao'
+                            ? 'bg-sky-50/60 dark:bg-sky-950/20'
+                            : ''
                     return (
                       <tr
                         key={`${s.cultivar}|${s.tratamento}|${s.embalagem}`}
-                        className={`border-t border-stone-100 dark:border-stone-800/60 ${
-                          embDesconhecida
-                            ? 'bg-amber-50/60 dark:bg-amber-950/20'
-                            : s.saldo < 0
-                              ? 'bg-red-50/60 dark:bg-red-950/20'
-                              : precisaAdiantar
-                                ? 'bg-amber-50/60 dark:bg-amber-950/20'
-                                : ''
-                        }`}
+                        className={`border-t border-stone-100 dark:border-stone-800/60 ${fundo}`}
                       >
                         <td className="px-2 py-1.5 font-medium">{s.cultivar}</td>
                         <td className="px-2 py-1.5">
@@ -408,10 +424,14 @@ export default function Expedicao() {
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           {embDesconhecida ? (
                             <Tag cor="alerta">embalagem sem de-para</Tag>
-                          ) : s.saldo < 0 ? (
+                          ) : situacao === 'falta' ? (
                             <Tag cor="perigo">faltam {inteiro(-s.saldo)}</Tag>
-                          ) : precisaAdiantar ? (
+                          ) : situacao === 'adiantar' ? (
                             <Tag cor="alerta">adiantar ≥ {inteiro(s.deficitPrazo)} bg</Tag>
+                          ) : situacao === 'aguardando-producao' ? (
+                            <span title={`${inteiro(s.agendado - s.estoque)} bags dependem de produção ainda não realizada (programada no prazo)`}>
+                              <Tag cor="info">aguardando produção</Tag>
+                            </span>
                           ) : (
                             <Tag cor="ok">atende</Tag>
                           )}
@@ -428,7 +448,9 @@ export default function Expedicao() {
                   produção se adianta. <b>Adiantar ≥ X</b> vem da linha do tempo: caminhão a
                   caminhão, conta como garantido o estoque, as ordens já iniciadas e as
                   programadas até a data de cada um; X é o pior buraco — o mínimo a puxar
-                  para frente (candidata a urgência na Programação).
+                  para frente (candidata a urgência na Programação). <b>Atende</b> é
+                  reservado a estoque físico: coberta só por produção futura, a linha fica em{' '}
+                  <b>aguardando produção</b> — bag programado não é bag no galpão.
                 </p>
               </>
             )}

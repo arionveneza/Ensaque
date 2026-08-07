@@ -354,8 +354,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    ordens **já iniciadas** (inclusive a adiantada com data futura) e ordens programadas até a
    data; promessa vencida (`data_prog` no passado sem iniciar) e ordem sem dia não garantem.
    O pior buraco vira o âmbar **"adiantar ≥ X bg"** — o gancho para marcar a ordem urgente.
-   Vermelho "faltam X" é falta mesmo adiantando. Embalagem sem de-para não vira falta falsa:
-   ganha etiqueta própria. "Finalizado" começa fora do filtro — o caminhão
+   Vermelho "faltam X" é falta mesmo adiantando. **"Atende" é reservado a estoque físico**:
+   coberta só por produção futura, a linha fica em **"aguardando produção"** (azul) — bag
+   programado não é bag no galpão (pedido do PCP, 07/08/2026). Embalagem sem de-para não vira
+   falta falsa: ganha etiqueta própria. "Finalizado" começa fora do filtro — o caminhão
    já saiu e o upload seguinte de saldos já desconta; contar de novo dobraria a falta. Também
    lista os **pedidos de venda** (agregados por combinação — cliente não é guardado no upload)
    com filtro de liberação financeira. Recurso `expedicao` (ver/importar): PCP e Logística
