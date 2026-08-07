@@ -86,26 +86,38 @@ end $$ language plpgsql security definer set search_path = tsi, public;
 -- 2. Consumo real passa a somar os abastecimentos
 --    (a view existia comparando só inicial − final)
 -- ------------------------------------------------------------
-create or replace view v_ordem_tanque_consumo as
-select ot.ordem_id,
-       ot.tanque,
-       ot.peso_inicial,
-       ot.peso_final,
-       coalesce((select sum(a.peso_kg)
-                   from tsi.ordem_tanque_abastecimentos a
-                  where a.tanque_id = ot.id), 0) as abastecido_kg,
-       case
-         when ot.peso_inicial is null or ot.peso_final is null then null
-         else greatest(0,
-                ot.peso_inicial
-              + coalesce((select sum(a.peso_kg)
-                            from tsi.ordem_tanque_abastecimentos a
-                           where a.tanque_id = ot.id), 0)
-              - ot.peso_final)
-       end as consumo_real_kg
-  from tsi.ordem_tanques ot;
+-- DROP + CREATE, não `create or replace`: a view já existe e o replace só
+-- aceita ACRESCENTAR coluna no fim — mudar ou remover dá 42P16. As colunas
+-- antigas (planejado_kg, real_kg, desvio_pct) continuam todas, com a mesma
+-- semântica; `real_kg` é que passa a somar os abastecimentos.
+drop view if exists v_ordem_tanque_consumo;
 
+create view v_ordem_tanque_consumo as
+with abast as (
+  select tanque_id, sum(peso_kg) as abastecido_kg
+    from ordem_tanque_abastecimentos
+   group by 1
+)
+select ot.ordem_id, ot.tanque, ot.peso_inicial, ot.peso_final,
+       coalesce(a.abastecido_kg, 0) as abastecido_kg,
+       p.planejado_kg,
+       case when ot.peso_inicial is not null and ot.peso_final is not null
+            then greatest(0, ot.peso_inicial + coalesce(a.abastecido_kg, 0) - ot.peso_final)
+       end as real_kg,
+       case when ot.peso_inicial is not null and ot.peso_final is not null and p.planejado_kg > 0
+            then (greatest(0, ot.peso_inicial + coalesce(a.abastecido_kg, 0) - ot.peso_final)
+                  - p.planejado_kg) / p.planejado_kg * 100
+       end as desvio_pct
+from ordem_tanques ot
+join (select ordem_id, tanque, sum(peso_planejado_kg) as planejado_kg
+      from v_ordem_itens_planejado group by 1,2) p
+  on p.ordem_id = ot.ordem_id and p.tanque = ot.tanque
+left join abast a on a.tanque_id = ot.id;
+
+-- view recriada volta sem security_invoker e sem os grants: sem isto ela
+-- roda com os privilégios de quem criou e passa por cima do RLS
 alter view v_ordem_tanque_consumo set (security_invoker = true);
+grant select on v_ordem_tanque_consumo to authenticated;
 
 -- ------------------------------------------------------------
 -- 3. Fotos na qualidade final
@@ -188,6 +200,11 @@ select 'rpc abastecer_tanque', (count(*) = 1)::text
  where ns.nspname = 'tsi' and p.proname = 'abastecer_tanque'
 union all
 select 'view soma abastecido', (position('abastecido_kg' in pg_get_viewdef('tsi.v_ordem_tanque_consumo'::regclass)) > 0)::text
+union all
+select 'view manteve planejado/real/desvio', (count(*) = 3)::text
+  from information_schema.columns
+ where table_schema = 'tsi' and table_name = 'v_ordem_tanque_consumo'
+   and column_name in ('planejado_kg','real_kg','desvio_pct')
 union all
 select 'coluna fotos', (count(*) = 1)::text
   from information_schema.columns
