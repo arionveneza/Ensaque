@@ -1,0 +1,61 @@
+name: Testes
+
+# Testes e verificação de tipos a cada push. NÃO publica.
+#
+# A publicação saiu daqui em 06/08/2026 e passou a ser da Cloudflare
+# (ver wrangler.jsonc), que clona o repositório e constrói na infraestrutura
+# dela. O motivo foi um incidente crítico de Actions/Pages que segurou uma
+# correção urgente por horas: a cadeia aqui tinha três elos — rodar testes,
+# construir, empurrar para a branch gh-pages, e ainda um workflow interno do
+# Pages para servir dali. Cada elo é um lugar onde travar. A Cloudflare tem um.
+#
+# A branch `gh-pages` continua existindo, servindo apenas uma página que
+# redireciona o endereço antigo para o novo — quem tem o link salvo no tablet
+# não pode cair numa versão velha do sistema sem perceber.
+#
+# Se um dia voltar a publicar por aqui: o histórico deste arquivo tem o job
+# `publicar` completo, com peaceiris/actions-gh-pages e BASE_PATH=/Ensaque/
+# (project site fica em subpasta; sem isso os assets dão 404).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# O nome NÃO pode ser "pages": esse grupo é o mesmo que o workflow interno
+# "pages build and deployment" usa, e grupos de concorrência valem para o
+# repositório inteiro — em 06/08/2026 os dois disputaram o grupo e o GitHub
+# cancelou este run antes de ele começar.
+concurrency:
+  group: build-tsi
+  cancel-in-progress: true
+
+jobs:
+  testar:
+    name: Testes e verificação de tipos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Testes
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      # o build entra aqui como verificação: erro de tipo ou de bundle
+      # aparece no commit, e não só quando a Cloudflare tentar publicar
+      - name: Build (verificação)
+        run: npm run build

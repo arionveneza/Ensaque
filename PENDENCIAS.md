@@ -71,9 +71,14 @@ dela, sem passar pelo GitHub Actions.
 **Endereço em produção: https://ensaque.arion-pereira.workers.dev** (raiz, sem `/Ensaque/`
 — ver `wrangler.jsonc`). Publica sozinha a cada push no `main`, ~2 min.
 
-O endereço antigo do GitHub Pages (`arionveneza.github.io/Ensaque`) continua servindo um
-build **velho** enquanto o incidente não fecha. Decisão pendente: desligar o Pages ou manter
-os dois; e eventual domínio próprio (`tsi.sementesveneza.com.br`).
+**O GitHub não publica mais** (decisão de 06/08/2026, depois que o incidente fechou e o
+Pages continuou servindo o build pré-incidente). `.github/workflows/testes.yml` só roda
+testes, lint e build de verificação; o job `publicar` está no histórico do arquivo caso um
+dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireciona
+`arionveneza.github.io/Ensaque` para a Cloudflare — desligar o Pages faria o endereço
+antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
+
+Pendente: domínio próprio (`tsi.sementesveneza.com.br`) apontando para a Cloudflare.
 
 ### SQL pendente de execução
 - [ ] `supabase/turnos-por-dia.sql` — tabela `dias_producao`. **Aditivo e opcional**: sem
