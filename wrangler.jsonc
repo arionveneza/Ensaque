@@ -28,6 +28,12 @@
     // o app é uma SPA: endereço desconhecido devolve o index em vez de 404
     "not_found_handling": "single-page-application",
     // com `main` presente, o Worker precisa do binding para servir os assets
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // SEM ISTO O REDIRECIONAMENTO NÃO ACONTECE. Por padrão a Cloudflare
+    // serve o arquivo estático e só chama o Worker se nada casar — e `/`
+    // casa com o index.html, então o código nunca rodava. Publicava certo e
+    // não fazia efeito nenhum. Com `run_worker_first`, o Worker decide
+    // primeiro e devolve os assets pelo binding.
+    "run_worker_first": true
   }
 }
