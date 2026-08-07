@@ -259,17 +259,22 @@ function FragmentoMaquina({
   const totalT = lista.reduce((a, o) => a + pesoOrdemKg(o) / 1000, 0)
   return (
     <>
-      <tr className="bg-stone-100 dark:bg-stone-800/60">
+      {/* Faixa cheia, não fundo claro: a grade é longa e rolada, e esta linha
+          é a referência de onde o operador está na lista. O pool fica em
+          cinza — verde é para máquina de verdade, e o pool não é uma. */}
+      <tr
+        className={
+          numerada
+            ? 'bg-emerald-700 text-white dark:bg-emerald-800'
+            : 'bg-stone-600 text-white dark:bg-stone-700'
+        }
+      >
         {/* colSpan 5 + célula fantasma: acompanha a coluna Cultivar, que some em tela estreita */}
-        <td colSpan={5} className="px-2 py-2 lg:px-3">
-          {/* a grade é longa e rolada: a faixa da máquina é a referência de
-              onde o operador está na lista, então precisa saltar aos olhos */}
-          <span className="border-l-4 border-stone-400 pl-2 text-base font-bold tracking-tight text-stone-900 dark:border-stone-500 dark:text-stone-100">
-            {nome}
-          </span>
+        <td colSpan={5} className="px-2 py-2.5 lg:px-3">
+          <span className="text-lg font-bold tracking-tight">{nome}</span>
         </td>
         <td className="hidden lg:table-cell" />
-        <td className="num-tabular px-2 py-2 text-right text-sm font-bold lg:px-3">
+        <td className="num-tabular px-2 py-2.5 text-right text-sm font-bold lg:px-3">
           {num(totalT, 1)} t
         </td>
         <td colSpan={2}></td>
