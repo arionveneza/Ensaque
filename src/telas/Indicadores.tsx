@@ -89,10 +89,34 @@ export default function Indicadores() {
   const paradasPlan = paradas.filter((p) => p.tipo === 'Planejada')
   const paradasNaoPlan = paradas.filter((p) => p.tipo === 'Nao planejada')
 
-  const totalBags = useMemo(
-    () => tempos.reduce((a, t) => a + (ordemPorId.get(t.ordem_id)?.bags ?? 0), 0),
-    [tempos, ordemPorId],
-  )
+  /**
+   * Bags produzidos vs planejados.
+   *
+   * O indicador mostrava só `bags` — a quantidade que o PCP digitou ao criar
+   * a ordem — com o rótulo "Bags", que qualquer um lê como produzido. Ordem
+   * planejada com 220 e fechada com 217 continuava exibindo 220, e o número
+   * que a produção declarou ao finalizar não aparecia em lugar nenhum.
+   *
+   * `bags_produzidos` só existe depois de finalizar (e ordens antigas, de
+   * antes do campo, não têm). Para essas o planejado entra como estimativa e
+   * `estimadas` conta quantas são — sem isso o total pareceria realizado
+   * quando é metade chute.
+   */
+  const bags = useMemo(() => {
+    let produzidos = 0
+    let planejados = 0
+    let estimadas = 0
+    for (const t of tempos) {
+      const o = ordemPorId.get(t.ordem_id)
+      planejados += o?.bags ?? 0
+      if (o?.bags_produzidos != null) produzidos += o.bags_produzidos
+      else {
+        produzidos += o?.bags ?? 0
+        estimadas++
+      }
+    }
+    return { produzidos, planejados, estimadas }
+  }, [tempos, ordemPorId])
 
   /** Produção agrupada por tratamento (receita). */
   const porTratamento = useMemo(() => {
@@ -105,7 +129,7 @@ export default function Indicadores() {
       const chave = o?.receita_nome ?? '?'
       const atual = mapa.get(chave) ?? { tratamento: chave, ordens: 0, bags: 0, pesoT: 0, liquido: 0 }
       atual.ordens++
-      atual.bags += o?.bags ?? 0
+      atual.bags += o?.bags_produzidos ?? o?.bags ?? 0
       atual.pesoT += Number(t.peso_t)
       atual.liquido += Number(t.liquido_s)
       mapa.set(chave, atual)
@@ -125,7 +149,8 @@ export default function Indicadores() {
       const atual =
         mapa.get(chave) ?? { dia: chave, ordens: 0, bags: 0, pesoT: 0, parPlan: 0, parNplan: 0 }
       atual.ordens++
-      atual.bags += o?.bags ?? 0
+      // produzido quando existe; senão o planejado, igual ao indicador do topo
+      atual.bags += o?.bags_produzidos ?? o?.bags ?? 0
       atual.pesoT += Number(t.peso_t)
       atual.parPlan += Number(t.paradas_plan_s)
       atual.parNplan += Number(t.paradas_nplan_s)
@@ -143,7 +168,9 @@ export default function Indicadores() {
         { titulo: 'Turno', largura: 8 }, { titulo: 'Ordem', largura: 14 },
         { titulo: 'Cultivar', largura: 18 }, { titulo: 'Lote', largura: 14 },
         { titulo: 'Tratamento', largura: 18 }, { titulo: 'Embalagem', largura: 12 },
-        { titulo: 'Bags', largura: 8, tipo: 'numero', casas: 0 },
+        // as duas colunas separadas: a diferença entre elas é o que interessa
+        { titulo: 'Bags planejados', largura: 14, tipo: 'numero', casas: 0 },
+        { titulo: 'Bags produzidos', largura: 14, tipo: 'numero', casas: 0 },
         { titulo: 'Peso (t)', largura: 10, tipo: 'numero', casas: 2 },
         { titulo: 'Planejado (h)', largura: 12, tipo: 'numero', casas: 2 },
         { titulo: 'Bruto (h)', largura: 10, tipo: 'numero', casas: 2 },
@@ -157,7 +184,7 @@ export default function Indicadores() {
         return [
           t.data_prog ?? '', t.maquina_id, t.turno_id ?? '', t.numero,
           o?.cultivar ?? '', o?.lote_id ?? '', o?.receita_nome ?? '', o?.embalagem ?? '',
-          o?.bags ?? '', Number(t.peso_t),
+          o?.bags ?? '', o?.bags_produzidos ?? '', Number(t.peso_t),
           Number(t.planejado_s) / 3600, Number(t.bruto_s) / 3600,
           Number(t.liquido_s) / 3600, Number(t.paradas_s) / 3600,
           Number(t.paradas_plan_s) / 3600, Number(t.paradas_nplan_s) / 3600,
@@ -197,7 +224,21 @@ export default function Indicadores() {
         <>
           <div className="mb-5 grid gap-3 sm:grid-cols-4 lg:grid-cols-7">
             <Indicador rotulo="Ordens" valor={String(totais.ordens)} />
-            <Indicador rotulo="Bags" valor={String(totalBags)} />
+            <Indicador
+              rotulo="Bags produzidos"
+              valor={String(bags.produzidos)}
+              detalhe={
+                bags.produzidos === bags.planejados
+                  ? `= o planejado`
+                  : `${bags.produzidos > bags.planejados ? '+' : ''}${bags.produzidos - bags.planejados} vs ${bags.planejados} planejados`
+              }
+              alerta={bags.estimadas > 0}
+              titulo={
+                bags.estimadas > 0
+                  ? `${bags.estimadas} ordem(ns) sem quantidade declarada pela produção — para essas entra o planejado`
+                  : 'Quantidade declarada pela produção ao finalizar cada ordem'
+              }
+            />
             <Indicador rotulo="Produzido" valor={`${n(totais.pesoT, 1)} t`} />
             <Indicador rotulo="Tempo líquido" valor={formataHms(totais.liquido)} />
             <Indicador
@@ -235,7 +276,7 @@ export default function Indicadores() {
 
           <div className="mb-5 grid gap-5 lg:grid-cols-2">
             <Cartao titulo="Produção por tratamento">
-              <Tabela cabecalho={['Tratamento', '#Ordens', '#Bags', '#Peso', '#Líquido']}>
+              <Tabela cabecalho={['Tratamento', '#Ordens', '#Bags produz.', '#Peso', '#Líquido']}>
                 {porTratamento.map((t) => (
                   <tr key={t.tratamento} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5 font-medium">{t.tratamento}</td>
@@ -249,7 +290,7 @@ export default function Indicadores() {
             </Cartao>
 
             <Cartao titulo="Produção e paradas por dia">
-              <Tabela cabecalho={['Dia', '#Ordens', '#Bags', '#Peso', '#Par. planej.', '#Par. não planej.']}>
+              <Tabela cabecalho={['Dia', '#Ordens', '#Bags produz.', '#Peso', '#Par. planej.', '#Par. não planej.']}>
                 {porDia.map((d) => (
                   <tr key={d.dia} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5 font-medium">
@@ -376,13 +417,16 @@ export default function Indicadores() {
               <Botao
                 onClick={() =>
                   exportarCsv('producao-por-ordem', [
-                    ['Ordem', 'Máquina', 'Dia', 'Turno', 'Início', 'Fim', 'Peso (t)',
+                    ['Ordem', 'Máquina', 'Dia', 'Turno', 'Início', 'Fim',
+                      'Bags planejados', 'Bags produzidos', 'Peso (t)',
                       'Planejado (s)', 'Bruto (s)', 'Líquido (s)', 'Paradas (s)'],
                     ...tempos.map((t) => [
                       t.numero, t.maquina_id, t.data_prog ?? '', t.turno_id ?? '',
                       // data e hora completas no arquivo: é lá que se audita
                       new Date(t.ini).toLocaleString('pt-BR'),
                       t.fim ? new Date(t.fim).toLocaleString('pt-BR') : 'em andamento',
+                      ordemPorId.get(t.ordem_id)?.bags ?? '',
+                      ordemPorId.get(t.ordem_id)?.bags_produzidos ?? '',
                       t.peso_t, Math.round(t.planejado_s), Math.round(t.bruto_s),
                       Math.round(t.liquido_s), Math.round(t.paradas_s),
                     ]),
@@ -394,12 +438,13 @@ export default function Indicadores() {
             }
           >
             <Tabela
-              cabecalho={['Ordem', 'Máq.', 'Turno', 'Início', 'Fim', '#Peso', '#Planejado',
+              cabecalho={['Ordem', 'Máq.', 'Turno', 'Início', 'Fim', '#Bags', '#Peso', '#Planejado',
                 '#Bruto', '#Líquido', '#Paradas', 'Aderência']}
             >
               {tempos.map((t) => {
                 const aderencia =
                   Number(t.liquido_s) > 0 ? (Number(t.planejado_s) / Number(t.liquido_s)) * 100 : null
+                const o = ordemPorId.get(t.ordem_id)
                 return (
                   <tr key={t.ordem_id} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5 font-medium">{t.numero}</td>
@@ -414,6 +459,24 @@ export default function Indicadores() {
                       ) : (
                         <span className="text-xs text-emerald-600 dark:text-emerald-400">
                           em andamento
+                        </span>
+                      )}
+                    </td>
+                    {/* produzido em destaque, planejado ao lado só quando
+                        diferente — a divergência é o que se quer enxergar */}
+                    <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+                      {o?.bags_produzidos != null ? (
+                        <>
+                          <span className="font-medium">{o.bags_produzidos}</span>
+                          {o.bags_produzidos !== o.bags && (
+                            <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
+                              /{o.bags}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-stone-400" title="Produção ainda não declarou a quantidade">
+                          {o?.bags ?? '—'}*
                         </span>
                       )}
                     </td>
@@ -435,6 +498,13 @@ export default function Indicadores() {
                 )
               })}
             </Tabela>
+            <p className="mt-3 text-xs text-stone-500">
+              <b>Bags</b>: quantidade que a produção declarou ao finalizar. Quando difere do
+              planejado, o planejado aparece ao lado em âmbar (ex.: <b>217</b>
+              <span className="text-amber-600 dark:text-amber-400">/220</span>). O{' '}
+              <b>*</b> marca ordem sem quantidade declarada — ainda em produção, ou finalizada
+              antes de o campo existir; nesses casos o número exibido é o planejado.
+            </p>
           </Cartao>
         </>
       )}
@@ -442,11 +512,33 @@ export default function Indicadores() {
   )
 }
 
-function Indicador({ rotulo, valor }: { rotulo: string; valor: string }) {
+function Indicador({
+  rotulo, valor, detalhe, alerta = false, titulo,
+}: {
+  rotulo: string
+  valor: string
+  /** Linha de contexto abaixo do número — comparação, ressalva. */
+  detalhe?: string
+  /** Marca o detalhe em âmbar: o número tem estimativa dentro. */
+  alerta?: boolean
+  titulo?: string
+}) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-800 dark:bg-stone-900">
+    <div
+      title={titulo}
+      className="rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-800 dark:bg-stone-900"
+    >
       <p className="text-[10px] uppercase tracking-wide text-stone-500">{rotulo}</p>
       <p className="num-tabular mt-1 text-lg font-semibold">{valor}</p>
+      {detalhe && (
+        <p
+          className={`num-tabular mt-0.5 text-[10px] leading-tight ${
+            alerta ? 'text-amber-600 dark:text-amber-400' : 'text-stone-500'
+          }`}
+        >
+          {detalhe}
+        </p>
+      )}
     </div>
   )
 }
