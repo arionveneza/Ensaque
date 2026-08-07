@@ -60,6 +60,36 @@ export interface ResumoCarregamentos {
   porStatus: Record<string, number>
 }
 
+/**
+ * Normaliza o retorno do leitor de xlsx. Arquivo com aba NOMEADA (o export
+ * da montagem de carga vem numa aba chamada `relatorio`) faz o read-excel-file
+ * devolver `[{ sheet, data }]` em vez das linhas diretas — e aí `rows[0]` não
+ * é uma linha, é um objeto, e a importação quebrava com
+ * "(e[0] ?? []).map is not a function".
+ *
+ * `aceita` escolhe a aba certa quando o arquivo tem várias: sem isso, uma
+ * aba de capa antes da `relatorio` faria um arquivo válido ser rejeitado.
+ */
+export function normalizaLinhasXlsx(
+  bruto: unknown,
+  aceita?: (rows: Linha[]) => boolean,
+): Linha[] {
+  const arr = bruto as ({ sheet?: string; data?: Linha[] } | Linha)[]
+  if (arr.length > 0 && !Array.isArray(arr[0])) {
+    const abas = arr.filter(
+      (x): x is { sheet?: string; data: Linha[] } =>
+        Array.isArray((x as { data?: unknown })?.data),
+    )
+    if (abas.length === 0) return []
+    if (aceita) {
+      const certa = abas.find((a) => aceita(a.data))
+      if (certa) return certa.data
+    }
+    return abas[0].data
+  }
+  return arr as Linha[]
+}
+
 export const ehRelatorioMontagemCarga = (rows: Linha[]): boolean => {
   const h = (rows[0] ?? []).map(txt)
   return h.includes('Carga') && h.includes('Qtd Agendada') && h.includes('Status Carga')
@@ -181,18 +211,41 @@ export interface ProducaoPrevista {
   embalagem: string
   bags: number
   dataProg: string | null
+  /**
+   * A produção já tocou a ordem (iniciada, parada ou finalizada): o material
+   * está saindo ou já saiu da máquina, garantido para qualquer caminhão.
+   * Sem isto, uma ordem ADIANTADA e concluída — data programada no futuro,
+   * status Finalizada — dispararia "adiante a produção" para bags que já
+   * estão no galpão: o caso feliz da regra virando alarme falso.
+   */
+  iniciada?: boolean
 }
+
+/**
+ * Duas casas, como o banco (numeric 12,2): 0.30+0.60 tem que empatar com
+ * 0.90. O `+ 0` desfaz o −0 que o Math.round devolve para negativos ínfimos.
+ */
+const arred2 = (x: number) => Math.round(x * 100) / 100 + 0
 
 export interface SaldoExpedicao {
   cultivar: string
   tratamento: string
+  /** SEM TSI agrega o cultivar inteiro: aqui vão as embalagens agendadas. */
   embalagem: string
   agendado: number
   /** Lotes (SEM TSI) ou estoque PA (tratado). */
   estoque: number
-  /** Só para tratado: ordens abertas com dia programado até a data fim. */
+  /** Só para tratado: TODAS as ordens abertas da combinação. */
   producaoPrevista: number
-  /** estoque + produção − agendado. Negativo = falta. */
+  /**
+   * O pior buraco da linha do tempo: quantos bags faltam, no caminhão mais
+   * crítico, se NADA for adiantado — contando como garantido só o estoque,
+   * as ordens já iniciadas e as programadas até a data de cada caminhão.
+   * Zero = todo caminhão sai cheio sem mexer em nada. Positivo com saldo
+   * total ≥ 0 = dá para atender, mas só adiantando pelo menos isso.
+   */
+  deficitPrazo: number
+  /** estoque + produção − agendado. Negativo = falta mesmo adiantando. */
   saldo: number
   semTsi: boolean
 }
@@ -202,26 +255,38 @@ export interface SaldoExpedicao {
  * pela tela (período e status são decisão de quem olha).
  *
  * - `SEM TSI` cruza com os LOTES por cultivar — a semente sai branca, e o
- *   lote não tem coluna de embalagem, então o corte é o cultivar inteiro.
- * - Tratado cruza com o estoque PA e soma a produção programada até
- *   `ateData` (inclusive). Ordem sem dia programado só entra sem filtro de
- *   data: promessa sem prazo não cobre carregamento com prazo.
+ *   lote não tem coluna de embalagem. Por isso o cultivar vira UMA linha,
+ *   somando todas as embalagens agendadas: duas linhas contariam o mesmo
+ *   pool de lotes duas vezes e cada uma diria "atende" com o total faltando.
+ * - Tratado cruza com o estoque PA mais TODA a produção aberta: a data
+ *   programada não corta a conta, porque produção se adianta (decisão do
+ *   PCP, 07/08/2026). O aviso vem da LINHA DO TEMPO: caminhão a caminhão,
+ *   em ordem de data, a demanda acumulada é comparada com o que está
+ *   garantido até aquele dia — estoque, ordens já iniciadas e ordens
+ *   programadas até a data (promessa vencida, `dataProg < hoje` sem
+ *   iniciar, não garante nada). O pior buraco vira `deficitPrazo`.
+ *
+ * Caminhão sem data entra primeiro na fila: prazo desconhecido se trata
+ * como "para já", nunca como "para nunca".
  */
 export function saldosExpedicao(
   carregamentos: CarregamentoLinha[],
   lotes: LoteDisponivel[],
   estoquePa: EstoqueTratado[],
   producao: ProducaoPrevista[],
-  ateData?: string | null,
+  hoje?: string | null,
 ): SaldoExpedicao[] {
+  // SEM TSI agrega por cultivar (o estoque é um pool só); tratado, pela tripla
   const chave = (c: { cultivar: string; tratamento: string; embalagem: string }) =>
-    `${c.cultivar}|${c.tratamento}|${c.embalagem}`
+    c.tratamento === SEM_TSI ? `${c.cultivar}|${SEM_TSI}` : `${c.cultivar}|${c.tratamento}|${c.embalagem}`
 
-  const agendado = new Map<string, SaldoExpedicao>()
+  const linhas = new Map<string, SaldoExpedicao>()
+  const embalagens = new Map<string, Set<string>>()
+  const fila = new Map<string, CarregamentoLinha[]>()
   for (const c of carregamentos) {
     const k = chave(c)
     const atual =
-      agendado.get(k) ??
+      linhas.get(k) ??
       ({
         cultivar: c.cultivar,
         tratamento: c.tratamento,
@@ -229,11 +294,14 @@ export function saldosExpedicao(
         agendado: 0,
         estoque: 0,
         producaoPrevista: 0,
+        deficitPrazo: 0,
         saldo: 0,
         semTsi: c.tratamento === SEM_TSI,
       } satisfies SaldoExpedicao)
     atual.agendado += c.bags
-    agendado.set(k, atual)
+    linhas.set(k, atual)
+    embalagens.set(k, (embalagens.get(k) ?? new Set()).add(c.embalagem))
+    fila.set(k, [...(fila.get(k) ?? []), c])
   }
 
   // lotes somados por cultivar uma vez só — não por linha de saldo
@@ -243,7 +311,9 @@ export function saldosExpedicao(
     lotesPorCultivar.set(c, (lotesPorCultivar.get(c) ?? 0) + l.bags)
   }
 
-  for (const s of agendado.values()) {
+  for (const [k, s] of linhas.entries()) {
+    s.embalagem = [...(embalagens.get(k) ?? [])].sort().join(' + ')
+
     if (s.semTsi) {
       s.estoque = lotesPorCultivar.get(s.cultivar) ?? 0
     } else {
@@ -255,19 +325,51 @@ export function saldosExpedicao(
             e.embalagem === s.embalagem,
         )
         .reduce((a, e) => a + e.bags, 0)
-      s.producaoPrevista = producao
-        .filter(
-          (p) =>
-            normalizaCultivar(p.cultivar) === s.cultivar &&
-            p.tratamento.toUpperCase() === s.tratamento &&
-            p.embalagem === s.embalagem &&
-            (ateData ? p.dataProg != null && p.dataProg <= ateData : true),
-        )
-        .reduce((a, p) => a + p.bags, 0)
+
+      const daCombinacao = producao.filter(
+        (p) =>
+          normalizaCultivar(p.cultivar) === s.cultivar &&
+          p.tratamento.toUpperCase() === s.tratamento &&
+          p.embalagem === s.embalagem,
+      )
+      s.producaoPrevista = daCombinacao.reduce((a, p) => a + p.bags, 0)
+
+      /**
+       * A linha do tempo. Um prazo único (o último caminhão) deixaria os
+       * anteriores sem proteção: caminhões em 08 e 12/08 com a produção
+       * toda em 11/08 mostrariam verde — e o de 08/08 voltaria vazio.
+       */
+      const garantidaAte = (dia: string | null) =>
+        daCombinacao
+          .filter(
+            (p) =>
+              p.iniciada ||
+              (p.dataProg != null &&
+                (hoje == null || p.dataProg >= hoje) &&
+                (dia == null ? false : p.dataProg <= dia)),
+          )
+          .reduce((a, p) => a + p.bags, 0)
+
+      const ordenada = [...(fila.get(k) ?? [])].sort((a, b) =>
+        (a.data ?? '').localeCompare(b.data ?? ''),
+      )
+      let demanda = 0
+      let pior = 0
+      for (const c of ordenada) {
+        demanda += c.bags
+        const garantida = c.data == null
+          ? garantidaAte(null) // sem data: só estoque e o que já está na máquina
+          : garantidaAte(c.data)
+        pior = Math.max(pior, demanda - (s.estoque + garantida))
+      }
+      s.deficitPrazo = arred2(Math.max(0, pior))
     }
-    s.saldo = s.estoque + s.producaoPrevista - s.agendado
+    s.saldo = arred2(s.estoque + s.producaoPrevista - s.agendado)
+    s.agendado = arred2(s.agendado)
+    s.estoque = arred2(s.estoque)
+    s.producaoPrevista = arred2(s.producaoPrevista)
   }
 
   // faltas primeiro: é a linha que muda a semana de alguém
-  return [...agendado.values()].sort((a, b) => a.saldo - b.saldo)
+  return [...linhas.values()].sort((a, b) => a.saldo - b.saldo)
 }

@@ -5,10 +5,13 @@ import type { BalancoLinha, CarregamentoBanco } from '@/dados/api-gestao'
 import {
   converterMontagemCarga,
   ehRelatorioMontagemCarga,
+  normalizaLinhasXlsx,
   saldosExpedicao,
   SEM_TSI,
 } from '@/dominio/expedicao'
-import type { Linha } from '@/dominio/importacao/simpleagro'
+import { EMBALAGEM_DEPARA } from '@/dominio/importacao/simpleagro'
+import { jaIniciada } from '@/dominio/status'
+import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import {
@@ -22,6 +25,9 @@ const CAMPO =
 /** Ordem que ainda vai virar produto: tudo que não foi apontado no AGROTIS. */
 const ABERTAS = ['Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
   'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada']
+
+/** Embalagens que o app conhece — fora disso o estoque nunca casa. */
+const EMBALAGENS_APP = new Set(Object.values(EMBALAGEM_DEPARA).map((e) => e.codigo))
 
 export default function Expedicao() {
   const { usuario, permitido } = useAuth()
@@ -124,13 +130,17 @@ export default function Expedicao() {
             embalagem: o.embalagem,
             bags: o.bags_produzidos ?? o.bags,
             dataProg: o.data_prog,
+            // ordem que a produção já tocou é material garantido — inclusive a
+            // ADIANTADA, cuja data programada continua no futuro
+            iniciada: jaIniciada(o.status_efetivo as StatusEfetivo),
           })),
-        ate || null,
+        new Date().toISOString().slice(0, 10),
       ),
-    [filtrados, lotes, estoquePa, ordens, ate],
+    [filtrados, lotes, estoquePa, ordens],
   )
 
   const faltas = saldos.filter((s) => s.saldo < 0)
+  const precisamAdiantar = saldos.filter((s) => s.saldo >= 0 && s.deficitPrazo > 0)
 
   const opcoes = useMemo(
     () => ({
@@ -163,7 +173,8 @@ export default function Expedicao() {
     setErro(null)
     setMsg(null)
     try {
-      const rows = (await readXlsxFile(arquivo)) as unknown as Linha[]
+      // aba nomeada faz o leitor devolver [{sheet, data}] em vez das linhas
+      const rows = normalizaLinhasXlsx(await readXlsxFile(arquivo))
       if (!ehRelatorioMontagemCarga(rows)) {
         throw new Error(
           'Este arquivo não parece o relatório de montagem de carga (faltam as colunas Carga / Status Carga / Qtd Agendada).',
@@ -317,24 +328,35 @@ export default function Expedicao() {
           </Cartao>
 
           {/* ---------------- o veredito ---------------- */}
-          {faltas.length > 0 ? (
+          {faltas.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="bloqueio">
                 <b>
                   {faltas.length} combinação(ões) não atendem os carregamentos
                   {ate && ` até ${diaCurto(ate)}`}:
                 </b>{' '}
-                faltam {inteiro(faltas.reduce((a, s) => a + -s.saldo, 0))} bags no total.
+                faltam {inteiro(faltas.reduce((a, s) => a + -s.saldo, 0))} bags no total —
+                nem adiantando a produção já aberta.
               </Aviso>
             </div>
-          ) : (
-            filtrados.length > 0 && (
-              <div className="mb-5">
-                <Aviso gravidade="ok">
-                  O estoque {ate ? `atende os carregamentos até ${diaCurto(ate)}` : 'atende tudo que está agendado'}.
-                </Aviso>
-              </div>
-            )
+          )}
+          {precisamAdiantar.length > 0 && (
+            <div className="mb-5">
+              <Aviso gravidade="alerta">
+                <b>{precisamAdiantar.length} combinação(ões) só atendem adiantando a produção:</b>{' '}
+                {precisamAdiantar
+                  .map((s) => `${s.cultivar} · ${s.tratamento} (adiantar ≥ ${inteiro(s.deficitPrazo)} bg)`)
+                  .join(' — ')}.
+                Vale marcar essas ordens como urgentes na Programação.
+              </Aviso>
+            </div>
+          )}
+          {faltas.length === 0 && precisamAdiantar.length === 0 && filtrados.length > 0 && (
+            <div className="mb-5">
+              <Aviso gravidade="ok">
+                O estoque {ate ? `atende os carregamentos até ${diaCurto(ate)}` : 'atende tudo que está agendado'}.
+              </Aviso>
+            </div>
           )}
 
           {/* ---------------- saldo por combinação ---------------- */}
@@ -348,43 +370,65 @@ export default function Expedicao() {
               <>
                 <Tabela cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Agendado',
                   '#Estoque', '#Prod. prevista', '#Saldo', '']}>
-                  {saldos.map((s) => (
-                    <tr
-                      key={`${s.cultivar}|${s.tratamento}|${s.embalagem}`}
-                      className={`border-t border-stone-100 dark:border-stone-800/60 ${
-                        s.saldo < 0 ? 'bg-red-50/60 dark:bg-red-950/20' : ''
-                      }`}
-                    >
-                      <td className="px-2 py-1.5 font-medium">{s.cultivar}</td>
-                      <td className="px-2 py-1.5">
-                        {s.semTsi ? <Tag cor="neutro">SEM TSI</Tag> : s.tratamento}
-                      </td>
-                      <td className="px-2 py-1.5">{s.embalagem}</td>
-                      <td className="num-tabular px-2 py-1.5 text-right">{inteiro(s.agendado)}</td>
-                      <td className="num-tabular px-2 py-1.5 text-right" title={s.semTsi ? 'Lotes de semente em estoque deste cultivar' : 'Estoque de produto acabado tratado'}>
-                        {inteiro(s.estoque)}
-                      </td>
-                      <td className="num-tabular px-2 py-1.5 text-right text-stone-500" title={s.semTsi ? 'Semente branca não passa pela produção' : `Ordens abertas${ate ? ` programadas até ${diaCurto(ate)}` : ''}`}>
-                        {s.semTsi ? '—' : inteiro(s.producaoPrevista)}
-                      </td>
-                      <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
-                        s.saldo < 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
-                      }`}>
-                        {s.saldo > 0 ? '+' : ''}{inteiro(s.saldo)}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {s.saldo < 0
-                          ? <Tag cor="perigo">faltam {inteiro(-s.saldo)}</Tag>
-                          : <Tag cor="ok">atende</Tag>}
-                      </td>
-                    </tr>
-                  ))}
+                  {saldos.map((s) => {
+                    const precisaAdiantar = s.saldo >= 0 && s.deficitPrazo > 0
+                    // embalagem que o app não conhece nunca casa com o estoque:
+                    // a "falta" seria artefato do de-para, não falta real
+                    const embDesconhecida = !s.semTsi && !EMBALAGENS_APP.has(s.embalagem)
+                    return (
+                      <tr
+                        key={`${s.cultivar}|${s.tratamento}|${s.embalagem}`}
+                        className={`border-t border-stone-100 dark:border-stone-800/60 ${
+                          embDesconhecida
+                            ? 'bg-amber-50/60 dark:bg-amber-950/20'
+                            : s.saldo < 0
+                              ? 'bg-red-50/60 dark:bg-red-950/20'
+                              : precisaAdiantar
+                                ? 'bg-amber-50/60 dark:bg-amber-950/20'
+                                : ''
+                        }`}
+                      >
+                        <td className="px-2 py-1.5 font-medium">{s.cultivar}</td>
+                        <td className="px-2 py-1.5">
+                          {s.semTsi ? <Tag cor="neutro">SEM TSI</Tag> : s.tratamento}
+                        </td>
+                        <td className="px-2 py-1.5">{s.embalagem}</td>
+                        <td className="num-tabular px-2 py-1.5 text-right">{inteiro(s.agendado)}</td>
+                        <td className="num-tabular px-2 py-1.5 text-right" title={s.semTsi ? 'Lotes de semente em estoque deste cultivar, todas as embalagens' : 'Estoque de produto acabado tratado'}>
+                          {inteiro(s.estoque)}
+                        </td>
+                        <td className="num-tabular px-2 py-1.5 text-right text-stone-500" title={s.semTsi ? 'Semente branca não passa pela produção' : 'Todas as ordens abertas da combinação — produção se adianta, então a data não corta a conta'}>
+                          {s.semTsi ? '—' : inteiro(s.producaoPrevista)}
+                        </td>
+                        <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
+                          s.saldo < 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
+                        }`}>
+                          {s.saldo > 0 ? '+' : ''}{inteiro(s.saldo)}
+                        </td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">
+                          {embDesconhecida ? (
+                            <Tag cor="alerta">embalagem sem de-para</Tag>
+                          ) : s.saldo < 0 ? (
+                            <Tag cor="perigo">faltam {inteiro(-s.saldo)}</Tag>
+                          ) : precisaAdiantar ? (
+                            <Tag cor="alerta">adiantar ≥ {inteiro(s.deficitPrazo)} bg</Tag>
+                          ) : (
+                            <Tag cor="ok">atende</Tag>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </Tabela>
                 <p className="mt-3 text-xs text-stone-500">
-                  <b>SEM TSI</b> compara com os lotes de semente em estoque (o cultivar
-                  inteiro). Tratamento real compara com o estoque de produto acabado mais a
-                  produção programada{ate ? ` até ${diaCurto(ate)}` : ''} — ordem sem dia
-                  marcado só conta quando não há filtro de data.
+                  <b>SEM TSI</b> compara com os lotes de semente em estoque — o cultivar vira
+                  uma linha só, somando as embalagens, porque o pool de lotes é um.
+                  Tratamento real compara com o estoque de produto acabado mais{' '}
+                  <b>todas as ordens abertas</b> — a data programada não corta a conta, porque
+                  produção se adianta. <b>Adiantar ≥ X</b> vem da linha do tempo: caminhão a
+                  caminhão, conta como garantido o estoque, as ordens já iniciadas e as
+                  programadas até a data de cada um; X é o pior buraco — o mínimo a puxar
+                  para frente (candidata a urgência na Programação).
                 </p>
               </>
             )}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   converterMontagemCarga,
   ehRelatorioMontagemCarga,
+  normalizaLinhasXlsx,
   saldosExpedicao,
   type CarregamentoLinha,
 } from './expedicao'
@@ -34,6 +35,36 @@ describe('reconhecimento do relatorio', () => {
   })
   it('rejeita outro relatorio qualquer', () => {
     expect(ehRelatorioMontagemCarga([['CULTIVAR', 'LOTE', 'SALDO']])).toBe(false)
+  })
+})
+
+describe('normalizacao do retorno do leitor de xlsx', () => {
+  it('aba nomeada vem embrulhada em {sheet, data} — desembrulha', () => {
+    // foi exatamente o erro real: "(e[0] ?? []).map is not a function"
+    const bruto = [{ sheet: 'relatorio', data: [CAB, linha()] }]
+    const rows = normalizaLinhasXlsx(bruto)
+    expect(Array.isArray(rows[0])).toBe(true)
+    expect(ehRelatorioMontagemCarga(rows)).toBe(true)
+  })
+
+  it('com varias abas, escolhe a que o reconhecedor aceita', () => {
+    // uma capa antes da aba de dados rejeitaria um arquivo valido
+    const bruto = [
+      { sheet: 'resumo', data: [['qualquer coisa']] },
+      { sheet: 'relatorio', data: [CAB, linha()] },
+    ]
+    const rows = normalizaLinhasXlsx(bruto, ehRelatorioMontagemCarga)
+    expect(ehRelatorioMontagemCarga(rows)).toBe(true)
+  })
+
+  it('linhas diretas passam intactas', () => {
+    const rows = normalizaLinhasXlsx([CAB, linha()])
+    expect(rows).toHaveLength(2)
+    expect(ehRelatorioMontagemCarga(rows)).toBe(true)
+  })
+
+  it('vazio nao explode', () => {
+    expect(normalizaLinhasXlsx([])).toEqual([])
   })
 })
 
@@ -124,42 +155,131 @@ describe('saldo dinamico da expedicao', () => {
     expect(r[0].saldo).toBe(2)
   })
 
-  it('tratado cruza com estoque PA e producao ate a data', () => {
+  it('SEM TSI do mesmo cultivar em duas embalagens vira UMA linha', () => {
+    // o pool de lotes e um so: duas linhas contariam os 12 bags duas vezes
+    // e cada uma diria "atende" com o cultivar 8 bags em falta
+    const r = saldosExpedicao(
+      [
+        carreg({ embalagem: 'BG5M', bags: 10 }),
+        carreg({ embalagem: 'MEIOBAG', bags: 10 }),
+      ],
+      [{ cultivar: 'NEO700 I2X', bags: 12 }],
+      [], [],
+    )
+    expect(r).toHaveLength(1)
+    expect(r[0].agendado).toBe(20)
+    expect(r[0].estoque).toBe(12)
+    expect(r[0].saldo).toBe(-8)
+    expect(r[0].embalagem).toBe('BG5M + MEIOBAG')
+  })
+
+  it('tratado: TODA a producao aberta conta no saldo (producao se adianta)', () => {
     const r = saldosExpedicao(
       [carreg({ tratamento: 'FTZ60', bags: 20 })],
       [{ cultivar: 'NEO700 I2X', bags: 99 }], // lotes NAO entram no tratado
       [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10 }],
       [
         { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 15, dataProg: '2026-08-09' },
-        // esta fica pronta DEPOIS do carregamento: nao conta
         { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 50, dataProg: '2026-08-15' },
       ],
-      '2026-08-10',
+      '2026-08-07',
     )
     expect(r[0].estoque).toBe(10)
-    expect(r[0].producaoPrevista).toBe(15)
-    expect(r[0].saldo).toBe(5)
+    expect(r[0].producaoPrevista).toBe(65)
+    expect(r[0].saldo).toBe(55)
+    // caminhao de 10/08: estoque 10 + 15 no prazo cobrem os 20 — sem buraco
+    expect(r[0].deficitPrazo).toBe(0)
   })
 
-  it('ordem sem dia programado nao cobre carregamento com prazo', () => {
+  it('producao so depois do caminhao: saldo fecha mas exige adiantar', () => {
     const r = saldosExpedicao(
-      [carreg({ tratamento: 'FTZ60', bags: 10 })],
+      [carreg({ tratamento: 'FTZ60', bags: 20 })],
       [], [],
-      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: null }],
-      '2026-08-10',
-    )
-    expect(r[0].producaoPrevista).toBe(0)
-    expect(r[0].saldo).toBe(-10)
-  })
-
-  it('sem filtro de data, toda producao aberta conta', () => {
-    const r = saldosExpedicao(
-      [carreg({ tratamento: 'FTZ60', bags: 10 })],
-      [], [],
-      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: null }],
-      null,
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, dataProg: '2026-08-15' }],
+      '2026-08-07',
     )
     expect(r[0].saldo).toBe(0)
+    expect(r[0].deficitPrazo).toBe(20)
+  })
+
+  it('ordem ja iniciada e garantida mesmo com a data programada no futuro', () => {
+    // ordem ADIANTADA e concluida: data 15/08 no banco, material no galpao.
+    // Sem a flag, o caso feliz da regra viraria alarme falso de urgencia.
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 20 })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, dataProg: '2026-08-15', iniciada: true }],
+      '2026-08-07',
+    )
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].deficitPrazo).toBe(0)
+  })
+
+  it('ordem sem dia marcado conta no saldo, mas nao garante caminhao', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10 })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: null }],
+      '2026-08-07',
+    )
+    expect(r[0].producaoPrevista).toBe(10)
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].deficitPrazo).toBe(10)
+  })
+
+  it('cada caminhao confere o proprio prazo — o ultimo nao esconde o primeiro', () => {
+    // caminhoes 08 e 12/08, producao toda em 11/08: o de 08/08 sai vazio.
+    // Um prazo unico (ultimo caminhao) mostraria verde.
+    const r = saldosExpedicao(
+      [
+        carreg({ tratamento: 'FTZ60', bags: 10, data: '2026-08-08' }),
+        carreg({ tratamento: 'FTZ60', bags: 10, data: '2026-08-12' }),
+      ],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, dataProg: '2026-08-11' }],
+      '2026-08-07',
+    )
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].deficitPrazo).toBe(10)
+  })
+
+  it('promessa vencida nao garante: dataProg no passado sem iniciar', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10, data: '2026-08-08' })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-08-05' }],
+      '2026-08-07',
+    )
+    expect(r[0].deficitPrazo).toBe(10)
+    // a mesma ordem, ja rodando, garante
+    const r2 = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10, data: '2026-08-08' })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-08-05', iniciada: true }],
+      '2026-08-07',
+    )
+    expect(r2[0].deficitPrazo).toBe(0)
+  })
+
+  it('caminhao sem data: so estoque e ordem iniciada garantem', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60', bags: 10, data: null })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-08-20' }],
+      '2026-08-07',
+    )
+    expect(r[0].deficitPrazo).toBe(10)
+  })
+
+  it('fracao de bag nao inventa falta por erro de ponto flutuante', () => {
+    // 0.30 + 0.60 tem que empatar com 0.90 — sem arredondar, saldo = -1e-16
+    const r = saldosExpedicao(
+      [carreg({ bags: 0.9 })],
+      [{ cultivar: 'NEO700 I2X', bags: 0.3 }, { cultivar: 'NEO700 I2X', bags: 0.6 }],
+      [], [],
+    )
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].saldo < 0).toBe(false)
   })
 
   it('as faltas vem primeiro na lista', () => {
