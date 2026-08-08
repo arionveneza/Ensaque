@@ -313,22 +313,24 @@ function FragmentoMaquina({
               </span>
             </td>
             <td className="px-2 py-2 text-right whitespace-nowrap lg:px-3">
-              {podeApontar && status === 'Pronto para produzir' && (
-                <button
-                  onClick={() => onIniciar(o)}
-                  className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-                >
-                  Iniciar
-                </button>
-              )}
-              {(o.ordem_tanques.length > 0 || status !== 'Pronto para produzir') && (
-                <button
-                  onClick={() => onAbrir(o.id)}
-                  className="ml-1.5 rounded-md border border-stone-300 px-4 py-2 text-sm transition-colors hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
-                >
-                  Abrir
-                </button>
-              )}
+              <div className="inline-flex gap-2">
+                {podeApontar && status === 'Pronto para produzir' && (
+                  <button
+                    onClick={() => onIniciar(o)}
+                    className="rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 sm:py-2 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                  >
+                    Iniciar
+                  </button>
+                )}
+                {(o.ordem_tanques.length > 0 || status !== 'Pronto para produzir') && (
+                  <button
+                    onClick={() => onAbrir(o.id)}
+                    className="rounded-md border border-stone-300 px-4 py-2.5 text-sm transition-colors hover:bg-stone-100 sm:py-2 dark:border-stone-700 dark:hover:bg-stone-800"
+                  >
+                    Abrir
+                  </button>
+                )}
+              </div>
             </td>
           </tr>
         )

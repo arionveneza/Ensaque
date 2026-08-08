@@ -60,8 +60,10 @@ export function Pagina({
   children: ReactNode
 }) {
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
+      {/* empilha no celular: 3-4 botões de ação ao lado do título comiam a
+          tela toda antes de qualquer conteúdo aparecer */}
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{titulo}</h2>
           {descricao && (
@@ -91,7 +93,7 @@ export function Cartao({
       className={`rounded-lg border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900 ${className}`}
     >
       {(titulo || acoes) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-3 dark:border-stone-800">
+        <header className="flex flex-col gap-2 border-b border-stone-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-stone-800">
           {titulo && <h3 className="text-sm font-semibold">{titulo}</h3>}
           {acoes && <div className="flex flex-wrap gap-2">{acoes}</div>}
         </header>
@@ -108,6 +110,7 @@ export function Botao({
   disabled,
   titulo,
   tipo = 'button',
+  className = '',
 }: {
   children: ReactNode
   onClick?: () => void
@@ -115,6 +118,7 @@ export function Botao({
   disabled?: boolean
   titulo?: string
   tipo?: 'button' | 'submit'
+  className?: string
 }) {
   const estilo =
     variante === 'primario'
@@ -128,7 +132,9 @@ export function Botao({
       title={titulo}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:pointer-events-none disabled:opacity-40 ${estilo}`}
+      // py-2 no celular (~40px de alvo de toque, 119 usos herdam de uma vez);
+      // sm: devolve py-1.5 — desktop e tablet ficam como já estavam
+      className={`rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:pointer-events-none disabled:opacity-40 sm:py-1.5 ${estilo} ${className}`}
     >
       {children}
     </button>
@@ -205,28 +211,54 @@ export function Aviso({
     ok: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
   }
   return (
-    <div className={`rounded-md border px-4 py-2.5 text-sm ${cores[gravidade]}`}>{children}</div>
+    // break-words: token longo sem espaço (um UUID em <code>, por ex.) não
+    // quebra por padrão e empurra scroll horizontal da página inteira
+    <div className={`rounded-md border px-4 py-2.5 text-sm break-words ${cores[gravidade]}`}>
+      {children}
+    </div>
   )
 }
 
-export function Tabela({ cabecalho, children }: { cabecalho: string[]; children: ReactNode }) {
+/**
+ * Coluna simples ("#Peso") ou com classe extra — tipicamente
+ * `'hidden lg:table-cell'` para esconder no celular/tablet. Quando usar a
+ * forma com objeto, aplique a MESMA className no `<td>` correspondente de
+ * cada linha — o Tabela não controla as linhas, que vêm como `children`.
+ */
+export type ColunaTabela = string | { texto: string; className?: string }
+
+export function Tabela({
+  cabecalho, children,
+}: {
+  cabecalho: ColunaTabela[]
+  children: ReactNode
+}) {
   return (
-    <div className="overflow-x-auto">
+    // relative: ancora as máscaras de borda que avisam "tem mais coluna aí"
+    <div className="relative overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
-            {cabecalho.map((c, i) => (
-              <th
-                key={c + i}
-                className={`px-2 py-2 ${c.startsWith('#') ? 'text-right' : ''}`}
-              >
-                {c.replace(/^#/, '')}
-              </th>
-            ))}
+            {cabecalho.map((c, i) => {
+              const texto = typeof c === 'string' ? c : c.texto
+              const extra = typeof c === 'string' ? '' : (c.className ?? '')
+              return (
+                <th
+                  key={texto + i}
+                  className={`px-2 py-2 ${texto.startsWith('#') ? 'text-right' : ''} ${extra}`}
+                >
+                  {texto.replace(/^#/, '')}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>{children}</tbody>
       </table>
+      {/* dica visual de que há mais coluna fora da tela — só no celular,
+          onde o overflow-x-auto sozinho não avisa nada */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-white to-transparent sm:hidden dark:from-stone-900" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-white to-transparent sm:hidden dark:from-stone-900" />
     </div>
   )
 }

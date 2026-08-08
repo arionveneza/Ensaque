@@ -175,12 +175,22 @@ export default function Agrotis() {
           <p className="mb-3 text-sm text-stone-500">
             Finalizadas pela produção, mas ainda sem tudo que o lançamento exige.
           </p>
-          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', 'Lote', '#Bags', 'Dia', 'Falta']}>
+          <Tabela cabecalho={[
+            'Ordem',
+            { texto: 'Cultivar', className: 'hidden lg:table-cell' },
+            { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+            'Lote', '#Bags', 'Dia', 'Falta',
+          ]}>
             {aguardando.map((o) => (
               <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{o.numero}</td>
-                <td className="px-2 py-1.5">{o.cultivar}</td>
-                <td className="px-2 py-1.5">{o.receita_nome}</td>
+                <td className="px-2 py-1.5 font-medium">
+                  {o.numero}
+                  <p className="text-xs font-normal text-stone-500 lg:hidden">
+                    {o.cultivar} · {o.receita_nome}
+                  </p>
+                </td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.cultivar}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.receita_nome}</td>
                 <td className="px-2 py-1.5">{o.lote_id}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                 <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
@@ -198,12 +208,22 @@ export default function Agrotis() {
         {lancadas.length === 0 ? (
           <Vazio>Nenhuma ordem lançada no AGROTIS ainda.</Vazio>
         ) : (
-          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', '#Bags', '#Peso', 'Nº lançamento']}>
+          <Tabela cabecalho={[
+            'Ordem',
+            { texto: 'Cultivar', className: 'hidden lg:table-cell' },
+            { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+            '#Bags', '#Peso', 'Nº lançamento',
+          ]}>
             {lancadas.map((o) => (
               <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{o.numero}</td>
-                <td className="px-2 py-1.5">{o.cultivar}</td>
-                <td className="px-2 py-1.5">{o.receita_nome}</td>
+                <td className="px-2 py-1.5 font-medium">
+                  {o.numero}
+                  <p className="text-xs font-normal text-stone-500 lg:hidden">
+                    {o.cultivar} · {o.receita_nome}
+                  </p>
+                </td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.cultivar}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.receita_nome}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{n(o.peso_t, 1)} t</td>
                 <td className="px-2 py-1.5 font-semibold">{o.agrotis_num ?? '—'}</td>

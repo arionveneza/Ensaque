@@ -234,8 +234,12 @@ export default function Qualidade() {
             <p className="mb-3 text-sm text-stone-500">
               O lançamento no AGROTIS é feito pelo PCP na tela <b>AGROTIS</b>.
             </p>
-            <Tabela cabecalho={['', 'Ordem', 'Cultivar', 'Tratamento', '#Peso', 'Q. geral',
-              'Umidade', 'Pó', 'Obs', 'Status']}>
+            <Tabela cabecalho={[
+              '', 'Ordem',
+              { texto: 'Cultivar', className: 'hidden lg:table-cell' },
+              { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+              '#Peso', 'Q. geral', 'Umidade', 'Pó', 'Obs', 'Status',
+            ]}>
               {concluidas.map((o) => {
                 const f = checksDe(o.id, 'final')[0]
                 const emProc = checksDe(o.id, 'processo')
@@ -258,7 +262,7 @@ export default function Qualidade() {
                             })
                           }
                           title={expandida ? 'Recolher' : `Ver os ${totalTestes} teste(s)`}
-                          className="w-6 rounded text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                          className="flex h-9 w-9 items-center justify-center rounded text-sm text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
                         >
                           {expandida ? '▾' : '▸'}
                         </button>
@@ -270,14 +274,20 @@ export default function Qualidade() {
                             {f.fotos.length}📷
                           </span>
                         )}
+                        {/* cultivar/tratamento somem em lg: — mostra aqui no celular/tablet */}
+                        <p className="text-xs font-normal text-stone-500 lg:hidden">
+                          {o.cultivar} · {o.receita_nome}
+                        </p>
                       </td>
-                      <td className="px-2 py-1.5">{o.cultivar}</td>
-                      <td className="px-2 py-1.5">{o.receita_nome}</td>
+                      <td className="hidden px-2 py-1.5 lg:table-cell">{o.cultivar}</td>
+                      <td className="hidden px-2 py-1.5 lg:table-cell">{o.receita_nome}</td>
                       <td className="num-tabular px-2 py-1.5 text-right">{n(o.peso_t, 1)} t</td>
                       <td className="px-2 py-1.5 text-center">{f ? <Nota valor={f.recobrimento} /> : '—'}</td>
                       <td className="px-2 py-1.5">{f ? <OkFora ok={f.umidade_ok} /> : '—'}</td>
                       <td className="px-2 py-1.5">{f ? <OkFora ok={f.po_ok} /> : '—'}</td>
-                      <td className="max-w-40 truncate px-2 py-1.5 text-stone-500">
+                      {/* sem truncate: quebra em várias linhas em vez de cortar
+                          — em toque não há hover pra abrir o title */}
+                      <td className="max-w-40 px-2 py-1.5 break-words text-stone-500">
                         {f?.observacao ?? '—'}
                       </td>
                       <td className="px-2 py-1.5">
@@ -365,7 +375,7 @@ function ListaChecks({
             <td className="px-2 py-1 text-center"><Nota valor={c.recobrimento} /></td>
             <td className="px-2 py-1"><OkFora ok={c.umidade_ok} /></td>
             <td className="px-2 py-1"><OkFora ok={c.po_ok} /></td>
-            <td className="max-w-40 truncate px-2 py-1 text-xs text-stone-500">
+            <td className="max-w-40 px-2 py-1 break-words text-xs text-stone-500">
               {c.observacao ?? '—'}
             </td>
             {nomes && (
@@ -452,12 +462,12 @@ function FormChecklist({
           <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
             Origem da amostra
           </p>
-          <div className="mt-1 flex gap-1">
+          <div className="mt-1 flex gap-2">
             {(['BOWL', 'BAG'] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setOrigem(v)}
-                className={`rounded-md border px-4 py-1.5 text-sm font-medium ${
+                className={`rounded-md border px-4 py-2.5 text-sm font-medium sm:py-1.5 ${
                   origem === v
                     ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
                     : 'border-stone-300 dark:border-stone-700'
@@ -474,12 +484,12 @@ function FormChecklist({
           <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
             Qualidade geral do tratamento (1 a 5)
           </p>
-          <div className="mt-1 flex gap-1">
+          <div className="mt-1 flex gap-2">
             {[1, 2, 3, 4, 5].map((v) => (
               <button
                 key={v}
                 onClick={() => setRecobrimento(v)}
-                className={`h-9 w-9 rounded-md border text-sm font-semibold ${
+                className={`h-11 w-11 rounded-md border text-sm font-semibold sm:h-9 sm:w-9 ${
                   recobrimento === v
                     ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
                     : 'border-stone-300 dark:border-stone-700'
@@ -565,7 +575,7 @@ function SeletorFotos({
             <button
               onClick={() => onMudar(fotos.filter((_, j) => j !== i))}
               title="Remover"
-              className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-red-600 text-xs font-bold text-white"
+              className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white"
             >
               ×
             </button>
@@ -605,12 +615,12 @@ function AlternadorOkFora({
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{rotulo}</p>
-      <div className="mt-1 flex gap-1">
+      <div className="mt-1 flex gap-2">
         {([true, false] as const).map((v) => (
           <button
             key={String(v)}
             onClick={() => onMudar(v)}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
+            className={`rounded-md border px-3 py-2.5 text-sm sm:py-1.5 ${
               ok === v
                 ? v
                   ? 'border-emerald-600 bg-emerald-600 text-white'

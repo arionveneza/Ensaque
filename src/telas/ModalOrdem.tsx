@@ -241,7 +241,9 @@ export default function ModalOrdem({
           </dl>
 
           {tempos && (
-            <dl className="mb-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+            // 5 itens em grid-cols-2: o 5º ficaria sozinho pela metade —
+            // [&>*:last-child] estica ele para a linha inteira no celular
+            <dl className="mb-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
               <Info
                 rotulo="Tempo planejado"
                 valor={planejadoS == null ? '—' : formataHms(planejadoS)}
@@ -311,7 +313,7 @@ export default function ModalOrdem({
                             ),
                           )
                         }
-                        className={`rounded border px-2 py-1 text-sm disabled:opacity-60 dark:bg-stone-800 ${
+                        className={`rounded border px-2 py-2 text-sm disabled:opacity-60 sm:py-1 dark:bg-stone-800 ${
                           atual
                             ? 'border-stone-300 dark:border-stone-700'
                             : 'border-amber-400 dark:border-amber-700'
@@ -337,107 +339,70 @@ export default function ModalOrdem({
               só começa no <b>Confirmar início</b>.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
-                    <th className="py-2 pr-3">Destino</th>
-                    <th className="py-2 pr-3">Produtos e doses</th>
-                    <th className="py-2 pr-3 text-right">Planejado</th>
-                    <th className="py-2 pr-3 text-right">Peso inicial</th>
-                    <th
-                      className="py-2 pr-3 text-right"
-                      title="O que foi acrescentado durante a ordem, quando o produto acabou"
-                    >
-                      Abastecido
-                    </th>
-                    <th
-                      className="py-2 pr-3 text-right"
-                      title="Opcional aqui — o PCP digita os pesos finais na tela AGROTIS"
-                    >
-                      Peso final*
-                    </th>
-                    <th className="py-2 pr-3 text-right">Real</th>
-                    <th className="py-2 text-right">Desvio</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ordem.ordem_tanques
-                    .slice()
-                    .sort((a, b) => a.tanque - b.tanque)
-                    .map((t) => {
-                      const c = consumos.find((x) => x.tanque === t.tanque)
-                      const doTanque = new Set(
-                        ordem.ordem_produtos
-                          .filter((op) => op.tanque === t.tanque)
-                          .map((op) => op.produto_id),
-                      )
-                      const itens = ordem.receitas.receita_itens.filter((i) =>
-                        doTanque.has(i.produto_id),
-                      )
-                      const mistura = itens.length > 1
-                      return (
-                        <tr
-                          key={t.id}
-                          className="border-b border-stone-100 align-top dark:border-stone-800/60"
-                        >
-                          <td className="py-3 pr-3 font-medium">
+            <>
+              {/* Celular/tablet: cards, um por tanque. A tabela de 8 colunas
+                  cabia só no desktop — mesmo com scroll horizontal, o peso
+                  (a tarefa do operador) ficava fora da primeira tela. */}
+              <div className="grid gap-3 lg:hidden">
+                {ordem.ordem_tanques
+                  .slice()
+                  .sort((a, b) => a.tanque - b.tanque)
+                  .map((t) => {
+                    const { itens, mistura, consumo: c } = dadosTanque(ordem, consumos, t)
+                    return (
+                      <div
+                        key={t.id}
+                        className="rounded-lg border border-stone-200 p-3 dark:border-stone-800"
+                      >
+                        <div className="flex items-baseline justify-between">
+                          <p className="font-semibold">
                             {rotuloTanque(t.tanque)}
                             {mistura && (
                               <span className="ml-1.5 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-violet-700 dark:bg-violet-950 dark:text-violet-300">
                                 mistura
                               </span>
                             )}
-                          </td>
-                          <td className="py-3 pr-3">
-                            {itens.map((i) => {
-                              const p = prods.get(i.produto_id)
-                              return (
-                                <div key={i.produto_id} className="mb-1.5 last:mb-0">
-                                  <span className="text-stone-700 dark:text-stone-300">
-                                    {p?.nome} · {num(i.dose, 2)} {p?.unidade}
-                                  </span>
-                                </div>
-                              )
-                            })}
-                          </td>
-                          <td className="num-tabular py-3 pr-3 text-right">
-                            {num(c?.planejadoKg)} kg
-                          </td>
-                          <td className="py-3 pr-3 text-right">
+                          </p>
+                          <span className="num-tabular text-xs text-stone-500 dark:text-stone-400">
+                            planejado {num(c?.planejadoKg)} kg
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+                          {itens
+                            .map((i) => `${prods.get(i.produto_id)?.nome} · ${num(i.dose, 2)} ${prods.get(i.produto_id)?.unidade ?? ''}`)
+                            .join(' · ')}
+                        </p>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <label className="text-xs text-stone-500 dark:text-stone-400">
+                            Peso inicial
                             <PesoInput
+                              tamanho="grande"
                               valor={t.peso_inicial}
-                              // trava assim que a produção começa e NÃO destrava
-                              // depois: ordem iniciada é registro histórico
                               travado={!podeApontar || tocada || ocupado}
                               onSalvar={(v) => acao(() => api.salvarPesoTanque(t.id, 'peso_inicial', v))}
                             />
-                          </td>
-                          {/* O produto acaba no meio da ordem e o operador
-                              completa: sem registrar isso, o consumo real
-                              (inicial − final) sairia menor que o verdadeiro
-                              e a ordem apareceria como economia que não houve. */}
-                          <td className="py-3 pr-3 text-right">
-                            <Abastecimentos
-                              lancamentos={t.ordem_tanque_abastecimentos ?? []}
-                              podeAbastecer={podeApontar && emAndamento && !ocupado}
-                              onAbastecer={(v) => acao(() => api.abastecerTanque(t.id, v))}
-                              onApagar={(id) => acao(() => api.apagarAbastecimento(id))}
-                            />
-                          </td>
-                          <td className="py-3 pr-3 text-right">
+                          </label>
+                          <label className="text-xs text-stone-500 dark:text-stone-400">
+                            Peso final*
                             <PesoInput
+                              tamanho="grande"
                               valor={t.peso_final}
-                              // final só libera depois do clique em Finalizar
                               travado={!podeApontar || !ordem.fim_pendente || ocupado}
                               onSalvar={(v) => acao(() => api.salvarPesoTanque(t.id, 'peso_final', v))}
                             />
-                          </td>
-                          <td className="num-tabular py-3 pr-3 text-right">
-                            {c?.realKg == null ? '—' : `${num(c.realKg)} kg`}
-                          </td>
-                          <td
-                            className={`num-tabular py-3 text-right ${
+                          </label>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-3 border-t border-stone-100 pt-2 text-sm dark:border-stone-800/60">
+                          <Abastecimentos
+                            lancamentos={t.ordem_tanque_abastecimentos ?? []}
+                            podeAbastecer={podeApontar && emAndamento && !ocupado}
+                            onAbastecer={(v) => acao(() => api.abastecerTanque(t.id, v))}
+                            onApagar={(id) => acao(() => api.apagarAbastecimento(id))}
+                          />
+                          <span
+                            className={`num-tabular text-right ${
                               c?.desvioPct == null
                                 ? 'text-stone-400'
                                 : Math.abs(c.desvioPct) <= 5
@@ -447,16 +412,129 @@ export default function ModalOrdem({
                                     : 'text-red-600 dark:text-red-400'
                             }`}
                           >
-                            {c?.desvioPct == null
-                              ? '—'
-                              : `${c.desvioPct > 0 ? '+' : ''}${num(c.desvioPct)}%`}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                </tbody>
-              </table>
-            </div>
+                            {c?.realKg == null ? '—' : `${num(c.realKg)} kg`}
+                            {c?.desvioPct != null &&
+                              ` (${c.desvioPct > 0 ? '+' : ''}${num(c.desvioPct)}%)`}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+
+              {/* Desktop: a tabela de sempre, sem nenhuma mudança. */}
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
+                      <th className="py-2 pr-3">Destino</th>
+                      <th className="py-2 pr-3">Produtos e doses</th>
+                      <th className="py-2 pr-3 text-right">Planejado</th>
+                      <th className="py-2 pr-3 text-right">Peso inicial</th>
+                      <th
+                        className="py-2 pr-3 text-right"
+                        title="O que foi acrescentado durante a ordem, quando o produto acabou"
+                      >
+                        Abastecido
+                      </th>
+                      <th
+                        className="py-2 pr-3 text-right"
+                        title="Opcional aqui — o PCP digita os pesos finais na tela AGROTIS"
+                      >
+                        Peso final*
+                      </th>
+                      <th className="py-2 pr-3 text-right">Real</th>
+                      <th className="py-2 text-right">Desvio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ordem.ordem_tanques
+                      .slice()
+                      .sort((a, b) => a.tanque - b.tanque)
+                      .map((t) => {
+                        const { itens, mistura, consumo: c } = dadosTanque(ordem, consumos, t)
+                        return (
+                          <tr
+                            key={t.id}
+                            className="border-b border-stone-100 align-top dark:border-stone-800/60"
+                          >
+                            <td className="py-3 pr-3 font-medium">
+                              {rotuloTanque(t.tanque)}
+                              {mistura && (
+                                <span className="ml-1.5 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                                  mistura
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 pr-3">
+                              {itens.map((i) => {
+                                const p = prods.get(i.produto_id)
+                                return (
+                                  <div key={i.produto_id} className="mb-1.5 last:mb-0">
+                                    <span className="text-stone-700 dark:text-stone-300">
+                                      {p?.nome} · {num(i.dose, 2)} {p?.unidade}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                            </td>
+                            <td className="num-tabular py-3 pr-3 text-right">
+                              {num(c?.planejadoKg)} kg
+                            </td>
+                            <td className="py-3 pr-3 text-right">
+                              <PesoInput
+                                valor={t.peso_inicial}
+                                // trava assim que a produção começa e NÃO destrava
+                                // depois: ordem iniciada é registro histórico
+                                travado={!podeApontar || tocada || ocupado}
+                                onSalvar={(v) => acao(() => api.salvarPesoTanque(t.id, 'peso_inicial', v))}
+                              />
+                            </td>
+                            {/* O produto acaba no meio da ordem e o operador
+                                completa: sem registrar isso, o consumo real
+                                (inicial − final) sairia menor que o verdadeiro
+                                e a ordem apareceria como economia que não houve. */}
+                            <td className="py-3 pr-3 text-right">
+                              <Abastecimentos
+                                lancamentos={t.ordem_tanque_abastecimentos ?? []}
+                                podeAbastecer={podeApontar && emAndamento && !ocupado}
+                                onAbastecer={(v) => acao(() => api.abastecerTanque(t.id, v))}
+                                onApagar={(id) => acao(() => api.apagarAbastecimento(id))}
+                              />
+                            </td>
+                            <td className="py-3 pr-3 text-right">
+                              <PesoInput
+                                valor={t.peso_final}
+                                // final só libera depois do clique em Finalizar
+                                travado={!podeApontar || !ordem.fim_pendente || ocupado}
+                                onSalvar={(v) => acao(() => api.salvarPesoTanque(t.id, 'peso_final', v))}
+                              />
+                            </td>
+                            <td className="num-tabular py-3 pr-3 text-right">
+                              {c?.realKg == null ? '—' : `${num(c.realKg)} kg`}
+                            </td>
+                            <td
+                              className={`num-tabular py-3 text-right ${
+                                c?.desvioPct == null
+                                  ? 'text-stone-400'
+                                  : Math.abs(c.desvioPct) <= 5
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : Math.abs(c.desvioPct) <= 10
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-red-600 dark:text-red-400'
+                              }`}
+                            >
+                              {c?.desvioPct == null
+                                ? '—'
+                                : `${c.desvioPct > 0 ? '+' : ''}${num(c.desvioPct)}%`}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {ordem.fim_pendente && (
@@ -616,7 +694,9 @@ export default function ModalOrdem({
 
         {escolhendoParada && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-lg rounded-lg bg-white p-5 dark:bg-stone-900">
+            {/* max-h + overflow: lista de motivos é cadastro, pode crescer;
+                sem isto o botão Cancelar podia ficar cortado, sem rolagem */}
+            <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
               <h3 className="text-base font-semibold">Motivo da parada</h3>
               <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
                 A classificação separa tempo normal de processo (setup, limpeza) de perda
@@ -790,10 +870,13 @@ function PesoInput({
   valor,
   travado,
   onSalvar,
+  tamanho = 'normal',
 }: {
   valor: number | null
   travado: boolean
   onSalvar: (v: number | null) => void
+  /** 'grande' = card de celular: é a tarefa principal do operador ali. */
+  tamanho?: 'normal' | 'grande'
 }) {
   const [texto, setTexto] = useState(valor == null ? '' : String(valor))
   return (
@@ -809,7 +892,26 @@ function PesoInput({
         if (v !== valor) onSalvar(v)
       }}
       placeholder="—"
-      className="num-tabular w-24 rounded border border-stone-300 px-2 py-1 text-right disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 dark:border-stone-700 dark:bg-stone-800 dark:disabled:bg-stone-800/50"
+      className={`num-tabular rounded border border-stone-300 text-right disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 dark:border-stone-700 dark:bg-stone-800 dark:disabled:bg-stone-800/50 ${
+        tamanho === 'grande' ? 'w-full px-3 py-2.5 text-base' : 'w-24 px-2 py-1'
+      }`}
     />
   )
+}
+
+/** Produtos, mistura e consumo real de um tanque — usado pela tabela (desktop/tablet) e pelos cards (celular), sem duplicar a derivação. */
+function dadosTanque(
+  ordem: LinhaOrdem,
+  consumos: ReturnType<typeof consumoPorTanque>,
+  t: LinhaOrdem['ordem_tanques'][number],
+) {
+  const doTanque = new Set(
+    ordem.ordem_produtos.filter((op) => op.tanque === t.tanque).map((op) => op.produto_id),
+  )
+  const itens = ordem.receitas.receita_itens.filter((i) => doTanque.has(i.produto_id))
+  return {
+    itens,
+    mistura: itens.length > 1,
+    consumo: consumos.find((x) => x.tanque === t.tanque),
+  }
 }

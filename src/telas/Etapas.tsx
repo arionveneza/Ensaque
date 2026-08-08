@@ -90,16 +90,28 @@ export default function Etapas() {
               : 'Nada nesse filtro — nenhuma ordem com etapa pendente.'}
           </Vazio>
         ) : (
-          <Tabela cabecalho={['Ordem', 'Lote', 'Cultivar', 'Tratamento', 'Dia', 'Máq.',
-            'Produção', 'Q. processo', 'Q. final', 'Conferência', 'AGROTIS', 'Status']}>
+          <Tabela cabecalho={[
+            'Ordem', 'Lote',
+            { texto: 'Cultivar', className: 'hidden lg:table-cell' },
+            { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+            { texto: 'Dia', className: 'hidden lg:table-cell' },
+            { texto: 'Máq.', className: 'hidden lg:table-cell' },
+            'Produção', 'Q. processo', 'Q. final', 'Conferência', 'AGROTIS', 'Status',
+          ]}>
             {filtradas.map((o) => (
               <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{o.numero}</td>
+                <td className="px-2 py-1.5 font-medium">
+                  {o.numero}
+                  {/* cultivar/dia/máquina somem em lg: — mostra aqui embaixo */}
+                  <p className="text-xs font-normal text-stone-500 lg:hidden">
+                    {o.cultivar} · {diaCurto(o.data_prog)} · {o.maquina_id ?? 'sem máquina'}
+                  </p>
+                </td>
                 <td className="px-2 py-1.5">{o.lote_id}</td>
-                <td className="px-2 py-1.5">{o.cultivar}</td>
-                <td className="px-2 py-1.5">{o.receita_nome}</td>
-                <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
-                <td className="px-2 py-1.5">{o.maquina_id ?? '—'}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.cultivar}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.receita_nome}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{diaCurto(o.data_prog)}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.maquina_id ?? '—'}</td>
                 {etapasDaOrdem(o).map((e) => (
                   <td key={e.id} className="px-2 py-1.5 text-center">
                     <ChipEtapa etapa={e} />

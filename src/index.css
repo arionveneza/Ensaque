@@ -27,6 +27,7 @@ body {
 /* Navegação rolável sem a barra aparente (o conteúdo cortado já indica rolagem). */
 .scroll-oculto {
   scrollbar-width: none;
+  scroll-behavior: smooth;
 }
 .scroll-oculto::-webkit-scrollbar {
   display: none;

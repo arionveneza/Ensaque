@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { AuthProvider, useAuth } from '@/auth/AuthProvider'
 import Login from '@/telas/Login'
 import Execucao from '@/telas/Execucao'
@@ -43,6 +43,13 @@ function Shell() {
   const [tela, setTela] = useState<TelaId>('execucao')
   // modo TV: tela cheia, fora do shell. Quem enxerga Execução pode abrir.
   const [painel, setPainel] = useState(false)
+  // no celular a nav rola; sem isto a aba ativa pode nascer fora da vista,
+  // sem nenhuma pista de que dá pra rolar até ela
+  const navRef = useRef<HTMLElement>(null)
+  const abaAtivaRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    abaAtivaRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [tela])
 
   if (carregando) {
     return (
@@ -64,7 +71,9 @@ function Shell() {
             login. O RLS bloqueia todo o acesso enquanto o perfil não for criado — peça ao
             gestor para cadastrá-lo.
           </p>
-          <button onClick={sair} className="mt-4 text-sm underline">Sair</button>
+          <button onClick={sair} className="-mx-3 mt-4 rounded px-3 py-2.5 text-sm underline">
+            Sair
+          </button>
         </div>
       </div>
     )
@@ -97,7 +106,9 @@ function Shell() {
             O gestor desmarcou todas as telas do perfil <b>{usuario.perfil}</b> na matriz de
             permissões. Peça a ele para revisar em Administração.
           </p>
-          <button onClick={sair} className="mt-4 text-sm underline">Sair</button>
+          <button onClick={sair} className="-mx-3 mt-4 rounded px-3 py-2.5 text-sm underline">
+            Sair
+          </button>
         </div>
       </div>
     )
@@ -119,6 +130,11 @@ function Shell() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-3 text-sm">
+            {/* no celular some o nome, mas o perfil logado tem que continuar
+                visível — sem ele não dá pra saber quem/o que está entrando */}
+            <span className="text-xs font-medium text-emerald-700 sm:hidden dark:text-emerald-400">
+              {usuario.perfil}
+            </span>
             <span className="hidden text-stone-600 sm:inline dark:text-stone-300">
               {usuario.nome} ·{' '}
               <span className="text-emerald-700 dark:text-emerald-400">{usuario.perfil}</span>
@@ -127,26 +143,27 @@ function Shell() {
               <button
                 onClick={() => setPainel(true)}
                 title="Painel de produção em tela cheia, para a TV do chão de fábrica"
-                className="rounded-md border border-stone-300 px-3 py-1.5 text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                className="rounded-md border border-stone-300 px-3 py-2.5 text-stone-600 transition-colors hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
               >
                 Painel TV
               </button>
             )}
             <button
               onClick={sair}
-              className="rounded-md border border-stone-300 px-3 py-1.5 text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+              className="rounded-md border border-stone-300 px-3 py-2.5 text-stone-600 transition-colors hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
             >
               Sair
             </button>
           </div>
         </div>
-        <nav className="scroll-oculto mx-auto max-w-6xl overflow-x-auto px-4 sm:px-6">
+        <nav className="scroll-oculto mx-auto max-w-6xl overflow-x-auto px-4 sm:px-6" ref={navRef}>
           <ul className="flex gap-1 py-2">
             {TELAS.filter((t) => permitidas.includes(t.id)).map((t) => (
               <li key={t.id}>
                 <button
+                  ref={atual === t.id ? abaAtivaRef : undefined}
                   onClick={() => setTela(t.id)}
-                  className={`rounded-md px-3 py-2 text-sm whitespace-nowrap transition-colors ${
+                  className={`rounded-md px-3 py-2.5 text-sm whitespace-nowrap transition-colors sm:py-2 ${
                     atual === t.id
                       ? 'bg-emerald-700 font-semibold text-white dark:bg-emerald-600'
                       : 'text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800'
