@@ -115,7 +115,11 @@ export default function Administracao() {
         {usuarios.length === 0 ? (
           <Vazio>Nenhum usuário cadastrado.</Vazio>
         ) : (
-          <Tabela cabecalho={['Nome', 'Perfil', 'Situação', 'Desde', '']}>
+          <Tabela cabecalho={[
+            'Nome', 'Perfil', 'Situação',
+            { texto: 'Desde', className: 'hidden lg:table-cell' },
+            '',
+          ]}>
             {usuarios.map((u) => (
               <LinhaUsuario
                 key={u.id}
@@ -147,7 +151,7 @@ export default function Administracao() {
             <select
               value={perfilSel}
               onChange={(e) => setPerfilSel(e.target.value as Perfil)}
-              className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+              className="rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1 dark:border-stone-700 dark:bg-stone-800"
             >
               {PERFIS.map((p) => (
                 <option key={p} value={p}>{p}</option>
@@ -175,7 +179,7 @@ export default function Administracao() {
                   {(ACOES_POR_RECURSO[recurso] ?? ['ver']).map((a) => (
                     <label
                       key={a}
-                      className={`flex items-center gap-1.5 rounded px-1 text-sm ${
+                      className={`flex items-center gap-1.5 rounded px-1 py-1.5 text-sm ${
                         mexida(recurso, a)
                           ? 'bg-amber-100 dark:bg-amber-950/60'
                           : ''
@@ -339,11 +343,16 @@ function LinhaUsuario({
         <td className="px-2 py-2">
           <Tag cor={usuario.ativo ? 'ok' : 'neutro'}>{usuario.ativo ? 'Ativo' : 'Inativo'}</Tag>
         </td>
-        <td className="px-2 py-2 text-stone-500">
+        <td className="hidden px-2 py-2 text-stone-500 lg:table-cell">
           {new Date(usuario.criado_em).toLocaleDateString('pt-BR')}
         </td>
         <td className="px-2 py-2 text-right">
-          <button onClick={() => setEdit(true)} className="text-xs underline">editar</button>
+          <button
+            onClick={() => setEdit(true)}
+            className="-m-1.5 rounded p-1.5 text-xs underline"
+          >
+            editar
+          </button>
         </td>
       </tr>
     )
@@ -352,10 +361,13 @@ function LinhaUsuario({
   return (
     <tr className="border-t border-stone-100 dark:border-stone-800/60">
       <td className="px-2 py-2">
+        {/* w-full+max-w: sem largura definida, o input ficava com a largura
+            intrínseca do navegador (~170px) e empurrava salvar/cancelar
+            para fora da tela no celular */}
         <input
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+          className="w-full max-w-32 rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1 dark:border-stone-700 dark:bg-stone-800"
         />
       </td>
       <td className="px-2 py-2">
@@ -364,7 +376,7 @@ function LinhaUsuario({
           onChange={(e) => setPerfil(e.target.value as Perfil)}
           disabled={ehVoce}
           title={ehVoce ? 'Você não pode mudar o próprio perfil — evita perder o acesso de gestor' : undefined}
-          className="rounded-md border border-stone-300 px-2 py-1 text-sm disabled:opacity-50 dark:border-stone-700 dark:bg-stone-800"
+          className="w-full max-w-28 rounded-md border border-stone-300 px-2 py-2 text-sm disabled:opacity-50 sm:py-1 dark:border-stone-700 dark:bg-stone-800"
         >
           {PERFIS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
@@ -380,11 +392,16 @@ function LinhaUsuario({
           Ativo
         </label>
       </td>
-      <td />
+      {/* mesma coluna "Desde" escondida no celular — precisa bater com a
+          linha de visualização, senão as colunas desalinham entre linhas */}
+      <td className="hidden lg:table-cell" />
       <td className="px-2 py-2 text-right whitespace-nowrap">
         <Botao onClick={salvar}>salvar</Botao>
         <span className="ml-2">
-          <button onClick={() => setEdit(false)} className="text-xs text-stone-500 underline">
+          <button
+            onClick={() => setEdit(false)}
+            className="-m-1.5 rounded p-1.5 text-xs text-stone-500 underline"
+          >
             cancelar
           </button>
         </span>

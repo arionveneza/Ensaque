@@ -15,8 +15,10 @@ import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n } fr
 /** Peso de referência usado só para exibir a receita numa escala legível. */
 const REFERENCIA_KG = 40_000
 
+// py-2 no celular (~40px de alvo de toque, usado por TODO input/select/date
+// desta tela); sm: devolve py-1, que é o que desktop/tablet já tinham
 const INPUT =
-  'rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800'
+  'rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1 dark:border-stone-700 dark:bg-stone-800'
 
 type Aba = 'quimicos' | 'receitas' | 'maquinas' | 'embalagens' | 'motivos' | 'lotes'
 
@@ -81,12 +83,14 @@ export default function Cadastros() {
     >
       {erro && <Erro>{erro}</Erro>}
 
-      <nav className="mb-5 flex flex-wrap gap-2">
+      {/* rola em 1 linha no celular em vez de empilhar 3 linhas de aba antes
+          de qualquer conteúdo — mesmo padrão da navegação principal */}
+      <nav className="scroll-oculto mb-5 flex gap-2 overflow-x-auto">
         {ABAS.map((a) => (
           <button
             key={a.id}
             onClick={() => setAba(a.id)}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
+            className={`shrink-0 rounded-md border px-3 py-2.5 text-sm whitespace-nowrap sm:py-1.5 ${
               aba === a.id
                 ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
                 : 'border-stone-200 dark:border-stone-700'
@@ -210,7 +214,7 @@ function AbaQuimicos({
                 <td className="px-2 py-2 font-medium">{p.nome}</td>
                 <td className="px-2 py-2 text-stone-500">{p.codigo}</td>
                 <td className="px-2 py-2">{p.unidade}</td>
-                <td className="num-tabular px-2 py-2 text-right">
+                <td className="num-tabular px-2 py-2 text-right whitespace-nowrap">
                   {!p.unidade.startsWith('ml') ? (
                     <span className="text-stone-400">— dose já em peso</span>
                   ) : p.densidade == null ? (
@@ -237,7 +241,7 @@ function AbaQuimicos({
                 </td>
                 <td className="px-2 py-2 text-right">
                   {podeEditar && (
-                    <button onClick={() => setEditando(p.id)} className="text-xs underline">
+                    <button onClick={() => setEditando(p.id)} className="-m-1.5 rounded p-1.5 text-xs underline">
                       editar
                     </button>
                   )}
@@ -429,7 +433,7 @@ function FormProduto({
             <button
               onClick={() => setPrincipios(principios.filter((_, idx) => idx !== i))}
               disabled={principios.length === 1}
-              className="pb-1.5 text-xs text-red-600 underline disabled:opacity-30"
+              className="-m-1.5 rounded p-1.5 pb-1.5 text-xs text-red-600 underline disabled:opacity-30"
             >
               remover
             </button>
@@ -578,11 +582,11 @@ function TabelaReceita({ receita }: { receita: ReceitaCompleta }) {
           return (
             <tr key={i.produto_id} className="border-t border-stone-100 dark:border-stone-800/60">
               <td className="px-2 py-1.5">{q.nome}</td>
-              <td className="num-tabular px-2 py-1.5 text-right">{n(i.dose, 2)} {q.unidade}</td>
-              <td className="num-tabular px-2 py-1.5 text-right">
+              <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(i.dose, 2)} {q.unidade}</td>
+              <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
                 {q.densidade == null ? '—' : `${n(q.densidade, 3)} g/ml`}
               </td>
-              <td className="num-tabular px-2 py-1.5 text-right font-medium">
+              <td className="num-tabular px-2 py-1.5 text-right font-medium whitespace-nowrap">
                 {peso == null ? <span className="text-red-600">densidade ausente</span> : `${n(peso, 1)} kg`}
               </td>
             </tr>
@@ -690,7 +694,7 @@ function FormReceita({
             <button
               onClick={() => setItens(itens.filter((_, idx) => idx !== i))}
               disabled={itens.length === 1}
-              className="pb-1.5 text-xs text-red-600 underline disabled:opacity-30"
+              className="-m-1.5 rounded p-1.5 pb-1.5 text-xs text-red-600 underline disabled:opacity-30"
             >
               remover
             </button>
@@ -805,15 +809,15 @@ function LinhaMaquinaEdit({
         <td className="num-tabular px-2 py-2 text-right">{n(maquina.capacidade_th, 1)}</td>
         <td className="num-tabular px-2 py-2 text-right">{maquina.qtd_tanques}</td>
         {horas.map((h, i) => (
-          <td key={i} className="num-tabular px-2 py-2 text-right text-stone-600 dark:text-stone-300">
+          <td key={i} className="num-tabular px-2 py-2 text-right whitespace-nowrap text-stone-600 dark:text-stone-300">
             {n(maquina.capacidade_th * h, 0)} t
           </td>
         ))}
-        <td className="num-tabular px-2 py-2 text-right font-semibold">
+        <td className="num-tabular px-2 py-2 text-right font-semibold whitespace-nowrap">
           {n(capacidadeDiaT(maquina.capacidade_th, horas), 0)} t
         </td>
         <td className="px-2 py-2 text-right">
-          {podeEditar && <button onClick={() => setEdit(true)} className="text-xs underline">editar</button>}
+          {podeEditar && <button onClick={() => setEdit(true)} className="-m-1.5 rounded p-1.5 text-xs underline">editar</button>}
         </td>
       </tr>
     )
@@ -839,11 +843,11 @@ function LinhaMaquinaEdit({
               setEdit(false)
             })
           }
-          className="mr-2 text-xs underline"
+          className="-my-1.5 mr-2 rounded px-1.5 py-1.5 text-xs underline"
         >
           salvar
         </button>
-        <button onClick={() => setEdit(false)} className="text-xs text-stone-500 underline">cancelar</button>
+        <button onClick={() => setEdit(false)} className="-m-1.5 rounded p-1.5 text-xs text-stone-500 underline">cancelar</button>
       </td>
     </tr>
   )
@@ -865,7 +869,7 @@ function LinhaTurnoEdit({
         <td className="px-2 py-2">{turno.fim}</td>
         <td className="num-tabular px-2 py-2 text-right">{n(Number(turno.horas), 1)}</td>
         <td className="px-2 py-2 text-right">
-          {podeEditar && <button onClick={() => setEdit(true)} className="text-xs underline">editar</button>}
+          {podeEditar && <button onClick={() => setEdit(true)} className="-m-1.5 rounded p-1.5 text-xs underline">editar</button>}
         </td>
       </tr>
     )
@@ -887,11 +891,11 @@ function LinhaTurnoEdit({
               setEdit(false)
             })
           }
-          className="mr-2 text-xs underline"
+          className="-my-1.5 mr-2 rounded px-1.5 py-1.5 text-xs underline"
         >
           salvar
         </button>
-        <button onClick={() => setEdit(false)} className="text-xs text-stone-500 underline">cancelar</button>
+        <button onClick={() => setEdit(false)} className="-m-1.5 rounded p-1.5 text-xs text-stone-500 underline">cancelar</button>
       </td>
     </tr>
   )
@@ -934,9 +938,9 @@ function LinhaEmbalagemEdit({
         <td className="px-2 py-2 text-stone-500">{emb.codigo_ext ?? '—'}</td>
         <td className="px-2 py-2">{emb.descricao}</td>
         <td className="num-tabular px-2 py-2 text-right">{inteiro(emb.sementes)}</td>
-        <td className="num-tabular px-2 py-2 text-right">PMS × {n(emb.fator_peso, 1)}</td>
+        <td className="num-tabular px-2 py-2 text-right whitespace-nowrap">PMS × {n(emb.fator_peso, 1)}</td>
         <td className="px-2 py-2 text-right">
-          {podeEditar && <button onClick={() => setEdit(true)} className="text-xs underline">editar</button>}
+          {podeEditar && <button onClick={() => setEdit(true)} className="-m-1.5 rounded p-1.5 text-xs underline">editar</button>}
         </td>
       </tr>
     )
@@ -959,11 +963,11 @@ function LinhaEmbalagemEdit({
               setEdit(false)
             })
           }
-          className="mr-2 text-xs underline"
+          className="-my-1.5 mr-2 rounded px-1.5 py-1.5 text-xs underline"
         >
           salvar
         </button>
-        <button onClick={() => setEdit(false)} className="text-xs text-stone-500 underline">cancelar</button>
+        <button onClick={() => setEdit(false)} className="-m-1.5 rounded p-1.5 text-xs text-stone-500 underline">cancelar</button>
       </td>
     </tr>
   )
@@ -1022,7 +1026,7 @@ function AbaMotivos({
               {podeEditar && (
                 <button
                   onClick={() => acao(() => adm.excluirMotivo(m.id))}
-                  className="text-xs text-red-600 underline"
+                  className="-m-1.5 rounded p-1.5 text-xs text-red-600 underline"
                 >
                   excluir
                 </button>
@@ -1140,7 +1144,7 @@ function AbaLotes({
               )}
             </td>
             <td className="num-tabular px-2 py-1.5 text-right">{l.pms == null ? '—' : n(l.pms, 1)}</td>
-            <td className="num-tabular px-2 py-1.5 text-right">{n(l.peso_bag_kg, 0)} kg</td>
+            <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(l.peso_bag_kg, 0)} kg</td>
             <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags_disp)}</td>
             <td className="px-2 py-1.5">
               <Tag cor={l.status === 'Baixado' ? 'ok' : 'neutro'}>{l.status}</Tag>
@@ -1152,7 +1156,7 @@ function AbaLotes({
                     if (!confirm(`Excluir o lote ${l.id}?`)) return
                     acao(() => adm.excluirLoteSemente(l.id))
                   }}
-                  className="text-xs text-red-600 underline"
+                  className="-m-1.5 rounded p-1.5 text-xs text-red-600 underline"
                   title="Só funciona se o lote não tem ordem nem baixa"
                 >
                   excluir

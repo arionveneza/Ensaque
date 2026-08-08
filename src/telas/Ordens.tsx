@@ -686,8 +686,15 @@ export default function Ordens() {
           <Vazio>Nenhuma ordem encontrada com esses filtros.</Vazio>
         ) : (
           <Tabela
-            cabecalho={['Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.', 'Lote', 'Endereço',
-              '#Bags', '#Peso', 'Cliente', 'Status', '']}
+            cabecalho={[
+              { texto: 'Seq', className: 'hidden lg:table-cell' }, 'Ordem', 'Cultivar', 'Tratamento',
+              { texto: 'Emb.', className: 'hidden lg:table-cell' },
+              { texto: 'Lote', className: 'hidden lg:table-cell' },
+              { texto: 'Endereço', className: 'hidden lg:table-cell' },
+              '#Bags', '#Peso',
+              { texto: 'Cliente', className: 'hidden lg:table-cell' },
+              'Status', '',
+            ]}
           >
             {porDia.map(([dia, lista]) => (
               <FragmentoDia
@@ -1010,51 +1017,62 @@ function FragmentoDia({
         const st = o.status_efetivo as StatusEfetivo
         return (
           <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
-            <td className="px-2 py-1.5 text-stone-400">{o.seq ?? '—'}</td>
+            <td className="hidden px-2 py-1.5 text-stone-400 lg:table-cell">{o.seq ?? '—'}</td>
             <td className="px-2 py-1.5 font-medium">
               {o.numero}
               {o.prioridade === 'Urgente' && <span className="ml-1"><Tag cor="perigo">urgente</Tag></span>}
               {!!o.reprogramacoes && o.reprogramacoes > 0 && (
                 <span
-                  className="ml-1 cursor-help text-[10px] font-normal text-amber-700 dark:text-amber-400"
+                  className="ml-1 cursor-help text-xs font-normal text-amber-700 dark:text-amber-400"
                   title={`Reprogramada ${o.reprogramacoes}× — estava para ${diaCurto(o.data_prog_original ?? null)}`}
                 >
                   ↷{o.reprogramacoes}
                 </span>
               )}
+              {/* lote/endereço/embalagem somem em lg: — mostra aqui embaixo */}
+              <p className="text-xs font-normal text-stone-500 lg:hidden">
+                {o.embalagem} · lote {o.lote_id} · {enderecoLote(o)}
+              </p>
             </td>
             <td className="px-2 py-1.5">{o.cultivar}</td>
             <td className="px-2 py-1.5">{o.receita_nome}</td>
-            <td className="px-2 py-1.5">{o.embalagem}</td>
-            <td className="px-2 py-1.5 font-medium">{o.lote_id}</td>
-            <td className="px-2 py-1.5 text-xs text-stone-500">{enderecoLote(o)}</td>
+            <td className="hidden px-2 py-1.5 lg:table-cell">{o.embalagem}</td>
+            <td className="hidden px-2 py-1.5 font-medium lg:table-cell">{o.lote_id}</td>
+            <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">{enderecoLote(o)}</td>
             <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
             <td className="num-tabular px-2 py-1.5 text-right">{n(o.peso_t, 1)} t</td>
-            <td className="max-w-32 truncate px-2 py-1.5 text-stone-500">{o.cliente ?? '—'}</td>
+            <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
+              {o.cliente ?? '—'}
+            </td>
             <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
             <td className="px-2 py-1.5 text-right whitespace-nowrap">
-              {podeEditar && pode(st, 'editar') && (
-                <button
-                  onClick={() => onEditar(o)}
-                  className="mr-1 text-xs underline"
-                  title="Editável enquanto a produção não toca a ordem"
-                >
-                  editar
-                </button>
-              )}
-              {podePriorizar && pode(st, 'priorizar') && (
-                <button
-                  onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
-                  className="mr-1 text-xs underline"
-                >
-                  {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
-                </button>
-              )}
-              {podeExcluir && pode(st, 'excluir') && (
-                <button onClick={() => onExcluir(o.id)} className="text-xs text-red-600 underline">
-                  excluir
-                </button>
-              )}
+              <div className="inline-flex flex-wrap justify-end gap-2">
+                {podeEditar && pode(st, 'editar') && (
+                  <button
+                    onClick={() => onEditar(o)}
+                    className="rounded px-1.5 py-1.5 text-xs underline"
+                    title="Editável enquanto a produção não toca a ordem"
+                  >
+                    editar
+                  </button>
+                )}
+                {podePriorizar && pode(st, 'priorizar') && (
+                  <button
+                    onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
+                    className="rounded px-1.5 py-1.5 text-xs underline"
+                  >
+                    {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
+                  </button>
+                )}
+                {podeExcluir && pode(st, 'excluir') && (
+                  <button
+                    onClick={() => onExcluir(o.id)}
+                    className="rounded px-1.5 py-1.5 text-xs text-red-600 underline"
+                  >
+                    excluir
+                  </button>
+                )}
+              </div>
             </td>
           </tr>
         )
@@ -1267,7 +1285,12 @@ function NovaOrdemForm({
         </Campo>
         <Campo rotulo="Máquina e dia (opcional)">
           <div className="flex gap-2">
-            <select value={maquinaId} onChange={(e) => definir({ maquinaId: e.target.value })} className={INPUT}>
+            {/* min-w: sem isto o select murchava para ~64px no tablet, com a
+                célula do grid pai em ~221px, apertando o texto da opção */}
+            <select
+              value={maquinaId} onChange={(e) => definir({ maquinaId: e.target.value })}
+              className={`${INPUT} min-w-[5.5rem]`}
+            >
               <option value="">pool</option>
               {maquinas.map((m) => (
                 <option key={m.id} value={m.id}>{m.nome}</option>
@@ -1280,8 +1303,11 @@ function NovaOrdemForm({
           </div>
         </Campo>
         <Campo rotulo="Endereço do lote (opcional)">
-          <div className="flex gap-2">
-            <div className="flex-1">
+          {/* empilha no celular/tablet (grid pai já é 3 colunas em sm:, então
+              cada campo tem só ~220px) — os 3 inputs murchavam para ~2-3
+              caracteres visíveis. A partir de lg: volta a ficar em 1 linha. */}
+          <div className="flex flex-col gap-2 lg:flex-row">
+            <div className="lg:flex-1">
               <p className="text-xs text-stone-500">Armazém</p>
               <input
                 value={armazem}
@@ -1291,23 +1317,25 @@ function NovaOrdemForm({
                 className={INPUT}
               />
             </div>
-            <div className="w-24">
-              <p className="text-xs text-stone-500">Bloco</p>
-              <input
-                value={bloco}
-                onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
-                placeholder="BL01"
-                className={INPUT}
-              />
-            </div>
-            <div className="w-24">
-              <p className="text-xs text-stone-500">Quadra</p>
-              <input
-                value={quadra}
-                onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
-                placeholder="QD04"
-                className={INPUT}
-              />
+            <div className="flex gap-2">
+              <div className="w-1/2 lg:w-24">
+                <p className="text-xs text-stone-500">Bloco</p>
+                <input
+                  value={bloco}
+                  onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
+                  placeholder="BL01"
+                  className={INPUT}
+                />
+              </div>
+              <div className="w-1/2 lg:w-24">
+                <p className="text-xs text-stone-500">Quadra</p>
+                <input
+                  value={quadra}
+                  onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
+                  placeholder="QD04"
+                  className={INPUT}
+                />
+              </div>
             </div>
           </div>
         </Campo>

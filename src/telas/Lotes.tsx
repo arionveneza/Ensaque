@@ -357,10 +357,10 @@ export default function Lotes() {
               const estornos = movimentos.filter((m) => m.estorno)
               const conferidasPeriodo = conferencias.filter((c) => c.ts >= `${desde}T00:00:00Z`)
               const tile = 'rounded border border-stone-200 px-3 py-2 dark:border-stone-800'
-              const rot = 'text-[10px] uppercase tracking-wide text-stone-500'
+              const rot = 'text-[11px] uppercase tracking-wide text-stone-500'
               const val = 'num-tabular text-lg font-semibold'
               return (
-                <div className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                   <div className={tile}>
                     <p className={rot}>Bags baixados</p>
                     <p className={val}>{inteiro(baixas.reduce((a, m) => a + m.bags, 0))}</p>
@@ -399,7 +399,11 @@ export default function Lotes() {
             <Tabela cabecalho={['Data', 'Lote', '#Bags', '#Peso', 'Tipo']}>
               {movimentos.map((m) => (
                 <tr key={m.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-1.5">{new Date(m.ts).toLocaleString('pt-BR')}</td>
+                  {/* data+hora completa não pode quebrar em 2 linhas dentro da
+                      célula — melhor rolar a tabela do que espremer o texto */}
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {new Date(m.ts).toLocaleString('pt-BR')}
+                  </td>
                   <td className="px-2 py-1.5 font-medium">{m.lote_id}</td>
                   <td className="num-tabular px-2 py-1.5 text-right">{m.bags}</td>
                   <td className="num-tabular px-2 py-1.5 text-right">
@@ -498,11 +502,17 @@ function LinhaLote({
       </div>
 
       <details className="mt-2" open={item.critico}>
-        <summary className="cursor-pointer py-1 text-xs text-stone-500 dark:text-stone-400">
+        <summary className="cursor-pointer py-2.5 text-xs text-stone-500 sm:py-1 dark:text-stone-400">
           {qtd === 1 ? 'ver a ordem dependente' : `ver as ${qtd} ordens dependentes`}
         </summary>
         <div className="mt-1">
-          <Tabela cabecalho={['Ordem', 'Tratamento', 'Máquina', 'Endereço', 'Dia', '#Bags', 'Status']}>
+          <Tabela cabecalho={[
+            'Ordem',
+            { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+            'Máquina', 'Endereço',
+            { texto: 'Dia', className: 'hidden lg:table-cell' },
+            '#Bags', 'Status',
+          ]}>
             {abertas.map((o) => (
               <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5">
@@ -512,8 +522,11 @@ function LinhaLote({
                       <Tag cor="perigo">urgente</Tag>
                     </span>
                   )}
+                  <p className="text-xs font-normal text-stone-500 lg:hidden">
+                    {o.receita_nome} · {diaCurto(o.data_prog)}
+                  </p>
                 </td>
-                <td className="px-2 py-1.5">{o.receita_nome}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{o.receita_nome}</td>
                 <td className="px-2 py-1.5">{nomeMaquina(o.maquina_id) ?? '—'}</td>
                 {/* é a informação que a separação usa: onde ir buscar */}
                 <td className="px-2 py-1.5 font-medium">
@@ -525,7 +538,7 @@ function LinhaLote({
                     </span>
                   )}
                 </td>
-                <td className="px-2 py-1.5">{diaCurto(o.data_prog)}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{diaCurto(o.data_prog)}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                 <td className="px-2 py-1.5">
                   <Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag>

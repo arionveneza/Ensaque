@@ -402,12 +402,14 @@ export default function Programacao() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
-                <th className="px-2 py-2">Máquina</th>
+                {/* sticky: a coluna Máquina não deve rolar junto com os 7 dias
+                    — sem referência, uma célula de ocupação isolada não diz nada */}
+                <th className="sticky left-0 z-10 bg-white px-2 py-2 dark:bg-stone-900">Máquina</th>
                 {dias.map((d) => (
                   <th key={d} className="px-2 py-2 text-center">
                     <button
                       onClick={() => setDiaSel(d)}
-                      className={`rounded px-2 py-0.5 ${d === diaSel ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900' : ''}`}
+                      className={`rounded px-2 py-2 sm:py-0.5 ${d === diaSel ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900' : ''}`}
                     >
                       {diaSemana(d)} {diaCurto(d)}
                     </button>
@@ -418,7 +420,9 @@ export default function Programacao() {
             <tbody>
               {maquinas.map((m) => (
                 <tr key={m.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-2 font-medium">{m.nome}</td>
+                  <td className="sticky left-0 z-10 bg-white px-2 py-2 font-medium dark:bg-stone-900">
+                    {m.nome}
+                  </td>
                   {dias.map((d) => {
                     const o = ocupacaoCelula(m.id, d)
                     const destacado = alvo?.maq === m.id && alvo?.dia === d
@@ -612,12 +616,15 @@ export default function Programacao() {
                             const antes = e.clientY < r.top + r.height / 2
                             marcarAlvo({ maq: m.id, dia: diaSel, pos: idx + (antes ? 0 : 1) })
                           }}
-                          className={`flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm dark:border-stone-700 dark:bg-stone-800 ${
+                          className={`flex flex-wrap items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm dark:border-stone-700 dark:bg-stone-800 ${
                             movivel ? 'cursor-grab' : ''
                           } ${arrastando === ord.id ? 'opacity-40' : ''}`}
                         >
                           <span className="w-5 text-xs text-stone-400">{idx + 1}</span>
-                          <div className="min-w-0 flex-1">
+                          {/* min-w-40: no celular, sem largura mínima o texto
+                              identificador espremia até ficar ilegível quando
+                              tags+mover+setas competiam pela mesma linha */}
+                          <div className="min-w-40 flex-1">
                             <p className="truncate font-medium">
                               {ord.numero} · {ord.cultivar}
                             </p>
@@ -632,7 +639,7 @@ export default function Programacao() {
                               <button
                                 onClick={() => setMovendo(movendo === ord.id ? null : ord.id)}
                                 title="Mover para outro dia ou máquina (funciona no tablet, onde arrastar não funciona)"
-                                className="rounded border border-stone-300 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-stone-500 hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+                                className="rounded border border-stone-300 px-3 py-2 text-xs uppercase tracking-wide text-stone-500 hover:bg-stone-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] dark:border-stone-600 dark:hover:bg-stone-700"
                               >
                                 mover
                               </button>
@@ -646,7 +653,7 @@ export default function Programacao() {
                                       await g.aplicarAtribuicoes(renumerar(m.id, diaSel, fila))
                                     })
                                   }
-                                  className="text-xs leading-none disabled:opacity-20"
+                                  className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
                                 >
                                   ▲
                                 </button>
@@ -659,7 +666,7 @@ export default function Programacao() {
                                       await g.aplicarAtribuicoes(renumerar(m.id, diaSel, fila))
                                     })
                                   }
-                                  className="text-xs leading-none disabled:opacity-20"
+                                  className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
                                 >
                                   ▼
                                 </button>
@@ -917,7 +924,7 @@ function PreviaCascata({
                     .slice()
                     .sort((a, b) => a.seq - b.seq)
                     .map((mv) => (
-                      <li key={mv.ordem.id} className="flex items-center gap-2">
+                      <li key={mv.ordem.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="w-5 text-right text-xs text-stone-400">{mv.seq}</span>
                         <span className="font-medium">{numeroDe(mv.ordem.id)}</span>
                         <span className="text-xs text-stone-500">

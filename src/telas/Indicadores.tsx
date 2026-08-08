@@ -261,7 +261,7 @@ export default function Indicadores() {
         <Vazio>Nenhuma ordem com apontamento de início no período.</Vazio>
       ) : (
         <>
-          <div className="mb-5 grid gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             <Indicador rotulo="Ordens" valor={String(totais.ordens)} />
             <Indicador
               rotulo="Bags produzidos"
@@ -322,7 +322,9 @@ export default function Indicadores() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              {/* 3 cartões cabiam em ~90px cada no celular, espremendo o
+                  rótulo em uppercase text-[10px]; empilha até sm: */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <FatorOee rotulo="Disponibilidade" valor={oee.disponibilidade} legenda="líquido ÷ bruto" />
                 <FatorOee rotulo="Performance" valor={oee.performance} legenda="ideal ÷ líquido" />
                 <FatorOee
@@ -437,11 +439,13 @@ export default function Indicadores() {
                     <BarChart
                       data={paradas.map((p) => ({ ...p, horas: p.segundos / 3600 }))}
                       layout="vertical"
-                      margin={{ left: 40 }}
+                      margin={{ left: 8 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.15} />
                       <XAxis type="number" fontSize={12} unit=" h" />
-                      <YAxis type="category" dataKey="motivo" fontSize={11} width={150} />
+                      {/* 150px de rótulo no celular (~295px úteis) deixava as
+                          barras espremidas em ~145px — 96px é o meio-termo */}
+                      <YAxis type="category" dataKey="motivo" fontSize={10} width={96} />
                       <Tooltip
                         formatter={(v) => `${n(Number(v), 2)} h`}
                         contentStyle={{ fontSize: 12 }}

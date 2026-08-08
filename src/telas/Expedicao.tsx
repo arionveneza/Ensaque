@@ -298,7 +298,7 @@ export default function Expedicao() {
               </label>
               {temFiltro && <Botao onClick={limparFiltros}>Limpar filtros</Botao>}
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-xs uppercase tracking-wide text-stone-500">Status:</span>
               {statusExistentes.map((s) => {
                 const ativo = statusSel.has(s)
@@ -313,7 +313,7 @@ export default function Expedicao() {
                         return novo
                       })
                     }
-                    className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                    className={`rounded-full border px-2.5 py-1.5 text-xs sm:py-0.5 ${
                       ativo
                         ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
                         : 'border-stone-300 text-stone-500 dark:border-stone-700'
@@ -383,8 +383,13 @@ export default function Expedicao() {
               <Vazio>Nenhum carregamento passa pelos filtros.</Vazio>
             ) : (
               <>
-                <Tabela cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Agendado',
-                  '#Estoque', '#Prod. prevista', '#Saldo', '']}>
+                <Tabela cabecalho={[
+                  'Cultivar', 'Tratamento',
+                  { texto: 'Emb.', className: 'hidden lg:table-cell' },
+                  '#Agendado', '#Estoque',
+                  { texto: '#Prod. prevista', className: 'hidden lg:table-cell' },
+                  '#Saldo', '',
+                ]}>
                   {saldos.map((s) => {
                     const situacao = situacaoSaldo(s)
                     // embalagem que o app não conhece nunca casa com o estoque:
@@ -404,16 +409,21 @@ export default function Expedicao() {
                         key={`${s.cultivar}|${s.tratamento}|${s.embalagem}`}
                         className={`border-t border-stone-100 dark:border-stone-800/60 ${fundo}`}
                       >
-                        <td className="px-2 py-1.5 font-medium">{s.cultivar}</td>
+                        <td className="px-2 py-1.5 font-medium">
+                          {s.cultivar}
+                          <p className="text-xs font-normal text-stone-500 lg:hidden">
+                            {s.embalagem}
+                          </p>
+                        </td>
                         <td className="px-2 py-1.5">
                           {s.semTsi ? <Tag cor="neutro">SEM TSI</Tag> : s.tratamento}
                         </td>
-                        <td className="px-2 py-1.5">{s.embalagem}</td>
+                        <td className="hidden px-2 py-1.5 lg:table-cell">{s.embalagem}</td>
                         <td className="num-tabular px-2 py-1.5 text-right">{inteiro(s.agendado)}</td>
                         <td className="num-tabular px-2 py-1.5 text-right" title={s.semTsi ? 'Lotes de semente em estoque deste cultivar, todas as embalagens' : 'Estoque de produto acabado tratado'}>
                           {inteiro(s.estoque)}
                         </td>
-                        <td className="num-tabular px-2 py-1.5 text-right text-stone-500" title={s.semTsi ? 'Semente branca não passa pela produção' : 'Todas as ordens abertas da combinação — produção se adianta, então a data não corta a conta'}>
+                        <td className="hidden num-tabular px-2 py-1.5 text-right text-stone-500 lg:table-cell" title={s.semTsi ? 'Semente branca não passa pela produção' : 'Todas as ordens abertas da combinação — produção se adianta, então a data não corta a conta'}>
                           {s.semTsi ? '—' : inteiro(s.producaoPrevista)}
                         </td>
                         <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
@@ -461,8 +471,15 @@ export default function Expedicao() {
             {filtrados.length === 0 ? (
               <Vazio>Nenhum carregamento passa pelos filtros.</Vazio>
             ) : (
-              <Tabela cabecalho={['Data', 'Carga', 'Status', 'Cliente', 'Cultivar',
-                'Tratamento', 'Emb.', '#Bags', 'Transporte']}>
+              <Tabela cabecalho={[
+                'Data',
+                { texto: 'Carga', className: 'hidden lg:table-cell' },
+                'Status', 'Cliente', 'Cultivar',
+                { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+                { texto: 'Emb.', className: 'hidden lg:table-cell' },
+                '#Bags',
+                { texto: 'Transporte', className: 'hidden lg:table-cell' },
+              ]}>
                 {filtrados.map((c) => (
                   <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5 whitespace-nowrap">
@@ -470,20 +487,27 @@ export default function Expedicao() {
                         <span className="text-amber-600 dark:text-amber-400">sem data</span>
                       )}
                     </td>
-                    <td className="num-tabular px-2 py-1.5">{c.carga}</td>
+                    <td className="hidden num-tabular px-2 py-1.5 lg:table-cell">{c.carga}</td>
                     <td className="px-2 py-1.5"><Tag cor={corStatusCarga(c.status)}>{c.status}</Tag></td>
-                    <td className="max-w-56 truncate px-2 py-1.5" title={c.cliente ?? ''}>
+                    {/* break-words em vez de truncate: em toque não há hover
+                        para abrir o title, e o nome ficava inacessível pra
+                        sempre — agora quebra em mais linhas em vez de cortar */}
+                    <td className="max-w-56 break-words px-2 py-1.5">
                       {c.cliente ?? '—'}
                     </td>
-                    <td className="px-2 py-1.5 font-medium">{c.cultivar}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 font-medium">
+                      {c.cultivar}
+                      <p className="text-xs font-normal text-stone-500 lg:hidden">
+                        {c.tratamento === SEM_TSI ? 'SEM TSI' : c.tratamento} · {c.embalagem}
+                      </p>
+                    </td>
+                    <td className="hidden px-2 py-1.5 lg:table-cell">
                       {c.tratamento === SEM_TSI ? <Tag cor="neutro">SEM TSI</Tag> : c.tratamento}
                     </td>
-                    <td className="px-2 py-1.5">{c.embalagem}</td>
+                    <td className="hidden px-2 py-1.5 lg:table-cell">{c.embalagem}</td>
                     <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.bags)}</td>
-                    <td className="max-w-44 truncate px-2 py-1.5 text-xs text-stone-500"
-                        title={`${c.transportadora ?? ''} · ${c.motorista ?? ''} · ${c.placa ?? ''}`}>
-                      {c.placa ?? c.transportadora ?? '—'}
+                    <td className="hidden max-w-44 break-words px-2 py-1.5 text-xs text-stone-500 lg:table-cell">
+                      {[c.transportadora, c.motorista, c.placa].filter(Boolean).join(' · ') || '—'}
                     </td>
                   </tr>
                 ))}
@@ -543,20 +567,33 @@ export default function Expedicao() {
         {pedidos.length === 0 ? (
           <Vazio>Nenhum pedido passa pelos filtros — ou nenhum upload de pedidos foi feito ainda (tela Ordens).</Vazio>
         ) : (
-          <Tabela cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Aprovado', '#Aguardando',
-            '#Estoque PA', '#Em ordens', '#Falta produzir', '']}>
+          <Tabela cabecalho={[
+            'Cultivar',
+            { texto: 'Tratamento', className: 'hidden lg:table-cell' },
+            { texto: 'Emb.', className: 'hidden lg:table-cell' },
+            '#Aprovado',
+            { texto: '#Aguardando', className: 'hidden lg:table-cell' },
+            { texto: '#Estoque PA', className: 'hidden lg:table-cell' },
+            { texto: '#Em ordens', className: 'hidden lg:table-cell' },
+            '#Falta produzir', '',
+          ]}>
             {pedidos.map((b) => (
               <tr key={`${b.cultivar}|${b.tratamento}|${b.embalagem}`}
                   className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{b.cultivar}</td>
-                <td className="px-2 py-1.5">{b.tratamento}</td>
-                <td className="px-2 py-1.5">{b.embalagem}</td>
+                <td className="px-2 py-1.5 font-medium">
+                  {b.cultivar}
+                  <p className="text-xs font-normal text-stone-500 lg:hidden">
+                    {b.tratamento} · {b.embalagem}
+                  </p>
+                </td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{b.tratamento}</td>
+                <td className="hidden px-2 py-1.5 lg:table-cell">{b.embalagem}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.pedido_aprovado)}</td>
-                <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+                <td className="hidden num-tabular px-2 py-1.5 text-right text-stone-500 lg:table-cell">
                   {b.pedido_pendente > 0 ? inteiro(b.pedido_pendente) : '—'}
                 </td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.estoque_pa)}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.ordens_abertas)}</td>
+                <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">{inteiro(b.estoque_pa)}</td>
+                <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">{inteiro(b.ordens_abertas)}</td>
                 <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
                   b.saldo > 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
                 }`}>
