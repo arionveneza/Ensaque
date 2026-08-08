@@ -4,7 +4,7 @@ import {
 } from 'recharts'
 import * as g from '@/dados/api-gestao'
 import type { OrdemVisao, ParadaDetalhe, ParadaLinha, TempoOrdem } from '@/dados/api-gestao'
-import { formataHms } from '@/dominio/calculos'
+import { calculaOee, checkFinalAprovado, diaDeProducao, formataHms } from '@/dominio/calculos'
 import { exportarXlsx } from '@/lib/exportar'
 import {
   Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, diaCurto, exportarCsv,
@@ -14,12 +14,16 @@ import {
 type Janela = 'dia' | 'semana' | 'mes'
 
 export default function Indicadores() {
-  const hoje = new Date().toISOString().slice(0, 10)
+  // dia de produção LOCAL (07:30–03:00), não a data UTC: no fim da noite do
+  // Brasil o toISOString já apontava amanhã e "Hoje" vinha vazio. Alinha com
+  // o Painel e a Execução, que também usam diaDeProducao.
+  const hoje = diaDeProducao(new Date())
   const [janela, setJanela] = useState<Janela>('semana')
   const [tempos, setTempos] = useState<TempoOrdem[]>([])
   const [paradas, setParadas] = useState<ParadaDetalhe[]>([])
   const [paradasDet, setParadasDet] = useState<ParadaLinha[]>([])
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
+  const [checks, setChecks] = useState<g.ChecklistQualidade[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -33,14 +37,15 @@ export default function Indicadores() {
     setCarregando(true)
     Promise.all([
       g.listarTempos(de, hoje), g.paretoParadas(de, hoje),
-      g.listarParadasPeriodo(de, hoje), g.listarOrdens(),
+      g.listarParadasPeriodo(de, hoje), g.listarOrdens(), g.listarChecksQualidade(),
     ])
-      .then(([t, p, pd, o]) => {
+      .then(([t, p, pd, o, c]) => {
         if (!vivo) return
         setTempos(t)
         setParadas(p)
         setParadasDet(pd)
         setOrdens(o)
+        setChecks(c)
       })
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
@@ -72,6 +77,40 @@ export default function Indicadores() {
       rendimento: t.liquido > 0 ? t.pesoT / (t.liquido / 3600) : null,
     }
   }, [tempos])
+
+  /** ordem_id → checklist final aprovado (o mais recente de cada ordem). */
+  const finalAprovado = useMemo(() => {
+    const m = new Map<string, boolean>()
+    for (const c of checks) {
+      if (c.etapa === 'final' && !m.has(c.ordem_id)) m.set(c.ordem_id, checkFinalAprovado(c))
+    }
+    return m
+  }, [checks])
+
+  /**
+   * OEE calculado sobre UMA população: as ordens que têm inspeção final. Sem
+   * isso, Disponibilidade e Performance sairiam de todas as ordens e Qualidade
+   * só das inspecionadas — três denominadores diferentes num número só, que
+   * mente. Aqui os três fatores medem exatamente as mesmas ordens; as sem
+   * qualidade final ainda não são "OEE-mensuráveis" e ficam de fora (o rótulo
+   * diz quantas de quantas).
+   */
+  const oee = useMemo(() => oeeDe(tempos.filter((t) => finalAprovado.has(t.ordem_id)), finalAprovado, tempos.length), [tempos, finalAprovado])
+
+  /** OEE por máquina, mesma regra de população, para comparar TSI 1 e TSI 2. */
+  const oeePorMaquina = useMemo(() => {
+    const porMaq = new Map<string, TempoOrdem[]>()
+    for (const t of tempos) {
+      if (!finalAprovado.has(t.ordem_id)) continue
+      const arr = porMaq.get(t.maquina_id) ?? []
+      arr.push(t)
+      porMaq.set(t.maquina_id, arr)
+    }
+    return [...porMaq.entries()].map(([maquina, linhas]) => ({
+      maquina,
+      ...oeeDe(linhas, finalAprovado, linhas.length),
+    }))
+  }, [tempos, finalAprovado])
 
   /** Produção por máquina e turno. */
   const porMaquinaTurno = useMemo(() => {
@@ -254,6 +293,64 @@ export default function Indicadores() {
               valor={totais.rendimento == null ? '—' : `${n(totais.rendimento, 1)} t/h`}
             />
           </div>
+
+          <Cartao
+            titulo="OEE — Eficiência global do equipamento"
+            className="mb-5"
+            acoes={
+              <span
+                className="text-xs text-stone-500 dark:text-stone-400"
+                title="OEE = Disponibilidade × Performance × Qualidade. Qualidade é a fração de ordens com checklist final aprovado (umidade e pó OK, recobrimento ≥ 3)."
+              >
+                Disponibilidade × Performance × Qualidade
+              </span>
+            }
+          >
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_2fr]">
+              {/* o número-herói */}
+              <div className="flex flex-col items-center justify-center rounded-lg border border-stone-200 p-4 text-center dark:border-stone-800">
+                <p className="text-[11px] font-medium uppercase tracking-widest text-stone-500">
+                  OEE do período
+                </p>
+                <p className={`num-tabular text-5xl font-bold ${corOee(oee.oee)}`}>
+                  {oee.oee == null ? '—' : `${n(oee.oee * 100, 0)}%`}
+                </p>
+                <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                  {oee.oee == null
+                    ? `${oee.qtdTotal} ordem(ns), nenhuma com qualidade final apontada`
+                    : `${oee.qtdMedidas} de ${oee.qtdTotal} ordem(ns) medidas (com qualidade final)`}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <FatorOee rotulo="Disponibilidade" valor={oee.disponibilidade} legenda="líquido ÷ bruto" />
+                <FatorOee rotulo="Performance" valor={oee.performance} legenda="ideal ÷ líquido" />
+                <FatorOee
+                  rotulo="Qualidade"
+                  valor={oee.qualidade}
+                  legenda={oee.qualidade == null ? 'sem inspeção final' : 'checklist final OK'}
+                />
+              </div>
+            </div>
+
+            {oeePorMaquina.length > 1 && (
+              <div className="mt-4">
+                <Tabela cabecalho={['Máquina', 'Disponib.', 'Perform.', 'Qualidade', 'OEE']}>
+                  {oeePorMaquina.map((m) => (
+                    <tr key={m.maquina} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <td className="px-2 py-1.5 font-medium">{m.maquina}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{pct(m.disponibilidade)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{pct(m.performance)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{pct(m.qualidade)}</td>
+                      <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${corOee(m.oee)}`}>
+                        {pct(m.oee)}
+                      </td>
+                    </tr>
+                  ))}
+                </Tabela>
+              </div>
+            )}
+          </Cartao>
 
           <Cartao titulo="Produção por máquina e turno" className="mb-5">
             <div className="h-64">
@@ -509,6 +606,74 @@ export default function Indicadores() {
         </>
       )}
     </Pagina>
+  )
+}
+
+/**
+ * OEE de um conjunto de ordens que TÊM checklist final: agrega os tempos e a
+ * taxa de aprovação sobre exatamente as mesmas ordens. `total` é o total de
+ * ordens do recorte (com e sem qualidade), só para o rótulo "N de M".
+ */
+function oeeDe(
+  medidas: TempoOrdem[],
+  aprovado: Map<string, boolean>,
+  total: number,
+) {
+  const agg = medidas.reduce(
+    (a, t) => ({
+      bruto: a.bruto + Number(t.bruto_s),
+      liquido: a.liquido + Number(t.liquido_s),
+      planejadas: a.planejadas + Number(t.paradas_plan_s),
+      planejado: a.planejado + Number(t.planejado_s),
+    }),
+    { bruto: 0, liquido: 0, planejadas: 0, planejado: 0 },
+  )
+  const aprovadas = medidas.filter((t) => aprovado.get(t.ordem_id)).length
+  const base =
+    calculaOee({
+      brutoS: agg.bruto,
+      liquidoS: agg.liquido,
+      paradasPlanejadasS: agg.planejadas,
+      planejadoS: agg.planejado,
+      qualidade: medidas.length > 0 ? aprovadas / medidas.length : null,
+    }) ?? { disponibilidade: null, performance: null, qualidade: null, oee: null }
+  return { ...base, qtdMedidas: medidas.length, qtdTotal: total }
+}
+
+/** % a partir de fração 0–1; traço quando null. */
+const pct = (v: number | null | undefined) =>
+  v == null ? '—' : `${n(v * 100, 0)}%`
+
+/** Cor do OEE: 85% classe mundial, 60% típico (fração 0–1). */
+const corOee = (v: number | null | undefined) =>
+  v == null
+    ? 'text-stone-400'
+    : v >= 0.85
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : v >= 0.6
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-600 dark:text-red-400'
+
+/** Um dos três fatores do OEE, com barra proporcional. */
+function FatorOee({
+  rotulo, valor, legenda,
+}: {
+  rotulo: string
+  valor: number | null
+  legenda: string
+}) {
+  return (
+    <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+      <p className="text-[10px] uppercase tracking-wide text-stone-500">{rotulo}</p>
+      <p className={`num-tabular mt-0.5 text-2xl font-bold ${corOee(valor)}`}>{pct(valor)}</p>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+        <div
+          className="h-full rounded-full bg-emerald-600"
+          style={{ width: `${Math.round((valor ?? 0) * 100)}%` }}
+        />
+      </div>
+      <p className="mt-1 text-[10px] text-stone-400">{legenda}</p>
+    </div>
   )
 }
 

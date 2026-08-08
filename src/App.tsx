@@ -18,6 +18,7 @@ const Expedicao = lazy(() => import('@/telas/Expedicao'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
+const Painel = lazy(() => import('@/telas/Painel'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
@@ -40,6 +41,8 @@ const TELAS: { id: TelaId; nome: string }[] = [
 function Shell() {
   const { session, usuario, carregando, semCadastro, permitido, sair } = useAuth()
   const [tela, setTela] = useState<TelaId>('execucao')
+  // modo TV: tela cheia, fora do shell. Quem enxerga Execução pode abrir.
+  const [painel, setPainel] = useState(false)
 
   if (carregando) {
     return (
@@ -74,6 +77,16 @@ function Shell() {
     t.id === 'administracao' ? usuario.perfil === 'Gestor' : permitido(t.id, 'ver'),
   ).map((t) => t.id)
   const atual = permitidas.includes(tela) ? tela : permitidas[0]
+  const podePainel = permitido('execucao', 'ver')
+
+  // modo TV ocupa a tela inteira, sem o shell — quem vê Execução pode abrir
+  if (painel && podePainel) {
+    return (
+      <Suspense fallback={<div className="fixed inset-0 bg-stone-950" />}>
+        <Painel onSair={() => setPainel(false)} />
+      </Suspense>
+    )
+  }
 
   if (permitidas.length === 0) {
     return (
@@ -110,6 +123,15 @@ function Shell() {
               {usuario.nome} ·{' '}
               <span className="text-emerald-700 dark:text-emerald-400">{usuario.perfil}</span>
             </span>
+            {podePainel && (
+              <button
+                onClick={() => setPainel(true)}
+                title="Painel de produção em tela cheia, para a TV do chão de fábrica"
+                className="rounded-md border border-stone-300 px-3 py-1.5 text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+              >
+                Painel TV
+              </button>
+            )}
             <button
               onClick={sair}
               className="rounded-md border border-stone-300 px-3 py-1.5 text-stone-600 transition-colors hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"

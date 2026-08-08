@@ -232,9 +232,11 @@ export function temposOrdem(
     // nunca negativa: relógios diferentes (cliente x servidor) já geraram
     // parada com fim ANTES do início, e o líquido saía maior que o bruto
     const duracao = Math.max(0, ((parada.fim ?? agora) - parada.inicio) / 1000)
+    // motivo desconhecido (ex.: desativado no cadastro, mas ainda referenciado)
+    // conta como NÃO planejada — o conservador. NUNCA lançar: isto roda no
+    // render da Execução e do Painel TV, e um throw viraria tela branca.
     const motivo = motivos.get(parada.motivoId)
-    if (!motivo) throw new Error(`Motivo de parada ${parada.motivoId} não cadastrado.`)
-    if (motivo.tipo === 'Planejada') planejadasS += duracao
+    if (motivo?.tipo === 'Planejada') planejadasS += duracao
     else naoPlanejadasS += duracao
   }
 
@@ -263,6 +265,71 @@ export function tempoPlanejadoS(pesoT: number, capacidadeTh: number): number {
 export function rendimentoTh(pesoT: number, liquidoS: number): number | null {
   if (liquidoS <= 0) return null
   return pesoT / (liquidoS / 3600)
+}
+
+// ----------------------------------------------------------------
+// OEE (Overall Equipment Effectiveness) = Disponibilidade × Performance × Qualidade
+// ----------------------------------------------------------------
+
+/**
+ * Nota mínima de "qualidade geral do tratamento" (recobrimento, 1–5) para o
+ * checklist final contar como aprovado no OEE. O checklist NUNCA bloqueia a
+ * ordem — este limite existe só para transformar a inspeção informativa num
+ * número de qualidade. Ajustar aqui se a operação definir outro corte.
+ */
+export const RECOBRIMENTO_MINIMO_OEE = 3
+
+/** Um checklist final "passa" com umidade e pó OK e recobrimento no mínimo. */
+export function checkFinalAprovado(c: {
+  recobrimento: number
+  umidade_ok: boolean
+  po_ok: boolean
+}): boolean {
+  return c.umidade_ok && c.po_ok && c.recobrimento >= RECOBRIMENTO_MINIMO_OEE
+}
+
+export interface Oee {
+  /** Fração 0–1. Líquido ÷ (bruto − paradas planejadas); null se a base é 0. */
+  disponibilidade: number | null
+  /** Fração 0–1. Tempo ideal ÷ tempo líquido, teto em 1 (ganho não vira >100%). */
+  performance: number
+  /** Fração 0–1. % de ordens com checklist final aprovado; null se nenhuma teve. */
+  qualidade: number | null
+  /** Produto dos três; null quando falta a qualidade para fechar a conta. */
+  oee: number | null
+}
+
+/**
+ * OEE a partir dos tempos agregados de um período/máquina.
+ * - Disponibilidade = líquido ÷ (bruto − paradas planejadas). Segue o padrão
+ *   da indústria (Nakajima): parada planejada — setup, limpeza, refeição — NÃO
+ *   conta como indisponibilidade; só a parada não planejada penaliza. É a
+ *   mesma "disponibilidade operacional" que o resto do app já usa.
+ * - Performance     = min(1, planejado ÷ líquido)  (produzir mais rápido que a
+ *   capacidade nominal não infla o número — o padrão trava em 100%)
+ * - Qualidade vem de fora (fração de checklists finais aprovados), porque nada
+ *   é refugado neste processo: o checklist é informativo, então a "qualidade"
+ *   do OEE é a taxa de aprovação da inspeção final, não peça boa ÷ peça ruim.
+ */
+export function calculaOee(input: {
+  brutoS: number
+  liquidoS: number
+  paradasPlanejadasS: number
+  planejadoS: number
+  qualidade: number | null
+}): Oee | null {
+  const { brutoS, liquidoS, paradasPlanejadasS, planejadoS, qualidade } = input
+  if (brutoS <= 0) return null
+  const base = brutoS - paradasPlanejadasS // tempo que a máquina deveria produzir
+  const disponibilidade = base > 0 ? Math.min(1, Math.max(0, liquidoS / base)) : null
+  const performance = liquidoS > 0 ? Math.min(1, planejadoS / liquidoS) : 0
+  const q = qualidade == null ? null : Math.min(1, Math.max(0, qualidade))
+  return {
+    disponibilidade,
+    performance,
+    qualidade: q,
+    oee: q == null || disponibilidade == null ? null : disponibilidade * performance * q,
+  }
 }
 
 export function formataHms(segundos: number): string {

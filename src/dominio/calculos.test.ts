@@ -1,6 +1,8 @@
 ﻿import { describe, expect, it } from 'vitest'
 import {
+  calculaOee,
   capacidadeDiaT,
+  checkFinalAprovado,
   consumoPorTanque,
   diaDeProducao,
   ensaquePorBagKg,
@@ -404,5 +406,46 @@ describe('ocupacao', () => {
 
   it('dentro do limite fica ok', () => {
     expect(ocupacao(100, 234).alerta).toBe('ok')
+  })
+})
+
+describe('oee', () => {
+  it('multiplica as tres dimensoes (parada planejada nao pesa na disponibilidade)', () => {
+    // base = 1000 - 100 (planej) = 900; disp = liquido 810 / 900 = 0,9
+    // perf 0,8 (648/810) x qual 0,5 -> oee 0,36
+    const o = calculaOee({ brutoS: 1000, liquidoS: 810, paradasPlanejadasS: 100, planejadoS: 648, qualidade: 0.5 })!
+    expect(o.disponibilidade).toBeCloseTo(0.9, 6)
+    expect(o.performance).toBeCloseTo(0.8, 6)
+    expect(o.qualidade).toBe(0.5)
+    expect(o.oee).toBeCloseTo(0.36, 6)
+  })
+
+  it('parada planejada nao penaliza: so parada e igual a base, disponibilidade 100%', () => {
+    // bruto 1000, planejada 200, sem nao-planejada -> liquido 800, base 800 -> disp 1
+    const o = calculaOee({ brutoS: 1000, liquidoS: 800, paradasPlanejadasS: 200, planejadoS: 800, qualidade: 1 })!
+    expect(o.disponibilidade).toBe(1)
+  })
+
+  it('performance trava em 100% quando produz mais rapido que a capacidade', () => {
+    const o = calculaOee({ brutoS: 1000, liquidoS: 500, paradasPlanejadasS: 0, planejadoS: 800, qualidade: 1 })!
+    expect(o.performance).toBe(1)
+  })
+
+  it('sem qualidade a conta nao fecha (oee null), mas disp e perf saem', () => {
+    const o = calculaOee({ brutoS: 1000, liquidoS: 900, paradasPlanejadasS: 0, planejadoS: 720, qualidade: null })!
+    expect(o.qualidade).toBeNull()
+    expect(o.oee).toBeNull()
+    expect(o.disponibilidade).toBeCloseTo(0.9, 6)
+  })
+
+  it('bruto zero nao calcula', () => {
+    expect(calculaOee({ brutoS: 0, liquidoS: 0, paradasPlanejadasS: 0, planejadoS: 0, qualidade: 1 })).toBeNull()
+  })
+
+  it('checklist final: aprova com umidade, po OK e recobrimento no minimo', () => {
+    expect(checkFinalAprovado({ recobrimento: 3, umidade_ok: true, po_ok: true })).toBe(true)
+    expect(checkFinalAprovado({ recobrimento: 2, umidade_ok: true, po_ok: true })).toBe(false)
+    expect(checkFinalAprovado({ recobrimento: 5, umidade_ok: false, po_ok: true })).toBe(false)
+    expect(checkFinalAprovado({ recobrimento: 5, umidade_ok: true, po_ok: false })).toBe(false)
   })
 })

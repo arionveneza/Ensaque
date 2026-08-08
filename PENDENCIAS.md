@@ -7,7 +7,7 @@ Atualizado em 05/08/2026 (noite — correções de RLS e baixa atômica).
 
 | Item | Situação |
 |---|---|
-| App publicado | https://arionveneza.github.io/Ensaque/ |
+| App publicado | **https://tsi.veneza.app.br** (Cloudflare) — ver §3b. O github.io redireciona |
 | Repositório | `arionveneza/Ensaque` (público) — `push` na `main` roda os testes e republica |
 | Banco | Supabase `Sistema_de_ensaque`, projeto `ztwmrhfloelqxhhpdmoz`, schema **`tsi`** |
 | Telas | As 8 implementadas: Ordens, Programação, Lotes, Execução, Qualidade, Indicadores, Cadastros, Administração |
@@ -179,6 +179,21 @@ rodar e conferir que só sobram os 3 ajudantes.
   **modo RSC**. Este app é SPA sem RSC, então o vetor não existe aqui, e não há versão
   corrigida publicada — a única sugestão do `npm audit` é regredir para 7.11.0. Mantido;
   revisar quando sair correção.
+- **OEE e Painel TV (08/08/2026).** Indicadores tem OEE = Disponibilidade × Performance ×
+  Qualidade, calculado sobre UMA população (as ordens com checklist final), para os três
+  fatores medirem as mesmas ordens — o rótulo diz "N de M medidas". Disponibilidade usa a
+  OPERACIONAL (líquido ÷ (bruto − paradas planejadas)), padrão Nakajima: parada planejada
+  não penaliza. Qualidade = taxa de aprovação do checklist final (umidade+pó OK, recobrimento
+  ≥ `RECOBRIMENTO_MINIMO_OEE`, hoje 3) — é o proxy possível, já que nada é refugado. O **Painel
+  TV** (botão no cabeçalho, `src/telas/Painel.tsx`) é tela cheia para a fábrica: máquinas,
+  cronômetro, parada, resumo do dia + OEE; atualiza por realtime + refetch de 30s.
+- **Falta um ErrorBoundary no topo** (App.tsx só tem Suspense). Um throw no render derruba a
+  árvore inteira = tela branca sem recuperação — pior no Painel, que fica sozinho na TV. O
+  crash concreto conhecido (motivo de parada desconhecido em `temposOrdem`) foi removido em
+  08/08/2026, mas um ErrorBoundary com "recarregar" pega a classe toda. Recomendado.
+- **`formataHms` não tem teto de horas**: uma ordem deixada aberta por dias mostra o
+  cronômetro gigante do Painel com string longa que pode vazar. É higiene de dado (ordem
+  aberta há dias é o próprio alarme), mas se incomodar, encolher a fonte ou capar.
 - **Testes**: só de domínio e dois de componente. Não há teste de fluxo ponta a ponta.
 - **Cadastros** cobrem produtos químicos, receitas, máquinas, turnos, embalagens, motivos e
   lotes de semente.
