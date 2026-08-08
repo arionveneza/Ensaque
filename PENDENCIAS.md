@@ -94,7 +94,7 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       08/08/2026: `dias_producao.turno1/turno2` e `ordens.data_prog_original` existem).
 - [x] `supabase/fecha-rpc-sem-guarda.sql` — aplicado e confirmado em produção em 08/08/2026
       (as duas RPCs recusam anônimo com `42501`, `tem_acao()` devolve `false` nunca `null`).
-- [x] `supabase/privilegio-padrao-fecha-funcoes.sql` — aplicado em 08/08/2026. Ver §5.
+- [x] `supabase/trancar-rpc-anon.sql` — aplicado e confirmado em 08/08/2026. Ver §5.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
@@ -117,17 +117,22 @@ resolvia as duas; `supabase/fecha-rpc-sem-guarda.sql` faz os dois: revoga as dua
 envolve `tem_acao()` em `coalesce(…, false)`, para a próxima função escrita no padrão
 de sempre já nascer segura.
 
-**Aplicado e confirmado em produção em 08/08/2026.**
+**Aplicado e confirmado em produção em 08/08/2026.** A auditoria completa (todas as funções
+que `anon` conseguia executar) revelou mais duas RPCs reais no mesmo estado:
+`excluir_lotes_sem_uso` (que APAGA lotes) e `contar_lotes_sem_uso`, ambas com a mesma guarda
+furada de NULL (`meu_perfil() not in (...)`). Fechadas por `supabase/trancar-rpc-anon.sql`.
 
-**Solução definitiva (mesmo dia):** `supabase/privilegio-padrao-fecha-funcoes.sql` roda
-`alter default privileges in schema tsi revoke execute on functions from public`. Isso não
-toca em nenhuma função existente (`meu_perfil()` e outras que as *policies* de leitura
-chamam continuam abertas para `anon`, como sempre foram — revogar retroativamente
-quebraria a leitura na hora). Muda só o **padrão de toda função criada a partir de agora**:
-sem `grant execute ... to authenticated` explícito, a função não roda nem para o app de
-verdade. Um `grant` esquecido passa a **falhar alto no primeiro teste**, em vez de vazar
-em silêncio para qualquer um. O arquivo traz uma consulta de saúde (lista quem ainda pode
-chamar cada função) — vale rodar de novo depois de qualquer migração grande.
+**O "fecha sozinho" NÃO funciona neste Supabase — não insistir.** Tentei
+`alter default privileges in schema tsi revoke execute on functions from public` (e de
+`anon`): a regra grava certo em `pg_default_acl`, mas função nova continua nascendo com
+`EXECUTE` para o PUBLIC embutido — que não aparece na regra e não é suprimido por ela neste
+ambiente (testado à exaustão, `has_function_privilege('anon', ...)` seguia `true`). O
+mecanismo que FUNCIONA é revogar por função. `supabase/trancar-rpc-anon.sql` faz isso em
+laço para toda função do schema exceto os 3 ajudantes de RLS (`meu_perfil`, `tem_acao`,
+`pode_baixar_lote`, que precisam ser anon-executáveis senão a policy dá erro em vez de
+devolver vazio) — e é **reexecutável como passo final de toda migração que criar função**.
+`supabase/auditoria-rpc.sql` lista quem `anon` ainda executa: depois de qualquer migração,
+rodar e conferir que só sobram os 3 ajudantes.
 
 ## 4. Melhorias técnicas conhecidas
 
