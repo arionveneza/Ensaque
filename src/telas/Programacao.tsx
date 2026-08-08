@@ -484,6 +484,16 @@ export default function Programacao() {
                   return (
                     <td key={d} className="px-1 py-1.5 text-center">
                       {podeProgramar ? (
+                        /*
+                          Bug real de celular (achado testando no aparelho,
+                          08/08/2026): sem min-width o select encolhia com a
+                          coluna do dia (~66px) e o texto da opção selecionada
+                          ("1º e 2º turno", "sem produção") era cortado no meio
+                          da palavra — nem toda opção tem o mesmo tamanho, e
+                          <select> nativo não aplica ellipsis sozinho. A
+                          tabela já rola horizontalmente; dar espaço aqui só
+                          faz o scroll começar um pouco mais perto.
+                        */
                         <select
                           value={codigoTurnos(t)}
                           onChange={(e) => {
@@ -493,7 +503,7 @@ export default function Programacao() {
                             )
                           }}
                           title="Quais turnos rodam neste dia — 1º tem 10 h, 2º tem 9h30, e isso muda a capacidade"
-                          className={`w-full rounded border px-1 py-1 text-xs dark:bg-stone-800 ${
+                          className={`min-w-24 w-full rounded border px-1 py-1 text-xs dark:bg-stone-800 ${
                             cheio
                               ? 'border-stone-200 text-stone-500 dark:border-stone-700'
                               : 'border-amber-400 font-medium text-amber-700 dark:border-amber-700 dark:text-amber-400'

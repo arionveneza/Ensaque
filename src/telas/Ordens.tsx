@@ -1018,7 +1018,14 @@ function FragmentoDia({
         return (
           <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
             <td className="hidden px-2 py-1.5 text-stone-400 lg:table-cell">{o.seq ?? '—'}</td>
-            <td className="px-2 py-1.5 font-medium">
+            {/*
+              min-w: achado testando no celular (08/08/2026) — table-layout
+              auto distribuiu a largura livre (5 colunas escondidas) para
+              Status/ações em vez desta, que agora carrega a linha
+              secundária; sem piso a legenda quebrava em várias linhas e
+              inflava a altura da linha inteira.
+            */}
+            <td className="min-w-36 px-2 py-1.5 font-medium lg:min-w-0">
               {o.numero}
               {o.prioridade === 'Urgente' && <span className="ml-1"><Tag cor="perigo">urgente</Tag></span>}
               {!!o.reprogramacoes && o.reprogramacoes > 0 && (
@@ -1029,9 +1036,12 @@ function FragmentoDia({
                   ↷{o.reprogramacoes}
                 </span>
               )}
-              {/* lote/endereço/embalagem somem em lg: — mostra aqui embaixo */}
+              {/* lote/embalagem somem em lg: — mostra aqui embaixo. Endereço
+                  saiu da linha: é o texto mais longo e essa é a Ordem do
+                  PCP, não a separação (a Logística já tem endereço em
+                  destaque na tela dela). */}
               <p className="text-xs font-normal text-stone-500 lg:hidden">
-                {o.embalagem} · lote {o.lote_id} · {enderecoLote(o)}
+                {o.embalagem} · lote {o.lote_id}
               </p>
             </td>
             <td className="px-2 py-1.5">{o.cultivar}</td>
@@ -1045,7 +1055,14 @@ function FragmentoDia({
               {o.cliente ?? '—'}
             </td>
             <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
-            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+            {/*
+              editar+urgente+excluir juntos precisam de ~160px — com menos
+              que isso os 3 empilhavam verticalmente (1 por linha) e essa
+              pilha, não o texto da coluna Ordem, é que inflava a linha para
+              113px de altura. A tabela já rola horizontalmente por
+              desenho — não há motivo pra espremer esta coluna.
+            */}
+            <td className="min-w-44 px-2 py-1.5 text-right whitespace-nowrap lg:min-w-0">
               <div className="inline-flex flex-wrap justify-end gap-2">
                 {podeEditar && pode(st, 'editar') && (
                   <button

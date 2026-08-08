@@ -333,3 +333,26 @@ aparece é o genérico "Failed to send a request to the Edge Function", sem pist
 
 **Deploy do GitHub Pages precisa do caminho base.** Um "project site" é servido em
 `/Ensaque/`; sem `BASE_PATH` no build, todos os assets dão 404.
+
+**`flex-1` some com o texto quando o vizinho não encolhe (08/08/2026).** `flex-1` é
+`flex-basis: 0` — o cálculo de "cabe numa linha?" do `flex-wrap` ignora o conteúdo desse item
+e olha só o vizinho que não é flexível. Em `Lotes.tsx` isso espremia o bloco de texto da
+`LinhaLote` a ~16 px de largura (uma letra por linha) em vez do bloco de números quebrar para
+a linha de baixo — só apareceu testando no celular de verdade, o code review anterior não
+pegou. Corrigido empilhando por padrão (`flex-col`) e só virando `sm:flex-row` a partir do
+tablet, onde sempre coube. Regra: `flex-1` ao lado de um irmão de largura fixa É candidato a
+colapsar no mobile — testar ou preferir empilhar por padrão.
+
+**Tabela com coluna oculta redistribui a largura livre sem avisar (08/08/2026).**
+`table-layout: auto` (padrão do HTML) manda a largura que uma `hidden lg:table-cell` liberou
+para QUALQUER coluna vizinha, não necessariamente a que precisa — em `Ordens.tsx` a coluna de
+ações (editar+urgente+excluir, ~160 px) ficou com só 96 px e os três empilharam verticalmente,
+inflando a linha para 113 px; em `Programacao.tsx` o `<select>` de turno encolheu para 66 px e
+cortou o texto da opção no meio da palavra (`<select>` nativo não faz ellipsis). Os dois só
+apareceram no aparelho real, não no code review. Correção: `min-w-*` explícito (com
+`lg:min-w-0` para não afetar o desktop) na célula que precisa de espaço garantido — a tabela já
+rola horizontalmente por desenho, então só sobra um pouco mais de scroll, não quebra layout.
+Aplicado também em `Indicadores.tsx` (tabela de paradas): `Motivo` ganhou `min-w-28` e as
+colunas `Máq.`/`Turno` (menos essenciais que Motivo/Tipo/Duração) viraram `hidden lg:table-cell`
+com o resumo "máquina · turno" numa linha pequena sob o número da ordem — mesmo padrão de
+Ordens/Etapas.

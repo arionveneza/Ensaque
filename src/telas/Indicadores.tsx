@@ -492,14 +492,25 @@ export default function Indicadores() {
             {paradasDet.length === 0 ? (
               <Vazio>Nenhuma parada registrada no período.</Vazio>
             ) : (
-              <Tabela cabecalho={['Dia', 'Ordem', 'Máq.', 'Turno', 'Motivo', 'Tipo', '#Duração']}>
+              <Tabela cabecalho={[
+                'Dia', 'Ordem',
+                { texto: 'Máq.', className: 'hidden lg:table-cell' },
+                { texto: 'Turno', className: 'hidden lg:table-cell' },
+                { texto: 'Motivo', className: 'min-w-28 lg:min-w-0' },
+                'Tipo', '#Duração',
+              ]}>
                 {paradasDet.map((p, i) => (
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{diaCurto(p.data_prog)}</td>
-                    <td className="px-2 py-1.5 font-medium">{p.ordem_numero}</td>
-                    <td className="px-2 py-1.5">{p.maquina_id}</td>
-                    <td className="px-2 py-1.5">{p.turno_id ?? '—'}</td>
-                    <td className="px-2 py-1.5">{p.motivo}</td>
+                    <td className="px-2 py-1.5 font-medium">
+                      {p.ordem_numero}
+                      <p className="text-xs font-normal text-stone-500 lg:hidden">
+                        {p.maquina_id} · T{p.turno_id ?? '—'}
+                      </p>
+                    </td>
+                    <td className="hidden px-2 py-1.5 lg:table-cell">{p.maquina_id}</td>
+                    <td className="hidden px-2 py-1.5 lg:table-cell">{p.turno_id ?? '—'}</td>
+                    <td className="min-w-28 px-2 py-1.5 lg:min-w-0">{p.motivo}</td>
                     <td className="px-2 py-1.5">
                       <Tag cor={p.tipo === 'Planejada' ? 'info' : 'perigo'}>{p.tipo}</Tag>
                     </td>

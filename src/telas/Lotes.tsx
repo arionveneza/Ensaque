@@ -451,8 +451,16 @@ function LinhaLote({
 
   return (
     <div className={`px-3 py-3 sm:px-4 ${item.critico ? 'bg-red-50/70 dark:bg-red-950/20' : ''}`}>
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+      {/*
+        Bug real de celular (achado testando no aparelho, 08/08/2026):
+        flex-1 tem flex-basis:0, então o bloco de texto era ignorado no
+        cálculo de "cabe numa linha?" — o texto era espremido a ~16px de
+        largura (uma palavra por linha) em vez do bloco de números quebrar
+        para a linha de baixo. Empilha por padrão; só fica lado a lado a
+        partir de sm: (tablet/desktop), onde sempre coube.
+      */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-x-4">
+        <div className="min-w-0 sm:flex-1">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
             <span>
               {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
