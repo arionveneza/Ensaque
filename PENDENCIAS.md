@@ -90,10 +90,35 @@ dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireci
 endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
-- [ ] `supabase/turnos-por-dia.sql` — tabela `dias_producao`. **Aditivo e opcional**: sem
-      ele a Programação assume 2 turnos em todo dia (comportamento antigo) e só falha se
-      alguém tentar marcar um dia diferente. `listarDiasProducao` engole o erro de tabela
-      inexistente de propósito, para o front poder ir ao ar antes do banco.
+- [x] `supabase/turnos-por-dia.sql` — confirmado aplicado em produção (validação de
+      08/08/2026: `dias_producao.turno1/turno2` e `ordens.data_prog_original` existem).
+- [ ] `supabase/fecha-rpc-sem-guarda.sql` — **rodar assim que possível**, ver §5 abaixo.
+
+## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
+
+Testando o domínio novo (`tsi.veneza.app.br`) contra o Supabase direto, com a chave
+**anon pura, sem login nenhum**: `abastecer_tanque` e `definir_tanque_produto` executaram
+— chegaram na lógica de negócio (uma devolveu "Tanque nao encontrado", a outra um erro de
+FK) em vez de recusar por falta de permissão.
+
+Causa: `tem_acao()` devolve **NULL** para quem não tem perfil (nem linha em
+`perfil_permissoes`, nem `meu_perfil() = 'Gestor'` — os dois lados do `coalesce` avaliam
+NULL). Em PL/pgSQL `if not NULL then` nunca entra no bloco — não é `true`, é `NULL`. Toda
+RPC escrita com `if not tem_acao(...) then raise exception` está vulnerável **por padrão**
+a partir de agora, a menos que `tem_acao()` nunca devolva NULL.
+
+Todas as RPCs de apontamento anteriores (`baixar_lote`, `confirmar_inicio`, `confirmar_fim`,
+`registrar_parada`, `retomar_producao`, `voltar_para_producao`, `cancelar_inicio`,
+`apontar_qualidade_final`) já tinham `revoke execute … from public, anon` explícito de
+outras migrações — só estas duas, criadas depois, ficaram sem. O `revoke` sozinho já
+resolvia as duas; `supabase/fecha-rpc-sem-guarda.sql` faz os dois: revoga as duas E
+envolve `tem_acao()` em `coalesce(…, false)`, para a próxima função escrita no padrão
+de sempre já nascer segura.
+
+**Rodar no SQL Editor assim que possível.** Risco prático limitado (RLS bloqueia leitura
+de `ordens` por anônimo, então não dá para descobrir IDs às cegas por aqui), mas é uma
+camada de defesa que faltou — e a chave anon é pública por natureza (vai no bundle do
+site), então "não é fácil de achar" não é o mesmo que "protegido".
 
 ## 4. Melhorias técnicas conhecidas
 
@@ -224,6 +249,15 @@ usa `useRascunho` (`src/lib/useRascunho.ts`), que persiste no localStorage e res
 montagem — sobrevive também a F5, a fechar a aba e ao tablet dormindo. Ao criar formulário
 novo, usar o hook e **chamar `limpar()` depois de gravar**, senão o próximo abre com o
 rascunho velho. Já cobertos: nova ordem, edição de ordem e receita.
+
+**`tem_acao()` nunca pode devolver NULL — só true ou false.** NULL some em silêncio em
+qualquer `if not tem_acao(...) then raise exception`: `not NULL` é `NULL`, não `true`, e o
+bloco não dispara. Foi assim que `abastecer_tanque` e `definir_tanque_produto` (08/08/2026)
+ficaram chamáveis por um usuário **anônimo, sem login** — a checagem parecia estar lá, mas
+não disparava para quem não tem perfil nenhum. Consertado com `coalesce(…, false)` no nível
+mais externo de `tem_acao`, então o sintoma some para sempre; mas toda RPC nova continua
+precisando do `revoke execute … from public, anon` explícito, porque o Postgres libera
+função nova para `public` por padrão — as duas defesas se somam, nenhuma substitui a outra.
 
 **UPDATE/DELETE barrado pelo RLS afeta 0 linhas SEM erro.** O app seguia adiante achando
 que gravou: a Produção inteira apontava no vácuo (não havia policy de update em `ordens`),
