@@ -92,7 +92,9 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
 ### SQL pendente de execução
 - [x] `supabase/turnos-por-dia.sql` — confirmado aplicado em produção (validação de
       08/08/2026: `dias_producao.turno1/turno2` e `ordens.data_prog_original` existem).
-- [ ] `supabase/fecha-rpc-sem-guarda.sql` — **rodar assim que possível**, ver §5 abaixo.
+- [x] `supabase/fecha-rpc-sem-guarda.sql` — aplicado e confirmado em produção em 08/08/2026
+      (as duas RPCs recusam anônimo com `42501`, `tem_acao()` devolve `false` nunca `null`).
+- [x] `supabase/privilegio-padrao-fecha-funcoes.sql` — aplicado em 08/08/2026. Ver §5.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
@@ -115,10 +117,17 @@ resolvia as duas; `supabase/fecha-rpc-sem-guarda.sql` faz os dois: revoga as dua
 envolve `tem_acao()` em `coalesce(…, false)`, para a próxima função escrita no padrão
 de sempre já nascer segura.
 
-**Rodar no SQL Editor assim que possível.** Risco prático limitado (RLS bloqueia leitura
-de `ordens` por anônimo, então não dá para descobrir IDs às cegas por aqui), mas é uma
-camada de defesa que faltou — e a chave anon é pública por natureza (vai no bundle do
-site), então "não é fácil de achar" não é o mesmo que "protegido".
+**Aplicado e confirmado em produção em 08/08/2026.**
+
+**Solução definitiva (mesmo dia):** `supabase/privilegio-padrao-fecha-funcoes.sql` roda
+`alter default privileges in schema tsi revoke execute on functions from public`. Isso não
+toca em nenhuma função existente (`meu_perfil()` e outras que as *policies* de leitura
+chamam continuam abertas para `anon`, como sempre foram — revogar retroativamente
+quebraria a leitura na hora). Muda só o **padrão de toda função criada a partir de agora**:
+sem `grant execute ... to authenticated` explícito, a função não roda nem para o app de
+verdade. Um `grant` esquecido passa a **falhar alto no primeiro teste**, em vez de vazar
+em silêncio para qualquer um. O arquivo traz uma consulta de saúde (lista quem ainda pode
+chamar cada função) — vale rodar de novo depois de qualquer migração grande.
 
 ## 4. Melhorias técnicas conhecidas
 
@@ -255,9 +264,10 @@ qualquer `if not tem_acao(...) then raise exception`: `not NULL` é `NULL`, não
 bloco não dispara. Foi assim que `abastecer_tanque` e `definir_tanque_produto` (08/08/2026)
 ficaram chamáveis por um usuário **anônimo, sem login** — a checagem parecia estar lá, mas
 não disparava para quem não tem perfil nenhum. Consertado com `coalesce(…, false)` no nível
-mais externo de `tem_acao`, então o sintoma some para sempre; mas toda RPC nova continua
-precisando do `revoke execute … from public, anon` explícito, porque o Postgres libera
-função nova para `public` por padrão — as duas defesas se somam, nenhuma substitui a outra.
+mais externo de `tem_acao`. E desde `privilegio-padrao-fecha-funcoes.sql` (mesmo dia) o
+Postgre já não libera função nova para `public` por padrão — as duas defesas se somam,
+nenhuma dispensa a outra: a de hoje fecha a porta por padrão; a de ontem garante que, se
+algum dia alguém abrir a porta de propósito, a checagem por dentro não falha em silêncio.
 
 **UPDATE/DELETE barrado pelo RLS afeta 0 linhas SEM erro.** O app seguia adiante achando
 que gravou: a Produção inteira apontava no vácuo (não havia policy de update em `ordens`),
