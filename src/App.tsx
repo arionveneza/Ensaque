@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { AuthProvider, useAuth } from '@/auth/AuthProvider'
+import { USUARIOS_SAP_TESTE } from '@/lib/sapTeste'
 import Login from '@/telas/Login'
 import Execucao from '@/telas/Execucao'
 
@@ -19,10 +20,12 @@ const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
 const Painel = lazy(() => import('@/telas/Painel'))
+const SapTeste = lazy(() => import('@/telas/SapTeste'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
   | 'agrotis' | 'etapas' | 'expedicao' | 'indicadores' | 'cadastros' | 'administracao'
+  | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -36,6 +39,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'indicadores', nome: 'Indicadores' },
   { id: 'cadastros', nome: 'Cadastros' },
   { id: 'administracao', nome: 'Administração' },
+  { id: 'sap', nome: 'SAP (teste)' },
 ]
 
 function Shell() {
@@ -80,10 +84,17 @@ function Shell() {
   }
 
   // A navegação obedece à matriz de permissões (Administração). Célula nunca
-  // gravada segue o padrão do perfil. Administração é hard-coded do Gestor:
-  // é a tela que conserta a matriz, não pode depender dela.
+  // gravada segue o padrão do perfil. Duas exceções hard-coded: Administração
+  // é do Gestor (é a tela que conserta a matriz, não pode depender dela) e
+  // "SAP (teste)" é POR USUÁRIO, não por perfil — laboratório de integração
+  // restrito à mesma lista que a Edge Function sap-teste valida no servidor.
+  const emailLogado = (session.user.email ?? '').toLowerCase()
   const permitidas = TELAS.filter((t) =>
-    t.id === 'administracao' ? usuario.perfil === 'Gestor' : permitido(t.id, 'ver'),
+    t.id === 'administracao'
+      ? usuario.perfil === 'Gestor'
+      : t.id === 'sap'
+        ? USUARIOS_SAP_TESTE.includes(emailLogado)
+        : permitido(t.id, 'ver'),
   ).map((t) => t.id)
   const atual = permitidas.includes(tela) ? tela : permitidas[0]
   const podePainel = permitido('execucao', 'ver')
@@ -192,6 +203,7 @@ function Shell() {
           {atual === 'indicadores' && <Indicadores />}
           {atual === 'cadastros' && <Cadastros />}
           {atual === 'administracao' && <Administracao />}
+          {atual === 'sap' && <SapTeste />}
         </Suspense>
       </main>
     </div>

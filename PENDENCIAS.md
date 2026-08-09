@@ -12,7 +12,7 @@ Atualizado em 05/08/2026 (noite — correções de RLS e baixa atômica).
 | Banco | Supabase `Sistema_de_ensaque`, projeto `ztwmrhfloelqxhhpdmoz`, schema **`tsi`** |
 | Telas | As 8 implementadas: Ordens, Programação, Lotes, Execução, Qualidade, Indicadores, Cadastros, Administração |
 | Testes | 153, rodam antes de cada deploy — teste vermelho não publica |
-| Integração SAP | **Fora do app; caminho 100% validado em 09/08/2026**: Basic Auth + endpoint próprio de homolog descoberto — pipeline completo rodou lá, saldo por lote incluso. Em produção falta só replicar a autorização de `SQLQueries` — ver `docs/integracao-sap.md` |
+| Integração SAP | **Laboratório no app** (aba "SAP (teste)", só p/ Arion, homolog só-leitura via Edge Function `sap-teste`). Caminho validado em 09/08/2026: Basic Auth + endpoint de homolog + saldo por lote. Produção espera a autorização de `SQLQueries` — ver `docs/integracao-sap.md` |
 
 Rodar local: `npm install`, depois `npm run dev` · `npm test` · `npm run build`.
 
@@ -32,14 +32,22 @@ Enquanto não for feito, o sistema é demonstrável mas **não confiável para p
 
 ## 2. Limpeza do que sobrou do SAP no Supabase
 
-O código saiu do app, mas ficaram coisas no projeto:
+> **Atualizado 09/08/2026:** a integração voltou ao radar — existe a Edge Function
+> **`sap-teste`** (aba "SAP (teste)", laboratório de homologação só-leitura) que **usa
+> `SAP_USER`/`SAP_PASSWORD`**. Então NÃO apagar esses dois secrets. O resto da limpeza da
+> integração antiga (`sap`) continua valendo.
 
-- **Tabela:** executar `supabase/remover-consultas-sap.sql` no SQL Editor.
-- **Edge Function:** apagar a função `sap` em *Edge Functions*.
-- **Secrets:** apagar `SAP_SL_URL`, `SAP_COMPANY_DB`, `SAP_USER` e **`SAP_PASSWORD`**.
-  Sem integração, guardar senha do ERP ali é exposição sem motivo.
-  ⚠️ Durante os testes o `SAP_USER`/`SAP_PASSWORD` foi trocado para o usuário **pessoal**
-  do Arion — pode ser a senha dele que está guardada, não a do `ven040`.
+- **Tabela:** executar `supabase/remover-consultas-sap.sql` no SQL Editor (a `sap-teste` não
+  usa a tabela `consultas_sap` — manda o caminho OData direto).
+- **Edge Function antiga:** apagar a função `sap` em *Edge Functions* (a nova é `sap-teste`,
+  outra função).
+- **Secrets:** apagar `SAP_SL_URL` e `SAP_COMPANY_DB` (a `sap-teste` aponta para homolog por
+  conta própria, via `SAP_HOM_URL`/`SAP_HOM_DB` com fallback embutido). **Manter
+  `SAP_USER` e `SAP_PASSWORD`** — a `sap-teste` depende deles.
+  ⚠️ Confirmar QUAL credencial está guardada: durante os testes de julho pode ter ficado a
+  senha **pessoal** do Arion, não a do `ven040`. O certo é um usuário de integração
+  dedicado, somente leitura (ver checklist em `docs/integracao-sap.md` §7), e trocar a senha
+  do `ven040` que ficou exposta.
 
 ## 3. Decisões de negócio em aberto (§7 do CLAUDE.md)
 

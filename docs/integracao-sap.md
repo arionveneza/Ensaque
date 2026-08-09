@@ -1,10 +1,14 @@
 # Integração SAP Business One — Service Layer
 
-> ## 🛑 SUSPENSA — o código saiu do app
+> ## 🟡 Laboratório no app; integração de produção ainda não
 >
-> A integração foi **removida do aplicativo** (código, Edge Function e tabela de consultas).
-> Este documento fica como registro do que foi descoberto, para quem retomar não repetir a
-> investigação. O histórico do git tem o código, se for preciso ressuscitar.
+> Desde 09/08/2026 existe a aba **"SAP (teste)"** (Edge Function `sap-teste`), um laboratório
+> de **leitura em homologação**, visível só para o Arion — para experimentar as consultas que
+> virarão a integração. A integração de PRODUÇÃO (job que alimenta o app) **ainda não existe**;
+> este documento é o registro do que já foi descoberto e o que falta.
+>
+> A integração antiga (código no app, função `sap`, tabela `consultas_sap`) foi removida em
+> 28/07/2026 — o histórico do git tem o código.
 >
 > **O que funciona no Service Layer com o usuário de integração:**
 > login, `Items`, `BatchNumberDetails`, `Orders` — tudo que é **objeto de negócio**,
@@ -164,12 +168,15 @@ WHERE Saldo."Quantity" > 0
 ORDER BY Lote."ItemCode", Lote."DistNumber", Saldo."WhsCode";
 ```
 
+> Na versão oficial salva no SL (`TSI_SALDOS`, na homolog desde 09/08/2026) entrou também
+> `Lote."U_AGRT_Safra" AS "Safra"`, e os apelidos são ASCII sem espaço (`NumLote`,
+> `QtdEstoque`…) — viram nome de campo no JSON da API.
+
 Dois usos:
-1. **Hoje**: rodar no Gerador de consultas do cliente B1 e exportar para Excel — alimenta a
-   importação por planilha enquanto o SL não libera.
-2. **Quando a autorização `-6006` sair** (§6.4): salvar como consulta do SL e executar por
-   HTTP. **Sem o prefixo `"SBOVENPRD".`** nas tabelas ao salvar — a consulta roda no contexto
-   da empresa logada, e com o prefixo fixo ela quebraria em homologação:
+1. **No cliente B1** (Gerador de consultas → exportar Excel): usar o prefixo do schema da
+   empresa logada — `"SBOVENPRD"."OBTN"` em produção, `"SBOVENHOM"."OBTN"` na homolog.
+2. **Salva no Service Layer** (`TSI_SALDOS`): **sem prefixo nenhum** (`FROM OBTN`) — a
+   consulta roda no contexto da empresa logada, e a mesma definição serve para as duas bases:
 ```http
 POST /b1s/v1/SQLQueries          # criar uma vez
 { "SqlCode":"TSI_SALDOS", "SqlName":"Saldos TSI por lote", "SqlText":"SELECT ... FROM OBTN ... INNER JOIN OBTQ ..." }
@@ -520,6 +527,34 @@ A `TSI_SALDOS` fica salva na homolog como consulta oficial da integração. Cons
 - Cuidado: na homolog o CRUISER apareceu **com** lote (`001-CRUISER`), enquanto produção diz
   `ManageBatchNumbers=tNO` — dados/config de teste divergem. Homolog valida a **mecânica**,
   não o comportamento exato dos dados de produção.
+
+### 6.7 Aba "SAP (teste)" no app — o laboratório (09/08/2026)
+
+Tudo que acima foi feito no PowerShell agora tem uma tela no app, para experimentar sem
+terminal. Arquivos: `src/telas/SapTeste.tsx` (UI), `src/lib/sapTeste.ts` (+ testes) e a
+Edge Function `supabase/functions/sap-teste/index.ts` (proxy).
+
+- **Visível só para o Arion**: gate por e-mail em `src/App.tsx` (lista `USUARIOS_SAP_TESTE`
+  em `src/lib/sapTeste.ts`) **e** de novo dentro da Edge Function — a lista do front é
+  conveniência; a barreira que vale é a do servidor. Não é regido pela matriz de permissões
+  (é por usuário, não por perfil), igual à exceção da Administração.
+- **Só leitura, só homologação**: a função repassa apenas `GET` para `SBOVENHOM`, com Basic
+  Auth (§6.4). Valida que o caminho resolvido não escapa do `/b1s/v1` (bloqueia
+  `..`/`%2e%2e`/`\`), segue `odata.nextLink` até 10 páginas, e responde sempre HTTP 200 com
+  `{ ok, erro?, dados? }` (o `invoke` do supabase-js esconde corpo de resposta não-2xx).
+- **Presets** na tela: ping, pedidos de venda abertos, insumos com estoque, saldo por lote
+  (`TSI_SALDOS`), consultas salvas, item completo e lotes do item. Mais um campo de caminho
+  OData livre.
+
+**Deploy da Edge Function** (não passa pelo GitHub/Cloudflare — é no Supabase):
+```
+supabase functions deploy sap-teste --no-verify-jwt
+```
+`--no-verify-jwt` porque a chave anônima é um JWT válido e não protegeria nada (o código faz
+a autenticação real). Secrets necessários no projeto: `SAP_USER`, `SAP_PASSWORD` (e,
+opcionais, `SAP_HOM_URL`/`SAP_HOM_DB` — têm fallback embutido para homolog). **Enquanto a
+função não for publicada, a aba mostra "Failed to send a request to the Edge Function"** — é
+o esperado, não bug do front.
 
 ## 7. Checklist de implantação
 

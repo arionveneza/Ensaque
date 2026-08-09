@@ -265,9 +265,12 @@ Colunas: C cultivar · F lote · G lote tratamento · H PMS · K saldo (bags) ·
 - Saldo negativo → ignorar e **reportar** (o arquivo de referência tem 4 casos, −27 bags).
 - **Resultado esperado**: 753 lotes · 16.865 bags · 0 estoque PA tratado.
 
-### SAP Business One — Service Layer: **fora do app, caminho técnico destravado** 🟡
-A integração continua **fora do app** (código removido em 28/07/2026) e os dados seguem
-vindo do upload das planilhas da SimpleAgro. Mas o diagnóstico de 09/08/2026 mudou o quadro:
+### SAP Business One — Service Layer: **laboratório no app, integração de produção pendente** 🟡
+A integração de produção (job que alimenta o app) **ainda não existe** — os dados seguem
+vindo do upload das planilhas da SimpleAgro. O que existe desde 09/08/2026 é a aba
+**"SAP (teste)"** (Edge Function `sap-teste`), um laboratório de LEITURA em homologação
+visível só para o Arion (`src/telas/SapTeste.tsx`, gate por e-mail em `src/App.tsx` +
+`src/lib/sapTeste.ts`). O diagnóstico de 09/08/2026 destravou o caminho técnico:
 
 - **Basic Auth por requisição funciona** em produção (`SBOVENPRD`) — dispensa o fluxo
   Login+sessão, que está quebrado no ambiente hospedado (a sessão emitida não é reconhecida

@@ -190,7 +190,9 @@ export function Vazio({ children }: { children: ReactNode }) {
 
 export function Erro({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+    // break-words: mensagem com token longo sem espaço (um JSON de erro do SAP,
+    // por ex.) não pode empurrar scroll horizontal da página no celular
+    <div className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm break-words text-red-700 dark:bg-red-950/40 dark:text-red-300">
       {children}
     </div>
   )
