@@ -276,9 +276,14 @@ vindo do upload das planilhas da SimpleAgro. Mas o diagnóstico de 09/08/2026 mu
   confirmado 176,40 × 5 = 882), tratamento em `U_LoteTSI` (texto livre — normalizar),
   item tratado tem sufixo `TSI` no `ItemName`, saldo total por item em
   `Items.QuantityOnStock` (55 insumos/defensivos listados).
-- **Só falta** a autorização de executar `SQLQueries` para o usuário de integração
-  (`code -6006`) — é ela que libera o **saldo por lote** (consulta OBTN × OBTQ pronta em
-  `docs/integracao-sap.md` §3.2). Homologação (`SBOVENHOM`) está fora do ar desde 28/07.
+- **Homologação tem endpoint próprio de Service Layer** (descoberto 09/08/2026):
+  `https://sap-sementesvenezahom-sl.skyinone.net:50000/b1s/v1` — o SL de produção não a
+  atende (HANAs separados). Lá o pipeline completo foi validado: criar e executar a
+  consulta `TSI_SALDOS` devolveu **saldo por lote real** (PMS, tratamento, safra, bags por
+  depósito). **Desenvolver sempre contra a homolog.**
+- **Em produção só falta** replicar a autorização de `SQLQueries` (`code -6006`, assunto
+  "Service Layer SQL Query" das Autorizações Gerais — mesma config que a homolog já tem)
+  para liberar o saldo por lote de semente lá.
 
 Ver `docs/integracao-sap.md` para o histórico completo. Reimplementar no app só com pedido
 explícito do Arion — e sempre somente leitura em produção.

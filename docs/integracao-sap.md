@@ -64,7 +64,8 @@
 
 | Item | Valor |
 |---|---|
-| Endpoint | `https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1` |
+| Endpoint (produção) | `https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1` |
+| **Endpoint (homologação)** | `https://sap-sementesvenezahom-sl.skyinone.net:50000/b1s/v1` — **descoberto em 09/08/2026** (IP 134.65.233.39); o SL de produção NÃO atende a base de homolog, são HANAs separados (§6.5/§6.6) |
 | Homologação | `SBOVENHOM` ← **usar para desenvolver** (sem "2" no final — corrigido 09/08/2026) |
 | Produção | `SBOVENPRD` ← só o job final, **somente leitura** |
 | Plataforma | SAP B1 sobre HANA (hospedado Agrotis/AutoSky) |
@@ -496,13 +497,42 @@ somente-leitura.
 funciona) ela não existe — por isso todos os `-6006`. O desbloqueio dos lotes de semente é
 conceder a mesma autorização na `SBOVENPRD`.
 
+### 6.6 Homologação encontrada — pipeline completo validado (09/08/2026)
+
+O endpoint do SL de homologação **existia**, num hostname que ninguém tinha anotado — achado
+por tentativa de DNS: **`sap-sementesvenezahom-sl.skyinone.net`** (IP `134.65.233.39`;
+produção é `134.65.247.214`). Com ele, a escada inteira rodou de ponta a ponta via Basic
+Auth com o `ven040`, que tem autorização total na homolog:
+
+1. `Items` → OK;
+2. `POST /SQLQueries` → **criou** a `TSI_SALDOS` (OBTN × OBTQ: nº do lote, PMS,
+   tratamento, categoria, safra, depósito, quantidade);
+3. `GET /SQLQueries('TSI_SALDOS')/List` → **executou**, devolvendo saldo por lote real:
+   lotes de semente safra 25/26, PMS, categoria C2, bags por depósito — **paridade completa
+   com a tela Saldos da SimpleAgro**.
+
+A `TSI_SALDOS` fica salva na homolog como consulta oficial da integração. Consequências:
+- **Ambiente de desenvolvimento completo funcionando** — vale a regra do projeto:
+  desenvolver contra a homolog.
+- **O pedido ao TI encolheu para uma linha:** replicar em `SBOVENPRD` a autorização que o
+  usuário já tem na homolog (assuntos "Service Layer SQL Query" e "Modify SQL Queries in
+  Service Layer" das Autorizações Gerais) — e criar lá a mesma `TSI_SALDOS`.
+- Cuidado: na homolog o CRUISER apareceu **com** lote (`001-CRUISER`), enquanto produção diz
+  `ManageBatchNumbers=tNO` — dados/config de teste divergem. Homolog valida a **mecânica**,
+  não o comportamento exato dos dados de produção.
+
 ## 7. Checklist de implantação
 
-- [ ] Login de teste OK em `SBOVENHOM`
-- [ ] JSON de `Items` e `Orders` inspecionado → mapeamento de campos fechado (§4)
+- [x] Acesso a `SBOVENHOM` OK — 09/08/2026, via Basic Auth no **endpoint próprio de homolog** (§6.6)
+- [x] JSON de `Items`, `Orders` e `BatchNumberDetails` inspecionado → mapeamento fechado (§4/§6.5)
+- [x] Saldo por lote executado de ponta a ponta na homolog (`TSI_SALDOS`, §6.6)
+- [ ] Autorização de `SQLQueries` replicada em `SBOVENPRD` + `TSI_SALDOS` criada lá (pedido ao TI)
+- [ ] Senha do `ven040` trocada (exposta em 09/08) e/ou usuário de integração dedicado, somente leitura
+- [ ] Campo do status financeiro dos pedidos identificado (candidatos no §6.5)
 - [ ] Conversão do SAP reproduzindo os números conhecidos: **1.018 bags aprovados** e
       **753 lotes / 16.865 bags** (comparar com a carga da SimpleAgro de 28/07/2026)
-- [ ] Segredos em `.env.local` / Supabase Secrets — nada versionado
+- [ ] Segredos em `.env.local` / Supabase Secrets — nada versionado; limpar os antigos, que
+      podem guardar a senha **pessoal** do Arion (PENDENCIAS §2)
 - [ ] Job agendado com log de execução e alerta em caso de falha
-- [ ] Confirmado com a Agrotis: limite de sessões/licença e política de rate limit
+- [ ] Confirmado com a Agrotis: limite de sessões/licença e rate limit do Basic Auth
 - [ ] Certificado TLS válido (solicitado à Agrotis) ou exceção documentada
