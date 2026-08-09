@@ -3,8 +3,10 @@ import { supabase } from '@/lib/supabase'
 import {
   entidadeDe,
   problemaNoCaminho,
+  resumoItem,
   tabelaDe,
   textoCelula,
+  type ResumoItem,
   type TabelaSap,
 } from '@/lib/sapTeste'
 import {
@@ -14,6 +16,7 @@ import {
   Erro,
   Pagina,
   Tabela,
+  Tag,
   Vazio,
   exportarCsv,
 } from '@/componentes/ui'
@@ -37,6 +40,49 @@ interface Resultado {
   temMais: boolean
   tempoMs: number
   caminho: string
+}
+
+type RespostaSap =
+  | { ok: true; dados: unknown; base: string; paginasLidas: number; temMais: boolean }
+  | { ok: false; erro: string }
+
+/** Só a chamada de rede, sem tocar estado — reusada pelo `executar()` e
+ *  pelo "Resumo do item". */
+async function chamarSap(caminho: string, paginas: number): Promise<RespostaSap> {
+  const problema = problemaNoCaminho(caminho)
+  if (problema) return { ok: false, erro: problema }
+  try {
+    const { data, error } = await supabase.functions.invoke('sap-teste', {
+      body: { caminho, paginas },
+    })
+    if (error) throw new Error(error.message)
+    const r = data as {
+      ok: boolean
+      erro?: string
+      sap?: unknown
+      base?: string
+      dados?: unknown
+      paginasLidas?: number
+      temMais?: boolean
+    }
+    if (!r.ok) {
+      return { ok: false, erro: r.erro + (r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : '') }
+    }
+    return {
+      ok: true,
+      dados: r.dados,
+      base: r.base ?? 'SBOVENHOM',
+      paginasLidas: r.paginasLidas ?? 1,
+      temMais: r.temMais ?? false,
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      erro:
+        `Falha ao chamar a Edge Function sap-teste: ${e instanceof Error ? e.message : e}. ` +
+        'Ela está publicada no Supabase? Os secrets SAP_USER/SAP_PASSWORD existem?',
+    }
+  }
 }
 
 const PRESETS: { nome: string; caminho: string; paginas?: number }[] = [
@@ -97,6 +143,35 @@ function TabelaResultado({ tabela }: { tabela: TabelaSap }) {
   )
 }
 
+function NumeroResumo({
+  rotulo,
+  valor,
+  destaque,
+  titulo,
+}: {
+  rotulo: string
+  valor: number
+  destaque?: boolean
+  titulo?: string
+}) {
+  return (
+    <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800" title={titulo}>
+      <p className="text-[10px] uppercase tracking-wide text-stone-500">{rotulo}</p>
+      <p
+        className={`num-tabular mt-0.5 text-2xl font-bold ${
+          destaque
+            ? valor < 0
+              ? 'text-red-600 dark:text-red-400'
+              : 'text-emerald-700 dark:text-emerald-400'
+            : ''
+        }`}
+      >
+        {valor.toLocaleString('pt-BR')}
+      </p>
+    </div>
+  )
+}
+
 export default function SapTeste() {
   const [caminho, setCaminho] = useState(PRESETS[0].caminho)
   const [paginas, setPaginas] = useState(1)
@@ -104,56 +179,53 @@ export default function SapTeste() {
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<Resultado | null>(null)
+  const [resumo, setResumo] = useState<ResumoItem | null>(null)
 
   async function executar(cam: string, pags: number) {
     if (carregando) return // Enter repetido não dispara consultas concorrentes
-    const problema = problemaNoCaminho(cam)
-    if (problema) {
-      setErro(problema)
-      setResultado(null) // não deixa o resultado anterior parecer o desta tentativa
-      return
-    }
     setCaminho(cam)
     setPaginas(pags)
     setCarregando(true)
     setErro(null)
+    setResumo(null) // um resultado por vez — some o painel do resumo anterior
     const inicio = performance.now()
-    try {
-      const { data, error } = await supabase.functions.invoke('sap-teste', {
-        body: { caminho: cam, paginas: pags },
-      })
-      if (error) throw new Error(error.message)
-      const r = data as {
-        ok: boolean
-        erro?: string
-        sap?: unknown
-        base?: string
-        dados?: unknown
-        paginasLidas?: number
-        temMais?: boolean
-      }
-      if (!r.ok) {
-        setResultado(null)
-        setErro(r.erro + (r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : ''))
-        return
-      }
-      setResultado({
-        dados: r.dados,
-        base: r.base ?? 'SBOVENHOM',
-        paginasLidas: r.paginasLidas ?? 1,
-        temMais: r.temMais ?? false,
-        tempoMs: Math.round(performance.now() - inicio),
-        caminho: cam,
-      })
-    } catch (e) {
+    const r = await chamarSap(cam, pags)
+    if (!r.ok) {
       setResultado(null)
-      setErro(
-        `Falha ao chamar a Edge Function sap-teste: ${e instanceof Error ? e.message : e}. ` +
-          'Ela está publicada no Supabase? Os secrets SAP_USER/SAP_PASSWORD existem?',
-      )
-    } finally {
-      setCarregando(false)
+      setErro(r.erro)
+    } else {
+      setResultado({ ...r, tempoMs: Math.round(performance.now() - inicio), caminho: cam })
     }
+    setCarregando(false)
+  }
+
+  /**
+   * Resumo de um item — uma chamada a `Items('CODIGO')`. O total em pedidos
+   * não soma `Orders` na mão: `$expand=DocumentLines` dá `400 "Cannot expand
+   * invalid navigation property"` nesta versão do Service Layer (testado
+   * em 09/08/2026); usa-se `ItemWarehouseInfoCollection[].Committed`, que o
+   * próprio SAP já calcula (ver comentário de `resumoItem` em sapTeste.ts).
+   */
+  async function buscarResumo(codigo: string) {
+    if (carregando || !codigo) return
+    setCarregando(true)
+    setErro(null)
+    setResultado(null) // um resultado por vez — some a tabela genérica anterior
+    setResumo(null)
+
+    const r = await chamarSap(`Items('${codigo}')`, 1)
+    if (!r.ok) {
+      setErro(r.erro)
+      setCarregando(false)
+      return
+    }
+    const calculado = resumoItem(r.dados)
+    if (!calculado) {
+      setErro(`"${codigo}" não parece um item válido — confira o código.`)
+    } else {
+      setResumo(calculado)
+    }
+    setCarregando(false)
   }
 
   const tabela = resultado ? tabelaDe(resultado.dados) : null
@@ -187,6 +259,14 @@ export default function SapTeste() {
               className="w-36 rounded border border-stone-300 px-2 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800"
             />
           </label>
+          <Botao
+            variante="primario"
+            disabled={carregando || !itemCode}
+            onClick={() => buscarResumo(itemCode)}
+            titulo="Cultivar, estoque por depósito (só os com saldo), total em pedidos abertos e saldo final"
+          >
+            Resumo do item
+          </Botao>
           <Botao
             disabled={carregando || !itemCode}
             onClick={() => executar(`Items('${itemCode}')`, 1)}
@@ -243,6 +323,57 @@ export default function SapTeste() {
       {erro && <Erro>{erro}</Erro>}
 
       {carregando && <Vazio>Consultando o SAP…</Vazio>}
+
+      {!carregando && resumo && (
+        <Cartao titulo={`Resumo — ${resumo.itemCode}`} className="mb-5">
+          <p className="mb-4 text-sm text-stone-600 dark:text-stone-300">
+            {resumo.itemName}
+            {resumo.cultivar && (
+              <>
+                {' '}
+                · cultivar <span className="font-semibold">{resumo.cultivar}</span>
+              </>
+            )}
+            {resumo.embalagem && <> · embalagem {resumo.embalagem}</>}
+            {resumo.tratado && (
+              <span className="ml-2">
+                <Tag cor="info">tratado</Tag>
+              </span>
+            )}
+          </p>
+
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <NumeroResumo rotulo="Saldo em estoque (total)" valor={resumo.saldoTotal} />
+            <NumeroResumo
+              rotulo="Em pedidos abertos"
+              valor={resumo.totalPedidos}
+              titulo="Soma do Committed (reservado em pedidos de venda abertos) de todos os depósitos"
+            />
+            <NumeroResumo rotulo="Saldo final" valor={resumo.saldoFinal} destaque />
+          </div>
+
+          <p className="mb-2 text-xs font-semibold text-stone-500">
+            Estoque por depósito ({resumo.porArmazem.length} com saldo)
+          </p>
+          {resumo.porArmazem.length === 0 ? (
+            <Vazio>Nenhum depósito com saldo diferente de zero.</Vazio>
+          ) : (
+            <Tabela cabecalho={['Depósito', '#Saldo', '#Comprometido']}>
+              {resumo.porArmazem.map((w) => (
+                <tr key={w.armazem} className="border-t border-stone-100 dark:border-stone-800/60">
+                  <td className="px-2 py-1.5">{w.armazem}</td>
+                  <td className="num-tabular px-2 py-1.5 text-right">
+                    {w.saldo.toLocaleString('pt-BR')}
+                  </td>
+                  <td className="num-tabular px-2 py-1.5 text-right">
+                    {w.comprometido.toLocaleString('pt-BR')}
+                  </td>
+                </tr>
+              ))}
+            </Tabela>
+          )}
+        </Cartao>
+      )}
 
       {!carregando && resultado && (
         <Cartao

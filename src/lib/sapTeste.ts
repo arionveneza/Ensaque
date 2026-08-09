@@ -107,6 +107,97 @@ export function entidadeDe(dados: unknown): EntidadeSap | null {
   return campos.length === 0 && colecoes.length === 0 ? null : { campos, colecoes }
 }
 
+/**
+ * Cultivar + embalagem a partir do `ItemName` do SAP — mesma regra do
+ * importador da SimpleAgro (`src/dominio/importacao/simpleagro.ts`,
+ * "SS <cultivar> <embalagem>", miolo entre o primeiro e o último token) e do
+ * CLAUDE.md §4. Diferença: item TRATADO no SAP termina em "TSI"
+ * (`SS NA7337 RR BB5M TSI`, confirmado em 09/08/2026) — remove esse token
+ * antes de achar a embalagem, senão "TSI" seria lido como se fosse o código
+ * de embalagem e a embalagem de verdade entraria no cultivar.
+ */
+export function partesDoNome(itemName: string): {
+  cultivar: string
+  embalagem: string
+  tratado: boolean
+} {
+  let tokens = itemName.trim().split(/\s+/).filter(Boolean)
+  let tratado = false
+  if (tokens[tokens.length - 1]?.toUpperCase() === 'TSI') {
+    tratado = true
+    tokens = tokens.slice(0, -1)
+  }
+  if (tokens.length <= 2) return { cultivar: '', embalagem: tokens.at(-1) ?? '', tratado }
+  return {
+    cultivar: tokens.slice(1, -1).join(' '),
+    embalagem: tokens[tokens.length - 1],
+    tratado,
+  }
+}
+
+export interface ResumoItem {
+  itemCode: string
+  itemName: string
+  cultivar: string
+  embalagem: string
+  tratado: boolean
+  saldoTotal: number
+  /** só os depósitos com saldo diferente de zero — o pedido era "não quero ver os zerados" */
+  porArmazem: { armazem: string; saldo: number; comprometido: number }[]
+  totalPedidos: number
+  saldoFinal: number
+}
+
+/**
+ * Resumo de UM item a partir de `Items('CODIGO')` — uma chamada só.
+ *
+ * O "total em pedidos" NÃO vem de somar `Orders` na mão: testado em
+ * 09/08/2026, `$expand=DocumentLines` em `Orders` dá
+ * `400 "Cannot expand invalid navigation property 'DocumentLines' for
+ * entity type 'Document'"` nesta versão do Service Layer — não tem jeito de
+ * pedir isso ao SAP. Em vez de brigar com a API, usa o que o próprio SAP já
+ * calcula: `ItemWarehouseInfoCollection[].Committed` é a quantidade já
+ * reservada em pedidos de venda **abertos**, por depósito — soma-se ela em
+ * vez de recalcular. `Committed` entra na soma mesmo de depósito com saldo
+ * zerado (pode haver reserva sem estoque físico — não contar subestimaria).
+ *
+ * Devolve null se `itemJson` não for uma entidade de item reconhecível.
+ */
+export function resumoItem(itemJson: unknown): ResumoItem | null {
+  if (itemJson === null || typeof itemJson !== 'object') return null
+  const item = itemJson as Record<string, unknown>
+  const itemCode = String(item.ItemCode ?? '')
+  if (!itemCode) return null
+  const itemName = String(item.ItemName ?? '')
+  const { cultivar, embalagem, tratado } = partesDoNome(itemName)
+
+  const armazens = Array.isArray(item.ItemWarehouseInfoCollection)
+    ? (item.ItemWarehouseInfoCollection as Record<string, unknown>[])
+    : []
+  const totalPedidos = armazens.reduce((soma, w) => soma + Number(w.Committed ?? 0), 0)
+  const porArmazem = armazens
+    .map((w) => ({
+      armazem: String(w.WarehouseCode ?? ''),
+      saldo: Number(w.InStock ?? 0),
+      comprometido: Number(w.Committed ?? 0),
+    }))
+    .filter((w) => w.saldo !== 0)
+    .sort((a, b) => b.saldo - a.saldo)
+
+  const saldoTotal = Number(item.QuantityOnStock ?? 0)
+  return {
+    itemCode,
+    itemName,
+    cultivar,
+    embalagem,
+    tratado,
+    saldoTotal,
+    porArmazem,
+    totalPedidos,
+    saldoFinal: saldoTotal - totalPedidos,
+  }
+}
+
 /** Tamanho máximo de uma célula renderizada — trava JSON/valor gigante. */
 const MAX_CELULA = 200
 

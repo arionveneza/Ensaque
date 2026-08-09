@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_COLUNAS, entidadeDe, problemaNoCaminho, tabelaDe, textoCelula } from './sapTeste'
+import {
+  MAX_COLUNAS,
+  entidadeDe,
+  partesDoNome,
+  problemaNoCaminho,
+  resumoItem,
+  tabelaDe,
+  textoCelula,
+} from './sapTeste'
 
 describe('problemaNoCaminho', () => {
   it('aceita caminho OData normal', () => {
@@ -105,6 +113,74 @@ describe('entidadeDe', () => {
     const e = entidadeDe({ Linhas: [{ x: 1 }] })
     expect(e?.campos).toEqual([])
     expect(e?.colecoes).toHaveLength(1)
+  })
+})
+
+describe('partesDoNome', () => {
+  it('semente branca: "SS <cultivar> <embalagem>"', () => {
+    expect(partesDoNome('SS NEO680 IPRO BB5M')).toEqual({
+      cultivar: 'NEO680 IPRO',
+      embalagem: 'BB5M',
+      tratado: false,
+    })
+  })
+
+  it('semente TRATADA termina em "TSI" — sem isso "TSI" seria lido como embalagem', () => {
+    expect(partesDoNome('SS NA7337 RR BB5M TSI')).toEqual({
+      cultivar: 'NA7337 RR',
+      embalagem: 'BB5M',
+      tratado: true,
+    })
+  })
+
+  it('nome curto (2 tokens ou menos) não tem miolo — cultivar vazio, sem quebrar', () => {
+    expect(partesDoNome('SS BB5M')).toEqual({ cultivar: '', embalagem: 'BB5M', tratado: false })
+    expect(partesDoNome('BB5M')).toEqual({ cultivar: '', embalagem: 'BB5M', tratado: false })
+  })
+})
+
+describe('resumoItem', () => {
+  const itemBase = {
+    ItemCode: 'SOJ00012',
+    ItemName: 'SS 761 I2X BB5M',
+    QuantityOnStock: 1997,
+    ItemWarehouseInfoCollection: [
+      { WarehouseCode: 'VEN_GER', InStock: 1977, Committed: 661 },
+      { WarehouseCode: 'VCS_GER', InStock: 0, Committed: 2 }, // zerado — não aparece na lista, mas soma no total
+      { WarehouseCode: 'VEN_DM', InStock: 20, Committed: 0 },
+    ],
+  }
+
+  it('separa depósitos com saldo e soma o Committed de TODOS (até o zerado) pro total em pedidos', () => {
+    const r = resumoItem(itemBase)
+    expect(r?.cultivar).toBe('761 I2X')
+    expect(r?.porArmazem).toEqual([
+      { armazem: 'VEN_GER', saldo: 1977, comprometido: 661 },
+      { armazem: 'VEN_DM', saldo: 20, comprometido: 0 },
+    ])
+    expect(r?.totalPedidos).toBe(663) // 661 + 2 (do zerado) + 0 — não é só a soma dos que aparecem na lista
+    expect(r?.saldoTotal).toBe(1997)
+    expect(r?.saldoFinal).toBe(1334) // 1997 - 663
+  })
+
+  it('sem nenhum depósito comprometido, saldo final = saldo total', () => {
+    const item = { ...itemBase, ItemWarehouseInfoCollection: [{ WarehouseCode: 'X', InStock: 50, Committed: 0 }] }
+    const r = resumoItem(item)
+    expect(r?.totalPedidos).toBe(0)
+    expect(r?.saldoFinal).toBe(r?.saldoTotal)
+  })
+
+  it('sem ItemWarehouseInfoCollection, ainda reconhece o item (só sem depósitos)', () => {
+    const r = resumoItem({ ItemCode: 'X', ItemName: 'SS X BB5M', QuantityOnStock: 10 })
+    expect(r?.porArmazem).toEqual([])
+    expect(r?.totalPedidos).toBe(0)
+    expect(r?.saldoFinal).toBe(10)
+  })
+
+  it('devolve null se não reconhecer um ItemCode na resposta', () => {
+    expect(resumoItem({ foo: 'bar' })).toBeNull()
+    expect(resumoItem('texto')).toBeNull()
+    expect(resumoItem(null)).toBeNull()
   })
 })
 
