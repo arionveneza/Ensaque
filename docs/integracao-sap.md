@@ -386,6 +386,34 @@ Custos e limites do contorno:
   autorizações do `ven040`, sem chamado de infraestrutura), não trava de ambiente como se
   supunha no banner. Pedir a liberação junto do resto.
 
+**Confirmado via `$metadata` (09/08/2026):** das **652 entidades** expostas nesta versão do
+SL, **nenhuma** entrega saldo por lote — `BatchNumberDetails`/`SerialNumberDetails` são só
+cadastro, os `Inventory*`/`StockTransfers` são documentos. O `sml.svc` (camada semântica do
+HANA) não responde. Não existe alternativa OData: `SQLQueries` é o único caminho de leitura
+da OBTQ. Nuance do `-6006` ainda aberta: pela regra da SAP, **criar** consulta exige
+superusuário, **executar** não — e o SAP devolve "sem permissão" também para consulta
+inexistente (armadilha já documentada no topo). Testado na sequência (mesmo dia):
+**criar a `TSI_SALDOS` também deu `-6006`** → o `ven040` não tem o flag de superusuário
+(autorização total nas telas do B1 não é a mesma coisa que o checkbox de superusuário no
+cadastro de usuários). O executar em seguida falhou igual, mas é inconclusivo — a consulta
+nem chegou a ser criada. Fechado na sequência com os testes que faltavam:
+- **Listar funciona**: 10 consultas salvas (eram 6 em 28/07). As 4 novas — `LotesSASaldo`,
+  `LotesSASaldoNum`, `LotesSATransacoes`, `LotesSATransacoesIBT1` — mostram que a integração
+  interna da Veneza (o exemplo em Python do colega) **já sincroniza saldo por lote**.
+- **Ler a definição funciona**: `LotesSASaldo` =
+  `SELECT "ItemCode","BatchNum","WhsCode",…,"Quantity",… FROM "OIBT" WHERE "UpdateDate" > :updatedate`
+  — saldo por lote **incremental** (parâmetro `:updatedate`, passado na execução como
+  `/List?updatedate='2026-01-01'`). Exatamente o dado de que o TSI precisa.
+- **Executar consulta EXISTENTE também dá `-6006`** — neste ambiente a execução é restrita
+  mesmo para consulta criada por outro; a regra usual da SAP ("usuário comum executa") não
+  vale aqui. Não há mais o que testar com o `ven040`.
+
+**Contorno final: pegar carona nos trilhos da integração interna.** A pergunta ao colega é
+uma só — *qual usuário executa as `LotesSA*`? O job do TSI pode usar o mesmo (ou ganhar um
+igual)?* Com um usuário que execute, `LotesSASaldo` (lote + depósito + quantidade) +
+`BatchNumberDetails` via OData (PMS, `U_LoteTSI`, categoria — que o `ven040` já lê) cobrem o
+dado completo. Talvez nem precise criar a `TSI_SALDOS`.
+
 Pendências de mapeamento abertas por este teste:
 - **unidade** dos saldos (`QuantityOnStock` de 16.544 do CRUISER é litro? kg?) — conferir
   `InventoryUOM`;
