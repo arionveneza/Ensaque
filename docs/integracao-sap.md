@@ -20,11 +20,16 @@
 > `LotesSATratamentos`, `LotesSANome`, `LotesSAProduto`, `LotesSAOri`, `LotesAnaliseSA`).
 > Ler que existem, sim; executar, não.
 >
-> **Se retomar, o pedido é um só — e desde 09/08/2026 ele tem nome exato:** conceder ao
-> usuário de integração a autorização de executar consultas via Service Layer. O bloqueio é
-> `code -6006 — "You are not permitted to perform this action"`, autorização de usuário no
-> B1 (ver §6.4) — não trava de ambiente, como se supunha. O resto já funciona por OData +
-> Basic Auth (§6.4), e a consulta a liberar está pronta no §3.2.
+> **Se retomar, o pedido é um só — e ele tem endereço exato no cliente B1** (regra oficial,
+> guia "Working with SAP Business One Service Layer" §4.11, confirmada em 09/08/2026):
+> usuário comum não executa NENHUMA consulta salva por padrão — nem as criadas por outros.
+> Um superusuário concede, em **Administração → Inicialização do Sistema → Autorizações →
+> Autorizações Gerais**, assunto **"Service Layer SQL Query"**, "Autorização total" nas
+> consultas específicas (`LotesSA`, `LotesSAProduto`, `LotesSASaldo`…) para o usuário do
+> job. Criar consulta nova exige superusuário ou o assunto "Modify SQL Queries in Service
+> Layer". Muda e vale em ~1 min (cache de permissão). `-6006` é SEMPRE autorização —
+> parâmetro faltando dá `704`, tabela fora do allowlist dá `702`. O resto já funciona por
+> OData + Basic Auth (§6.4).
 >
 > **Armadilha que custou tempo:** o código da consulta é **sensível a maiúsculas**
 > (`LotesSA`, não `LOTESSA`), e o SAP responde **403** — não 404 — para consulta
@@ -199,16 +204,24 @@ o cadastro INTEIRO (inclusive lotes de safras velhas, 2023 etc.) em páginas de 
 `GET /Orders?$top=1&$expand=DocumentLines` e olhe o JSON completo — os UDFs aparecem como
 `U_XXX`. Traga o JSON e o mapeamento se resolve em minutos.
 
-## 5. Job de sincronização (desenho)
+## 5. Job de sincronização (desenho — revisto em 09/08/2026 para Basic Auth)
+
+> O desenho original usava `POST /Login` → `POST /Logout`, o fluxo de sessão que o §6.3
+> provou quebrado. Reescrito para o contorno que funciona (§6.4).
 
 ```
-[cron a cada 1h]
-  → POST /Login (SBOVENPRD, usuário somente leitura)
-  → GET  /Orders  (pedidos abertos)      → normaliza → upsert em pedidos_venda (nova carga)
-  → GET  /Items   (estoque + lotes)      → normaliza → upsert em estoque_pa + lotes_semente
-  → POST /Logout
+[cron a cada 1h — Basic Auth por requisição, sem sessão]
+  → GET  /Items   (saldo total por item, insumos)   → alerta de cobertura de químicos
+  → GET  /SQLQueries('LotesSASaldo')/List?updatedate='<última carga>'   ← incremental!
+        (exige a autorização por consulta — ver banner/§6.4)
+  → GET  /BatchNumberDetails ($filter=ItemCode …)   → PMS, U_LoteTSI, validade, categoria
+  → normaliza → upsert em lotes_semente / tabela de saldo de insumos
   → registra em cargas_demanda (origem='sap')
 ```
+
+Antes de agendar frequência alta, confirmar com a Agrotis o custo do Basic Auth em
+licença/sessão por requisição (§6.4) — e `Orders` (pedidos) segue **nunca testado** em
+nenhum modo; o balanço de pedidos continua vindo da SimpleAgro até isso mudar.
 
 **Onde rodar:** duas opções, ambas viáveis agora que o endpoint é público.
 1. **Supabase Edge Function** com `pg_cron`/Scheduled Function — mais simples, nada de servidor.
@@ -408,11 +421,28 @@ nem chegou a ser criada. Fechado na sequência com os testes que faltavam:
   mesmo para consulta criada por outro; a regra usual da SAP ("usuário comum executa") não
   vale aqui. Não há mais o que testar com o `ven040`.
 
-**Contorno final: pegar carona nos trilhos da integração interna.** A pergunta ao colega é
-uma só — *qual usuário executa as `LotesSA*`? O job do TSI pode usar o mesmo (ou ganhar um
-igual)?* Com um usuário que execute, `LotesSASaldo` (lote + depósito + quantidade) +
-`BatchNumberDetails` via OData (PMS, `U_LoteTSI`, categoria — que o `ven040` já lê) cobrem o
-dado completo. Talvez nem precise criar a `TSI_SALDOS`.
+**Fechamento (auditoria de 09/08, com o guia oficial da SAP §4.9–4.12):** todo o
+comportamento observado é o padrão de fábrica documentado —
+- usuário comum **lê e lista** definições (concedido por padrão) ✔ observado;
+- usuário comum **não executa nenhuma consulta salva** sem "Autorização total" naquela
+  consulta específica (assunto **"Service Layer SQL Query"** das Autorizações Gerais; cada
+  consulta salva vira um item da árvore, nascendo como "Sem autorização") ✔ observado;
+- **criar** exige superusuário ou o assunto "Modify SQL Queries in Service Layer" ✔ observado
+  ("autorização total nas telas" não cobre nada disso — são assuntos próprios);
+- `-6006` é **exclusivamente autorização**: parâmetro faltando dá `400/704 "Parameter
+  error"`, tabela fora do allowlist (`b1s_sqltable.conf`) dá `702`, sintaxe dá `701`. Os
+  testes do dia mediram a coisa certa. (O sufixo "- Business Partner Master Data" visto na
+  `LotesSASaldo` aparece em checagens de autorização/allowlist sobre tabelas referenciadas
+  no SqlText — relato igual na SAP Community.)
+- Sintaxe de parâmetro confirmada: `GET .../List?updatedate='2020-01-01'` (sem os dois
+  pontos) ou `POST .../List` com corpo `{"ParamList": "updatedate='2020-01-01'"}`.
+
+**Desbloqueio, portanto:** um superusuário do B1 concede "Autorização total" nas `LotesSA*`
+(e/ou no "Modify SQL Queries..." para criar a `TSI_SALDOS`) para o usuário do job — 2
+minutos no cliente, vale em ~1 min. Perguntas ao colega da integração: *quem é superusuário
+aí?* e *a integração Python (Login+sessão) está rodando hoje?* — a segunda data a quebra da
+sessão para o chamado. Com a autorização dada, `LotesSASaldo` (incremental por
+`:updatedate`) + `BatchNumberDetails` via OData cobrem o dado completo de lotes.
 
 Pendências de mapeamento abertas por este teste:
 - **unidade** dos saldos (`QuantityOnStock` de 16.544 do CRUISER é litro? kg?) — conferir
