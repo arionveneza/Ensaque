@@ -12,7 +12,7 @@ Atualizado em 05/08/2026 (noite — correções de RLS e baixa atômica).
 | Banco | Supabase `Sistema_de_ensaque`, projeto `ztwmrhfloelqxhhpdmoz`, schema **`tsi`** |
 | Telas | As 8 implementadas: Ordens, Programação, Lotes, Execução, Qualidade, Indicadores, Cadastros, Administração |
 | Testes | 153, rodam antes de cada deploy — teste vermelho não publica |
-| Integração SAP | **Retirada do app.** Ver `docs/integracao-sap.md` |
+| Integração SAP | **Fora do app, mas destravada em 09/08/2026**: Basic Auth funciona em produção; mapeamento confirmado; falta só a autorização `-6006` p/ saldo por lote — ver `docs/integracao-sap.md` |
 
 Rodar local: `npm install`, depois `npm run dev` · `npm test` · `npm run build`.
 

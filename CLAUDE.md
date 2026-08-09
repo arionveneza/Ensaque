@@ -265,26 +265,35 @@ Colunas: C cultivar · F lote · G lote tratamento · H PMS · K saldo (bags) ·
 - Saldo negativo → ignorar e **reportar** (o arquivo de referência tem 4 casos, −27 bags).
 - **Resultado esperado**: 753 lotes · 16.865 bags · 0 estoque PA tratado.
 
-### SAP Business One — Service Layer **SUSPENSO** 🛑
-A integração foi **retirada do app**. O acesso externo existe e o login funciona, mas a
-execução de consultas via Service Layer é recusada com `403` mesmo para usuário
-profissional — trava de ambiente. Os dados do TSI seguem vindo do **upload das planilhas
-da SimpleAgro**, que está validado.
+### SAP Business One — Service Layer: **fora do app, caminho técnico destravado** 🟡
+A integração continua **fora do app** (código removido em 28/07/2026) e os dados seguem
+vindo do upload das planilhas da SimpleAgro. Mas o diagnóstico de 09/08/2026 mudou o quadro:
 
-Ver `docs/integracao-sap.md` para o diagnóstico completo e o que pedir à Agrotis caso se
-retome. **Não reimplementar sem antes confirmar que o `403` foi resolvido.**
+- **Basic Auth por requisição funciona** em produção (`SBOVENPRD`) — dispensa o fluxo
+  Login+sessão, que está quebrado no ambiente hospedado (a sessão emitida não é reconhecida
+  por nenhum nó). Se reimplementar, usar Basic Auth, não Login+sessão.
+- **Mapeamento de campos confirmado com dado real**: PMS em `U_AGRT_PMS` (×5 = peso do bag,
+  confirmado 176,40 × 5 = 882), tratamento em `U_LoteTSI` (texto livre — normalizar),
+  item tratado tem sufixo `TSI` no `ItemName`, saldo total por item em
+  `Items.QuantityOnStock` (55 insumos/defensivos listados).
+- **Só falta** a autorização de executar `SQLQueries` para o usuário de integração
+  (`code -6006`) — é ela que libera o **saldo por lote** (consulta OBTN × OBTQ pronta em
+  `docs/integracao-sap.md` §3.2). Homologação (`SBOVENHOM`) está fora do ar desde 28/07.
+
+Ver `docs/integracao-sap.md` para o histórico completo. Reimplementar no app só com pedido
+explícito do Arion — e sempre somente leitura em produção.
 
 Ambiente **B1 sobre HANA**, hospedado pela Agrotis/AutoSky:
 
 | Item | Valor |
 |---|---|
 | Endpoint | `https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1` |
-| Base de **homologação** | `SBOVENHOM2` |
+| Base de **homologação** | `SBOVENHOM` |
 | Base de **produção** | `SBOVENPRD` |
 | Credenciais | usuário/senha fornecidos por e-mail — **nunca comitar** (ver §4.1) |
 | Certificado | provavelmente autoassinado (navegador exige "Avançado → Continuar") |
 
-**Regra de trabalho, se um dia voltar:** desenvolver e testar **sempre contra `SBOVENHOM2`**.
+**Regra de trabalho, se um dia voltar:** desenvolver e testar **sempre contra `SBOVENHOM`**.
 `SBOVENPRD` só no job final e **somente leitura** — nenhum POST/PATCH/DELETE em produção.
 
 ---
@@ -298,7 +307,7 @@ Credenciais **nunca** entram no repositório, no CLAUDE.md, em prints ou em chat
 ```
 # .env.local (exemplo — preencher com os valores reais)
 SAP_SL_URL=https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1
-SAP_COMPANY_DB=SBOVENHOM2
+SAP_COMPANY_DB=SBOVENHOM
 SAP_USER=
 SAP_PASSWORD=
 ```
