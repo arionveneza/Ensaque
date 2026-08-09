@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { problemaNoCaminho, tabelaDe, textoCelula } from '@/lib/sapTeste'
+import {
+  entidadeDe,
+  problemaNoCaminho,
+  tabelaDe,
+  textoCelula,
+  type TabelaSap,
+} from '@/lib/sapTeste'
 import {
   Aviso,
   Botao,
@@ -52,6 +58,44 @@ const PRESETS: { nome: string; caminho: string; paginas?: number }[] = [
 
 // quantas linhas a tabela mostra; o resto vai pelo Exportar
 const LIMITE_LINHAS = 300
+
+/** Tabela genérica com o aviso de colunas cortadas e o corte de linhas — usada
+ *  tanto pro resultado principal quanto pras coleções aninhadas de uma entidade
+ *  (ex.: ItemWarehouseInfoCollection dentro de um Items('CODIGO')). */
+function TabelaResultado({ tabela }: { tabela: TabelaSap }) {
+  if (tabela.linhas.length === 0) return <Vazio>Sem linhas.</Vazio>
+  return (
+    <>
+      {tabela.colunasCortadas && (
+        <div className="mb-3">
+          <Aviso>
+            Mostrando as primeiras {tabela.colunas.length} colunas — esta consulta traz
+            muitas. Use <code>$select=Campo1,Campo2</code> para escolher.
+          </Aviso>
+        </div>
+      )}
+      <Tabela cabecalho={tabela.colunas}>
+        {tabela.linhas.slice(0, LIMITE_LINHAS).map((linha, i) => (
+          <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+            {tabela.colunas.map((c) => {
+              const texto = textoCelula(linha[c])
+              return (
+                <td key={c} className="max-w-64 truncate px-2 py-1.5" title={texto}>
+                  {texto}
+                </td>
+              )
+            })}
+          </tr>
+        ))}
+      </Tabela>
+      {tabela.linhas.length > LIMITE_LINHAS && (
+        <p className="mt-2 text-xs text-stone-500">
+          Mostrando {LIMITE_LINHAS} de {tabela.linhas.length} linhas — o Exportar leva todas.
+        </p>
+      )}
+    </>
+  )
+}
 
 export default function SapTeste() {
   const [caminho, setCaminho] = useState(PRESETS[0].caminho)
@@ -113,6 +157,9 @@ export default function SapTeste() {
   }
 
   const tabela = resultado ? tabelaDe(resultado.dados) : null
+  // entidade única (Items('X'), Orders(4404)...) não é lista — tenta separar
+  // campos escalares de coleções aninhadas antes de desistir pro JSON cru
+  const entidade = resultado && !tabela ? entidadeDe(resultado.dados) : null
 
   return (
     <Pagina
@@ -239,44 +286,34 @@ export default function SapTeste() {
             </div>
           )}
           {tabela ? (
-            tabela.linhas.length === 0 ? (
-              <Vazio>A consulta executou e voltou vazia.</Vazio>
-            ) : (
-              <>
-                {tabela.colunasCortadas && (
-                  <div className="mb-3">
-                    <Aviso>
-                      Mostrando as primeiras {tabela.colunas.length} colunas — esta consulta
-                      traz muitas. Use <code>$select=Campo1,Campo2</code> para escolher.
-                    </Aviso>
-                  </div>
-                )}
-                <Tabela cabecalho={tabela.colunas}>
-                  {tabela.linhas.slice(0, LIMITE_LINHAS).map((linha, i) => (
-                    <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
-                      {tabela.colunas.map((c) => {
-                        const texto = textoCelula(linha[c])
-                        return (
-                          <td key={c} className="max-w-64 truncate px-2 py-1.5" title={texto}>
-                            {texto}
-                          </td>
-                        )
-                      })}
+            <TabelaResultado tabela={tabela} />
+          ) : entidade ? (
+            <div className="space-y-4">
+              {entidade.campos.length > 0 && (
+                <Tabela cabecalho={['Campo', 'Valor']}>
+                  {entidade.campos.map(([chave, valor]) => (
+                    <tr key={chave} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <td className="px-2 py-1.5 font-medium whitespace-nowrap">{chave}</td>
+                      <td className="max-w-96 truncate px-2 py-1.5" title={textoCelula(valor)}>
+                        {textoCelula(valor)}
+                      </td>
                     </tr>
                   ))}
                 </Tabela>
-              </>
-            )
+              )}
+              {entidade.colecoes.map(({ nome, tabela: sub }) => (
+                <div key={nome}>
+                  <p className="mb-2 text-xs font-semibold text-stone-500">
+                    {nome} ({sub.linhas.length})
+                  </p>
+                  <TabelaResultado tabela={sub} />
+                </div>
+              ))}
+            </div>
           ) : (
             <pre className="max-h-[32rem] overflow-auto rounded bg-stone-100 p-3 text-xs dark:bg-stone-800">
               {JSON.stringify(resultado.dados, null, 2)}
             </pre>
-          )}
-          {tabela && tabela.linhas.length > LIMITE_LINHAS && (
-            <p className="mt-2 text-xs text-stone-500">
-              Mostrando {LIMITE_LINHAS} de {tabela.linhas.length} linhas — o Exportar leva
-              todas.
-            </p>
           )}
         </Cartao>
       )}

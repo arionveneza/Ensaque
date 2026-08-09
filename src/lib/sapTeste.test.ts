@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_COLUNAS, problemaNoCaminho, tabelaDe, textoCelula } from './sapTeste'
+import { MAX_COLUNAS, entidadeDe, problemaNoCaminho, tabelaDe, textoCelula } from './sapTeste'
 
 describe('problemaNoCaminho', () => {
   it('aceita caminho OData normal', () => {
@@ -64,6 +64,47 @@ describe('tabelaDe', () => {
     expect(tabelaDe({ ItemCode: 'A', ItemName: 'x' })).toBeNull()
     expect(tabelaDe('texto')).toBeNull()
     expect(tabelaDe(null)).toBeNull()
+  })
+})
+
+describe('entidadeDe', () => {
+  it('separa campos escalares de coleções aninhadas (Items com depósitos)', () => {
+    const e = entidadeDe({
+      ItemCode: 'SOJ00012',
+      QuantityOnStock: 1997,
+      'odata.etag': 'W/"x"',
+      ItemWarehouseInfoCollection: [
+        { WarehouseCode: 'VEN_GER', InStock: 1977, Committed: 661 },
+        { WarehouseCode: '01', InStock: 0, Committed: 0 },
+      ],
+    })
+    expect(e?.campos).toEqual([['ItemCode', 'SOJ00012'], ['QuantityOnStock', 1997]])
+    expect(e?.colecoes).toHaveLength(1)
+    expect(e?.colecoes[0].nome).toBe('ItemWarehouseInfoCollection')
+    expect(e?.colecoes[0].tabela.colunas).toEqual(['WarehouseCode', 'InStock', 'Committed'])
+    expect(e?.colecoes[0].tabela.linhas).toHaveLength(2)
+  })
+
+  it('devolve null para coleção ({ value: [...] }) — isso é trabalho do tabelaDe', () => {
+    expect(entidadeDe({ value: [{ ItemCode: 'A' }] })).toBeNull()
+  })
+
+  it('devolve null para array solto, escalar ou null', () => {
+    expect(entidadeDe([{ a: 1 }])).toBeNull()
+    expect(entidadeDe('texto')).toBeNull()
+    expect(entidadeDe(null)).toBeNull()
+  })
+
+  it('coleção vazia não aparece, mas não quebra (fica só com os campos)', () => {
+    const e = entidadeDe({ ItemCode: 'A', ItemWarehouseInfoCollection: [] })
+    expect(e?.campos).toEqual([['ItemCode', 'A']])
+    expect(e?.colecoes).toEqual([])
+  })
+
+  it('objeto só com coleção (sem campo escalar) ainda é reconhecido', () => {
+    const e = entidadeDe({ Linhas: [{ x: 1 }] })
+    expect(e?.campos).toEqual([])
+    expect(e?.colecoes).toHaveLength(1)
   })
 })
 

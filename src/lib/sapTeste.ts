@@ -71,6 +71,42 @@ export function tabelaDe(dados: unknown): TabelaSap | null {
   return { colunas, linhas, colunasCortadas: todas.length > MAX_COLUNAS }
 }
 
+export interface EntidadeSap {
+  /** campos escalares do próprio objeto — nome + valor bruto (passa por textoCelula na tela). */
+  campos: [string, unknown][]
+  /** coleções aninhadas (ex.: ItemWarehouseInfoCollection, DocumentLines), já como tabela. */
+  colecoes: { nome: string; tabela: TabelaSap }[]
+}
+
+/**
+ * Converte resposta de ENTIDADE ÚNICA (`Items('X')`, `Orders(4404)`...) em
+ * campos escalares + coleções aninhadas como sub-tabelas — em vez do JSON
+ * cru, que escondia dados úteis como `ItemWarehouseInfoCollection` (estoque
+ * e comprometido por depósito) atrás de uma parede de texto.
+ *
+ * Devolve null para coleção ({ value: [...] }, já cobertas por `tabelaDe`)
+ * e para valor escalar/array solto — só entidade única (objeto) tem esta forma.
+ */
+export function entidadeDe(dados: unknown): EntidadeSap | null {
+  if (dados === null || typeof dados !== 'object' || Array.isArray(dados)) return null
+  const obj = dados as Record<string, unknown>
+  if (Array.isArray(obj.value)) return null // é coleção — tabelaDe cobre
+
+  const campos: [string, unknown][] = []
+  const colecoes: { nome: string; tabela: TabelaSap }[] = []
+  for (const [chave, valor] of Object.entries(obj)) {
+    if (chave.startsWith('odata.')) continue
+    if (Array.isArray(valor) && valor.some((v) => v !== null && typeof v === 'object')) {
+      const tabela = tabelaDe(valor)
+      if (tabela) colecoes.push({ nome: chave, tabela })
+      continue
+    }
+    if (valor !== null && typeof valor === 'object') continue // objeto aninhado raro: ignora
+    campos.push([chave, valor])
+  }
+  return campos.length === 0 && colecoes.length === 0 ? null : { campos, colecoes }
+}
+
 /** Tamanho máximo de uma célula renderizada — trava JSON/valor gigante. */
 const MAX_CELULA = 200
 
