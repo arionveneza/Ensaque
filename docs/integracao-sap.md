@@ -472,12 +472,24 @@ Todos via Basic Auth em `SBOVENPRD` (leitura):
 
 E o teste da homologação (com a autorização total que o `ven040` tem LÁ):
 `Items` e `SQLQueries` na `SBOVENHOM` devolvem `code 100000027 — Error while connecting to
-database server SK1@saphasementesven:30013` também via Basic Auth. **Detalhe decisivo: o
-cliente B1 do Arion estava logado nessa mesma homologação, funcionando, na mesma hora.** O
-banco existe e está vivo — é a *configuração de conexão do Service Layer* para essa empresa
-que aponta para um endereço que não responde. Para a Agrotis, o chamado deixa de ser
-"homologação fora do ar" e vira: *"o SL aponta para `SK1@saphasementesven:30013` e falha,
-enquanto o cliente B1 acessa a mesma empresa normalmente — corrijam a conexão do SL"*.
+database server SK1@saphasementesven:30013` também via Basic Auth — enquanto o cliente B1
+do Arion estava logado nessa mesma homologação, funcionando, na mesma hora.
+
+**Causa raiz encontrada (print da tela "Selecionar a empresa" do cliente, 09/08/2026):**
+a homologação vive em **OUTRO servidor HANA** — o cliente conecta em
+`SK1@saphasementesvenhom:30013` (com **"hom"** no hostname), e o Service Layer tenta
+`SK1@saphasementesven:30013` (o HANA de **produção**, sem o "hom"). Ou seja: o SL público
+(`sap-sementesveneza-sl.skyinone.net:50000`) só atende o HANA de produção; a base
+`SBOVENHOM` (e a `SBOFVENHOM5`, da Fazenda, no mesmo servidor de homolog) está fora do
+alcance dele **por desenho**, não por defeito. Explica o `500` no Login (o SL nem alcança a
+base para validar credencial) e todos os `100000027`.
+
+**Pedido pronto para TI/Agrotis:** *"O Service Layer público atende só o HANA de produção
+(`saphasementesven`). Nossa homologação (`SBOVENHOM`) está no HANA `saphasementesvenhom`.
+Existe um endpoint de Service Layer para o ambiente de homologação? Se não, é possível
+habilitar/expor um (ou incluir o servidor de homolog no SL existente)?"* — sem isso não há
+como desenvolver contra homologação via API, e os testes continuarão em produção
+somente-leitura.
 
 **Autorização é por empresa** — a "Autorização total" no "Service Layer SQL Query" que o
 `ven040` tem está na HOMOLOGAÇÃO (onde o SL não alcança o banco); na PRODUÇÃO (onde o SL
