@@ -190,7 +190,8 @@ foi resolvido. No SAP, o padrão observado no cliente B1 é o mesmo:
 | **Tratamento** | `U_LoteTSI` em `BatchNumberDetails` — vazio em semente branca; em lote tratado traz o código: `FORTENZA DUO 60`, `OFERTA VeP`, `OFERTA VeP + EI` | ✔ **confirmado 09/08/2026** — mas é texto livre (espaçamento varia: `+ EI` vs `+EI`); importar com `normaliza()` + de-para, como na SimpleAgro |
 | Branca × tratada | item tratado tem `ItemName` com sufixo **`TSI`** (`SS NA7337 RR BB5M TSI`) | ✔ confirmado 09/08/2026 |
 | Saldo por lote | coluna `Quantity` da **OBTQ** (join com OBTN por `ItemCode`+`SysNumber`) — **consulta pronta e validada no §3.2**; não existe em `BatchNumberDetails` (só cadastro) nem em entidade OData padrão | ❌ via SL depende da autorização `-6006` (§6.4); hoje sai pelo Gerador de consultas do cliente B1 |
-| Saldo por item (total) | `QuantityOnStock` em `Items` | ✔ funciona (55 insumos listados em 09/08); ❓ unidade — conferir `InventoryUOM` |
+| Saldo por item (total) | `QuantityOnStock` em `Items`; por depósito em `ItemWarehouseInfoCollection` (`WarehouseCode`, `InStock`, `Committed` — depósitos `VEN_GER` e `VEN_TER1`) | ✔ funciona; **unidade confirmada 09/08: litros** (`InventoryUOM = 'LT'` no CRUISER e FORTENZA) — dose ml/kg compara em volume direto, **sem precisar de densidade** |
+| Lote de insumo/defensivo | **não existe**: `ManageBatchNumbers = tNO`, zero lotes no FORTENZA | ✔ confirmado 09/08 — saldo total por item é a única granularidade de insumo; lote só importa para SEMENTE |
 | Aprovação financeira | ❓ existe status equivalente ao da SimpleAgro? | ❓ se não existir, manter pedidos vindo da SimpleAgro e só o estoque do SAP |
 
 Bônus descobertos no cadastro do lote (dados que a SimpleAgro não entrega):
@@ -445,8 +446,7 @@ sessão para o chamado. Com a autorização dada, `LotesSASaldo` (incremental po
 `:updatedate`) + `BatchNumberDetails` via OData cobrem o dado completo de lotes.
 
 Pendências de mapeamento abertas por este teste:
-- **unidade** dos saldos (`QuantityOnStock` de 16.544 do CRUISER é litro? kg?) — conferir
-  `InventoryUOM`;
+- ~~unidade dos saldos~~ **resolvida na bateria de testes (§6.5): litros (`LT`)**;
 - **saldo por lote**: resolvido no papel, bloqueado na prática. `BatchNumberDetails` foi
   testado no mesmo dia e comprovadamente **não tem campo de quantidade** (o `Format-List *`
   listou todos os campos do lote — é só cadastro, incluindo lotes velhos de safra 22/23). A
@@ -456,6 +456,33 @@ Pendências de mapeamento abertas por este teste:
 **Dado novo do mesmo dia:** existe integração interna (exemplo em Python de colega da Veneza)
 usando o fluxo Login+sessão **apontando para produção**. Perguntar a ele se está rodando hoje
 — se parou recentemente, isso data o início da quebra da sessão e fortalece o chamado.
+
+### 6.5 Bateria final — 09/08/2026, os buracos que a auditoria apontou
+
+Todos via Basic Auth em `SBOVENPRD` (leitura):
+
+| Teste | Resultado |
+|---|---|
+| `Orders` (nunca testado antes) | ✔ **funciona** — pedido veio com `DocumentLines` inline, `RemainingOpenQuantity` (= "Saldo a Faturar") e `LineStatus`. Candidatos ao status financeiro: `NTSApproved`, `U_AGRT_SitVenda`, `U_AGRT_StatusPedFat`, `U_AGRT_DtLibCom`, `Document_ApprovalRequests` — identificar comparando valores com o relatório da SimpleAgro (os `U_AGRT_*` são da Agrotis, mesma origem) |
+| Unidade dos saldos de insumo | ✔ **litros** (`InventoryUOM='LT'`, CRUISER e FORTENZA). Dose ml/kg → consumo em L, comparação em volume **sem densidade**. Densidade continua necessária só para o peso de balança (feature existente) |
+| Saldo por depósito | ✔ `ItemWarehouseInfoCollection` traz `VEN_GER` e `VEN_TER1` com `InStock` e `Committed`. Decisão de desenho pendente: quais depósitos contam e se desconta o comprometido |
+| Lote de insumo/defensivo | **não existe** (`ManageBatchNumbers=tNO`, 0 lotes no FORTENZA). A pergunta "saldo do lote de defensivo" se dissolve — total por item é toda a granularidade. `SQLQueries` importa só para lotes de SEMENTE |
+| Paginação (`odata.nextLink`) | ✔ funciona — página 2 seguida com sucesso (100+100 lotes do SOJ00002) |
+| `sml.svc` | ❌ **404** com Basic Auth — camada semântica não está implantada neste servidor. Descartada com evidência (antes era só "não responde") |
+
+E o teste da homologação (com a autorização total que o `ven040` tem LÁ):
+`Items` e `SQLQueries` na `SBOVENHOM` devolvem `code 100000027 — Error while connecting to
+database server SK1@saphasementesven:30013` também via Basic Auth. **Detalhe decisivo: o
+cliente B1 do Arion estava logado nessa mesma homologação, funcionando, na mesma hora.** O
+banco existe e está vivo — é a *configuração de conexão do Service Layer* para essa empresa
+que aponta para um endereço que não responde. Para a Agrotis, o chamado deixa de ser
+"homologação fora do ar" e vira: *"o SL aponta para `SK1@saphasementesven:30013` e falha,
+enquanto o cliente B1 acessa a mesma empresa normalmente — corrijam a conexão do SL"*.
+
+**Autorização é por empresa** — a "Autorização total" no "Service Layer SQL Query" que o
+`ven040` tem está na HOMOLOGAÇÃO (onde o SL não alcança o banco); na PRODUÇÃO (onde o SL
+funciona) ela não existe — por isso todos os `-6006`. O desbloqueio dos lotes de semente é
+conceder a mesma autorização na `SBOVENPRD`.
 
 ## 7. Checklist de implantação
 
