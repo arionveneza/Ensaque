@@ -51,7 +51,17 @@ comment on column ordens.lote_liberado_em is
 -- próprio bug desta migração no dia em que for programada (nasceria
 -- 'Pronto para produzir' sem nenhuma liberação de fato ter acontecido
 -- para ela). Só grandfather quem HOJE está efetivamente pronto.
+--
+-- Desliga tg_ordens_por_acao só para este UPDATE: rodando pelo SQL
+-- Editor não existe usuário logado (auth.uid() é null), então
+-- tem_acao('lotes','baixar_lote') dá sempre false e o gatilho recusaria
+-- este backfill com "Editar a ordem exige a acao Editar" — a checagem é
+-- para clique de usuário real, não para migração de DBA. Os outros
+-- gatilhos de ordens (fn_ordem_imutavel etc.) continuam ativos; o WHERE
+-- acima já exclui ordem iniciada, então nem tocariam essas linhas.
 -- ------------------------------------------------------------
+alter table ordens disable trigger tg_ordens_por_acao;
+
 update ordens o
    set lote_liberado_em = coalesce(ls.baixado_em, now()),
        lote_liberado_por = ls.baixado_por
@@ -61,6 +71,8 @@ update ordens o
    and o.lote_liberado_em is null
    and o.maquina_id is not null
    and o.status not in ('Em producao','Parada','Finalizada','Qualidade apontada','Apontada');
+
+alter table ordens enable trigger tg_ordens_por_acao;
 
 -- ------------------------------------------------------------
 -- 3. fn_ordens_por_acao: as colunas novas entram na lista ignorar (são
