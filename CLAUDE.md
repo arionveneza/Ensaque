@@ -62,6 +62,13 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   agregado do lote para herdar, nem quando uma ordem liberada é cancelada. Sem isso, uma ordem
   cancelada "doava" sua liberação para a próxima ordem do mesmo lote sem ação nenhuma da
   logística.
+- **O estorno é por ORDEM** (decisão de 10/08/2026): desfaz a liberação de **uma** ordem
+  específica, sem tocar nas outras do mesmo lote — se um lote tem 3 ordens liberadas e só 1
+  foi por engano, estorna-se só ela. `lotes_semente.status` só volta a `Em estoque` quando,
+  depois do estorno, **nenhuma** outra ordem do lote continuar liberada. Caso raro — lote
+  `Baixado` sem **nenhuma** ordem dependente (ex.: a única ordem que dependia dele foi
+  excluída depois de liberada) — não tem ordem para o estorno agir; a tela "Baixados sem
+  ordem — devolver" cobre só esse caso, devolvendo o lote direto.
 
 ### Produtos químicos e receitas
 - Cada químico tem **unidade de dose** (`ml/kg` ou `g/kg`) e **densidade em g/ml** (só para ml/kg).

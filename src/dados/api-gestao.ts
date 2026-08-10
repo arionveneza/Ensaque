@@ -356,13 +356,26 @@ export async function baixarLote(loteId: string): Promise<void> {
 }
 
 /**
- * Estorno, mesma transação da baixa. O trigger do banco recusa se qualquer
- * ordem do lote já foi iniciada — a mensagem que volta é a do próprio banco.
- * Desfaz a liberação só das ordens que ainda não começaram.
+ * Estorno é POR ORDEM (10/08/2026): desfaz a liberação de uma ordem
+ * específica, sem afetar outras ordens do mesmo lote que também estejam
+ * liberadas. O trigger do banco recusa se esta ordem já foi iniciada.
+ * Também recalcula `lotes_semente.status`: só volta a 'Em estoque' se,
+ * depois deste estorno, nenhuma outra ordem do lote continuar liberada.
  */
-export async function estornarLote(loteId: string): Promise<void> {
-  const { error } = await supabase.rpc('estornar_lote', { p_lote: loteId })
-  erro('estornar lote', error)
+export async function estornarLiberacao(ordemId: string): Promise<void> {
+  const { error } = await supabase.rpc('estornar_liberacao', { p_ordem: ordemId })
+  erro('estornar liberação', error)
+}
+
+/**
+ * Devolve ao estoque um lote 'Baixado' que ficou sem NENHUMA ordem
+ * dependente (órfão) — caso raro em que não há ordem para o estorno por
+ * ordem agir. Ex.: a última ordem que dependia dele foi excluída depois
+ * de liberada.
+ */
+export async function devolverLoteOrfao(loteId: string): Promise<void> {
+  const { error } = await supabase.rpc('devolver_lote_orfao', { p_lote: loteId })
+  erro('devolver lote órfão', error)
 }
 
 export interface MovimentoLote {

@@ -91,23 +91,6 @@ export function pode(status: StatusEfetivo, acao: keyof PermissoesStatus): boole
   return MATRIZ_STATUS[status][acao]
 }
 
-/**
- * Estorno de lote é bloqueado se QUALQUER ordem daquele lote já foi iniciada.
- * A baixa é do lote, não da ordem — então a decisão olha todas as dependentes.
- */
-export function podeEstornarLote(
-  ordensDoLote: { status: StatusEfetivo }[],
-): { permitido: boolean; motivo?: string } {
-  const iniciadas = ordensDoLote.filter((o) => jaIniciada(o.status))
-  if (iniciadas.length > 0) {
-    return {
-      permitido: false,
-      motivo: `Lote já consumido por ${iniciadas.length} ordem(ns) iniciada(s).`,
-    }
-  }
-  return { permitido: true }
-}
-
 /** Mensagem de bloqueio para o usuário, explicando o porquê. */
 export function motivoBloqueio(status: StatusEfetivo): string | null {
   if (status === 'Em producao' || status === 'Parada') {

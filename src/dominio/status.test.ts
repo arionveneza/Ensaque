@@ -5,7 +5,6 @@ import {
   jaIniciada,
   motivoBloqueio,
   pode,
-  podeEstornarLote,
   statusEfetivo,
 } from './status'
 import type { Ordem, StatusEfetivo } from './tipos'
@@ -94,27 +93,6 @@ describe('matriz de permissoes', () => {
     expect(jaIniciada('Pronto para produzir')).toBe(false)
     expect(jaIniciada('Em producao')).toBe(true)
     expect(jaIniciada('Finalizada')).toBe(true)
-  })
-})
-
-describe('estorno do lote olha todas as ordens dependentes', () => {
-  it('libera quando nenhuma ordem do lote comecou', () => {
-    const r = podeEstornarLote([{ status: 'Programada' }, { status: 'Aguardando lote' }])
-    expect(r.permitido).toBe(true)
-  })
-
-  it('bloqueia se QUALQUER ordem do lote ja foi iniciada', () => {
-    const r = podeEstornarLote([{ status: 'Programada' }, { status: 'Em producao' }])
-    expect(r.permitido).toBe(false)
-    expect(r.motivo).toMatch(/1 ordem/)
-  })
-
-  it('bloqueia tambem quando a ordem ja terminou', () => {
-    expect(podeEstornarLote([{ status: 'Apontada' }]).permitido).toBe(false)
-  })
-
-  it('lote sem ordens pode ser estornado', () => {
-    expect(podeEstornarLote([]).permitido).toBe(true)
   })
 })
 

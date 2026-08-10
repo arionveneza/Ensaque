@@ -114,6 +114,12 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       logado, e a checagem dedicada de `lote_liberado_*` em `tg_ordens_por_acao` exige
       `tem_acao('lotes','baixar_lote')`, sempre `false` sem sessão; corrigido desligando só
       esse gatilho em volta do UPDATE do backfill.
+- [ ] `supabase/estorno-liberacao-por-ordem.sql` — **pendente**, decisão de 10/08/2026: o
+      estorno também passa a ser por ORDEM (a liberação já era desde o script anterior; só
+      o estorno ainda desfazia todas as ordens liberadas do lote de uma vez). Substitui
+      `estornar_lote(text)` por `estornar_liberacao(uuid)` (uma ordem só) e acrescenta
+      `devolver_lote_orfao(text)` para o caso raro de lote `Baixado` sem nenhuma ordem
+      dependente. `baixar_lote(text)` não muda — baixa continua em bloco, por lote.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 

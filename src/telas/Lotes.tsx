@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import type { LoteSementeLinha, MovimentoLote, OrdemVisao } from '@/dados/api-gestao'
-import { jaIniciada, podeEstornarLote } from '@/dominio/status'
+import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
@@ -167,7 +167,7 @@ export default function Lotes() {
   return (
     <Pagina
       titulo="Logística"
-      descricao="Baixa de lote e conferência de estoque. Um clique libera de uma vez todas as ordens em aberto daquele lote — mas a liberação é registrada por ordem: uma ordem nova, criada depois, nasce sempre aguardando, mesmo que o lote já tenha sido baixado para outras."
+      descricao="Baixa de lote e conferência de estoque. Um clique em Baixar libera de uma vez todas as ordens em aberto daquele lote — mas a liberação é registrada por ordem: uma ordem nova, criada depois, nasce sempre aguardando, mesmo que o lote já tenha sido baixado para outras. O Estornar desfaz só uma ordem por vez, sem afetar as demais do mesmo lote."
     >
       {erro && <Erro>{erro}</Erro>}
 
@@ -215,104 +215,60 @@ export default function Lotes() {
             estoque para não distorcer o saldo.
           </p>
           <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Baixado por', '']}>
-            {orfaos.map((a) => {
-              const permissao = podeEstornarLote(
-                a.dependentes.map((o) => ({ status: o.status_efetivo as StatusEfetivo })),
-              )
-              return (
-                <tr key={a.lote.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-2 font-medium">{a.lote.id}</td>
-                  <td className="px-2 py-2">{a.lote.cultivar}</td>
-                  <td className="num-tabular px-2 py-2 text-right">
-                    {n(a.lote.peso_bag_kg, 0)} kg
-                  </td>
-                  <td className="px-2 py-2 text-xs text-stone-500">
-                    <QuemEQuando
-                      usuarioId={a.lote.baixado_por}
-                      quando={a.lote.baixado_em}
-                      nomes={nomes}
-                    />
-                  </td>
-                  <td className="px-2 py-2 text-right">
-                    {podeBaixar && (
-                      <Botao
-                        variante="perigo"
-                        disabled={!permissao.permitido}
-                        titulo={permissao.motivo}
-                        onClick={() => comErro(() => g.estornarLote(a.lote.id))}
-                      >
-                        Estornar
-                      </Botao>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
+            {orfaos.map((a) => (
+              <tr key={a.lote.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="px-2 py-2 font-medium">{a.lote.id}</td>
+                <td className="px-2 py-2">{a.lote.cultivar}</td>
+                <td className="num-tabular px-2 py-2 text-right">
+                  {n(a.lote.peso_bag_kg, 0)} kg
+                </td>
+                <td className="px-2 py-2 text-xs text-stone-500">
+                  <QuemEQuando
+                    usuarioId={a.lote.baixado_por}
+                    quando={a.lote.baixado_em}
+                    nomes={nomes}
+                  />
+                </td>
+                <td className="px-2 py-2 text-right">
+                  {podeBaixar && (
+                    <Botao
+                      variante="perigo"
+                      onClick={() => comErro(() => g.devolverLoteOrfao(a.lote.id))}
+                    >
+                      Devolver
+                    </Botao>
+                  )}
+                </td>
+              </tr>
+            ))}
           </Tabela>
         </Cartao>
       )}
 
-      {/* -------- baixados, para desfazer baixa errada -------- */}
+      {/* -------- baixados, para desfazer liberação errada -------- */}
       {baixados.length > 0 && (
         <Cartao titulo={`Baixados (${baixados.length})`} className="mb-6">
           <p className="mb-3 text-sm text-stone-500">
-            Lotes já liberados para a produção. O <b>estorno</b> desfaz uma baixa feita por
-            engano — só enquanto <b>nenhuma</b> ordem do lote tiver sido iniciada; depois disso
-            o lote já virou consumo e o histórico não se desfaz.
+            Ordens já liberadas para a produção. O <b>estorno</b> desfaz a liberação de{' '}
+            <b>uma</b> ordem — só enquanto ela não tiver sido iniciada. As outras ordens do
+            mesmo lote, liberadas ou não, não são afetadas.
           </p>
-          <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Ordens', 'Baixado por', '']}>
-            {baixados.map((a) => {
-              const permissao = podeEstornarLote(
-                a.dependentes.map((o) => ({ status: o.status_efetivo as StatusEfetivo })),
-              )
-              return (
-                <tr key={a.lote.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-2 font-medium">{a.lote.id}</td>
-                  <td className="px-2 py-2">{a.lote.cultivar}</td>
-                  <td className="num-tabular px-2 py-2 text-right">
-                    {n(a.lote.peso_bag_kg, 0)} kg
-                  </td>
-                  <td className="px-2 py-2 text-xs text-stone-500">
-                    {a.liberadas.length} liberada(s)
-                    {a.aLiberar.length > 0 && (
-                      <span className="ml-1">
-                        <Tag cor="alerta">{a.aLiberar.length} aguardando</Tag>
-                      </span>
-                    )}
-                    {a.dependentes.length > a.abertas.length && (
-                      <span className="ml-1">
-                        <Tag cor="neutro">
-                          {a.dependentes.length - a.abertas.length} já iniciada(s)
-                        </Tag>
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 text-xs text-stone-500">
-                    <QuemEQuando
-                      usuarioId={a.lote.baixado_por}
-                      quando={a.lote.baixado_em}
-                      nomes={nomes}
-                    />
-                  </td>
-                  <td className="px-2 py-2 text-right">
-                    {podeBaixar && (
-                      <Botao
-                        variante="perigo"
-                        disabled={!permissao.permitido}
-                        titulo={permissao.motivo}
-                        onClick={() => {
-                          if (!confirm(`Estornar a baixa do lote ${a.lote.id}?`)) return
-                          comErro(() => g.estornarLote(a.lote.id))
-                        }}
-                      >
-                        Estornar
-                      </Botao>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </Tabela>
+          <div className="divide-y divide-stone-200 overflow-hidden rounded-lg border border-stone-200 dark:divide-stone-800 dark:border-stone-800">
+            {baixados.map((a) => (
+              <LinhaLoteBaixado
+                key={a.lote.id}
+                item={a}
+                podeBaixar={podeBaixar}
+                nomes={nomes}
+                onEstornar={(o) => {
+                  if (!confirm(`Estornar a liberação da ordem ${o.numero} (lote ${a.lote.id})?`)) {
+                    return
+                  }
+                  comErro(() => g.estornarLiberacao(o.id))
+                }}
+              />
+            ))}
+          </div>
         </Cartao>
       )}
 
@@ -622,6 +578,69 @@ function LinhaLote({
           </Tabela>
         </div>
       </details>
+    </div>
+  )
+}
+
+/**
+ * Um lote na lista de "Baixados": o estorno é por ORDEM (10/08/2026), então
+ * a linha lista cada ordem liberada com seu próprio botão — estornar uma não
+ * afeta as outras do mesmo lote, liberadas ou ainda aguardando.
+ */
+function LinhaLoteBaixado({
+  item, podeBaixar, nomes, onEstornar,
+}: {
+  item: LoteAgregado
+  podeBaixar: boolean
+  nomes: Record<string, string>
+  onEstornar: (ordem: OrdemVisao) => void
+}) {
+  const { lote, liberadas, aLiberar, dependentes, abertas } = item
+  return (
+    <div className="px-3 py-3 sm:px-4">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+        <span>
+          {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
+        </span>
+        {aLiberar.length > 0 && <Tag cor="alerta">{aLiberar.length} aguardando</Tag>}
+        {dependentes.length > abertas.length && (
+          <Tag cor="neutro">{dependentes.length - abertas.length} já iniciada(s)</Tag>
+        )}
+      </p>
+      <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+        {n(lote.peso_bag_kg, 0)} kg/bag
+      </p>
+      <div className="mt-2">
+        <Tabela cabecalho={['Ordem', '#Bags', 'Liberado por', '']}>
+          {liberadas.map((o) => (
+            <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
+              <td className="px-2 py-1.5">
+                {o.numero}
+                {o.prioridade === 'Urgente' && (
+                  <span className="ml-1">
+                    <Tag cor="perigo">urgente</Tag>
+                  </span>
+                )}
+              </td>
+              <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
+              <td className="px-2 py-1.5 text-xs text-stone-500">
+                <QuemEQuando
+                  usuarioId={o.lote_liberado_por}
+                  quando={o.lote_liberado_em}
+                  nomes={nomes}
+                />
+              </td>
+              <td className="px-2 py-1.5 text-right">
+                {podeBaixar && (
+                  <Botao variante="perigo" onClick={() => onEstornar(o)}>
+                    Estornar
+                  </Botao>
+                )}
+              </td>
+            </tr>
+          ))}
+        </Tabela>
+      </div>
     </div>
   )
 }
