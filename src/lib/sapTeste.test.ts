@@ -4,6 +4,7 @@ import {
   entidadeDe,
   partesDoNome,
   problemaNoCaminho,
+  relatorioComPedido,
   resumoItem,
   tabelaDe,
   textoCelula,
@@ -181,6 +182,60 @@ describe('resumoItem', () => {
     expect(resumoItem({ foo: 'bar' })).toBeNull()
     expect(resumoItem('texto')).toBeNull()
     expect(resumoItem(null)).toBeNull()
+  })
+})
+
+describe('relatorioComPedido', () => {
+  const comPedidoBB5M = {
+    ItemCode: 'SOJ00012',
+    ItemName: 'SS 761 I2X BB5M',
+    QuantityOnStock: 1997,
+    ItemWarehouseInfoCollection: [{ WarehouseCode: 'VEN_GER', InStock: 1977, Committed: 754 }],
+  }
+  const semPedido = {
+    ItemCode: 'SOJ00009',
+    ItemName: 'SS O790 IPRO BB5M',
+    QuantityOnStock: 500,
+    ItemWarehouseInfoCollection: [{ WarehouseCode: 'VEN_GER', InStock: 500, Committed: 0 }],
+  }
+  // achado real de 09/08/2026: item de granel, "embalagem" não é BB5M/BMB
+  const granelComPedido = {
+    ItemCode: 'SOJ00001',
+    ItemName: 'SOJA GRAO ORIUNDO DO CAMPO DE SEMENTES/DESTINADO SEMENTES',
+    QuantityOnStock: 27340586.02,
+    ItemWarehouseInfoCollection: [{ WarehouseCode: 'VEN_GER', InStock: 27340586.02, Committed: 18711 }],
+  }
+
+  it('só lista item com pedido (Committed > 0) e embalagem reconhecida, ordenado do maior déficit', () => {
+    const outroComPedido = {
+      ItemCode: 'SOJ00002',
+      ItemName: 'SS NEO680 IPRO BB5M',
+      QuantityOnStock: 754,
+      ItemWarehouseInfoCollection: [{ WarehouseCode: 'VEN_GER', InStock: 754, Committed: 909 }], // saldoFinal -155
+    }
+    const r = relatorioComPedido([comPedidoBB5M, semPedido, granelComPedido, outroComPedido], 'SOJ')
+    expect(r.totalLido).toBe(4)
+    expect(r.itens.map((i) => i.itemCode)).toEqual(['SOJ00002', 'SOJ00012']) // -155 antes de +1243
+    expect(r.ignorados).toBe(1) // o granel tinha pedido mas embalagem não reconhecida
+  })
+
+  it('item de granel com pedido é contado em ignorados, não aparece na lista', () => {
+    const r = relatorioComPedido([granelComPedido], 'SOJ')
+    expect(r.itens).toEqual([])
+    expect(r.ignorados).toBe(1)
+  })
+
+  it('sem nenhum item com pedido, lista vazia e ignorados zero', () => {
+    const r = relatorioComPedido([semPedido], 'SOJ')
+    expect(r.itens).toEqual([])
+    expect(r.ignorados).toBe(0)
+    expect(r.totalLido).toBe(1)
+  })
+
+  it('item não reconhecível (resumoItem devolveria null) não entra em totalLido nem quebra', () => {
+    const r = relatorioComPedido([comPedidoBB5M, { foo: 'bar' }, 'texto'], 'SOJ')
+    expect(r.totalLido).toBe(1)
+    expect(r.itens).toHaveLength(1)
   })
 })
 

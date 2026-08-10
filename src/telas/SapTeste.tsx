@@ -3,9 +3,11 @@ import { supabase } from '@/lib/supabase'
 import {
   entidadeDe,
   problemaNoCaminho,
+  relatorioComPedido,
   resumoItem,
   tabelaDe,
   textoCelula,
+  type RelatorioComPedido,
   type ResumoItem,
   type TabelaSap,
 } from '@/lib/sapTeste'
@@ -105,6 +107,14 @@ const PRESETS: { nome: string; caminho: string; paginas?: number }[] = [
 // quantas linhas a tabela mostra; o resto vai pelo Exportar
 const LIMITE_LINHAS = 300
 
+// tamanho de cada lote e teto de lotes do relatório por prefixo — 10×100 = até
+// 1000 itens. Cada item pesa ~59KB com a coleção de depósitos (medido em
+// 09/08/2026: SOJ tem 315 itens, 4 lotes, ~24MB no total); pedir tudo numa
+// chamada só arrisca estourar o limite de resposta da Edge Function, então
+// cada lote é uma chamada própria, acumulada aqui na tela.
+const TAMANHO_LOTE = 100
+const MAX_LOTES = 10
+
 /** Tabela genérica com o aviso de colunas cortadas e o corte de linhas — usada
  *  tanto pro resultado principal quanto pras coleções aninhadas de uma entidade
  *  (ex.: ItemWarehouseInfoCollection dentro de um Items('CODIGO')). */
@@ -146,26 +156,32 @@ function TabelaResultado({ tabela }: { tabela: TabelaSap }) {
 function NumeroResumo({
   rotulo,
   valor,
-  destaque,
+  // 'auto': cor pelo sinal do PRÓPRIO valor (certo pra "saldo final", que pode
+  // ser negativo ou positivo). 'critico'/'ok': cor fixa — necessário pra uma
+  // contagem ou soma que é sempre má notícia mesmo sendo um número positivo
+  // (ex.: "quantos itens estão negativos" é sempre exibido em vermelho).
+  tom,
   titulo,
 }: {
   rotulo: string
   valor: number
-  destaque?: boolean
+  tom?: 'auto' | 'critico' | 'ok'
   titulo?: string
 }) {
+  const cor =
+    tom === 'critico'
+      ? 'text-red-600 dark:text-red-400'
+      : tom === 'ok'
+        ? 'text-emerald-700 dark:text-emerald-400'
+        : tom === 'auto'
+          ? valor < 0
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-emerald-700 dark:text-emerald-400'
+          : ''
   return (
     <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800" title={titulo}>
       <p className="text-[10px] uppercase tracking-wide text-stone-500">{rotulo}</p>
-      <p
-        className={`num-tabular mt-0.5 text-2xl font-bold ${
-          destaque
-            ? valor < 0
-              ? 'text-red-600 dark:text-red-400'
-              : 'text-emerald-700 dark:text-emerald-400'
-            : ''
-        }`}
-      >
+      <p className={`num-tabular mt-0.5 text-2xl font-bold ${cor}`}>
         {valor.toLocaleString('pt-BR')}
       </p>
     </div>
@@ -176,10 +192,14 @@ export default function SapTeste() {
   const [caminho, setCaminho] = useState(PRESETS[0].caminho)
   const [paginas, setPaginas] = useState(1)
   const [itemCode, setItemCode] = useState('SOJ00002')
+  const [prefixo, setPrefixo] = useState('SOJ')
   const [carregando, setCarregando] = useState(false)
+  const [progresso, setProgresso] = useState('')
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<Resultado | null>(null)
   const [resumo, setResumo] = useState<ResumoItem | null>(null)
+  const [relatorio, setRelatorio] = useState<RelatorioComPedido | null>(null)
+  const [relatorioCapAtingido, setRelatorioCapAtingido] = useState(false)
 
   async function executar(cam: string, pags: number) {
     if (carregando) return // Enter repetido não dispara consultas concorrentes
@@ -187,7 +207,8 @@ export default function SapTeste() {
     setPaginas(pags)
     setCarregando(true)
     setErro(null)
-    setResumo(null) // um resultado por vez — some o painel do resumo anterior
+    setResumo(null) // um resultado por vez — some os outros painéis
+    setRelatorio(null)
     const inicio = performance.now()
     const r = await chamarSap(cam, pags)
     if (!r.ok) {
@@ -210,8 +231,9 @@ export default function SapTeste() {
     if (carregando || !codigo) return
     setCarregando(true)
     setErro(null)
-    setResultado(null) // um resultado por vez — some a tabela genérica anterior
+    setResultado(null) // um resultado por vez — some os outros painéis
     setResumo(null)
+    setRelatorio(null)
 
     const r = await chamarSap(`Items('${codigo}')`, 1)
     if (!r.ok) {
@@ -225,6 +247,52 @@ export default function SapTeste() {
     } else {
       setResumo(calculado)
     }
+    setCarregando(false)
+  }
+
+  /**
+   * Todos os itens de um prefixo (`SOJ`, `INS`...) que têm pedido em aberto,
+   * do maior déficit pro maior excedente — o que antes só saía num script
+   * avulso (09/08/2026), agora dentro do app.
+   *
+   * Busca em lotes de TAMANHO_LOTE via `$skip`, em vez de pedir tudo numa
+   * chamada só: cada item pesa ~59KB com a coleção de depósitos (medido com
+   * SOJ), e um prefixo com muitos itens numa resposta só arrisca estourar o
+   * limite de tamanho da Edge Function.
+   */
+  async function buscarComPedido(pref: string) {
+    if (carregando || !pref) return
+    setCarregando(true)
+    setErro(null)
+    setResultado(null) // um resultado por vez — some os outros painéis
+    setResumo(null)
+    setRelatorio(null)
+    setRelatorioCapAtingido(false)
+
+    const todosOsItens: unknown[] = []
+    let capAtingido = false
+    for (let lote = 0; lote < MAX_LOTES; lote++) {
+      setProgresso(`Lendo itens ${lote * TAMANHO_LOTE + 1}–${(lote + 1) * TAMANHO_LOTE}…`)
+      const skip = lote * TAMANHO_LOTE
+      const r = await chamarSap(
+        `Items?$filter=startswith(ItemCode,'${pref}')&$orderby=ItemCode&$top=${TAMANHO_LOTE}&$skip=${skip}`,
+        1,
+      )
+      if (!r.ok) {
+        setErro(r.erro)
+        setCarregando(false)
+        setProgresso('')
+        return
+      }
+      const pagina = (r.dados as { value?: unknown[] } | null)?.value ?? []
+      todosOsItens.push(...pagina)
+      if (pagina.length < TAMANHO_LOTE) break
+      if (lote === MAX_LOTES - 1) capAtingido = true
+    }
+
+    setProgresso('')
+    setRelatorioCapAtingido(capAtingido)
+    setRelatorio(relatorioComPedido(todosOsItens, pref))
     setCarregando(false)
   }
 
@@ -287,6 +355,34 @@ export default function SapTeste() {
         </div>
       </Cartao>
 
+      <Cartao titulo="Relatório: itens com pedido em aberto" className="mb-5">
+        <p className="mb-2 text-xs text-stone-500">
+          Todos os itens do prefixo com saldo × pedido (<code>Committed</code>) × saldo final,
+          do maior déficit pro maior excedente. Lê em lotes de {TAMANHO_LOTE} — pode levar
+          alguns segundos pra prefixos com muitos itens (SOJ tem 315).
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-stone-500">Prefixo</span>
+            <input
+              value={prefixo}
+              onChange={(e) => setPrefixo(e.target.value.trim().toUpperCase())}
+              className="w-28 rounded border border-stone-300 px-2 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800"
+            />
+          </label>
+          <Botao
+            variante="primario"
+            disabled={carregando || !prefixo}
+            onClick={() => buscarComPedido(prefixo)}
+          >
+            Itens com pedido
+          </Botao>
+          {carregando && progresso && (
+            <span className="text-xs text-stone-500">{progresso}</span>
+          )}
+        </div>
+      </Cartao>
+
       <Cartao titulo="Caminho livre (OData)" className="mb-5">
         <p className="mb-2 text-xs text-stone-500">
           O que vier depois de <code>/b1s/v1/</code> — ex.:{' '}
@@ -322,7 +418,7 @@ export default function SapTeste() {
 
       {erro && <Erro>{erro}</Erro>}
 
-      {carregando && <Vazio>Consultando o SAP…</Vazio>}
+      {carregando && <Vazio>{progresso || 'Consultando o SAP…'}</Vazio>}
 
       {!carregando && resumo && (
         <Cartao titulo={`Resumo — ${resumo.itemCode}`} className="mb-5">
@@ -349,7 +445,7 @@ export default function SapTeste() {
               valor={resumo.totalPedidos}
               titulo="Soma do Committed (reservado em pedidos de venda abertos) de todos os depósitos"
             />
-            <NumeroResumo rotulo="Saldo final" valor={resumo.saldoFinal} destaque />
+            <NumeroResumo rotulo="Saldo final" valor={resumo.saldoFinal} tom="auto" />
           </div>
 
           <p className="mb-2 text-xs font-semibold text-stone-500">
@@ -374,6 +470,102 @@ export default function SapTeste() {
           )}
         </Cartao>
       )}
+
+      {!carregando && relatorio && (() => {
+        const negativos = relatorio.itens.filter((i) => i.saldoFinal < 0)
+        const positivos = relatorio.itens.length - negativos.length
+        const faltaTotal = negativos.reduce((s, i) => s + Math.abs(i.saldoFinal), 0)
+        return (
+          <Cartao
+            titulo={`Itens ${relatorio.prefixo}* com pedido — ${relatorio.itens.length}`}
+            className="mb-5"
+            acoes={
+              relatorio.itens.length > 0 ? (
+                <Botao
+                  onClick={() =>
+                    exportarCsv('itens-com-pedido', [
+                      ['Item', 'Cultivar', 'Embalagem', 'Semente', 'Saldo', 'EmPedidos', 'SaldoFinal'],
+                      ...relatorio.itens.map((i) => [
+                        i.itemCode, i.cultivar, i.embalagem, i.tratado ? 'Tratada' : 'Branca',
+                        i.saldoTotal, i.totalPedidos, i.saldoFinal,
+                      ]),
+                    ])
+                  }
+                >
+                  Exportar
+                </Botao>
+              ) : undefined
+            }
+          >
+            {relatorioCapAtingido && (
+              <div className="mb-3">
+                <Aviso>
+                  Parou em {MAX_LOTES * TAMANHO_LOTE} itens lidos — pode haver mais itens
+                  {' '}"{relatorio.prefixo}*" no SAP além desse teto.
+                </Aviso>
+              </div>
+            )}
+            {relatorio.ignorados > 0 && (
+              <p className="mb-3 text-xs text-stone-500">
+                {relatorio.ignorados} item(ns) com pedido ignorado(s) por não ter embalagem
+                reconhecida (BB5M/BMB) — provavelmente matéria-prima/granel, não lote de
+                cultivar.
+              </p>
+            )}
+            {relatorio.itens.length === 0 ? (
+              <Vazio>
+                Nenhum item "{relatorio.prefixo}*" com pedido em aberto ({relatorio.totalLido}
+                {' '}lido(s)).
+              </Vazio>
+            ) : (
+              <>
+                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <NumeroResumo rotulo={`Itens ${relatorio.prefixo}* lidos`} valor={relatorio.totalLido} />
+                  <NumeroResumo rotulo="Com saldo negativo" valor={negativos.length} tom="critico" />
+                  <NumeroResumo rotulo="Com saldo positivo" valor={positivos} tom="ok" />
+                  <NumeroResumo rotulo="Falta total (negativos)" valor={faltaTotal} tom="critico" />
+                </div>
+                <Tabela
+                  cabecalho={[
+                    'Item', 'Cultivar', 'Emb.', 'Semente', '#Saldo', '#Em pedidos', '#Saldo final',
+                  ]}
+                >
+                  {relatorio.itens.map((i) => (
+                    <tr
+                      key={i.itemCode}
+                      className={`border-t border-stone-100 dark:border-stone-800/60 ${
+                        i.saldoFinal < 0
+                          ? 'border-l-4 border-l-red-500'
+                          : 'border-l-4 border-l-emerald-500'
+                      }`}
+                    >
+                      <td className="px-2 py-1.5 font-medium whitespace-nowrap">{i.itemCode}</td>
+                      <td className="px-2 py-1.5">{i.cultivar || '—'}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{i.embalagem}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{i.tratado ? 'Tratada' : 'Branca'}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {i.saldoTotal.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {i.totalPedidos.toLocaleString('pt-BR')}
+                      </td>
+                      <td
+                        className={`num-tabular px-2 py-1.5 text-right font-semibold ${
+                          i.saldoFinal < 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-emerald-700 dark:text-emerald-400'
+                        }`}
+                      >
+                        {i.saldoFinal.toLocaleString('pt-BR')}
+                      </td>
+                    </tr>
+                  ))}
+                </Tabela>
+              </>
+            )}
+          </Cartao>
+        )
+      })()}
 
       {!carregando && resultado && (
         <Cartao

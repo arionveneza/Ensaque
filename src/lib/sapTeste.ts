@@ -198,6 +198,41 @@ export function resumoItem(itemJson: unknown): ResumoItem | null {
   }
 }
 
+/**
+ * Embalagens que o app reconhece (mesmo de-para de
+ * `src/dominio/importacao/simpleagro.ts`, `EMBALAGEM_DEPARA`). Item cujo
+ * último token do nome não é uma dessas não é lote de cultivar — é matéria-
+ * prima/granel (ex.: `SOJ00001`, "GRAO ORIUNDO DO CAMPO DE
+ * SEMENTES/DESTINADO SEMENTES", saldo na casa de milhões) — mesma regra que
+ * a SimpleAgro já usa pra jogar granel fora do balanço.
+ */
+const EMBALAGENS_RECONHECIDAS = new Set(['BB5M', 'BMB'])
+
+export interface RelatorioComPedido {
+  prefixo: string
+  /** quantos itens do prefixo existem no SAP, antes de qualquer filtro */
+  totalLido: number
+  /** itens com pedido (Committed > 0) E embalagem reconhecida — a lista que a tela mostra */
+  itens: ResumoItem[]
+  /** tinham pedido mas embalagem não reconhecida (granel/matéria-prima) — contados, não escondidos */
+  ignorados: number
+}
+
+/**
+ * Resumo de TODOS os itens de um prefixo (`SOJ`, `INS`...) que têm pedido em
+ * aberto, ordenado do maior déficit pro maior excedente.
+ *
+ * `itensJson` já vem paginado por fora (ver `buscarItensComPedido` na tela) —
+ * esta função só calcula, não busca; fica testável sem rede.
+ */
+export function relatorioComPedido(itensJson: unknown[], prefixo: string): RelatorioComPedido {
+  const todos = itensJson.map(resumoItem).filter((r): r is ResumoItem => r !== null)
+  const comPedido = todos.filter((r) => r.totalPedidos > 0)
+  const itens = comPedido.filter((r) => EMBALAGENS_RECONHECIDAS.has(r.embalagem))
+  itens.sort((a, b) => a.saldoFinal - b.saldoFinal)
+  return { prefixo, totalLido: todos.length, itens, ignorados: comPedido.length - itens.length }
+}
+
 /** Tamanho máximo de uma célula renderizada — trava JSON/valor gigante. */
 const MAX_CELULA = 200
 
