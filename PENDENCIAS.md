@@ -103,11 +103,17 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
 - [x] `supabase/fecha-rpc-sem-guarda.sql` — aplicado e confirmado em produção em 08/08/2026
       (as duas RPCs recusam anônimo com `42501`, `tem_acao()` devolve `false` nunca `null`).
 - [x] `supabase/trancar-rpc-anon.sql` — aplicado e confirmado em 08/08/2026. Ver §5.
-- [ ] `supabase/liberacao-lote-por-ordem.sql` — **pendente**, decisão de 10/08/2026: liberação de
-      lote passa a ser por ORDEM, não por lote inteiro (ver `CLAUDE.md` §1, "Lotes de semente").
-      Recria a cadeia toda de views (`v_ordens` e as 5 dependentes) e as RPCs `baixar_lote`/
-      `estornar_lote` com assinatura nova (1 arg em vez de 3/2). De brinde, corrige a
-      armadilha abaixo (`v_ordens` sem as colunas de reprogramação).
+- [x] `supabase/liberacao-lote-por-ordem.sql` — aplicado e confirmado em produção em 10/08/2026:
+      liberação de lote passa a ser por ORDEM, não por lote inteiro (ver `CLAUDE.md` §1,
+      "Lotes de semente"). Recriou a cadeia toda de views (`v_ordens` e as 5 dependentes,
+      as 6 com `security_invoker`) e as RPCs `baixar_lote`/`estornar_lote` com assinatura
+      nova (1 arg em vez de 3/2, sem ambiguidade). De brinde, corrigiu a armadilha abaixo
+      (`v_ordens` sem as colunas de reprogramação). Backfill liberou 3 ordens que já
+      estavam efetivamente prontas. Na primeira tentativa o backfill falhou com "Editar a
+      ordem exige a acao Editar" — rodar UPDATE em `ordens` pelo SQL Editor não tem usuário
+      logado, e a checagem dedicada de `lote_liberado_*` em `tg_ordens_por_acao` exige
+      `tem_acao('lotes','baixar_lote')`, sempre `false` sem sessão; corrigido desligando só
+      esse gatilho em volta do UPDATE do backfill.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
@@ -214,6 +220,23 @@ rodar e conferir que só sobram os 3 ajudantes.
 ---
 
 ## Armadilhas já pagas — não repetir
+
+**Backfill de migração por UPDATE direto em `ordens` pode ser recusado pela própria checagem
+de permissão que ele acabou de criar — achado em 10/08/2026.** O SQL Editor do Supabase não
+tem usuário logado: `auth.uid()` é `null`, então `meu_perfil()` é `null` e `tem_acao(...)`
+devolve **sempre `false`** (é a blindagem anti-NULL de 08/08 fazendo o trabalho certo — só que
+aqui contra quem não devia). Qualquer coluna de `ordens` que ganhe checagem DEDICADA em
+`fn_ordens_por_acao` (padrão usado por `prioridade_*`, `agrotis_*`, e agora `lote_liberado_*`)
+vira um UPDATE-de-DBA impossível de rodar puro pelo editor: a checagem dispara e recusa com
+"Editar a ordem exige a acao Editar", mesmo a migração estando certa. Reordenar os passos do
+script (criar a função antes do backfill) NÃO resolve — o problema não é qual versão da função
+está ativa, é que `tem_acao()` é `false` para QUALQUER versão sem sessão. A saída é desligar só
+o gatilho específico em volta do UPDATE: `alter table ordens disable trigger tg_ordens_por_acao;`
+... `update ...` ... `alter table ordens enable trigger tg_ordens_por_acao;` — cirúrgico, os
+outros gatilhos de `ordens` (ex.: `fn_ordem_imutavel`) continuam de pé. Ao escrever nova
+migração que dê `alter table ... add column` seguido de backfill nessa MESMA coluna, e a coluna
+for entrar em checagem dedicada (não só no `ignorar` genérico), já sair com esse disable/enable
+em volta do UPDATE.
 
 **Ordenar a fila por urgência DEPOIS de gravar a sequência faz o arraste parecer quebrado.**
 O quadro da Programação ordenava por `(urgente, seq)`. Arrastar uma ordem normal para o topo
