@@ -48,6 +48,8 @@ export interface LinhaOrdem {
   status: StatusPersistido
   fim_pendente: boolean
   bags_produzidos: number | null
+  /** Liberação DESTA ordem — por ordem, não pelo lote inteiro (10/08/2026). */
+  lote_liberado_em: string | null
   lotes_semente: {
     id: string
     cultivar: string
@@ -79,6 +81,7 @@ const SELECT_ORDEM = `
   id, numero, cultivar, receita_id, embalagem, bags, lote_id, cliente, observacao,
   armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente, bags_produzidos,
+  lote_liberado_em,
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status ),
   receitas ( nome, receita_itens ( produto_id, dose ) ),
   ordem_produtos ( produto_id, tanque ),

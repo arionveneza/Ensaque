@@ -280,7 +280,7 @@ function FragmentoMaquina({
         <td colSpan={2}></td>
       </tr>
       {lista.map((o, idx) => {
-        const status = statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status)
+        const status = statusEfetivo(paraOrdemDominio(o))
         return (
           <tr
             key={o.id}
@@ -375,10 +375,7 @@ function CardMaquina({
   // máquina livre: NÃO aponta a próxima — a sequência é sugestão do PCP, e é
   // o operador quem decide qual ordem vai entrar (pedido da operação, 06/08)
   const prontas = !atual
-    ? ordens.filter(
-        (o) =>
-          statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status) === 'Pronto para produzir',
-      ).length
+    ? ordens.filter((o) => statusEfetivo(paraOrdemDominio(o)) === 'Pronto para produzir').length
     : 0
 
   return (

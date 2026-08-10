@@ -27,6 +27,7 @@ export function paraOrdemDominio(l: LinhaOrdem): Ordem {
     seq: l.seq,
     turnoId: (l.turno_id as 1 | 2 | null) ?? null,
     status: l.status,
+    loteLiberadoEm: l.lote_liberado_em ? ms(l.lote_liberado_em) : null,
     eventos: l.ordem_eventos.map((e) => ({ tipo: e.tipo, ts: ms(e.ts) })),
     paradas: l.ordem_paradas.map((p) => ({
       motivoId: p.motivo_id,

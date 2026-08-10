@@ -116,7 +116,7 @@ export default function Painel({ onSair }: { onSair: () => void }) {
     const capDe = (id: string | null) =>
       cadastros?.maquinas.find((m) => m.id === id)?.capacidade_th ?? 12
     for (const o of ordens) {
-      const st = statusEfetivo(paraOrdemDominio(o), o.lotes_semente.status)
+      const st = statusEfetivo(paraOrdemDominio(o))
       if (!FINALIZADAS.includes(st)) continue
       ordensFin++
       // tonelagem pelos bags PRODUZIDOS, para casar com o card ao lado (e não

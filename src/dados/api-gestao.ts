@@ -45,6 +45,13 @@ export interface OrdemVisao {
   /** Quantas vezes mudou de dia. */
   reprogramacoes?: number | null
   reprogramada_em?: string | null
+  /**
+   * Liberação DESTA ordem pela logística — por ordem, não pelo lote
+   * inteiro (10/08/2026). Null = aguardando; uma ordem nova do mesmo
+   * lote de outra já liberada nasce null, nunca herda a liberação dela.
+   */
+  lote_liberado_em: string | null
+  lote_liberado_por: string | null
 }
 
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
@@ -335,24 +342,26 @@ export async function criarLote(l: {
  * sobrava lote Baixado sem movimento (baixa fantasma que liberava produção
  * sem separação física). A RPC roda as duas numa transação só; quem decide
  * quem pode é a matriz da Administração, via `tem_acao()` no banco.
- * Requer supabase/baixa-atomica-e-rls-apontamento.sql e
- * matriz-permissoes-no-banco.sql aplicados.
+ *
+ * Libera POR ORDEM (10/08/2026), não o lote inteiro: uma viagem ao depósito
+ * continua liberando várias ordens de uma vez (isso é físico), mas só as
+ * que estão abertas E ainda sem liberação NESTE momento — a RPC calcula
+ * bags/peso sozinha a partir delas, então não recebe mais esses valores
+ * como parâmetro (evita divergir do que o front somou no clique).
+ * Requer supabase/liberacao-lote-por-ordem.sql aplicado.
  */
-export async function baixarLote(loteId: string, bags: number, pesoT: number): Promise<void> {
-  const { error } = await supabase.rpc('baixar_lote', {
-    p_lote: loteId,
-    p_bags: bags,
-    p_peso_t: pesoT,
-  })
+export async function baixarLote(loteId: string): Promise<void> {
+  const { error } = await supabase.rpc('baixar_lote', { p_lote: loteId })
   erro('baixar lote', error)
 }
 
 /**
  * Estorno, mesma transação da baixa. O trigger do banco recusa se qualquer
  * ordem do lote já foi iniciada — a mensagem que volta é a do próprio banco.
+ * Desfaz a liberação só das ordens que ainda não começaram.
  */
-export async function estornarLote(loteId: string, bags: number): Promise<void> {
-  const { error } = await supabase.rpc('estornar_lote', { p_lote: loteId, p_bags: bags })
+export async function estornarLote(loteId: string): Promise<void> {
+  const { error } = await supabase.rpc('estornar_lote', { p_lote: loteId })
   erro('estornar lote', error)
 }
 

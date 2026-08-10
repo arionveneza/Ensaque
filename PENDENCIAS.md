@@ -11,7 +11,7 @@ Atualizado em 05/08/2026 (noite — correções de RLS e baixa atômica).
 | Repositório | `arionveneza/Ensaque` (público) — `push` na `main` roda os testes e republica |
 | Banco | Supabase `Sistema_de_ensaque`, projeto `ztwmrhfloelqxhhpdmoz`, schema **`tsi`** |
 | Telas | As 8 implementadas: Ordens, Programação, Lotes, Execução, Qualidade, Indicadores, Cadastros, Administração |
-| Testes | 153, rodam antes de cada deploy — teste vermelho não publica |
+| Testes | 308, rodam antes de cada deploy — teste vermelho não publica |
 | Integração SAP | **Laboratório no app** (aba "SAP (teste)", só p/ Arion, homolog só-leitura via Edge Function `sap-teste`). Caminho validado em 09/08/2026: Basic Auth + endpoint de homolog + saldo por lote. Produção espera a autorização de `SQLQueries` — ver `docs/integracao-sap.md` |
 
 Rodar local: `npm install`, depois `npm run dev` · `npm test` · `npm run build`.
@@ -103,6 +103,11 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
 - [x] `supabase/fecha-rpc-sem-guarda.sql` — aplicado e confirmado em produção em 08/08/2026
       (as duas RPCs recusam anônimo com `42501`, `tem_acao()` devolve `false` nunca `null`).
 - [x] `supabase/trancar-rpc-anon.sql` — aplicado e confirmado em 08/08/2026. Ver §5.
+- [ ] `supabase/liberacao-lote-por-ordem.sql` — **pendente**, decisão de 10/08/2026: liberação de
+      lote passa a ser por ORDEM, não por lote inteiro (ver `CLAUDE.md` §1, "Lotes de semente").
+      Recria a cadeia toda de views (`v_ordens` e as 5 dependentes) e as RPCs `baixar_lote`/
+      `estornar_lote` com assinatura nova (1 arg em vez de 3/2). De brinde, corrige a
+      armadilha abaixo (`v_ordens` sem as colunas de reprogramação).
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
@@ -365,6 +370,19 @@ a linha de baixo — só apareceu testando no celular de verdade, o code review 
 pegou. Corrigido empilhando por padrão (`flex-col`) e só virando `sm:flex-row` a partir do
 tablet, onde sempre coube. Regra: `flex-1` ao lado de um irmão de largura fixa É candidato a
 colapsar no mobile — testar ou preferir empilhar por padrão.
+
+**View `select o.*` NÃO ganha coluna nova sozinha — achado em 10/08/2026.** Uma view criada com
+`o.*` congela a lista de colunas no momento do `create`/`replace`; `alter table ... add column`
+depois não aparece nela até um `create or replace view` (ou, se a coluna precisa entrar no meio
+de colunas explícitas depois do `*`, um `drop view ... cascade` + recriação completa — Postgres
+não deixa reposicionar coluna por `replace`). Foi assim que `v_ordens` ficou **sem**
+`data_prog_original`/`reprogramacoes`/`reprogramada_em` (adicionadas em 08/08/2026): o
+comentário no script de origem dizia "a view já expõe sem recriar nada" — verificado como falso
+contra o banco real (REST API, login de teste) antes de confiar. As colunas "Dia original" e
+"Reprogramada" do relatório de Ordens ficaram silenciosamente vazias por 2 dias. Corrigido de
+brinde em `supabase/liberacao-lote-por-ordem.sql`, que já precisava recriar a view em cascata
+por outro motivo. Regra: **toda vez que a view mudar, comparar o `pg_get_viewdef` contra o
+banco**, nunca contra o que o último script de origem diz que criou.
 
 **Tabela com coluna oculta redistribui a largura livre sem avisar (08/08/2026).**
 `table-layout: auto` (padrão do HTML) manda a largura que uma `hidden lg:table-cell` liberou

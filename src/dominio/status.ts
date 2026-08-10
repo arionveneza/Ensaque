@@ -5,7 +5,7 @@
  * a ordem, ela é registro histórico e nada que afete medição pode mudar.
  */
 
-import type { Ordem, StatusEfetivo, StatusLote } from './tipos'
+import type { Ordem, StatusEfetivo } from './tipos'
 
 export interface PermissoesStatus {
   editar: boolean
@@ -71,12 +71,16 @@ export function jaIniciada(status: StatusEfetivo): boolean {
 
 /**
  * Status efetivo da ordem. 'Aguardando lote' e 'Pronto para produzir' são
- * derivados da baixa do lote — nunca persistidos.
+ * derivados — nunca persistidos — mas a partir de 10/08/2026 olham a
+ * liberação DESTA ordem (`ordem.loteLiberadoEm`), não mais o status do
+ * lote inteiro: baixar libera bags para as ordens abertas NAQUELE momento,
+ * e uma ordem criada depois não deve nascer pronta só porque o lote já
+ * tinha sido baixado para outra — nem herdar sobra de uma ordem cancelada.
  */
-export function statusEfetivo(ordem: Ordem, statusLote: StatusLote): StatusEfetivo {
+export function statusEfetivo(ordem: Ordem): StatusEfetivo {
   if (jaIniciada(ordem.status)) return ordem.status
   if (!ordem.maquinaId) return 'Nao programada'
-  return statusLote === 'Em estoque' ? 'Aguardando lote' : 'Pronto para produzir'
+  return ordem.loteLiberadoEm == null ? 'Aguardando lote' : 'Pronto para produzir'
 }
 
 export function permissoes(status: StatusEfetivo): PermissoesStatus {

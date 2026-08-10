@@ -177,6 +177,12 @@ export interface Ordem {
   /** Derivado do horário real do início. Nunca programado. */
   turnoId: 1 | 2 | null
   status: StatusPersistido
+  /**
+   * Quando a logística liberou bags o suficiente para ESTA ordem —
+   * por ordem, não por lote (decisão de 10/08/2026): uma ordem nova
+   * nunca nasce liberada só porque o lote já foi baixado para outra.
+   */
+  loteLiberadoEm: number | null
   eventos: EventoOrdem[]
   paradas: Parada[]
   tanques: TanqueOrdem[]

@@ -14,26 +14,36 @@ const ordem = (over: Partial<Ordem> = {}): Ordem => ({
   id: 'o1', numero: '79500-1', cultivar: '761 I2X', receitaId: 'R1',
   embalagem: 'BG5M', bags: 45, loteId: 'L-4412', prioridade: 'Normal',
   maquinaId: 'TSI1', dataProg: '2026-07-28', seq: 1, turnoId: null,
-  status: 'Programada', eventos: [], paradas: [], tanques: [],
+  status: 'Programada', loteLiberadoEm: null, eventos: [], paradas: [], tanques: [],
   ...over,
 })
 
-describe('status derivado da baixa do lote', () => {
+describe('status derivado da liberacao do lote (por ordem, nao por lote inteiro)', () => {
   it('sem maquina a ordem esta fora da programacao', () => {
-    expect(statusEfetivo(ordem({ maquinaId: null }), 'Baixado')).toBe('Nao programada')
+    expect(statusEfetivo(ordem({ maquinaId: null }))).toBe('Nao programada')
   })
 
-  it('lote em estoque deixa a ordem aguardando', () => {
-    expect(statusEfetivo(ordem(), 'Em estoque')).toBe('Aguardando lote')
+  it('sem liberacao a ordem fica aguardando', () => {
+    expect(statusEfetivo(ordem({ loteLiberadoEm: null }))).toBe('Aguardando lote')
   })
 
-  it('lote baixado libera a ordem', () => {
-    expect(statusEfetivo(ordem(), 'Baixado')).toBe('Pronto para produzir')
+  it('liberada, a ordem fica pronta', () => {
+    expect(statusEfetivo(ordem({ loteLiberadoEm: 1723000000000 }))).toBe('Pronto para produzir')
   })
 
-  it('status ja iniciado nao e sobrescrito pelo lote', () => {
-    expect(statusEfetivo(ordem({ status: 'Em producao' }), 'Em estoque')).toBe('Em producao')
-    expect(statusEfetivo(ordem({ status: 'Apontada' }), 'Em estoque')).toBe('Apontada')
+  it('status ja iniciado nao e sobrescrito pela liberacao', () => {
+    expect(statusEfetivo(ordem({ status: 'Em producao', loteLiberadoEm: null }))).toBe('Em producao')
+    expect(statusEfetivo(ordem({ status: 'Apontada', loteLiberadoEm: null }))).toBe('Apontada')
+  })
+
+  // o caso real que motivou a mudanca: ordem B, do MESMO lote da ordem A
+  // (ja liberada), nasce SEM liberacao -- nao existe mais "lote baixado"
+  // como estado do lote inteiro that A e B leem juntas.
+  it('duas ordens do mesmo lote podem ter liberacao diferente', () => {
+    const a = ordem({ id: 'a', loteLiberadoEm: 1723000000000 })
+    const b = ordem({ id: 'b', loteLiberadoEm: null })
+    expect(statusEfetivo(a)).toBe('Pronto para produzir')
+    expect(statusEfetivo(b)).toBe('Aguardando lote')
   })
 })
 

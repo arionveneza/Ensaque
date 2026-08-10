@@ -13,11 +13,21 @@ import {
 
 type Periodo = 'dia' | 'semana' | 'mes'
 
-/** Um lote com as ordens que dependem dele — o que a tela lista. */
+/**
+ * Um lote com as ordens que dependem dele — o que a tela lista.
+ *
+ * A liberação é POR ORDEM desde 10/08/2026 (não mais um flag do lote
+ * inteiro): `aLiberar` é o que falta liberar AGORA (o botão "Baixar"
+ * cobre só essas), `liberadas` é o que já foi liberado e pode ser
+ * estornado. Uma ordem nova do mesmo lote de outra já liberada entra
+ * em `aLiberar`, mesmo que o lote já tenha sido baixado antes.
+ */
 type LoteAgregado = {
   lote: LoteSementeLinha
   dependentes: OrdemVisao[]
   abertas: OrdemVisao[]
+  aLiberar: OrdemVisao[]
+  liberadas: OrdemVisao[]
   bagsNecessarios: number
   pesoT: number
   critico: boolean
@@ -94,17 +104,23 @@ export default function Lotes() {
         const abertas = dependentes.filter(
           (o) => !jaIniciada(o.status_efetivo as StatusEfetivo),
         )
-        const bagsNecessarios = abertas.reduce((a, o) => a + o.bags, 0)
-        const pesoT = abertas.reduce((a, o) => a + o.peso_t, 0)
-        const temUrgente = abertas.some((o) => o.prioridade === 'Urgente')
+        // por ordem, não pelo lote inteiro: uma ordem nova nasce em
+        // aLiberar mesmo que outra do mesmo lote já esteja liberada
+        const aLiberar = abertas.filter((o) => !o.lote_liberado_em)
+        const liberadas = abertas.filter((o) => o.lote_liberado_em)
+        const bagsNecessarios = aLiberar.reduce((a, o) => a + o.bags, 0)
+        const pesoT = aLiberar.reduce((a, o) => a + o.peso_t, 0)
+        const temUrgente = aLiberar.some((o) => o.prioridade === 'Urgente')
         return {
           lote: l,
           dependentes,
           abertas,
+          aLiberar,
+          liberadas,
           bagsNecessarios,
           pesoT,
-          /** Trava ordem urgente: lote ainda em estoque com ordem urgente esperando. */
-          critico: l.status === 'Em estoque' && temUrgente,
+          /** Trava ordem urgente: ainda falta liberar bags para ela. */
+          critico: temUrgente,
           /** Baixado e sem nenhuma ordem: devolver ao estoque. */
           orfao: l.status === 'Baixado' && dependentes.length === 0,
         }
@@ -115,13 +131,14 @@ export default function Lotes() {
       )
   }, [lotes, ordens])
 
-  const aBaixar = agregado.filter((a) => a.lote.status === 'Em estoque' && a.abertas.length > 0)
+  const aBaixar = agregado.filter((a) => a.aLiberar.length > 0)
   const orfaos = agregado.filter((a) => a.orfao)
   const criticos = agregado.filter((a) => a.critico)
-  // Baixado e AINDA com ordem: some das duas listas acima, e era o único
-  // caminho para desfazer uma baixa errada — sem isto o lote baixado por
-  // engano ficava invisível, sem botão de estorno em lugar nenhum.
-  const baixados = agregado.filter((a) => a.lote.status === 'Baixado' && !a.orfao)
+  // Tem ordem liberada (e ainda não iniciada): é o único caminho para
+  // desfazer uma liberação errada — sem isto ficava invisível, sem botão
+  // de estorno em lugar nenhum. Pode aparecer também em "A baixar" ao
+  // mesmo tempo, se outra ordem do mesmo lote ainda espera liberação.
+  const baixados = agregado.filter((a) => a.liberadas.length > 0)
 
   // etapa da logística: conferir fisicamente o estoque das finalizadas
   const FINALIZADAS = ['Finalizada', 'Qualidade apontada', 'Apontada']
@@ -150,7 +167,7 @@ export default function Lotes() {
   return (
     <Pagina
       titulo="Logística"
-      descricao="Baixa de lote e conferência de estoque. A baixa é do lote, não da ordem: baixar um lote libera todas as ordens que dependem dele."
+      descricao="Baixa de lote e conferência de estoque. Um clique libera de uma vez todas as ordens em aberto daquele lote — mas a liberação é registrada por ordem: uma ordem nova, criada depois, nasce sempre aguardando, mesmo que o lote já tenha sido baixado para outras."
     >
       {erro && <Erro>{erro}</Erro>}
 
@@ -181,9 +198,7 @@ export default function Lotes() {
               item={a}
               podeBaixar={podeBaixar}
               nomeMaquina={nomeMaquina}
-              onBaixar={() =>
-                comErro(() => g.baixarLote(a.lote.id, a.bagsNecessarios, a.pesoT))
-              }
+              onBaixar={() => comErro(() => g.baixarLote(a.lote.id))}
             />
           ))}
         </div>
@@ -224,9 +239,7 @@ export default function Lotes() {
                         variante="perigo"
                         disabled={!permissao.permitido}
                         titulo={permissao.motivo}
-                        onClick={() =>
-                          comErro(() => g.estornarLote(a.lote.id, a.lote.bags_disp ?? 0))
-                        }
+                        onClick={() => comErro(() => g.estornarLote(a.lote.id))}
                       >
                         Estornar
                       </Botao>
@@ -260,8 +273,13 @@ export default function Lotes() {
                     {n(a.lote.peso_bag_kg, 0)} kg
                   </td>
                   <td className="px-2 py-2 text-xs text-stone-500">
-                    {a.dependentes.length} ordem(ns)
-                    {a.abertas.length < a.dependentes.length && (
+                    {a.liberadas.length} liberada(s)
+                    {a.aLiberar.length > 0 && (
+                      <span className="ml-1">
+                        <Tag cor="alerta">{a.aLiberar.length} aguardando</Tag>
+                      </span>
+                    )}
+                    {a.dependentes.length > a.abertas.length && (
                       <span className="ml-1">
                         <Tag cor="neutro">
                           {a.dependentes.length - a.abertas.length} já iniciada(s)
@@ -284,7 +302,7 @@ export default function Lotes() {
                         titulo={permissao.motivo}
                         onClick={() => {
                           if (!confirm(`Estornar a baixa do lote ${a.lote.id}?`)) return
-                          comErro(() => g.estornarLote(a.lote.id, a.lote.bags_disp ?? 0))
+                          comErro(() => g.estornarLote(a.lote.id))
                         }}
                       >
                         Estornar
@@ -477,16 +495,20 @@ function LinhaLote({
   nomeMaquina: (id: string | null) => string | null
   onBaixar: () => void
 }) {
-  const { lote, abertas } = item
-  const qtd = abertas.length
-  const urgentes = abertas.filter((o) => o.prioridade === 'Urgente').length
+  const { lote, abertas, aLiberar } = item
+  // o resumo (qtd/urgência/endereço/destino) é só das ordens que ESTA baixa
+  // afeta — aLiberar; ordens do mesmo lote já liberadas antes não entram
+  // aqui, senão a badge de urgente/endereço mistura o que já foi liberado
+  // com o que este clique vai liberar agora.
+  const qtd = aLiberar.length
+  const urgentes = aLiberar.filter((o) => o.prioridade === 'Urgente').length
   // endereço é da ordem, não do lote: quase sempre é um só, e aí cabe na linha
-  const enderecos = [...new Set(abertas.map((o) => enderecoLote(o, '')).filter(Boolean))]
-  const semEndereco = abertas.filter((o) => !enderecoLote(o, '')).length
-  const primeiroDia = abertas.map((o) => o.data_prog).filter(Boolean).sort()[0]
+  const enderecos = [...new Set(aLiberar.map((o) => enderecoLote(o, '')).filter(Boolean))]
+  const semEndereco = aLiberar.filter((o) => !enderecoLote(o, '')).length
+  const primeiroDia = aLiberar.map((o) => o.data_prog).filter(Boolean).sort()[0]
   // para onde levar depois de baixar: a(s) máquina(s) das ordens dependentes
-  const destinos = [...new Set(abertas.map((o) => nomeMaquina(o.maquina_id)).filter(Boolean))] as string[]
-  const semMaquina = abertas.filter((o) => !o.maquina_id).length
+  const destinos = [...new Set(aLiberar.map((o) => nomeMaquina(o.maquina_id)).filter(Boolean))] as string[]
+  const semMaquina = aLiberar.filter((o) => !o.maquina_id).length
 
   const rot = 'text-[10px] uppercase tracking-wide text-stone-500'
   const val = 'num-tabular font-semibold'
@@ -553,7 +575,9 @@ function LinhaLote({
 
       <details className="mt-2" open={item.critico}>
         <summary className="cursor-pointer py-2.5 text-xs text-stone-500 sm:py-1 dark:text-stone-400">
-          {qtd === 1 ? 'ver a ordem dependente' : `ver as ${qtd} ordens dependentes`}
+          {abertas.length === 1
+            ? 'ver a ordem dependente'
+            : `ver as ${abertas.length} ordens dependentes`}
         </summary>
         <div className="mt-1">
           <Tabela cabecalho={[

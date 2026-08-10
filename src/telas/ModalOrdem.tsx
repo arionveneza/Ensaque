@@ -58,7 +58,7 @@ export default function ModalOrdem({
   const dominio = useMemo(() => paraOrdemDominio(ordem), [ordem])
 
   const kg = pesoOrdemKg(ordem)
-  const status = statusEfetivo(dominio, ordem.lotes_semente.status)
+  const status = statusEfetivo(dominio)
   const emAndamento = status === 'Em producao' || status === 'Parada'
   /**
    * A produção já tocou a ordem — inclui Finalizada e além. Distribuição e

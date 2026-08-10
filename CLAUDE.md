@@ -53,7 +53,15 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 - Vêm da planilha de **Saldos** da SimpleAgro (upload) — ver §4.
 - **Peso do bag = PMS × 5** (BB5M) ou **PMS × 2,5** (BMB). Ex.: PMS 171 → 855 kg/bag.
 - Status: `Em estoque` → `Baixado` (logística) → volta a `Em estoque` só por estorno.
-- A **baixa é do lote**, não da ordem: baixar um lote libera **todas** as ordens que dependem dele.
+  Serve só à Expedição (saldo de semente branca SEM TSI) — não decide se uma ordem pode produzir.
+- **A liberação para produção é por ORDEM, não por lote** (decisão de 10/08/2026): o clique em
+  "Baixar" continua sendo **um só por lote** (é uma viagem física ao depósito, que libera várias
+  ordens de uma vez), mas o sistema carimba **cada ordem aberta daquele lote individualmente**
+  (`ordens.lote_liberado_em`/`lote_liberado_por`). Uma ordem nova, criada depois — mesmo do
+  mesmo lote, mesmo já `Baixado` para outras — **nasce sempre aguardando**; não existe saldo
+  agregado do lote para herdar, nem quando uma ordem liberada é cancelada. Sem isso, uma ordem
+  cancelada "doava" sua liberação para a próxima ordem do mesmo lote sem ação nenhuma da
+  logística.
 
 ### Produtos químicos e receitas
 - Cada químico tem **unidade de dose** (`ml/kg` ou `g/kg`) e **densidade em g/ml** (só para ml/kg).
@@ -94,8 +102,9 @@ a margem não incide sobre a parcela de químico.
 Status: `Não programada` → `Programada` → `Aguardando lote` → `Pronto para produzir` →
 `Em produção` ⇄ `Parada` → `Finalizada` → `Qualidade apontada` → `Apontada`
 
-`Aguardando lote` e `Pronto para produzir` são **derivados**: se o lote está `Em estoque` →
-aguardando; se `Baixado` → pronto.
+`Aguardando lote` e `Pronto para produzir` são **derivados**: aguardando enquanto a **própria
+ordem** não foi liberada (`lote_liberado_em` nulo); pronto depois que a logística a liberou —
+por ordem, não pelo status do lote (§1, Lotes de semente).
 
 | Status | Editar | Excluir | Iniciar | Priorizar | Qualidade | Estorno do lote |
 |---|---|---|---|---|---|---|
