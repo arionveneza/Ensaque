@@ -8,7 +8,7 @@ import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
-  corDoStatus, diaCurto, enderecoLote, exportarCsv, inteiro, n, somaDias,
+  corDoStatus, dataHoraCurta, diaCurto, enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
 
 type Periodo = 'dia' | 'semana' | 'mes'
@@ -34,6 +34,7 @@ export default function Lotes() {
   const [maquinas, setMaquinas] = useState<api.LinhaMaquina[]>([])
   const [movimentos, setMovimentos] = useState<MovimentoLote[]>([])
   const [conferencias, setConferencias] = useState<g.ConferenciaLinha[]>([])
+  const [nomes, setNomes] = useState<Record<string, string>>({})
   const [periodo, setPeriodo] = useState<Periodo>('semana')
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -46,16 +47,18 @@ export default function Lotes() {
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const [l, o, m, c] = await Promise.all([
+      const [l, o, m, c, nm] = await Promise.all([
         g.listarLotes(),
         g.listarOrdens(),
         g.listarMovimentos(`${desde}T00:00:00Z`),
         g.listarConferencias(),
+        g.listarNomesUsuarios(),
       ])
       setLotes(l)
       setOrdens(o)
       setMovimentos(m)
       setConferencias(c)
+      setNomes(nm)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -196,7 +199,7 @@ export default function Lotes() {
             Estes lotes foram baixados e ficaram sem nenhuma ordem dependente. Devolva ao
             estoque para não distorcer o saldo.
           </p>
-          <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', '']}>
+          <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Baixado por', '']}>
             {orfaos.map((a) => {
               const permissao = podeEstornarLote(
                 a.dependentes.map((o) => ({ status: o.status_efetivo as StatusEfetivo })),
@@ -207,6 +210,13 @@ export default function Lotes() {
                   <td className="px-2 py-2">{a.lote.cultivar}</td>
                   <td className="num-tabular px-2 py-2 text-right">
                     {n(a.lote.peso_bag_kg, 0)} kg
+                  </td>
+                  <td className="px-2 py-2 text-xs text-stone-500">
+                    <QuemEQuando
+                      usuarioId={a.lote.baixado_por}
+                      quando={a.lote.baixado_em}
+                      nomes={nomes}
+                    />
                   </td>
                   <td className="px-2 py-2 text-right">
                     {podeBaixar && (
@@ -237,7 +247,7 @@ export default function Lotes() {
             engano — só enquanto <b>nenhuma</b> ordem do lote tiver sido iniciada; depois disso
             o lote já virou consumo e o histórico não se desfaz.
           </p>
-          <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Ordens', '']}>
+          <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Ordens', 'Baixado por', '']}>
             {baixados.map((a) => {
               const permissao = podeEstornarLote(
                 a.dependentes.map((o) => ({ status: o.status_efetivo as StatusEfetivo })),
@@ -258,6 +268,13 @@ export default function Lotes() {
                         </Tag>
                       </span>
                     )}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-stone-500">
+                    <QuemEQuando
+                      usuarioId={a.lote.baixado_por}
+                      quando={a.lote.baixado_em}
+                      nomes={nomes}
+                    />
                   </td>
                   <td className="px-2 py-2 text-right">
                     {podeBaixar && (
@@ -332,13 +349,14 @@ export default function Lotes() {
               disabled={movimentos.length === 0}
               onClick={() =>
                 exportarCsv(`baixas-${periodo}`, [
-                  ['Data', 'Lote', 'Bags', 'Peso (t)', 'Tipo'],
+                  ['Data', 'Lote', 'Bags', 'Peso (t)', 'Tipo', 'Quem'],
                   ...movimentos.map((m) => [
                     new Date(m.ts).toLocaleString('pt-BR'),
                     m.lote_id,
                     m.bags,
                     m.peso_t ?? '',
                     m.estorno ? 'Estorno' : 'Baixa',
+                    (m.usuario_id && nomes[m.usuario_id]) || '',
                   ]),
                 ])
               }
@@ -396,7 +414,7 @@ export default function Lotes() {
               {movimentos.filter((m) => !m.estorno).length} baixa(s) ·{' '}
               {movimentos.filter((m) => m.estorno).length} estorno(s) no período
             </p>
-            <Tabela cabecalho={['Data', 'Lote', '#Bags', '#Peso', 'Tipo']}>
+            <Tabela cabecalho={['Data', 'Lote', '#Bags', '#Peso', 'Tipo', 'Quem']}>
               {movimentos.map((m) => (
                 <tr key={m.id} className="border-t border-stone-100 dark:border-stone-800/60">
                   {/* data+hora completa não pode quebrar em 2 linhas dentro da
@@ -412,6 +430,9 @@ export default function Lotes() {
                   <td className="px-2 py-1.5">
                     <Tag cor={m.estorno ? 'alerta' : 'ok'}>{m.estorno ? 'Estorno' : 'Baixa'}</Tag>
                   </td>
+                  <td className="px-2 py-1.5 text-xs text-stone-500">
+                    {(m.usuario_id && nomes[m.usuario_id]) || '—'}
+                  </td>
                 </tr>
               ))}
             </Tabela>
@@ -419,6 +440,27 @@ export default function Lotes() {
         )}
       </Cartao>
     </Pagina>
+  )
+}
+
+/**
+ * Quem baixou o lote e quando — o banco grava isso desde a primeira baixa
+ * (RPC grava `auth.uid()` + `now()`), mas a tela nunca mostrou; "quem baixou
+ * este lote?" só tinha resposta consultando o banco direto.
+ */
+function QuemEQuando({
+  usuarioId, quando, nomes,
+}: {
+  usuarioId: string | null
+  quando: string | null
+  nomes: Record<string, string>
+}) {
+  if (!usuarioId) return <>—</>
+  return (
+    <>
+      {nomes[usuarioId] ?? 'usuário removido'}
+      {quando && <> · {dataHoraCurta(quando)}</>}
+    </>
   )
 }
 

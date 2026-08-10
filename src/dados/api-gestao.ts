@@ -296,12 +296,16 @@ export interface LoteSementeLinha {
   bags_disp: number | null
   status: 'Em estoque' | 'Baixado'
   devolver: boolean
+  /** Quem baixou e quando — o banco grava desde a primeira baixa, mas a
+   *  tela nunca mostrava; "quem baixou este lote?" só tinha resposta via SQL. */
+  baixado_por: string | null
+  baixado_em: string | null
 }
 
 export async function listarLotes(): Promise<LoteSementeLinha[]> {
   const { data, error } = await supabase
     .from('lotes_semente')
-    .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver')
+    .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver, baixado_por, baixado_em')
     .order('id')
   erro('lotes de semente', error)
   return (data ?? []) as LoteSementeLinha[]
@@ -359,12 +363,13 @@ export interface MovimentoLote {
   peso_t: number | null
   estorno: boolean
   ts: string
+  usuario_id: string | null
 }
 
 export async function listarMovimentos(desde: string): Promise<MovimentoLote[]> {
   const { data, error } = await supabase
     .from('lote_movimentos')
-    .select('id, lote_id, bags, peso_t, estorno, ts')
+    .select('id, lote_id, bags, peso_t, estorno, ts, usuario_id')
     .gte('ts', desde)
     .order('ts', { ascending: false })
   erro('movimentos de lote', error)
