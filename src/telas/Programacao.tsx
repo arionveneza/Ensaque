@@ -638,6 +638,39 @@ export default function Programacao() {
           const listaVisivel = lista.filter(visivel)
           const o = ocupacaoCelula(m.id, diaSel)
           const naCelula = alvo?.maq === m.id && alvo?.dia === diaSel
+
+          /**
+           * Ordem de EXIBIÇÃO, separada da ordem REAL (`lista`, por seq —
+           * a única que `mover`/`renumerar`/a cascata conhecem). O dia
+           * misturava ordens em estágios bem diferentes na mesma lista, e
+           * achar o que precisa de ação agora exigia ler linha por linha:
+           * agora quem está rodando aparece primeiro, o que pode ser
+           * produzido logo depois, o que espera o lote em seguida, e o que
+           * já passou pela qualidade vai para o fim, fora do caminho.
+           *
+           * `Pronto para produzir` e `Aguardando lote` são grupos SEPARADOS
+           * (não misturados por seq): a diferença entre eles é se a ordem
+           * pode rodar HOJE ou está bloqueada esperando a logística — muito
+           * mais forte que uma prioridade arbitrária, e é por isso que não
+           * reintroduz a ambiguidade das setas (cada uma só troca com o
+           * vizinho do PRÓPRIO grupo, nunca com um item de outro status).
+           */
+          const rodando = lista.filter(
+            (x) => x.status_efetivo === 'Em producao' || x.status_efetivo === 'Parada',
+          )
+          const pronto = lista.filter((x) => x.status_efetivo === 'Pronto para produzir')
+          const aguardando = lista.filter((x) => x.status_efetivo === 'Aguardando lote')
+          const concluidas = lista.filter((x) =>
+            ['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo),
+          )
+          const exibicao = [...rodando, ...pronto, ...aguardando, ...concluidas]
+          const inicioConcluidas = exibicao.length - concluidas.length
+          const grupoMovelDe = (x: OrdemVisao) =>
+            x.status_efetivo === 'Pronto para produzir'
+              ? pronto
+              : x.status_efetivo === 'Aguardando lote'
+                ? aguardando
+                : []
           return (
             <Cartao
               key={m.id}
@@ -705,12 +738,24 @@ export default function Programacao() {
                     </button>
                   </p>
                 ) : (
-                  lista.map((ord, idx) => {
+                  exibicao.map((ord, displayIdx) => {
                     if (!visivel(ord)) return null
+                    // posição na lista REAL — a que mover()/renumerar() conhecem;
+                    // drag e "mover" sempre inserem relativos a um item específico
+                    // (não a um vizinho), então continuam corretos com a exibição
+                    // reagrupada. Só as setas precisam do grupo (abaixo).
+                    const idx = lista.indexOf(ord)
                     const movivel =
                       podeProgramar && !jaIniciada(ord.status_efetivo as StatusEfetivo)
+                    const grupo = grupoMovelDe(ord)
+                    const posNoGrupo = grupo.indexOf(ord)
                     return (
                       <div key={ord.id}>
+                        {displayIdx === inicioConcluidas && concluidas.length > 0 && inicioConcluidas > 0 && (
+                          <p className="pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-stone-400">
+                            Concluídas
+                          </p>
+                        )}
                         {naCelula && alvo?.pos === idx && <LinhaDeInsercao />}
                         <div
                           draggable={movivel}
@@ -729,9 +774,11 @@ export default function Programacao() {
                           }}
                           className={`flex flex-wrap items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm dark:border-stone-700 dark:bg-stone-800 ${
                             movivel ? 'cursor-grab' : ''
-                          } ${arrastando === ord.id ? 'opacity-40' : ''}`}
+                          } ${arrastando === ord.id ? 'opacity-40' : ''} ${
+                            displayIdx >= inicioConcluidas ? 'opacity-70' : ''
+                          }`}
                         >
-                          <span className="w-5 text-xs text-stone-400">{idx + 1}</span>
+                          <span className="w-5 text-xs text-stone-400">{displayIdx + 1}</span>
                           {/* min-w-40: no celular, sem largura mínima o texto
                               identificador espremia até ficar ilegível quando
                               tags+mover+setas competiam pela mesma linha */}
@@ -754,21 +801,29 @@ export default function Programacao() {
                               >
                                 mover
                               </button>
-                              {/* as setas trocam com o vizinho da lista REAL,
-                                  não da lista filtrada — com filtro ativo esse
-                                  vizinho pode estar oculto, e a troca pareceria
-                                  não fazer nada. Desabilitadas até limpar o
-                                  filtro; arrastar e "mover" continuam ok, pois
-                                  sempre operam sobre posições visíveis. */}
+                              {/* as setas trocam com o vizinho do MESMO GRUPO
+                                  (mesmo status), não com o vizinho literal da
+                                  lista real — que agora pode ser uma ordem já
+                                  concluída ou em produção, renderizada em
+                                  outra parte da tela. Trocar com um vizinho
+                                  invisível pareceria não fazer nada, que foi
+                                  exatamente o defeito corrigido hoje de manhã
+                                  para a urgência; aqui a troca sempre aparece
+                                  dentro do próprio bloco visível. Com filtro
+                                  de status ativo, ficam desabilitadas — o
+                                  vizinho do grupo pode estar oculto. */}
                               <div className="flex flex-col">
                                 <button
-                                  disabled={idx === 0 || filtroStatus.size > 0}
+                                  disabled={posNoGrupo <= 0 || filtroStatus.size > 0}
                                   title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
                                   onClick={() =>
                                     comErro(async () => {
-                                      const fila = [...lista]
-                                      ;[fila[idx - 1], fila[idx]] = [fila[idx], fila[idx - 1]]
-                                      await g.aplicarAtribuicoes(renumerar(m.id, diaSel, fila))
+                                      const vizinho = grupo[posNoGrupo - 1]
+                                      const copia = [...lista]
+                                      const iA = copia.indexOf(ord)
+                                      const iB = copia.indexOf(vizinho)
+                                      ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
+                                      await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
                                     })
                                   }
                                   className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
@@ -776,13 +831,16 @@ export default function Programacao() {
                                   ▲
                                 </button>
                                 <button
-                                  disabled={idx === lista.length - 1 || filtroStatus.size > 0}
+                                  disabled={posNoGrupo < 0 || posNoGrupo === grupo.length - 1 || filtroStatus.size > 0}
                                   title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
                                   onClick={() =>
                                     comErro(async () => {
-                                      const fila = [...lista]
-                                      ;[fila[idx], fila[idx + 1]] = [fila[idx + 1], fila[idx]]
-                                      await g.aplicarAtribuicoes(renumerar(m.id, diaSel, fila))
+                                      const vizinho = grupo[posNoGrupo + 1]
+                                      const copia = [...lista]
+                                      const iA = copia.indexOf(ord)
+                                      const iB = copia.indexOf(vizinho)
+                                      ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
+                                      await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
                                     })
                                   }
                                   className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
