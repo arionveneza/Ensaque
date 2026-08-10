@@ -236,27 +236,34 @@ export function Tabela({
   children: ReactNode
 }) {
   return (
-    // relative: ancora as máscaras de borda que avisam "tem mais coluna aí"
-    <div className="relative overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
-            {cabecalho.map((c, i) => {
-              const texto = typeof c === 'string' ? c : c.texto
-              const extra = typeof c === 'string' ? '' : (c.className ?? '')
-              return (
-                <th
-                  key={texto + i}
-                  className={`px-2 py-2 ${texto.startsWith('#') ? 'text-right' : ''} ${extra}`}
-                >
-                  {texto.replace(/^#/, '')}
-                </th>
-              )
-            })}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
+    /**
+     * As máscaras moram no wrapper EXTERNO, e o overflow num div interno:
+     * filho absoluto de um scroller pertence ao conteúdo rolável, então as
+     * máscaras rolavam junto — a dica só funcionava na posição zero e, ao
+     * rolar, virava uma mancha branca de 16px por cima dos números.
+     */
+    <div className="relative">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
+              {cabecalho.map((c, i) => {
+                const texto = typeof c === 'string' ? c : c.texto
+                const extra = typeof c === 'string' ? '' : (c.className ?? '')
+                return (
+                  <th
+                    key={texto + i}
+                    className={`px-2 py-2 ${texto.startsWith('#') ? 'text-right' : ''} ${extra}`}
+                  >
+                    {texto.replace(/^#/, '')}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
       {/* dica visual de que há mais coluna fora da tela — só no celular,
           onde o overflow-x-auto sozinho não avisa nada */}
       <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-white to-transparent sm:hidden dark:from-stone-900" />

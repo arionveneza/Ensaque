@@ -500,6 +500,16 @@ export default function Expedicao() {
                       <p className="text-xs font-normal text-stone-500 lg:hidden">
                         {c.tratamento === SEM_TSI ? 'SEM TSI' : c.tratamento} · {c.embalagem}
                       </p>
+                      {/* no celular as colunas Carga e Transporte somem; sem
+                          esta sub-linha a logística ficava sem a placa e o
+                          motorista justamente onde mais consulta: no pátio */}
+                      {(c.carga || c.transportadora || c.motorista || c.placa) && (
+                        <p className="text-xs font-normal text-stone-500 lg:hidden">
+                          {[c.carga && `carga ${c.carga}`, c.transportadora, c.motorista, c.placa]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      )}
                     </td>
                     <td className="hidden px-2 py-1.5 lg:table-cell">
                       {c.tratamento === SEM_TSI ? <Tag cor="neutro">SEM TSI</Tag> : c.tratamento}

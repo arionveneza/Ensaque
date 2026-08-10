@@ -292,10 +292,12 @@ qualquer `if not tem_acao(...) then raise exception`: `not NULL` é `NULL`, não
 bloco não dispara. Foi assim que `abastecer_tanque` e `definir_tanque_produto` (08/08/2026)
 ficaram chamáveis por um usuário **anônimo, sem login** — a checagem parecia estar lá, mas
 não disparava para quem não tem perfil nenhum. Consertado com `coalesce(…, false)` no nível
-mais externo de `tem_acao`. E desde `privilegio-padrao-fecha-funcoes.sql` (mesmo dia) o
-Postgre já não libera função nova para `public` por padrão — as duas defesas se somam,
-nenhuma dispensa a outra: a de hoje fecha a porta por padrão; a de ontem garante que, se
-algum dia alguém abrir a porta de propósito, a checagem por dentro não falha em silêncio.
+mais externo de `tem_acao`. **Atenção: função nova AINDA nasce executável por `public`** —
+o `ALTER DEFAULT PRIVILEGES` foi testado à exaustão em 08/08/2026 e NÃO funciona neste
+Supabase (o script `privilegio-padrao-fecha-funcoes.sql` foi criado e apagado no mesmo dia
+por isso). Toda migração que cria RPC precisa do par `revoke … from public, anon` +
+`grant … to authenticated` na própria migração, e `auditoria-rpc.sql` é o cinto de
+segurança que confere depois.
 
 **UPDATE/DELETE barrado pelo RLS afeta 0 linhas SEM erro.** O app seguia adiante achando
 que gravou: a Produção inteira apontava no vácuo (não havia policy de update em `ordens`),

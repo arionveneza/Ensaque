@@ -126,16 +126,25 @@ export default function Painel({ onSair }: { onSair: () => void }) {
       bags += bagsReais
       const t = (bagsReais * o.lotes_semente.peso_bag_kg) / 1000
       pesoT += t
-      const tempos = temposOrdem(paraOrdemDominio(o), motivos, agora)
-      if (tempos) {
-        bruto += tempos.brutoS
-        liquido += tempos.liquidoS
-        planejadas += tempos.paradasPlanejadasS
-        planejado += tempoPlanejadoS(t, capDe(o.maquina_id))
-      }
+      /**
+       * O OEE inteiro sai da MESMA população: só ordens com qualidade final
+       * apontada — a regra que o Indicadores documenta ("três denominadores
+       * diferentes num número só, que mente"). Antes o Painel somava
+       * disponibilidade/performance de todas as finalizadas e qualidade só
+       * das inspecionadas, e a TV mostrava um OEE diferente do Indicadores
+       * para o mesmo dia. Os contadores de produção (ordens/bags/toneladas)
+       * continuam sobre todas — produzir é fato, OEE é medição.
+       */
       if (aprovado.has(o.id)) {
         avaliadas++
         if (aprovado.get(o.id)) aprovadas++
+        const tempos = temposOrdem(paraOrdemDominio(o), motivos, agora)
+        if (tempos) {
+          bruto += tempos.brutoS
+          liquido += tempos.liquidoS
+          planejadas += tempos.paradasPlanejadasS
+          planejado += tempoPlanejadoS(t, capDe(o.maquina_id))
+        }
       }
     }
     const oee = calculaOee({

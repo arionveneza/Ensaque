@@ -325,7 +325,10 @@ export default function Indicadores() {
               {/* 3 cartões cabiam em ~90px cada no celular, espremendo o
                   rótulo em uppercase text-[10px]; empilha até sm: */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <FatorOee rotulo="Disponibilidade" valor={oee.disponibilidade} legenda="líquido ÷ bruto" />
+                {/* a conta é a OPERACIONAL (desconta parada planejada) — a
+                    legenda dizia "líquido ÷ bruto" e quem conferia na mão
+                    concluía que o indicador estava errado */}
+                <FatorOee rotulo="Disponibilidade" valor={oee.disponibilidade} legenda="líquido ÷ (bruto − par. planej.)" />
                 <FatorOee rotulo="Performance" valor={oee.performance} legenda="ideal ÷ líquido" />
                 <FatorOee
                   rotulo="Qualidade"

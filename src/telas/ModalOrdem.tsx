@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
 import * as api from '@/dados/api'
 import {
@@ -879,13 +879,28 @@ function PesoInput({
   tamanho?: 'normal' | 'grande'
 }) {
   const [texto, setTexto] = useState(valor == null ? '' : String(valor))
+  /**
+   * O mesmo campo existe DUAS vezes montadas ao mesmo tempo — card do celular
+   * e tabela do desktop, alternados só por CSS. Quem salva num deles muda a
+   * prop, mas o gêmeo oculto ficava com o texto de quando montou: girar o
+   * tablet no meio da preparação mostrava o campo VAZIO com peso já salvo, e
+   * um toque + sair do campo gravava null por cima — apagava o peso em
+   * silêncio. Um estado por render não basta; a prop nova tem que vencer o
+   * texto velho sempre que o usuário não está digitando NESTE input.
+   */
+  const [focado, setFocado] = useState(false)
+  useEffect(() => {
+    if (!focado) setTexto(valor == null ? '' : String(valor))
+  }, [valor, focado])
   return (
     <input
       inputMode="decimal"
       disabled={travado}
       value={texto}
       onChange={(e) => setTexto(e.target.value)}
+      onFocus={() => setFocado(true)}
       onBlur={() => {
+        setFocado(false)
         const limpo = texto.replace(',', '.').trim()
         const v = limpo === '' ? null : Number(limpo)
         if (v != null && Number.isNaN(v)) return

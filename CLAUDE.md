@@ -391,7 +391,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
   "o Fortenza não cobre a programação da semana".
 - **Etiquetas**: a planilha antiga tinha ~15 abas de etiquetas; ficaram fora do escopo.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
-- **Horário previsto por ordem** (cascata a partir da sequência) e **painel modo TV** — sugeridos, não feitos.
+- **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
+  O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,
+  aberto a quem vê a Execução (`src/telas/Painel.tsx`). A aba **SAP (teste)** também existe —
+  restrita por e-mail (fora da matriz de perfis), mesma lista da Edge Function `sap-teste`.
 
 ## 8. Dados de exemplo do protótipo (substituir na carga real)
 

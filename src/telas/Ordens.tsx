@@ -1004,14 +1004,21 @@ function FragmentoDia({
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
   return (
     <>
+      {/* o corpo esconde 5 colunas em <lg (Seq, Emb., Lote, Endereço,
+          Cliente); a faixa do dia precisa esconder as mesmas trilhas, senão
+          força a tabela a 12 colunas e o total flutua desalinhado à direita
+          das ações, criando rolagem para colunas fantasmas — mesmo padrão da
+          célula-fantasma da Execução */}
       <tr className="bg-stone-100/70 dark:bg-stone-800/40">
-        <td colSpan={8} className="px-2 py-1.5 text-xs font-semibold uppercase">
+        <td colSpan={4} className="px-2 py-1.5 text-xs font-semibold uppercase">
           {dia === 'sem-dia' ? 'Sem dia programado' : `Dia ${diaCurto(dia)}`}
         </td>
+        <td className="hidden lg:table-cell" colSpan={4} />
         <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold">
           {n(totalT, 1)} t
         </td>
-        <td colSpan={3} />
+        <td className="hidden lg:table-cell" />
+        <td colSpan={2} />
       </tr>
       {lista.map((o) => {
         const st = o.status_efetivo as StatusEfetivo
