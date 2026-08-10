@@ -39,6 +39,12 @@ const OPCOES_TURNO: { valor: string; rotulo: string; turnos: TurnosDoDia }[] = [
 
 const codigoTurnos = (t: TurnosDoDia) => `${t.t1 ? '1' : ''}${t.t2 ? '2' : ''}` || '0'
 
+/** Ordem de exibição dos chips de status — a mesma sequência do ciclo de vida. */
+const ORDEM_STATUS: StatusEfetivo[] = [
+  'Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
+  'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada', 'Apontada',
+]
+
 /** Onde a ordem arrastada vai cair: célula e posição na fila (null = no fim). */
 type Alvo = { maq: string; dia: string; pos: number | null } | null
 
@@ -58,6 +64,13 @@ export default function Programacao() {
   const [alvo, setAlvo] = useState<Alvo>(null)
   const [movendo, setMovendo] = useState<string | null>(null)
   const [previa, setPrevia] = useState<ReturnType<typeof reprogramarCascata> | null>(null)
+  /**
+   * Filtro por status do quadro do dia. Vazio = mostra tudo — o dia
+   * misturava ordens em estágios bem diferentes (pronta para produzir,
+   * parada, já com qualidade apontada) na mesma lista, e achar o que
+   * precisa de ação agora exigia ler linha por linha.
+   */
+  const [filtroStatus, setFiltroStatus] = useState<Set<StatusEfetivo>>(new Set())
 
   const dias = useMemo(
     () => Array.from({ length: 7 }, (_, i) => somaDias(inicio, i)),
@@ -302,6 +315,35 @@ export default function Programacao() {
     [ordens, pool],
   )
 
+  /** Quantas ordens do dia (nas duas máquinas) têm cada status — monta os chips. */
+  const statusDoDia = useMemo(() => {
+    const contagem = new Map<StatusEfetivo, number>()
+    for (const m of maquinas) {
+      for (const o of celula(m.id, diaSel)) {
+        const st = o.status_efetivo as StatusEfetivo
+        contagem.set(st, (contagem.get(st) ?? 0) + 1)
+      }
+    }
+    return ORDEM_STATUS.filter((s) => contagem.has(s)).map((s) => ({ status: s, qtd: contagem.get(s)! }))
+  }, [maquinas, diaSel, celula])
+
+  const totalDoDia = statusDoDia.reduce((a, x) => a + x.qtd, 0)
+
+  const visivel = useCallback(
+    (o: OrdemVisao) =>
+      filtroStatus.size === 0 || filtroStatus.has(o.status_efetivo as StatusEfetivo),
+    [filtroStatus],
+  )
+
+  function alternarFiltro(st: StatusEfetivo) {
+    setFiltroStatus((atual) => {
+      const novo = new Set(atual)
+      if (novo.has(st)) novo.delete(st)
+      else novo.add(st)
+      return novo
+    })
+  }
+
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando programação…</p>
 
   const diasCascata = Array.from({ length: DIAS_CASCATA + 1 }, (_, i) => somaDias(diaSel, i))
@@ -542,10 +584,58 @@ export default function Programacao() {
         </div>
       )}
 
+      {/* -------- filtro por status do dia -------- */}
+      {statusDoDia.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-stone-500 dark:text-stone-400">Mostrar:</span>
+          <button
+            onClick={() => setFiltroStatus(new Set())}
+            className={`rounded px-2 py-1 text-xs font-medium whitespace-nowrap ${
+              filtroStatus.size === 0
+                ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
+            }`}
+          >
+            Todos ({totalDoDia})
+          </button>
+          {statusDoDia.map(({ status, qtd }) => {
+            const ativo = filtroStatus.has(status)
+            const cores = {
+              neutro: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300',
+              ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+              alerta: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+              perigo: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+              info: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+              roxo: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
+            }
+            return (
+              <button
+                key={status}
+                onClick={() => alternarFiltro(status)}
+                className={`rounded px-2 py-1 text-xs font-medium whitespace-nowrap ${cores[corDoStatus(status)]} ${
+                  ativo ? 'ring-2 ring-offset-1 ring-stone-900 dark:ring-stone-100' : 'opacity-60 hover:opacity-100'
+                }`}
+              >
+                {status} ({qtd})
+              </button>
+            )
+          })}
+          {filtroStatus.size > 0 && (
+            <button
+              onClick={() => setFiltroStatus(new Set())}
+              className="text-xs text-stone-500 underline hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200"
+            >
+              limpar
+            </button>
+          )}
+        </div>
+      )}
+
       {/* -------- quadro do dia -------- */}
       <div className="mb-5 grid gap-4 sm:grid-cols-2">
         {maquinas.map((m) => {
           const lista = celula(m.id, diaSel)
+          const listaVisivel = lista.filter(visivel)
           const o = ocupacaoCelula(m.id, diaSel)
           const naCelula = alvo?.maq === m.id && alvo?.dia === diaSel
           return (
@@ -604,8 +694,19 @@ export default function Programacao() {
                   <p className="py-4 text-center text-xs text-stone-400">
                     {podeProgramar ? 'Arraste ordens para cá' : 'Sem ordens'}
                   </p>
+                ) : listaVisivel.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-stone-400">
+                    Nenhuma ordem com o status filtrado aqui.{' '}
+                    <button
+                      onClick={() => setFiltroStatus(new Set())}
+                      className="underline hover:text-stone-600 dark:hover:text-stone-300"
+                    >
+                      ver todas
+                    </button>
+                  </p>
                 ) : (
                   lista.map((ord, idx) => {
+                    if (!visivel(ord)) return null
                     const movivel =
                       podeProgramar && !jaIniciada(ord.status_efetivo as StatusEfetivo)
                     return (
@@ -653,9 +754,16 @@ export default function Programacao() {
                               >
                                 mover
                               </button>
+                              {/* as setas trocam com o vizinho da lista REAL,
+                                  não da lista filtrada — com filtro ativo esse
+                                  vizinho pode estar oculto, e a troca pareceria
+                                  não fazer nada. Desabilitadas até limpar o
+                                  filtro; arrastar e "mover" continuam ok, pois
+                                  sempre operam sobre posições visíveis. */}
                               <div className="flex flex-col">
                                 <button
-                                  disabled={idx === 0}
+                                  disabled={idx === 0 || filtroStatus.size > 0}
+                                  title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
                                   onClick={() =>
                                     comErro(async () => {
                                       const fila = [...lista]
@@ -668,7 +776,8 @@ export default function Programacao() {
                                   ▲
                                 </button>
                                 <button
-                                  disabled={idx === lista.length - 1}
+                                  disabled={idx === lista.length - 1 || filtroStatus.size > 0}
+                                  title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
                                   onClick={() =>
                                     comErro(async () => {
                                       const fila = [...lista]
