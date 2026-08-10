@@ -3,6 +3,7 @@ import * as g from '@/dados/api-gestao'
 import type { ChecklistQualidade, DadosChecklist, OrdemVisao } from '@/dados/api-gestao'
 import { useRealtime } from '@/dados/useRealtime'
 import { exportarXlsx } from '@/lib/exportar'
+import { limparRascunhoDe, useRascunho } from '@/lib/useRascunho'
 import { useAuth } from '@/auth/AuthProvider'
 import {
   Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, n,
@@ -19,8 +20,22 @@ export default function Qualidade() {
   const [nomes, setNomes] = useState<Record<string, string>>({})
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
-  const [aberta, setAberta] = useState<string | null>(null)
+  /**
+   * Qual formulário está aberto vive em RASCUNHO, não em useState: tirar
+   * foto abre o app de câmera, o Android descarta a aba do navegador para
+   * liberar memória e, ao voltar, a página recarrega DO ZERO — o formulário
+   * fechava, a foto ia para um campo que não existia mais, e o inspetor
+   * ficava no ciclo câmera → tela limpa → câmera. Persistindo qual form
+   * está aberto (e o conteúdo dele, mais abaixo), a volta da câmera cai
+   * exatamente onde parou.
+   */
+  const abertaRasc = useRascunho<{ id: string | null }>('qualidade-aberta', { id: null })
+  const aberta = abertaRasc.valor.id
+  const setAberta = (id: string | null) => abertaRasc.definir({ id })
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
+
+  /** Chave do rascunho do formulário de uma ordem — o pai limpa após gravar. */
+  const chaveForm = (idForm: string) => `qualidade-form-${idForm}`
 
   const recarregar = useCallback(async () => {
     const [o, c, u] = await Promise.all([
@@ -156,11 +171,14 @@ export default function Qualidade() {
 
                   {aberta === idForm && (
                     <FormChecklist
+                      chave={chaveForm(idForm)}
                       rotuloSalvar="Registrar verificação"
                       comOrigem
                       onSalvar={(d) =>
                         comErro(async () => {
                           await g.registrarCheckProcesso(o.id, d, usuario!.id)
+                          // só depois de gravar: falha no envio mantém o rascunho
+                          limparRascunhoDe(chaveForm(idForm))
                           setAberta(null)
                         })
                       }
@@ -206,11 +224,14 @@ export default function Qualidade() {
 
                   {aberta === idForm && (
                     <FormChecklist
+                      chave={chaveForm(idForm)}
                       rotuloSalvar="Salvar qualidade final"
                       comFotos
                       onSalvar={(d) =>
                         comErro(async () => {
                           await g.apontarQualidadeFinal(o.id, d)
+                          // só depois de gravar: falha no envio mantém o rascunho
+                          limparRascunhoDe(chaveForm(idForm))
                           setAberta(null)
                         })
                       }
@@ -433,25 +454,55 @@ function Fotos({ caminhos }: { caminhos: string[] }) {
   )
 }
 
+/** O que o inspetor digitou — persiste no rascunho para sobreviver à câmera. */
+interface FormChecklistValor {
+  origem: 'BOWL' | 'BAG' | null
+  recobrimento: number
+  umidadeOk: boolean
+  poOk: boolean
+  obs: string
+  /** dataURLs JPEG já reduzidas — texto, então cabem no localStorage. */
+  fotos: string[]
+}
+
+const FORM_VAZIO: FormChecklistValor = {
+  origem: null,
+  recobrimento: 0,
+  umidadeOk: true,
+  poOk: true,
+  obs: '',
+  fotos: [],
+}
+
 /**
  * O checklist das duas etapas — mesmo formulário, destino diferente.
  * `comOrigem` (só em processo): de onde saiu a amostra, BOWL ou BAG.
+ *
+ * TODO o estado vive em rascunho persistente (`chave`): tirar foto abre a
+ * câmera, o Android descarta a aba, e a página volta recarregada — sem o
+ * rascunho, nota, observação e fotos anteriores evaporavam e o apontamento
+ * final era impossível de concluir no tablet. Quem grava com sucesso limpa
+ * o rascunho (o PAI chama `limparRascunhoDe`, porque este componente já foi
+ * desmontado quando o sucesso chega).
  */
 function FormChecklist({
-  rotuloSalvar, comOrigem = false, comFotos = false, onSalvar,
+  chave, rotuloSalvar, comOrigem = false, comFotos = false, onSalvar,
 }: {
+  chave: string
   rotuloSalvar: string
   comOrigem?: boolean
   /** Até 3 imagens — só na etapa final. */
   comFotos?: boolean
   onSalvar: (d: DadosChecklist) => void
 }) {
-  const [origem, setOrigem] = useState<'BOWL' | 'BAG' | null>(null)
-  const [recobrimento, setRecobrimento] = useState(0)
-  const [umidadeOk, setUmidadeOk] = useState(true)
-  const [poOk, setPoOk] = useState(true)
-  const [obs, setObs] = useState('')
-  const [fotos, setFotos] = useState<File[]>([])
+  const { valor, definir } = useRascunho<FormChecklistValor>(chave, FORM_VAZIO)
+  const { origem, recobrimento, umidadeOk, poOk, obs, fotos } = valor
+  const setOrigem = (v: 'BOWL' | 'BAG') => definir({ origem: v })
+  const setRecobrimento = (v: number) => definir({ recobrimento: v })
+  const setUmidadeOk = (v: boolean) => definir({ umidadeOk: v })
+  const setPoOk = (v: boolean) => definir({ poOk: v })
+  const setObs = (v: string) => definir({ obs: v })
+  const setFotos = (v: string[]) => definir({ fotos: v })
 
   const incompleto = recobrimento === 0 || (comOrigem && origem === null)
 
@@ -543,21 +594,37 @@ function FormChecklist({
  * Até 3 fotos do teste final. `capture="environment"` faz o tablet abrir a
  * câmera traseira direto, em vez da galeria — no chão de fábrica a foto é
  * tirada na hora, e um passo a menos importa com luva na mão.
+ *
+ * As fotos viram dataURL reduzida (1600 px) NA SELEÇÃO e vivem no rascunho
+ * do formulário: se a câmera derrubar a aba, o que já foi fotografado volta
+ * junto com o resto. As prévias usam a própria dataURL — sem URL de objeto,
+ * sem revogação, sem File preso na memória.
  */
 function SeletorFotos({
   fotos, onMudar,
 }: {
-  fotos: File[]
-  onMudar: (f: File[]) => void
+  fotos: string[]
+  onMudar: (f: string[]) => void
 }) {
   const MAX = 3
-  const previas = fotos.map((f) => ({ f, url: URL.createObjectURL(f) }))
+  const [processando, setProcessando] = useState(false)
+  const [erroFoto, setErroFoto] = useState<string | null>(null)
 
-  // sem revogar, cada re-render vaza uma URL de objeto na memória do tablet
-  useEffect(() => {
-    return () => previas.forEach((p) => URL.revokeObjectURL(p.url))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fotos])
+  async function aoEscolher(arquivos: File[]) {
+    setErroFoto(null)
+    setProcessando(true)
+    try {
+      const novas: string[] = []
+      for (const a of arquivos.slice(0, MAX - fotos.length)) {
+        novas.push(await g.fotoParaDataUrl(a))
+      }
+      onMudar([...fotos, ...novas].slice(0, MAX))
+    } catch (e) {
+      setErroFoto(e instanceof Error ? e.message : String(e))
+    } finally {
+      setProcessando(false)
+    }
+  }
 
   return (
     <div className="mt-3">
@@ -565,10 +632,10 @@ function SeletorFotos({
         Fotos do teste (até {MAX})
       </p>
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        {previas.map((p, i) => (
-          <div key={p.url} className="relative">
+        {fotos.map((f, i) => (
+          <div key={`${i}-${f.length}`} className="relative">
             <img
-              src={p.url}
+              src={f}
               alt={`Foto ${i + 1}`}
               className="h-20 w-20 rounded-md border border-stone-200 object-cover dark:border-stone-700"
             />
@@ -583,24 +650,36 @@ function SeletorFotos({
         ))}
         {fotos.length < MAX && (
           <label className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-stone-300 text-xs text-stone-500 hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800">
-            <span className="text-lg leading-none">+</span>
-            <span>foto</span>
+            {processando ? (
+              <span className="animate-pulse text-[10px]">processando…</span>
+            ) : (
+              <>
+                <span className="text-lg leading-none">+</span>
+                <span>foto</span>
+              </>
+            )}
             <input
               type="file"
               accept="image/*"
               capture="environment"
               multiple
+              disabled={processando}
               className="hidden"
               onChange={(e) => {
                 const novas = Array.from(e.target.files ?? [])
-                onMudar([...fotos, ...novas].slice(0, MAX))
                 // permite escolher o MESMO arquivo de novo depois de remover
                 e.target.value = ''
+                if (novas.length) void aoEscolher(novas)
               }}
             />
           </label>
         )}
       </div>
+      {erroFoto && (
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+          Não deu para usar a foto: {erroFoto}
+        </p>
+      )}
     </div>
   )
 }

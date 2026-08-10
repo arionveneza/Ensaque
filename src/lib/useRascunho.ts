@@ -85,3 +85,16 @@ export const temRascunho = (chave: string): boolean => {
     return false
   }
 }
+
+/**
+ * Apaga um rascunho DE FORA do componente que o usa — para o pai limpar
+ * depois de gravar, quando o formulário já foi desmontado e o `limpar()`
+ * do hook não está mais ao alcance.
+ */
+export const limparRascunhoDe = (chave: string): void => {
+  try {
+    localStorage.removeItem(PREFIXO + chave)
+  } catch {
+    /* sem storage não há o que limpar */
+  }
+}

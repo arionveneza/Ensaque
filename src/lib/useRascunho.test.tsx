@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useRascunho, temRascunho } from './useRascunho'
+import { limparRascunhoDe, useRascunho, temRascunho } from './useRascunho'
 
 /**
  * O cenário do chão de fábrica: o PCP digita metade de uma ordem, sai para
@@ -75,6 +75,26 @@ describe('rascunho de formulario', () => {
     await u.click(screen.getByText('descartar'))
     expect(screen.getByLabelText('numero')).toHaveValue('')
     expect(temRascunho('teste')).toBe(false)
+  })
+
+  /**
+   * O caso da câmera: o componente do formulário já foi DESMONTADO quando a
+   * gravação no servidor termina com sucesso (o pai trocou de tela ou
+   * fechou o formulário), então o `limpar()` do hook não está mais ao
+   * alcance — só a função solta serve para o pai apagar de fora.
+   */
+  it('limparRascunhoDe apaga sem precisar do componente montado', async () => {
+    const u = userEvent.setup()
+    const tela = render(<FormularioFake />)
+    await u.type(screen.getByLabelText('numero'), '79500-1')
+    tela.unmount()
+    expect(temRascunho('teste')).toBe(true)
+
+    limparRascunhoDe('teste')
+
+    expect(temRascunho('teste')).toBe(false)
+    render(<FormularioFake />)
+    expect(screen.getByLabelText('numero')).toHaveValue('')
   })
 
   it('rascunhos de chaves diferentes nao se misturam', async () => {

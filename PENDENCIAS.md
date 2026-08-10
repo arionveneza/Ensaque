@@ -242,6 +242,19 @@ quanto `temposOrdem` em `calculos.ts` usam `greatest(0, …)`/`Math.max(0, …)`
 cliente, por serem informativos e não entrarem em cálculo de duração: `ordem_conferencias.ts`,
 `prioridade_em` e `agrotis_em` — se algum dia entrarem em conta, mover para o servidor.
 
+**Tirar foto no Android recarrega a página — todo formulário com upload de imagem precisa
+de rascunho.** Abrir a câmera nativa some com a aba do navegador da memória; ao voltar, o
+Chrome recarrega a URL do zero. Foi o que travava a Qualidade final num ciclo de
+câmera → tela limpa → câmera: o estado do formulário (nota, fotos já tiradas, qual ordem
+estava aberta) vivia em `useState` e morria a cada volta. A correção tem duas partes —
+(1) persistir em `useRascunho` **qual formulário está aberto**, não só o conteúdo dele,
+porque a própria pergunta "que tela eu estava vendo" também não sobrevive; (2) fotos como
+**dataURL (texto)**, nunca `File`: o objeto `File` é referência a um blob que a navegação
+descartada invalida, e o rascunho (localStorage) só guarda texto/JSON. Reduzir a imagem
+(1600 px) ANTES de guardar no rascunho evita explodir a cota do localStorage com o Base64
+de uma foto de 8 MB. Ao criar qualquer tela nova com `<input type="file" capture="...">`,
+repetir o padrão.
+
 **Aba em segundo plano congela o cronômetro.** Sleeping tabs / modo de eficiência do Edge (e o
 throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo decorrido
 parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no

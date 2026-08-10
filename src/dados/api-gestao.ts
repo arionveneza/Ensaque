@@ -568,8 +568,13 @@ export interface DadosChecklist {
   umidadeOk: boolean
   poOk: boolean
   observacao: string | null
-  /** Arquivos escolhidos na tela; viram caminhos no Storage ao salvar. */
-  fotos?: File[]
+  /**
+   * Fotos como dataURL JPEG já reduzidas (1600 px), não File: o objeto File
+   * morre junto com a página quando o Android descarta a aba para abrir a
+   * câmera — dataURL é texto, vive no rascunho (localStorage) e sobrevive.
+   * Viram caminhos no Storage ao salvar.
+   */
+  fotos?: string[]
 }
 
 export async function listarChecksQualidade(): Promise<ChecklistQualidade[]> {
@@ -595,16 +600,12 @@ export async function listarChecksQualidade(): Promise<ChecklistQualidade[]> {
 const BUCKET_FOTOS = 'qualidade'
 
 /**
- * Sobe as fotos e devolve os caminhos.
- *
- * As imagens saem da câmera do tablet com vários MB; sem reduzir, uma ordem
- * com 3 fotos ocuparia mais que todo o resto do banco e o envio travaria na
- * rede do galpão. O redimensionamento é feito no navegador, antes de subir.
+ * Sobe as fotos (dataURLs já reduzidas na seleção) e devolve os caminhos.
  */
-export async function enviarFotosQualidade(ordemId: string, fotos: File[]): Promise<string[]> {
+export async function enviarFotosQualidade(ordemId: string, fotos: string[]): Promise<string[]> {
   const caminhos: string[] = []
-  for (const [i, arquivo] of fotos.entries()) {
-    const blob = await reduzirImagem(arquivo)
+  for (const [i, dataUrl] of fotos.entries()) {
+    const blob = await (await fetch(dataUrl)).blob()
     // sem o índice, duas fotos do mesmo segundo se sobrescreveriam
     const caminho = `${ordemId}/${Date.now()}-${i}.jpg`
     const { error } = await supabase.storage
@@ -625,8 +626,20 @@ export async function urlFotoQualidade(caminho: string): Promise<string | null> 
   return data?.signedUrl ?? null
 }
 
-/** Redimensiona para no máximo 1600 px e recomprime em JPEG. */
-async function reduzirImagem(arquivo: File, maxLado = 1600, qualidade = 0.8): Promise<Blob> {
+/**
+ * Foto da câmera → dataURL JPEG de no máximo 1600 px.
+ *
+ * Roda na SELEÇÃO, não no envio: (1) a foto original tem vários MB e
+ * travaria o upload na rede do galpão; (2) o dataURL é texto e cabe no
+ * rascunho persistente — é o que faz o teste sobreviver quando o Android
+ * mata a aba para abrir a câmera; (3) soltar o File original cedo alivia a
+ * memória do tablet, que é justamente quem mata a aba.
+ */
+export async function fotoParaDataUrl(
+  arquivo: File,
+  maxLado = 1600,
+  qualidade = 0.8,
+): Promise<string> {
   const bitmap = await createImageBitmap(arquivo)
   const escala = Math.min(1, maxLado / Math.max(bitmap.width, bitmap.height))
   const w = Math.round(bitmap.width * escala)
@@ -635,11 +648,10 @@ async function reduzirImagem(arquivo: File, maxLado = 1600, qualidade = 0.8): Pr
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
-  if (!ctx) return arquivo
+  if (!ctx) throw new Error('Este navegador não consegue processar a imagem.')
   ctx.drawImage(bitmap, 0, 0, w, h)
   bitmap.close()
-  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', qualidade))
-  return blob ?? arquivo
+  return canvas.toDataURL('image/jpeg', qualidade)
 }
 
 /** Em processo: vários por ordem, cada verificação vira um registro com hora. */
