@@ -648,6 +648,9 @@ export default function Ordens() {
       {/* ---------------- painel de demanda ---------------- */}
       <PainelDemanda balanco={balanco} />
 
+      {/* ---------------- bags por lote ---------------- */}
+      <ResumoBagsPorLote ordens={ordens} />
+
       {/* ---------------- lista de ordens ---------------- */}
       <Cartao
         titulo={`Ordens (${filtradas.length} de ${ordens.length})`}
@@ -735,9 +738,10 @@ export default function Ordens() {
  */
 function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
   const [filtro, setFiltro] = useState<'tudo' | SituacaoDemanda | 'sem-receita'>('tudo')
-  // a tabela é comprida; a preferência de ocultar sobrevive ao recarregamento
+  // a tabela é comprida; nasce oculto, e a preferência (inclusive a de
+  // mostrar) sobrevive ao recarregamento
   const [oculto, setOculto] = useState(
-    () => localStorage.getItem('tsi.demanda.oculta') === '1',
+    () => localStorage.getItem('tsi.demanda.oculta') !== '0',
   )
   const alternar = () => {
     const v = !oculto
@@ -924,6 +928,112 @@ function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
   )
 }
 
+/** Ordem de exibição dos status — segue o ciclo de vida da ordem, não o alfabeto. */
+const ORDEM_STATUS = [
+  'Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
+  'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada', 'Apontada',
+]
+
+/**
+ * Quantos bags de cada lote estão em cada etapa (programado, em produção,
+ * finalizado, apontado…) — a logística e o PCP perguntavam isso toda hora
+ * sem ter onde olhar além de filtrar a lista ordem por ordem.
+ */
+function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
+  const [busca, setBusca] = useState('')
+  // nasce oculto, e a preferência (inclusive a de mostrar) sobrevive ao recarregamento
+  const [oculto, setOculto] = useState(
+    () => localStorage.getItem('tsi.resumoLotes.oculta') !== '0',
+  )
+  const alternar = () => {
+    const v = !oculto
+    setOculto(v)
+    localStorage.setItem('tsi.resumoLotes.oculta', v ? '1' : '0')
+  }
+
+  const porLote = useMemo(() => {
+    const mapa = new Map<
+      string,
+      { loteId: string; cultivar: string; total: number; porStatus: Map<string, number> }
+    >()
+    for (const o of ordens) {
+      let e = mapa.get(o.lote_id)
+      if (!e) {
+        e = { loteId: o.lote_id, cultivar: o.cultivar, total: 0, porStatus: new Map() }
+        mapa.set(o.lote_id, e)
+      }
+      e.total += o.bags
+      e.porStatus.set(o.status_efetivo, (e.porStatus.get(o.status_efetivo) ?? 0) + o.bags)
+    }
+    return [...mapa.values()].sort((a, b) => b.total - a.total)
+  }, [ordens])
+
+  const filtrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase()
+    if (!termo) return porLote
+    return porLote.filter((l) => `${l.loteId} ${l.cultivar}`.toLowerCase().includes(termo))
+  }, [porLote, busca])
+
+  if (oculto) {
+    return (
+      <Cartao
+        titulo="Bags por lote"
+        acoes={<Botao onClick={alternar}>Mostrar</Botao>}
+        className="mb-5"
+      >
+        <p className="text-sm text-stone-600 dark:text-stone-300">
+          {porLote.length} lote(s) com ordem lançada.
+        </p>
+      </Cartao>
+    )
+  }
+
+  return (
+    <Cartao
+      titulo="Bags por lote"
+      acoes={
+        <>
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="filtrar por lote ou cultivar…"
+            className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+          />
+          <Botao onClick={alternar}>Ocultar</Botao>
+        </>
+      }
+      className="mb-5"
+    >
+      {porLote.length === 0 ? (
+        <Vazio>Nenhuma ordem lançada ainda.</Vazio>
+      ) : filtrados.length === 0 ? (
+        <Vazio>Nenhum lote nesse filtro.</Vazio>
+      ) : (
+        <Tabela cabecalho={['Lote', 'Cultivar', '#Total', 'Bags por status']}>
+          {filtrados.map((l) => (
+            <tr key={l.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
+              <td className="px-2 py-1.5 font-medium">{l.loteId}</td>
+              <td className="px-2 py-1.5">{l.cultivar}</td>
+              <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                {inteiro(l.total)}
+              </td>
+              <td className="px-2 py-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {ORDEM_STATUS.filter((s) => l.porStatus.has(s)).map((s) => (
+                    <Tag key={s} cor={corDoStatus(s)}>
+                      {s}: {inteiro(l.porStatus.get(s)!)}
+                    </Tag>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </Tabela>
+      )}
+    </Cartao>
+  )
+}
+
 /**
  * Código comercial de cada embalagem (BG5M → BB5M, MEIOBAG → BMB), derivado
  * do de-para da importação. O painel mostra os dois porque o PCP e o
@@ -989,6 +1099,12 @@ function Placar({
   )
 }
 
+/** Botões de ação da linha da ordem — mesmas cores do Botao, tamanho compacto para caber na tabela. */
+const BOTAO_ACAO =
+  'shrink-0 rounded-md border border-stone-300 px-2 py-1 text-xs font-medium transition-colors hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+const BOTAO_ACAO_PERIGO =
+  'shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
+
 function FragmentoDia({
   dia, lista, podeEditar, podeExcluir, podePriorizar, onEditar, onExcluir, onPrioridade,
 }: {
@@ -1014,7 +1130,7 @@ function FragmentoDia({
           {dia === 'sem-dia' ? 'Sem dia programado' : `Dia ${diaCurto(dia)}`}
         </td>
         <td className="hidden lg:table-cell" colSpan={4} />
-        <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold">
+        <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold whitespace-nowrap">
           {n(totalT, 1)} t
         </td>
         <td className="hidden lg:table-cell" />
@@ -1057,24 +1173,25 @@ function FragmentoDia({
             <td className="hidden px-2 py-1.5 font-medium lg:table-cell">{o.lote_id}</td>
             <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">{enderecoLote(o)}</td>
             <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
-            <td className="num-tabular px-2 py-1.5 text-right">{n(o.peso_t, 1)} t</td>
+            <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(o.peso_t, 1)} t</td>
             <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
               {o.cliente ?? '—'}
             </td>
             <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
             {/*
-              editar+urgente+excluir juntos precisam de ~160px — com menos
-              que isso os 3 empilhavam verticalmente (1 por linha) e essa
-              pilha, não o texto da coluna Ordem, é que inflava a linha para
-              113px de altura. A tabela já rola horizontalmente por
-              desenho — não há motivo pra espremer esta coluna.
+              editar+urgente+excluir como botão com borda pedem mais espaço
+              que o texto sublinhado de antes — por isso min-w-56, não
+              min-w-44. Continua valendo em qualquer largura: em lg:
+              aparecem MAIS colunas (Seq, Emb., Lote, Endereço, Cliente)
+              disputando espaço, não menos — zerar o mínimo ali seria o
+              oposto do que essa coluna precisa.
             */}
-            <td className="min-w-44 px-2 py-1.5 text-right whitespace-nowrap lg:min-w-0">
-              <div className="inline-flex flex-wrap justify-end gap-2">
+            <td className="min-w-56 px-2 py-1.5 text-right whitespace-nowrap">
+              <div className="inline-flex flex-wrap justify-end gap-1.5">
                 {podeEditar && pode(st, 'editar') && (
                   <button
                     onClick={() => onEditar(o)}
-                    className="rounded px-1.5 py-1.5 text-xs underline"
+                    className={BOTAO_ACAO}
                     title="Editável enquanto a produção não toca a ordem"
                   >
                     editar
@@ -1083,16 +1200,13 @@ function FragmentoDia({
                 {podePriorizar && pode(st, 'priorizar') && (
                   <button
                     onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
-                    className="rounded px-1.5 py-1.5 text-xs underline"
+                    className={BOTAO_ACAO}
                   >
                     {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
                   </button>
                 )}
                 {podeExcluir && pode(st, 'excluir') && (
-                  <button
-                    onClick={() => onExcluir(o.id)}
-                    className="rounded px-1.5 py-1.5 text-xs text-red-600 underline"
-                  >
+                  <button onClick={() => onExcluir(o.id)} className={BOTAO_ACAO_PERIGO}>
                     excluir
                   </button>
                 )}
