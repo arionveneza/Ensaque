@@ -289,6 +289,19 @@ descartada invalida, e o rascunho (localStorage) só guarda texto/JSON. Reduzir 
 de uma foto de 8 MB. Ao criar qualquer tela nova com `<input type="file" capture="...">`,
 repetir o padrão.
 
+**A parte (1) acima ("qual formulário está aberto") foi esquecida em Cadastros — achado em
+10/08/2026, relatado pelo Arion: "o de receita fica vazio" depois de Alt+Tab no Chrome
+(Memory Saver recarrega a aba em segundo plano, mesmo efeito da câmera do Android).**
+`FormReceita`/`FormProduto` já guardavam o CONTEÚDO certo via `useRascunho`, mas `aba`
+(qual aba do Cadastros) e `editando`/`novo` (qual receita/produto estava aberto) eram
+`useState` comum — reload trocava a aba para "Produtos químicos" e escondia o formulário,
+com o rascunho intacto mas invisível. Corrigido replicando o padrão da Qualidade em
+`Cadastros.tsx`: `aba`, e o `editando`/`novo` de Receitas e Químicos agora também vivem em
+`useRascunho`. Teste de regressão em `Cadastros.test.tsx` (desmonta e remonta o componente,
+confere que a aba e o formulário voltam abertos com o texto digitado). Não estendido às
+outras abas (Máquinas, Embalagens, Motivos) — são edições de 1 linha, 2-3 campos, baixo
+custo de redigitar; o padrão vale a pena só onde perder o formulário dói de verdade.
+
 **Aba em segundo plano congela o cronômetro.** Sleeping tabs / modo de eficiência do Edge (e o
 throttling do Chrome) suspendem `setInterval` e o websocket do realtime: o tempo decorrido
 parava e a tela ficava desatualizada. A tela Execução resincroniza relógio e dados no

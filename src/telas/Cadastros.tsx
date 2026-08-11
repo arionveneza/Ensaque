@@ -35,7 +35,12 @@ export default function Cadastros() {
   const { permitido } = useAuth()
   const podeEditar = permitido('cadastros', 'editar')
 
-  const [aba, setAba] = useState<Aba>('quimicos')
+  // sobrevive a recarregar a página (F5, aba suspensa em segundo plano) —
+  // sem isto, um reload trocava a aba para "Produtos químicos" e escondia
+  // o formulário que estava aberto, mesmo com o rascunho dele intacto
+  const abaRasc = useRascunho<{ aba: Aba }>('cadastros-aba', { aba: 'quimicos' })
+  const aba = abaRasc.valor.aba
+  const setAba = (v: Aba) => abaRasc.definir({ aba: v })
   const [cad, setCad] = useState<Awaited<ReturnType<typeof api.carregarCadastros>> | null>(null)
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[]>([])
@@ -152,8 +157,17 @@ function AbaQuimicos({
   podeEditar: boolean
   acao: Acao
 }) {
-  const [editando, setEditando] = useState<string | null>(null)
-  const [novo, setNovo] = useState(false)
+  // qual produto está aberto (id, 'novo' ou nenhum) sobrevive a recarregar a
+  // página — sem isto, o rascunho do FormProduto ficava salvo mas invisível,
+  // porque a tabela nem mostrava o formulário aberto de novo
+  const abertoRasc = useRascunho<{ aberto: string | 'novo' | null }>(
+    'cadastros-quimico-aberto',
+    { aberto: null },
+  )
+  const editando = abertoRasc.valor.aberto !== 'novo' ? abertoRasc.valor.aberto : null
+  const novo = abertoRasc.valor.aberto === 'novo'
+  const setEditando = (id: string | null) => abertoRasc.definir({ aberto: id })
+  const setNovo = (v: boolean) => abertoRasc.definir({ aberto: v ? 'novo' : null })
 
   const semDensidade = produtos.filter(
     (p) => p.unidade.startsWith('ml') && p.densidade == null,
@@ -480,7 +494,15 @@ function AbaReceitas({
   podeEditar: boolean
   acao: Acao
 }) {
-  const [editando, setEditando] = useState<string | 'nova' | null>(null)
+  // qual receita está aberta (nome, 'nova' ou nenhuma) sobrevive a
+  // recarregar a página — sem isto, o rascunho do FormReceita ficava salvo
+  // mas invisível, porque a tela nem mostrava o formulário aberto de novo
+  const abertaRasc = useRascunho<{ aberta: string | 'nova' | null }>(
+    'cadastros-receita-aberta',
+    { aberta: null },
+  )
+  const editando = abertaRasc.valor.aberta
+  const setEditando = (v: string | 'nova' | null) => abertaRasc.definir({ aberta: v })
 
   return (
     <>
