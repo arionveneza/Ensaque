@@ -114,12 +114,21 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       logado, e a checagem dedicada de `lote_liberado_*` em `tg_ordens_por_acao` exige
       `tem_acao('lotes','baixar_lote')`, sempre `false` sem sessão; corrigido desligando só
       esse gatilho em volta do UPDATE do backfill.
-- [ ] `supabase/estorno-liberacao-por-ordem.sql` — **pendente**, decisão de 10/08/2026: o
-      estorno também passa a ser por ORDEM (a liberação já era desde o script anterior; só
-      o estorno ainda desfazia todas as ordens liberadas do lote de uma vez). Substitui
-      `estornar_lote(text)` por `estornar_liberacao(uuid)` (uma ordem só) e acrescenta
-      `devolver_lote_orfao(text)` para o caso raro de lote `Baixado` sem nenhuma ordem
-      dependente. `baixar_lote(text)` não muda — baixa continua em bloco, por lote.
+- [x] `supabase/estorno-liberacao-por-ordem.sql` — aplicado e confirmado em produção em
+      10/08/2026: o estorno também passa a ser por ORDEM (a liberação já era desde o script
+      anterior; só o estorno ainda desfazia todas as ordens liberadas do lote de uma vez).
+      Substituiu `estornar_lote(text)` por `estornar_liberacao(uuid)` (uma ordem só) e
+      acrescentou `devolver_lote_orfao(text)` para o caso raro de lote `Baixado` sem nenhuma
+      ordem dependente. `baixar_lote(text)` não mudou — baixa continua em bloco, por lote.
+- [ ] `supabase/renumerar-ordem-tocada.sql` — **pendente**, decisão de 11/08/2026: PCP pode
+      corrigir o **número** de uma ordem já tocada pela produção (Em produção, Parada,
+      Finalizada, Qualidade apontada) — não entra em cálculo nenhum, então corrigir não
+      distorce nada. Trava de novo em `Apontada` (já foi para o AGROTIS): achado ao
+      implementar que `fn_ordem_imutavel` nunca checou a coluna `numero` em NENHUM status
+      tocado — o banco sempre permitiu essa edição, inclusive em `Apontada`; só a tela nunca
+      expunha. A migração fecha esse caso específico no próprio trigger, não só escondendo o
+      botão. Sem mais mudança de schema: RLS e o restante do trigger já bastavam (`ordens/editar`
+      é PCP/Gestor por padrão).
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
@@ -226,6 +235,21 @@ rodar e conferir que só sobram os 3 ajudantes.
 ---
 
 ## Armadilhas já pagas — não repetir
+
+**Teste de tela que usa `vi.mock` com `vi.importActual` sobre um módulo que importa
+`@/lib/supabase` passa na sua máquina e quebra sempre no CI — achado em 11/08/2026.**
+`Cadastros.test.tsx` mockava `@/dados/api`/`api-gestao`/`api-admin` espalhando
+`{...real, funcaoX: ...}`, e `vi.importActual` PRECISA carregar o módulo real para conseguir
+espalhar — o que carrega `@/lib/supabase`, que lança `Error` se
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` não existirem. Na minha máquina existem
+(`.env.local` local, com credenciais reais) — no GitHub Actions não existem (`.env.local` é
+gitignored de propósito), então o teste passava sempre local e falhava sempre lá, quebrando 3
+commits em sequência sem eu notar (só a checagem manual do run no GitHub pegou). Corrigido
+trocando por mocks TOTALMENTE inline (sem `importActual`, sem espalhar nada do módulo real) —
+testado removendo `.env.local` E `.env.test` na hora, simulando o CI exatamente, antes de
+confiar que resolveu. Regra: teste de componente nunca deve precisar do módulo real de
+`@/dados/*`/`@/lib/supabase`; se `vi.mock` precisa de algumas funções, listar cada uma à mão
+no factory, nunca `{...await vi.importActual(...)}`.
 
 **Backfill de migração por UPDATE direto em `ordens` pode ser recusado pela própria checagem
 de permissão que ele acabou de criar — achado em 10/08/2026.** O SQL Editor do Supabase não
