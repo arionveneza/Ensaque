@@ -296,10 +296,24 @@ export default function Ordens() {
       {podeCriar && (
         <Cartao titulo="Carga diária" className="mb-5">
           <p className="mb-3 text-sm text-stone-500">
-            O mesmo arquivo de <b>Saldos</b> alimenta dois destinos: linhas com embalagem e
-            tratamento <code>SEM TSI</code> viram lotes de semente; com tratamento real viram
-            estoque de produto acabado. Pré-lote e granel são ignorados.
+            Um único botão — o sistema reconhece o arquivo pelo formato, sem precisar escolher
+            o tipo:
           </p>
+          <ul className="mb-3 list-inside list-disc text-sm text-stone-500">
+            <li>
+              <b>Pedidos Analítico Resumido</b> — vira demanda (painel Demanda × Estoque ×
+              Planejado abaixo).
+            </li>
+            <li>
+              <b>Saldos</b> — alimenta dois destinos: linhas com embalagem e tratamento{' '}
+              <code>SEM TSI</code> viram lotes de semente; com tratamento real viram estoque de
+              produto acabado. Pré-lote e granel são ignorados.
+            </li>
+            <li>
+              <b>Planilha de ordens</b> (opcional, não vem da SimpleAgro) — cria várias ordens de
+              uma vez; layout e modelo abaixo.
+            </li>
+          </ul>
           <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium dark:border-stone-700">
               Carregar planilha (.xlsx)
