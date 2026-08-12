@@ -129,7 +129,7 @@ function Shell() {
     <div className="min-h-svh bg-stone-50 text-stone-800 dark:bg-stone-950 dark:text-stone-200">
       {/* fixo no topo: no tablet do chão de fábrica a navegação fica sempre à mão */}
       <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/95 backdrop-blur print:hidden dark:border-stone-800 dark:bg-stone-900/95">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 pt-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 pt-3 sm:px-6">
           {/* marca: bloco esmeralda no lugar de logo — trocar quando houver arte */}
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-700 text-sm font-bold tracking-tight text-white dark:bg-emerald-600">
@@ -167,7 +167,7 @@ function Shell() {
             </button>
           </div>
         </div>
-        <nav className="scroll-oculto mx-auto max-w-6xl overflow-x-auto px-4 sm:px-6" ref={navRef}>
+        <nav className="scroll-oculto mx-auto max-w-[1600px] overflow-x-auto px-4 sm:px-6" ref={navRef}>
           <ul className="flex gap-1 py-2">
             {TELAS.filter((t) => permitidas.includes(t.id)).map((t) => (
               <li key={t.id}>

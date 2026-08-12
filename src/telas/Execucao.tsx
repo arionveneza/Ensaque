@@ -126,7 +126,7 @@ export default function Execucao() {
   const semProgramacao = ordens.length === 0
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-[1600px] px-6 py-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Execução</h2>

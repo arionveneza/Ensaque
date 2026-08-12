@@ -60,7 +60,7 @@ export function Pagina({
   children: ReactNode
 }) {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
+    <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6">
       {/* empilha no celular: 3-4 botões de ação ao lado do título comiam a
           tela toda antes de qualquer conteúdo aparecer */}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
