@@ -13,7 +13,11 @@ const ordem = (over: Partial<Ordem> = {}): Ordem => ({
   id: 'o1', numero: '79500-1', cultivar: '761 I2X', receitaId: 'R1',
   embalagem: 'BG5M', bags: 45, loteId: 'L-4412', prioridade: 'Normal',
   maquinaId: 'TSI1', dataProg: '2026-07-28', seq: 1, turnoId: null,
-  status: 'Programada', loteLiberadoEm: null, eventos: [], paradas: [], tanques: [],
+  status: 'Programada', loteLiberadoEm: null,
+  // já confirmada por padrão: os testes de liberação/lote abaixo isolam
+  // esse eixo; a confirmação em si tem describe próprio mais adiante
+  confirmadaEm: 1700000000000,
+  eventos: [], paradas: [], tanques: [],
   ...over,
 })
 
@@ -43,6 +47,34 @@ describe('status derivado da liberacao do lote (por ordem, nao por lote inteiro)
     const b = ordem({ id: 'b', loteLiberadoEm: null })
     expect(statusEfetivo(a)).toBe('Pronto para produzir')
     expect(statusEfetivo(b)).toBe('Aguardando lote')
+  })
+})
+
+describe('confirmacao do PCP antes de expor a ordem a Logistica (11/08/2026)', () => {
+  it('programada mas ainda nao confirmada fica em Programada, mesmo sem lote pendente', () => {
+    expect(statusEfetivo(ordem({ confirmadaEm: null, loteLiberadoEm: null }))).toBe('Programada')
+    expect(statusEfetivo(ordem({ confirmadaEm: null, loteLiberadoEm: 1723000000000 }))).toBe(
+      'Programada',
+    )
+  })
+
+  it('sem maquina, falta de confirmacao nao aparece: e Nao programada mesmo', () => {
+    expect(statusEfetivo(ordem({ maquinaId: null, confirmadaEm: null }))).toBe('Nao programada')
+  })
+
+  it('confirmada, a ordem segue para aguardando/pronto normalmente', () => {
+    expect(statusEfetivo(ordem({ confirmadaEm: 1700000000000, loteLiberadoEm: null }))).toBe(
+      'Aguardando lote',
+    )
+    expect(
+      statusEfetivo(ordem({ confirmadaEm: 1700000000000, loteLiberadoEm: 1723000000000 })),
+    ).toBe('Pronto para produzir')
+  })
+
+  it('status ja iniciado nao e afetado por confirmacao', () => {
+    expect(statusEfetivo(ordem({ status: 'Em producao', confirmadaEm: null }))).toBe(
+      'Em producao',
+    )
   })
 })
 
@@ -87,6 +119,12 @@ describe('matriz de permissoes', () => {
       ['Em producao', 'Parada', 'Finalizada', 'Qualidade apontada'].sort(),
     )
     expect(MATRIZ_STATUS.Apontada.renumerar).toBe(false)
+  })
+
+  it('confirmar so existe em Programada', () => {
+    const podemConfirmar = (Object.keys(MATRIZ_STATUS) as StatusEfetivo[])
+      .filter((s) => MATRIZ_STATUS[s].confirmar)
+    expect(podemConfirmar).toEqual(['Programada'])
   })
 
   it('estorno so antes de iniciar', () => {

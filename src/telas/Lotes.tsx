@@ -21,11 +21,18 @@ type Periodo = 'dia' | 'semana' | 'mes'
  * cobre só essas), `liberadas` é o que já foi liberado e pode ser
  * estornado. Uma ordem nova do mesmo lote de outra já liberada entra
  * em `aLiberar`, mesmo que o lote já tenha sido baixado antes.
+ *
+ * `abertas` exige CONFIRMAÇÃO do PCP desde 11/08/2026 (`Aguardando lote`
+ * ou `Pronto para produzir` — nunca `Programada`): dar máquina/dia a uma
+ * ordem não deveria já expor ela para a Logística baixar o lote sem
+ * revisão nenhuma do PCP. `iniciadas` é separado, para o badge "já
+ * iniciada(s)" continuar contando certo mesmo com `abertas` mais estreito.
  */
 type LoteAgregado = {
   lote: LoteSementeLinha
   dependentes: OrdemVisao[]
   abertas: OrdemVisao[]
+  iniciadas: OrdemVisao[]
   aLiberar: OrdemVisao[]
   liberadas: OrdemVisao[]
   bagsNecessarios: number
@@ -101,9 +108,16 @@ export default function Lotes() {
     return lotes
       .map((l) => {
         const dependentes = ordens.filter((o) => o.lote_id === l.id)
-        const abertas = dependentes.filter(
-          (o) => !jaIniciada(o.status_efetivo as StatusEfetivo),
+        const iniciadas = dependentes.filter((o) =>
+          jaIniciada(o.status_efetivo as StatusEfetivo),
         )
+        // só ordem CONFIRMADA pelo PCP entra na fila da logística — uma
+        // ordem só "Programada" (máquina/dia dados, PCP ainda não revisou)
+        // não deveria aparecer aqui para baixar (11/08/2026)
+        const abertas = dependentes.filter((o) => {
+          const st = o.status_efetivo as StatusEfetivo
+          return st === 'Aguardando lote' || st === 'Pronto para produzir'
+        })
         // por ordem, não pelo lote inteiro: uma ordem nova nasce em
         // aLiberar mesmo que outra do mesmo lote já esteja liberada
         const aLiberar = abertas.filter((o) => !o.lote_liberado_em)
@@ -115,6 +129,7 @@ export default function Lotes() {
           lote: l,
           dependentes,
           abertas,
+          iniciadas,
           aLiberar,
           liberadas,
           bagsNecessarios,
@@ -595,7 +610,7 @@ function LinhaLoteBaixado({
   nomes: Record<string, string>
   onEstornar: (ordem: OrdemVisao) => void
 }) {
-  const { lote, liberadas, aLiberar, dependentes, abertas } = item
+  const { lote, liberadas, aLiberar, iniciadas } = item
   return (
     <div className="px-3 py-3 sm:px-4">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
@@ -603,8 +618,8 @@ function LinhaLoteBaixado({
           {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
         </span>
         {aLiberar.length > 0 && <Tag cor="alerta">{aLiberar.length} aguardando</Tag>}
-        {dependentes.length > abertas.length && (
-          <Tag cor="neutro">{dependentes.length - abertas.length} já iniciada(s)</Tag>
+        {iniciadas.length > 0 && (
+          <Tag cor="neutro">{iniciadas.length} já iniciada(s)</Tag>
         )}
       </p>
       <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">

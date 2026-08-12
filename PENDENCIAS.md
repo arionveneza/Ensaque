@@ -128,6 +128,22 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       tocado — o banco sempre permitiu essa edição, inclusive em `Apontada`; só a tela nunca
       expunha. A migração fechou esse caso específico no próprio trigger, não só escondendo o
       botão.
+- [ ] `supabase/confirmar-ordem-programada.sql` — **pendente**, decisão de 11/08/2026 (relatado
+      pelo Arion): dar máquina/dia a uma ordem não deveria já expô-la para a Logística baixar
+      o lote, sem revisão do PCP (nem impressa, nada). O status derivado ganha um passo —
+      `Programada` (já existia no tipo, nunca era alcançado) — entre "tem máquina" e
+      "Aguardando lote": só depois que o PCP clica "confirmar" (botão novo em Ordens) a ordem
+      segue adiante e aparece para a Logística. Toca `Ordens.tsx`, `Lotes.tsx` (a fila "a
+      baixar" exige ordem confirmada, não só não-iniciada) e `Programacao.tsx` (o quadro do
+      dia ganhou um grupo `Programada`, senão a ordem sumia da célula sem aparecer em nenhum
+      status). Revisão adversarial pegou dois problemas reais antes de aplicar: (1) o backfill
+      esbarraria na mesma armadilha do `tg_ordens_por_acao` sem sessão (corrigido com
+      disable/enable trigger, igual à migração de 10/08); (2) `baixar_lote` não checava
+      `confirmada_em` — o clique em "Baixar" (que a tela só soma sobre ordens confirmadas)
+      liberaria por baixo dos panos qualquer ordem `Programada` do mesmo lote também, que
+      pularia direto para `Pronto para produzir` ao ser confirmada, sem passar por
+      `Aguardando lote` nem a Logística agir de propósito — corrigido acrescentando
+      `confirmada_em is not null` ao `WHERE` da função.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
@@ -234,6 +250,15 @@ rodar e conferir que só sobram os 3 ajudantes.
 ---
 
 ## Armadilhas já pagas — não repetir
+
+**Novo filtro de visibilidade na tela não basta — auditar toda função de banco que age em
+lote sobre o mesmo recurso.** Ao criar o gate de confirmação do PCP (11/08/2026), a revisão
+adversarial (não eu sozinho) pegou que `Lotes.tsx` passou a exigir ordem confirmada para
+mostrar "a baixar", mas `baixar_lote()` continuava liberando por `status`/`lote_id` crus, sem
+checar `confirmada_em` — o clique em "Baixar" arrastaria uma ordem `Programada` do mesmo lote
+por baixo dos panos, mesmo ela nunca tendo aparecido na tela para a Logística decidir. A
+regra: toda vez que um novo campo mudar QUEM UMA TELA MOSTRA, perguntar também "que RPC/função
+age sobre esse mesmo recurso sem passar pela tela — ela também precisa do novo filtro?"
 
 **Teste de tela que usa `vi.mock` com `vi.importActual` sobre um módulo que importa
 `@/lib/supabase` passa na sua máquina e quebra sempre no CI — achado em 11/08/2026.**

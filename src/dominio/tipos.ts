@@ -183,6 +183,12 @@ export interface Ordem {
    * nunca nasce liberada só porque o lote já foi baixado para outra.
    */
   loteLiberadoEm: number | null
+  /**
+   * Quando o PCP confirmou a ordem já programada (decisão de 11/08/2026).
+   * Null = programada mas ainda em rascunho, invisível para a Logística —
+   * dar máquina/dia não deveria já expor a ordem para baixar o lote.
+   */
+  confirmadaEm: number | null
   eventos: EventoOrdem[]
   paradas: Parada[]
   tanques: TanqueOrdem[]

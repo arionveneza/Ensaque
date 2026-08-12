@@ -736,6 +736,7 @@ export default function Ordens() {
                   comErro(() => g.definirPrioridade(id, p, usuario!.id))
                 }
                 onRenumerar={(o) => setRenumerando(o)}
+                onConfirmar={(id) => comErro(() => g.confirmarOrdem(id, usuario!.id))}
               />
             ))}
           </Tabela>
@@ -1188,7 +1189,8 @@ const BOTAO_ACAO_PERIGO =
   'shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
 
 function FragmentoDia({
-  dia, lista, podeEditar, podeExcluir, podePriorizar, onEditar, onExcluir, onPrioridade, onRenumerar,
+  dia, lista, podeEditar, podeExcluir, podePriorizar,
+  onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar,
 }: {
   dia: string
   lista: OrdemVisao[]
@@ -1199,6 +1201,7 @@ function FragmentoDia({
   onExcluir: (id: string) => void
   onPrioridade: (id: string, p: 'Normal' | 'Urgente') => void
   onRenumerar: (o: OrdemVisao) => void
+  onConfirmar: (id: string) => void
 }) {
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
   return (
@@ -1278,6 +1281,17 @@ function FragmentoDia({
                     title="Editável enquanto a produção não toca a ordem"
                   >
                     editar
+                  </button>
+                )}
+                {/* programar não expõe a ordem para a Logística baixar o lote —
+                    só depois que o PCP confirma (11/08/2026) */}
+                {podeEditar && pode(st, 'confirmar') && (
+                  <button
+                    onClick={() => onConfirmar(o.id)}
+                    className={BOTAO_ACAO}
+                    title="Libera a ordem para a Logística ver e baixar o lote"
+                  >
+                    confirmar
                   </button>
                 )}
                 {/* única correção liberada numa ordem já tocada pela produção:

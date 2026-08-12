@@ -162,7 +162,9 @@ export default function Programacao() {
       receitaId: o.receita_id,
       prioridade: o.prioridade,
       pesoT: o.peso_t,
-      loteBaixado: o.status_efetivo !== 'Aguardando lote',
+      // explícito, não "!== 'Aguardando lote'": Programada (11/08/2026,
+      // aguardando confirmação do PCP) também não tem lote baixado ainda
+      loteBaixado: o.status_efetivo === 'Pronto para produzir',
       maquinaId: o.maquina_id,
       dataProg: o.data_prog,
       seq: o.seq,
@@ -660,17 +662,23 @@ export default function Programacao() {
           )
           const pronto = lista.filter((x) => x.status_efetivo === 'Pronto para produzir')
           const aguardando = lista.filter((x) => x.status_efetivo === 'Aguardando lote')
+          // Programada (11/08/2026): tem máquina/dia mas o PCP ainda não
+          // confirmou — sem grupo próprio ela sumia da célula (nenhum dos
+          // outros filtros bate), mesmo com lista.length > 0
+          const programada = lista.filter((x) => x.status_efetivo === 'Programada')
           const concluidas = lista.filter((x) =>
             ['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo),
           )
-          const exibicao = [...rodando, ...pronto, ...aguardando, ...concluidas]
+          const exibicao = [...rodando, ...pronto, ...aguardando, ...programada, ...concluidas]
           const inicioConcluidas = exibicao.length - concluidas.length
           const grupoMovelDe = (x: OrdemVisao) =>
             x.status_efetivo === 'Pronto para produzir'
               ? pronto
               : x.status_efetivo === 'Aguardando lote'
                 ? aguardando
-                : []
+                : x.status_efetivo === 'Programada'
+                  ? programada
+                  : []
           return (
             <Cartao
               key={m.id}

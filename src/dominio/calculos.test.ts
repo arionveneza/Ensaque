@@ -278,7 +278,7 @@ describe('tempos', () => {
     id: 'o1', numero: '1', cultivar: 'C', receitaId: 'R', embalagem: 'BG5M',
     bags: 10, loteId: 'L', prioridade: 'Normal', maquinaId: 'TSI1',
     dataProg: '2026-07-28', seq: 1, turnoId: null, status: 'Finalizada',
-    loteLiberadoEm: null, eventos: [], paradas: [], tanques: [],
+    loteLiberadoEm: null, confirmadaEm: null, eventos: [], paradas: [], tanques: [],
   })
 
   it('sem apontamento de inicio nao ha tempos', () => {

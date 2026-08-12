@@ -52,6 +52,12 @@ export interface OrdemVisao {
    */
   lote_liberado_em: string | null
   lote_liberado_por: string | null
+  /**
+   * PCP confirmou a ordem programada (11/08/2026). Null = programada mas
+   * ainda em rascunho — invisível para a Logística baixar o lote.
+   */
+  confirmada_em: string | null
+  confirmada_por: string | null
 }
 
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
@@ -192,6 +198,20 @@ export async function aplicarAtribuicoes(
   for (const a of lista) {
     await reprogramar(a.ordemId, a.maquinaId, a.dia, a.seq)
   }
+}
+
+/**
+ * PCP confirma a ordem programada — só a partir daqui ela aparece para a
+ * Logística baixar o lote (decisão de 11/08/2026). Dar máquina/dia não
+ * bastava: a ordem ficava visível para baixa sem revisão nenhuma do PCP.
+ * Requer supabase/confirmar-ordem-programada.sql aplicado.
+ */
+export async function confirmarOrdem(id: string, usuarioId: string): Promise<void> {
+  const { error } = await supabase
+    .from('ordens')
+    .update({ confirmada_em: new Date().toISOString(), confirmada_por: usuarioId })
+    .eq('id', id)
+  erro('confirmar ordem', error)
 }
 
 // ================================================================

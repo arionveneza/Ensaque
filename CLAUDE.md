@@ -109,17 +109,25 @@ a margem não incide sobre a parcela de químico.
 Status: `Não programada` → `Programada` → `Aguardando lote` → `Pronto para produzir` →
 `Em produção` ⇄ `Parada` → `Finalizada` → `Qualidade apontada` → `Apontada`
 
-`Aguardando lote` e `Pronto para produzir` são **derivados**: aguardando enquanto a **própria
-ordem** não foi liberada (`lote_liberado_em` nulo); pronto depois que a logística a liberou —
-por ordem, não pelo status do lote (§1, Lotes de semente).
+`Programada`, `Aguardando lote` e `Pronto para produzir` são **derivados**. `Programada`
+(decisão de 11/08/2026): dar máquina/dia a uma ordem não a expõe direto para a Logística
+baixar o lote — programar é rápido, muitas vezes só reserva um horário, e a Logística não
+devia agir sem o PCP ter revisado e confirmado de propósito (nem impressa, nada). Fica
+`Programada` até o PCP clicar "confirmar" (botão próprio na tela de Ordens); só a partir daí
+segue para `Aguardando lote`/`Pronto para produzir`, que é quando aparece para a Logística
+(`ordens.confirmada_em`). `Aguardando lote`/`Pronto para produzir` continuam olhando a
+liberação da **própria ordem** (`lote_liberado_em` nulo/preenchido), por ordem, não pelo
+status do lote (§1, Lotes de semente) — e `baixar_lote` só libera ordem confirmada: uma
+`Programada` do mesmo lote não é arrastada por baixo dos panos no clique de outra.
 
-| Status | Editar | Excluir | Iniciar | Priorizar | Qualidade | Estorno do lote | Renumerar |
-|---|---|---|---|---|---|---|---|
-| Não programada / Programada / Aguardando lote | ✔ | ✔ | — | ✔ | — | ✔ | — |
-| Pronto para produzir | ✔ | ✔ | ✔ | ✔ | — | ✔ | — |
-| Em produção / Parada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | ✔ (só PCP) |
-| Finalizada / Qualidade apontada | ✖ | ✖ | ✖ | ✖ | ✔ | **✖** | ✔ (só PCP) |
-| Apontada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | **✖** |
+| Status | Editar | Excluir | Iniciar | Priorizar | Qualidade | Estorno do lote | Renumerar | Confirmar |
+|---|---|---|---|---|---|---|---|---|
+| Não programada | ✔ | ✔ | — | ✔ | — | ✔ | — | — |
+| Programada | ✔ | ✔ | — | ✔ | — | ✔ | — | ✔ (só PCP) |
+| Aguardando lote / Pronto para produzir | ✔ | ✔ | ✔ (só Pronto) | ✔ | — | ✔ | — | — |
+| Em produção / Parada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | ✔ (só PCP) | — |
+| Finalizada / Qualidade apontada | ✖ | ✖ | ✖ | ✖ | ✔ | **✖** | ✔ (só PCP) | — |
+| Apontada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | **✖** | — |
 
 **Regra de ouro:** antes de iniciar, tudo é editável; depois que a produção toca a ordem, ela é
 registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele lote já foi iniciada.
