@@ -577,19 +577,33 @@ qualquer clique.
   Fora do que este laboratório faz de propósito (só GET, sem excecão, nem para o Arion) e da
   regra "sempre leitura em produção" do CLAUDE.md §4. Se precisar criar lá, é uma ação
   específica, deliberada, fora deste caminho — não algo que o laboratório faz sozinho.
-- **Ainda não testado**: esta sessão implementou e publicou o código; o teste de ponta a
-  ponta em `SBOVENPRD` pelo laboratório (listar `SQLQueries`, e se a `TSI_SALDOS` já existir
-  lá, executá-la) é o próximo passo, do lado do Arion.
+- **Testado e confirmado em 12/08/2026, via PowerShell (Basic Auth, mesmo padrão do §6.4) em
+  `SBOVENPRD` real** — a autorização está liberada de ponta a ponta:
+  1. `GET /SQLQueries?$select=SqlCode,SqlName` → **OK**, 10 consultas salvas (`LotesSA`,
+     `LotesSAProduto`, `LotesSANome`, `LotesSATratamentos`, `LotesSAOri`, `LotesSASaldo`,
+     `LotesSASaldoNum`, `LotesSATransacoes`, `LotesSATransacoesIBT1`, `LotesAnaliseSA`) — a
+     `TSI_SALDOS` **não está entre elas**, só existe na homolog (§6.6).
+  2. `GET /SQLQueries('TSI_SALDOS')/List` → `404`, `code -2028 "No matching records found"` —
+     diferente do `-6006` de autorização; é exatamente o erro de "não existe", confirmando que
+     a chamada passou pela checagem de permissão e só não achou a consulta.
+  3. **Teste decisivo**, com uma consulta que EXISTE (`LotesSASaldo`, saldo por lote
+     incremental — `SELECT ... FROM OIBT WHERE UpdateDate > :updatedate`):
+     `GET /SQLQueries('LotesSASaldo')/List?updatedate='2020-01-01'` → **FUNCIONOU**, 100
+     linhas reais de movimento de lote (`BatchNum`, `CardCode`, `CardName`, datas de 2023 a
+     12/08/2026). Sem `-6006`. **A autorização de `SQLQueries` está confirmada em produção.**
+  - Falta só decidir se cria a `TSI_SALDOS` (a consulta OBTN×OBTQ do §3.2, com PMS/tratamento/
+    safra que `LotesSASaldo` não tem) em `SBOVENPRD` — é um `POST`, decisão separada e
+    deliberada, não parte deste teste de leitura.
 
 ## 7. Checklist de implantação
 
 - [x] Acesso a `SBOVENHOM` OK — 09/08/2026, via Basic Auth no **endpoint próprio de homolog** (§6.6)
 - [x] JSON de `Items`, `Orders` e `BatchNumberDetails` inspecionado → mapeamento fechado (§4/§6.5)
 - [x] Saldo por lote executado de ponta a ponta na homolog (`TSI_SALDOS`, §6.6)
-- [~] Autorização de `SQLQueries` replicada em `SBOVENPRD` — Arion confirmou acesso liberado
-      em 12/08/2026; falta testar de ponta a ponta pelo laboratório (agora suporta produção,
-      §6.8) e confirmar se a `TSI_SALDOS` já existe lá ou ainda precisa ser criada (POST —
-      fora do que o laboratório faz de propósito, ver §6.8)
+- [x] Autorização de `SQLQueries` replicada em `SBOVENPRD` — confirmado em 12/08/2026 via
+      PowerShell (§6.8): `LotesSASaldo` executou de verdade em produção, sem `-6006`.
+      `TSI_SALDOS` em si ainda não existe lá (só na homolog) — criar é `POST`, decisão
+      separada
 - [ ] Senha do `ven040` trocada (exposta em 09/08) e/ou usuário de integração dedicado, somente leitura
 - [ ] Campo do status financeiro dos pedidos identificado (candidatos no §6.5)
 - [ ] Conversão do SAP reproduzindo os números conhecidos: **1.018 bags aprovados** e
