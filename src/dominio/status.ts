@@ -15,44 +15,53 @@ export interface PermissoesStatus {
   qualidade: boolean
   /** Estorno do lote de semente desta ordem. */
   estornarLote: boolean
+  /**
+   * Corrigir só o NÚMERO da ordem mesmo com a produção já rodando —
+   * decisão de 11/08/2026. Único campo liberado aqui: não entra em nenhum
+   * cálculo (tempo, consumo, peso), então corrigi-lo não distorce nada,
+   * diferente de cultivar/receita/bags/lote/máquina/dia, que o gatilho de
+   * imutabilidade continua travando. Só Em produção/Parada — depois de
+   * Finalizada o número já pode ter ido para relatório/AGROTIS.
+   */
+  renumerar: boolean
 }
 
 export const MATRIZ_STATUS: Record<StatusEfetivo, PermissoesStatus> = {
   'Nao programada': {
     editar: true, excluir: true, iniciar: false,
-    priorizar: true, qualidade: false, estornarLote: true,
+    priorizar: true, qualidade: false, estornarLote: true, renumerar: false,
   },
   Programada: {
     editar: true, excluir: true, iniciar: false,
-    priorizar: true, qualidade: false, estornarLote: true,
+    priorizar: true, qualidade: false, estornarLote: true, renumerar: false,
   },
   'Aguardando lote': {
     editar: true, excluir: true, iniciar: false,
-    priorizar: true, qualidade: false, estornarLote: true,
+    priorizar: true, qualidade: false, estornarLote: true, renumerar: false,
   },
   'Pronto para produzir': {
     editar: true, excluir: true, iniciar: true,
-    priorizar: true, qualidade: false, estornarLote: true,
+    priorizar: true, qualidade: false, estornarLote: true, renumerar: false,
   },
   'Em producao': {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: false, estornarLote: false,
+    priorizar: false, qualidade: false, estornarLote: false, renumerar: true,
   },
   Parada: {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: false, estornarLote: false,
+    priorizar: false, qualidade: false, estornarLote: false, renumerar: true,
   },
   Finalizada: {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: true, estornarLote: false,
+    priorizar: false, qualidade: true, estornarLote: false, renumerar: false,
   },
   'Qualidade apontada': {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: true, estornarLote: false,
+    priorizar: false, qualidade: true, estornarLote: false, renumerar: false,
   },
   Apontada: {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: false, estornarLote: false,
+    priorizar: false, qualidade: false, estornarLote: false, renumerar: false,
   },
 }
 

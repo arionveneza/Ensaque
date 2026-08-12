@@ -113,16 +113,24 @@ Status: `Não programada` → `Programada` → `Aguardando lote` → `Pronto par
 ordem** não foi liberada (`lote_liberado_em` nulo); pronto depois que a logística a liberou —
 por ordem, não pelo status do lote (§1, Lotes de semente).
 
-| Status | Editar | Excluir | Iniciar | Priorizar | Qualidade | Estorno do lote |
-|---|---|---|---|---|---|---|
-| Não programada / Programada / Aguardando lote | ✔ | ✔ | — | ✔ | — | ✔ |
-| Pronto para produzir | ✔ | ✔ | ✔ | ✔ | — | ✔ |
-| Em produção / Parada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** |
-| Finalizada / Qualidade apontada | ✖ | ✖ | ✖ | ✖ | ✔ | **✖** |
-| Apontada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** |
+| Status | Editar | Excluir | Iniciar | Priorizar | Qualidade | Estorno do lote | Renumerar |
+|---|---|---|---|---|---|---|---|
+| Não programada / Programada / Aguardando lote | ✔ | ✔ | — | ✔ | — | ✔ | — |
+| Pronto para produzir | ✔ | ✔ | ✔ | ✔ | — | ✔ | — |
+| Em produção / Parada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | ✔ (só PCP) |
+| Finalizada / Qualidade apontada | ✖ | ✖ | ✖ | ✖ | ✔ | **✖** | — |
+| Apontada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | — |
 
 **Regra de ouro:** antes de iniciar, tudo é editável; depois que a produção toca a ordem, ela é
 registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele lote já foi iniciada.
+
+**Renumerar é a única exceção à regra de ouro** (decisão de 11/08/2026): o **nº da ordem** pode
+ser corrigido enquanto ela está `Em produção`/`Parada` — não entra em nenhum cálculo (tempo,
+consumo, peso), então corrigi-lo não distorce nada, diferente dos outros campos. Ação exclusiva
+de quem tem `ordens/editar` (PCP/Gestor) — a tela de Ordens mostra um botão "renumerar" separado
+do "editar" para esse status; os demais campos continuam travados pelo trigger de imutabilidade.
+Só até Parada: depois de `Finalizada` o número já pode ter ido para relatório/AGROTIS, e a
+correção fica bloqueada de novo, igual antes.
 
 **Excluir exige ordem virgem** (decisão de 05/08/2026): além do status, o banco recusa excluir
 ordem com **qualquer história** — evento de produção, parada, teste de qualidade ou conferência

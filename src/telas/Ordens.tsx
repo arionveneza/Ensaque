@@ -88,6 +88,7 @@ export default function Ordens() {
   const podeExcluir = permitido('ordens', 'excluir')
   const podePriorizar = permitido('ordens', 'priorizar')
   const [editando, setEditando] = useState<OrdemVisao | null>(null)
+  const [renumerando, setRenumerando] = useState<OrdemVisao | null>(null)
 
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
@@ -720,12 +721,79 @@ export default function Ordens() {
                 onPrioridade={(id, p) =>
                   comErro(() => g.definirPrioridade(id, p, usuario!.id))
                 }
+                onRenumerar={(o) => setRenumerando(o)}
               />
             ))}
           </Tabela>
         )}
       </Cartao>
+
+      {renumerando && (
+        <ModalRenumerar
+          ordem={renumerando}
+          onFechar={() => setRenumerando(null)}
+          onSalvar={(numero) =>
+            comErro(async () => {
+              await g.atualizarOrdem(renumerando.id, { numero })
+              setRenumerando(null)
+            })
+          }
+        />
+      )}
     </Pagina>
+  )
+}
+
+/**
+ * Única correção liberada numa ordem já em produção/parada: o número. Os
+ * outros campos (cultivar, receita, bags, lote, máquina, dia) continuam
+ * travados pelo gatilho de imutabilidade — este modal só manda `numero`,
+ * de propósito, para nunca tentar mudar mais que isso.
+ */
+function ModalRenumerar({
+  ordem, onFechar, onSalvar,
+}: {
+  ordem: OrdemVisao
+  onFechar: () => void
+  onSalvar: (numero: string) => void
+}) {
+  const [numero, setNumero] = useState(ordem.numero)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl dark:bg-stone-900">
+        <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">
+          Renumerar ordem
+        </h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          A ordem já está {ordem.status_efetivo.toLowerCase()} — só o número muda; os demais
+          campos continuam travados.
+        </p>
+        <label className="mt-4 block text-xs text-stone-500">
+          Número da ordem
+          <input
+            autoFocus
+            value={numero}
+            onChange={(e) => setNumero(e.target.value)}
+            className="mt-1 block w-full rounded-md border border-stone-300 px-2 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
+          />
+        </label>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            onClick={onFechar}
+            className="rounded-md px-3 py-1.5 text-sm text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+          >
+            Cancelar
+          </button>
+          <button
+            disabled={!numero.trim() || numero.trim() === ordem.numero}
+            onClick={() => onSalvar(numero.trim())}
+            className="rounded-md bg-stone-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-stone-100 dark:text-stone-900"
+          >
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1106,7 +1174,7 @@ const BOTAO_ACAO_PERIGO =
   'shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
 
 function FragmentoDia({
-  dia, lista, podeEditar, podeExcluir, podePriorizar, onEditar, onExcluir, onPrioridade,
+  dia, lista, podeEditar, podeExcluir, podePriorizar, onEditar, onExcluir, onPrioridade, onRenumerar,
 }: {
   dia: string
   lista: OrdemVisao[]
@@ -1116,6 +1184,7 @@ function FragmentoDia({
   onEditar: (o: OrdemVisao) => void
   onExcluir: (id: string) => void
   onPrioridade: (id: string, p: 'Normal' | 'Urgente') => void
+  onRenumerar: (o: OrdemVisao) => void
 }) {
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
   return (
@@ -1195,6 +1264,19 @@ function FragmentoDia({
                     title="Editável enquanto a produção não toca a ordem"
                   >
                     editar
+                  </button>
+                )}
+                {/* única correção liberada numa ordem já tocada pela produção:
+                    o número não entra em nenhum cálculo, então corrigi-lo não
+                    distorce tempo/consumo — diferente dos outros campos, que
+                    o gatilho de imutabilidade continua travando */}
+                {podeEditar && pode(st, 'renumerar') && (
+                  <button
+                    onClick={() => onRenumerar(o)}
+                    className={BOTAO_ACAO}
+                    title="Corrige o número da ordem mesmo em produção — os demais campos continuam travados"
+                  >
+                    renumerar
                   </button>
                 )}
                 {podePriorizar && pode(st, 'priorizar') && (

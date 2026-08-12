@@ -80,6 +80,12 @@ describe('matriz de permissoes', () => {
     expect(Object.values(p).every((v) => v === false)).toBe(true)
   })
 
+  it('renumerar so em producao/parada, exclusivo do PCP na tela', () => {
+    const podemRenumerar = (Object.keys(MATRIZ_STATUS) as StatusEfetivo[])
+      .filter((s) => MATRIZ_STATUS[s].renumerar)
+    expect(podemRenumerar.sort()).toEqual(['Em producao', 'Parada'].sort())
+  })
+
   it('estorno so antes de iniciar', () => {
     const comEstorno = (Object.keys(MATRIZ_STATUS) as StatusEfetivo[])
       .filter((s) => MATRIZ_STATUS[s].estornarLote)
