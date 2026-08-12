@@ -120,15 +120,14 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       Substituiu `estornar_lote(text)` por `estornar_liberacao(uuid)` (uma ordem só) e
       acrescentou `devolver_lote_orfao(text)` para o caso raro de lote `Baixado` sem nenhuma
       ordem dependente. `baixar_lote(text)` não mudou — baixa continua em bloco, por lote.
-- [ ] `supabase/renumerar-ordem-tocada.sql` — **pendente**, decisão de 11/08/2026: PCP pode
-      corrigir o **número** de uma ordem já tocada pela produção (Em produção, Parada,
-      Finalizada, Qualidade apontada) — não entra em cálculo nenhum, então corrigir não
-      distorce nada. Trava de novo em `Apontada` (já foi para o AGROTIS): achado ao
+- [x] `supabase/renumerar-ordem-tocada.sql` — aplicado e confirmado em produção em 11/08/2026:
+      PCP pode corrigir o **número** de uma ordem já tocada pela produção (Em produção,
+      Parada, Finalizada, Qualidade apontada) — não entra em cálculo nenhum, então corrigir
+      não distorce nada. Trava de novo em `Apontada` (já foi para o AGROTIS): achado ao
       implementar que `fn_ordem_imutavel` nunca checou a coluna `numero` em NENHUM status
       tocado — o banco sempre permitiu essa edição, inclusive em `Apontada`; só a tela nunca
-      expunha. A migração fecha esse caso específico no próprio trigger, não só escondendo o
-      botão. Sem mais mudança de schema: RLS e o restante do trigger já bastavam (`ordens/editar`
-      é PCP/Gestor por padrão).
+      expunha. A migração fechou esse caso específico no próprio trigger, não só escondendo o
+      botão.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 
