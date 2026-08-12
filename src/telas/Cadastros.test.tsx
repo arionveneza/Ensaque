@@ -15,34 +15,34 @@ vi.mock('@/auth/AuthProvider', () => ({
   useAuth: () => ({ permitido: () => true }),
 }))
 
-vi.mock('@/dados/api', async () => {
-  const real = await vi.importActual<typeof import('@/dados/api')>('@/dados/api')
-  return {
-    ...real,
-    carregarCadastros: () =>
-      Promise.resolve({
-        maquinas: [],
-        motivos: [],
-        produtos: [{ id: 'p1', codigo: 'FTZ', nome: 'Fortenza', unidade: 'ml/100kg', densidade: 1.2 }],
-      }),
-  }
-})
+/**
+ * Mocks inteiramente inline — sem `vi.importActual`. Puxar o módulo real
+ * (mesmo só para espalhar `...real`) importa `@/lib/supabase`, que lança se
+ * `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` não existirem — o caso do CI,
+ * que não tem `.env.local` (nem deveria: é gitignored). Rodava só na minha
+ * máquina, que tem as credenciais reais; quebrava sempre no GitHub Actions.
+ * `Cadastros.tsx` só chama estas quatro funções ao montar — nada mais do
+ * módulo real precisa existir para este teste.
+ */
+vi.mock('@/dados/api', () => ({
+  carregarCadastros: () =>
+    Promise.resolve({
+      maquinas: [],
+      motivos: [],
+      produtos: [{ id: 'p1', codigo: 'FTZ', nome: 'Fortenza', unidade: 'ml/100kg', densidade: 1.2 }],
+    }),
+}))
 
-vi.mock('@/dados/api-gestao', async () => {
-  const real = await vi.importActual<typeof import('@/dados/api-gestao')>('@/dados/api-gestao')
-  return {
-    ...real,
-    listarReceitas: () => Promise.resolve([]),
-    listarEmbalagens: () => Promise.resolve([]),
-    listarTurnos: () => Promise.resolve([]),
-    listarLotes: () => Promise.resolve([]),
-  }
-})
+vi.mock('@/dados/api-gestao', () => ({
+  listarReceitas: () => Promise.resolve([]),
+  listarEmbalagens: () => Promise.resolve([]),
+  listarTurnos: () => Promise.resolve([]),
+  listarLotes: () => Promise.resolve([]),
+}))
 
-vi.mock('@/dados/api-admin', async () => {
-  const real = await vi.importActual<typeof import('@/dados/api-admin')>('@/dados/api-admin')
-  return { ...real, listarPrincipios: () => Promise.resolve([]) }
-})
+vi.mock('@/dados/api-admin', () => ({
+  listarPrincipios: () => Promise.resolve([]),
+}))
 
 const { default: Cadastros } = await import('./Cadastros')
 

@@ -80,10 +80,13 @@ describe('matriz de permissoes', () => {
     expect(Object.values(p).every((v) => v === false)).toBe(true)
   })
 
-  it('renumerar so em producao/parada, exclusivo do PCP na tela', () => {
+  it('renumerar vale ate Qualidade apontada, trava em Apontada (AGROTIS)', () => {
     const podemRenumerar = (Object.keys(MATRIZ_STATUS) as StatusEfetivo[])
       .filter((s) => MATRIZ_STATUS[s].renumerar)
-    expect(podemRenumerar.sort()).toEqual(['Em producao', 'Parada'].sort())
+    expect(podemRenumerar.sort()).toEqual(
+      ['Em producao', 'Parada', 'Finalizada', 'Qualidade apontada'].sort(),
+    )
+    expect(MATRIZ_STATUS.Apontada.renumerar).toBe(false)
   })
 
   it('estorno so antes de iniciar', () => {

@@ -118,19 +118,21 @@ por ordem, não pelo status do lote (§1, Lotes de semente).
 | Não programada / Programada / Aguardando lote | ✔ | ✔ | — | ✔ | — | ✔ | — |
 | Pronto para produzir | ✔ | ✔ | ✔ | ✔ | — | ✔ | — |
 | Em produção / Parada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | ✔ (só PCP) |
-| Finalizada / Qualidade apontada | ✖ | ✖ | ✖ | ✖ | ✔ | **✖** | — |
-| Apontada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | — |
+| Finalizada / Qualidade apontada | ✖ | ✖ | ✖ | ✖ | ✔ | **✖** | ✔ (só PCP) |
+| Apontada | ✖ | ✖ | ✖ | ✖ | ✖ | **✖** | **✖** |
 
 **Regra de ouro:** antes de iniciar, tudo é editável; depois que a produção toca a ordem, ela é
 registro histórico. Estorno de lote é bloqueado se **qualquer** ordem daquele lote já foi iniciada.
 
 **Renumerar é a única exceção à regra de ouro** (decisão de 11/08/2026): o **nº da ordem** pode
-ser corrigido enquanto ela está `Em produção`/`Parada` — não entra em nenhum cálculo (tempo,
+ser corrigido em qualquer status já tocado pela produção — não entra em nenhum cálculo (tempo,
 consumo, peso), então corrigi-lo não distorce nada, diferente dos outros campos. Ação exclusiva
 de quem tem `ordens/editar` (PCP/Gestor) — a tela de Ordens mostra um botão "renumerar" separado
-do "editar" para esse status; os demais campos continuam travados pelo trigger de imutabilidade.
-Só até Parada: depois de `Finalizada` o número já pode ter ido para relatório/AGROTIS, e a
-correção fica bloqueada de novo, igual antes.
+do "editar" para esses status; os demais campos continuam travados pelo trigger de imutabilidade.
+**Trava de novo em `Apontada`**: nesse ponto o número já foi lançado no AGROTIS (ERP externo), e
+corrigir aqui divergiria de lá sem ninguém saber — bloqueado tanto na tela quanto no próprio
+trigger `fn_ordem_imutavel` (que nunca checava a coluna `numero`; era permissivo por omissão em
+TODOS os status tocados, não só nos 4 que a tela libera de propósito).
 
 **Excluir exige ordem virgem** (decisão de 05/08/2026): além do status, o banco recusa excluir
 ordem com **qualquer história** — evento de produção, parada, teste de qualidade ou conferência

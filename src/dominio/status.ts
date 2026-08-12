@@ -16,12 +16,13 @@ export interface PermissoesStatus {
   /** Estorno do lote de semente desta ordem. */
   estornarLote: boolean
   /**
-   * Corrigir só o NÚMERO da ordem mesmo com a produção já rodando —
-   * decisão de 11/08/2026. Único campo liberado aqui: não entra em nenhum
-   * cálculo (tempo, consumo, peso), então corrigi-lo não distorce nada,
-   * diferente de cultivar/receita/bags/lote/máquina/dia, que o gatilho de
-   * imutabilidade continua travando. Só Em produção/Parada — depois de
-   * Finalizada o número já pode ter ido para relatório/AGROTIS.
+   * Corrigir só o NÚMERO da ordem mesmo já tocada pela produção — decisão
+   * de 11/08/2026. Único campo liberado aqui: não entra em nenhum cálculo
+   * (tempo, consumo, peso), então corrigi-lo não distorce nada, diferente
+   * de cultivar/receita/bags/lote/máquina/dia, que o gatilho de
+   * imutabilidade continua travando. Vale até `Qualidade apontada`; trava
+   * de novo em `Apontada` porque o número já foi lançado no AGROTIS
+   * (ERP externo) — corrigir aqui divergiria de lá sem ninguém saber.
    */
   renumerar: boolean
 }
@@ -53,11 +54,11 @@ export const MATRIZ_STATUS: Record<StatusEfetivo, PermissoesStatus> = {
   },
   Finalizada: {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: true, estornarLote: false, renumerar: false,
+    priorizar: false, qualidade: true, estornarLote: false, renumerar: true,
   },
   'Qualidade apontada': {
     editar: false, excluir: false, iniciar: false,
-    priorizar: false, qualidade: true, estornarLote: false, renumerar: false,
+    priorizar: false, qualidade: true, estornarLote: false, renumerar: true,
   },
   Apontada: {
     editar: false, excluir: false, iniciar: false,
