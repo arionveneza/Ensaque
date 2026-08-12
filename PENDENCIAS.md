@@ -9,7 +9,7 @@ Atualizado em 05/08/2026 (noite — correções de RLS e baixa atômica).
 |---|---|
 | App publicado | **https://tsi.veneza.app.br** (Cloudflare) — ver §3b. O github.io redireciona |
 | Repositório | `arionveneza/Ensaque` (público) — `push` na `main` roda os testes e republica |
-| Banco | Supabase `Sistema_de_ensaque`, projeto `ztwmrhfloelqxhhpdmoz`, schema **`tsi`** |
+| Banco | Supabase `Sistema_de_ensaque`, projeto `ztwmrhfloelqxhhpdmoz`, schema **`tsi`** — mudança para self-hosted em avaliação (política de dados), ver `docs/self-hosting-supabase.md` |
 | Telas | As 8 implementadas: Ordens, Programação, Lotes, Execução, Qualidade, Indicadores, Cadastros, Administração |
 | Testes | 308, rodam antes de cada deploy — teste vermelho não publica |
 | Integração SAP | **Laboratório no app** (aba "SAP (teste)", só p/ Arion, homolog só-leitura via Edge Function `sap-teste`). Caminho validado em 09/08/2026: Basic Auth + endpoint de homolog + saldo por lote. Produção espera a autorização de `SQLQueries` — ver `docs/integracao-sap.md` |
