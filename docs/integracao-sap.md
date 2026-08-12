@@ -538,8 +538,9 @@ Edge Function `supabase/functions/sap-teste/index.ts` (proxy).
   em `src/lib/sapTeste.ts`) **e** de novo dentro da Edge Function — a lista do front é
   conveniência; a barreira que vale é a do servidor. Não é regido pela matriz de permissões
   (é por usuário, não por perfil), igual à exceção da Administração.
-- **Só leitura, só homologação**: a função repassa apenas `GET` para `SBOVENHOM`, com Basic
-  Auth (§6.4). Valida que o caminho resolvido não escapa do `/b1s/v1` (bloqueia
+- **Só leitura, sempre — em qualquer base**: a função repassa apenas `GET`, nunca
+  POST/PATCH/DELETE (§6.8 estendeu para também alcançar produção, mas a trava de método é a
+  mesma, incondicional). Valida que o caminho resolvido não escapa do `/b1s/v1` (bloqueia
   `..`/`%2e%2e`/`\`), segue `odata.nextLink` até 10 páginas, e responde sempre HTTP 200 com
   `{ ok, erro?, dados? }` (o `invoke` do supabase-js esconde corpo de resposta não-2xx).
 - **Presets** na tela: ping, pedidos de venda abertos, insumos com estoque, saldo por lote
@@ -551,17 +552,44 @@ Edge Function `supabase/functions/sap-teste/index.ts` (proxy).
 supabase functions deploy sap-teste --no-verify-jwt
 ```
 `--no-verify-jwt` porque a chave anônima é um JWT válido e não protegeria nada (o código faz
-a autenticação real). Secrets necessários no projeto: `SAP_USER`, `SAP_PASSWORD` (e,
-opcionais, `SAP_HOM_URL`/`SAP_HOM_DB` — têm fallback embutido para homolog). **Enquanto a
-função não for publicada, a aba mostra "Failed to send a request to the Edge Function"** — é
-o esperado, não bug do front.
+a autenticação real). Secrets necessários no projeto: `SAP_USER`, `SAP_PASSWORD` (mesma
+credencial serve as duas bases) e, opcionais, `SAP_HOM_URL`/`SAP_HOM_DB`/`SAP_PROD_URL`/
+`SAP_PROD_DB` — todos têm fallback embutido (§1). **Enquanto a função não for publicada, a
+aba mostra "Failed to send a request to the Edge Function"** — é o esperado, não bug do front.
+
+### 6.8 Laboratório ganha produção (12/08/2026)
+
+Arion confirmou acesso liberado em `SBOVENPRD` (a autorização de `SQLQueries` pendente desde
+§6.6/§6.7) e pediu para testar direto na base real. Em vez de rodar PowerShell de novo, o
+laboratório do app foi estendido: agora tem um seletor **Homologação / Produção** no topo da
+tela — homolog continua o padrão ao abrir a aba (nunca produção por acidente), e escolher
+produção pinta a tela em vermelho e mostra "dados reais da empresa — só leitura" antes de
+qualquer clique.
+
+- **Trava dura preservada**: o `fetch` na Edge Function agora passa `method: 'GET'`
+  explicitamente (antes era o padrão implícito) — comentário no código deixa claro que isso
+  vale para as duas bases, sem exceção.
+- **Sem secret novo obrigatório**: o endpoint/base de produção (§1) não é segredo — só
+  usuário/senha são (`SAP_USER`/`SAP_PASSWORD`, os mesmos das duas bases). `SAP_PROD_URL`/
+  `SAP_PROD_DB` existem como override opcional, com fallback para os valores documentados.
+- **O que NÃO foi feito**: criar a `TSI_SALDOS` em produção (se ainda não existir lá) exige
+  `POST /SQLQueries` — uma escrita, mesmo sendo só metadado de consulta, não dado de negócio.
+  Fora do que este laboratório faz de propósito (só GET, sem excecão, nem para o Arion) e da
+  regra "sempre leitura em produção" do CLAUDE.md §4. Se precisar criar lá, é uma ação
+  específica, deliberada, fora deste caminho — não algo que o laboratório faz sozinho.
+- **Ainda não testado**: esta sessão implementou e publicou o código; o teste de ponta a
+  ponta em `SBOVENPRD` pelo laboratório (listar `SQLQueries`, e se a `TSI_SALDOS` já existir
+  lá, executá-la) é o próximo passo, do lado do Arion.
 
 ## 7. Checklist de implantação
 
 - [x] Acesso a `SBOVENHOM` OK — 09/08/2026, via Basic Auth no **endpoint próprio de homolog** (§6.6)
 - [x] JSON de `Items`, `Orders` e `BatchNumberDetails` inspecionado → mapeamento fechado (§4/§6.5)
 - [x] Saldo por lote executado de ponta a ponta na homolog (`TSI_SALDOS`, §6.6)
-- [ ] Autorização de `SQLQueries` replicada em `SBOVENPRD` + `TSI_SALDOS` criada lá (pedido ao TI)
+- [~] Autorização de `SQLQueries` replicada em `SBOVENPRD` — Arion confirmou acesso liberado
+      em 12/08/2026; falta testar de ponta a ponta pelo laboratório (agora suporta produção,
+      §6.8) e confirmar se a `TSI_SALDOS` já existe lá ou ainda precisa ser criada (POST —
+      fora do que o laboratório faz de propósito, ver §6.8)
 - [ ] Senha do `ven040` trocada (exposta em 09/08) e/ou usuário de integração dedicado, somente leitura
 - [ ] Campo do status financeiro dos pedidos identificado (candidatos no §6.5)
 - [ ] Conversão do SAP reproduzindo os números conhecidos: **1.018 bags aprovados** e

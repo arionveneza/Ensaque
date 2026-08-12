@@ -1,20 +1,24 @@
 /**
- * Laboratório do SAP em HOMOLOGAÇÃO — proxy da aba "SAP (teste)".
+ * Laboratório do SAP — proxy da aba "SAP (teste)". Homologação e, desde
+ * 12/08/2026, produção também (autorização de SQLQueries liberada lá).
  *
  * Por que existe: o navegador não fala direto com o Service Layer (sem CORS
  * lá, certificado próprio), e a credencial do SAP não pode viver no bundle.
  * O front chama esta função autenticado no Supabase; ela guarda usuário e
- * senha como secrets e repassa APENAS GETs para a homologação.
+ * senha como secrets e repassa APENAS GETs.
  *
  * Diferenças da antiga função `sap` (código removido em 28/07/2026, ver histórico):
  *  - Basic Auth POR REQUISIÇÃO, sem Login/cookie — a sessão do Service Layer
  *    está quebrada no ambiente hospedado (docs/integracao-sap.md §6.3) e o
  *    Basic Auth é o contorno validado (§6.4).
- *  - Aponta para o endpoint PRÓPRIO da homologação, descoberto em 09/08/2026
- *    (§6.6) — o SL de produção não atende a base de homolog.
+ *  - Homologação usa o endpoint PRÓPRIO dela, descoberto em 09/08/2026
+ *    (§6.6) — o SL de produção não atende a base de homolog. Produção usa
+ *    o endpoint público (§1).
  *  - Caminho OData livre, porque isto é um laboratório: quem explora decide
  *    a consulta. Em troca, o acesso é restrito a UM usuário (lista abaixo),
- *    só leitura, e a autorização do usuário do SAP é a última barreira.
+ *    só leitura SEMPRE (GET, nunca POST/PATCH/DELETE — regra dura mesmo em
+ *    produção, CLAUDE.md §4), e a autorização do usuário do SAP é a última
+ *    barreira.
  *
  * Deploy com "Enforce JWT verification" DESLIGADO: a chave anônima é um JWT
  * válido, então essa trava não barra ninguém (lição registrada no
@@ -23,10 +27,22 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
-const SAP_URL =
-  Deno.env.get('SAP_HOM_URL') ??
-  'https://sap-sementesvenezahom-sl.skyinone.net:50000/b1s/v1'
-const SAP_DB = Deno.env.get('SAP_HOM_DB') ?? 'SBOVENHOM'
+type Ambiente = 'homolog' | 'producao'
+
+const BASES: Record<Ambiente, { url: string; db: string }> = {
+  homolog: {
+    url:
+      Deno.env.get('SAP_HOM_URL') ??
+      'https://sap-sementesvenezahom-sl.skyinone.net:50000/b1s/v1',
+    db: Deno.env.get('SAP_HOM_DB') ?? 'SBOVENHOM',
+  },
+  producao: {
+    url:
+      Deno.env.get('SAP_PROD_URL') ??
+      'https://sap-sementesveneza-sl.skyinone.net:50000/b1s/v1',
+    db: Deno.env.get('SAP_PROD_DB') ?? 'SBOVENPRD',
+  },
+}
 const SAP_USER = Deno.env.get('SAP_USER') ?? ''
 const SAP_PASSWORD = Deno.env.get('SAP_PASSWORD') ?? ''
 
@@ -60,10 +76,10 @@ const recusa = (erro: string, sap?: unknown) => json({ ok: false, erro, sap })
  * Monta a URL final e recusa se ela escapar do service root. Validar o texto
  * cru não basta: o parser de URL colapsa `%2e%2e` e `\` em `..`, então
  * `Items/%2e%2e/%2e%2e/Login` passaria por um `includes('..')` e sairia para
- * fora do /b1s/v1. A regra que vale é a URL RESOLVIDA continuar sob SAP_URL.
- * Devolve { url } ou { erro }.
+ * fora do /b1s/v1. A regra que vale é a URL RESOLVIDA continuar sob a raiz
+ * da base escolhida (homolog ou produção). Devolve { url } ou { erro }.
  */
-function resolveCaminho(caminho: string): { url?: string; erro?: string } {
+function resolveCaminho(caminho: string, sapUrl: string): { url?: string; erro?: string } {
   const c = caminho.trim()
   if (!c) return { erro: 'Informe o caminho OData.' }
   if (c.includes('://')) return { erro: 'Só caminho relativo — sem http(s)://.' }
@@ -71,11 +87,11 @@ function resolveCaminho(caminho: string): { url?: string; erro?: string } {
   if (!/^[A-Za-z$]/.test(c)) return { erro: 'O caminho começa com letra (ou $).' }
   let url: URL
   try {
-    url = new URL(`${SAP_URL}/${c}`)
+    url = new URL(`${sapUrl}/${c}`)
   } catch {
     return { erro: 'Caminho inválido.' }
   }
-  const raiz = new URL(SAP_URL + '/')
+  const raiz = new URL(sapUrl + '/')
   if (url.origin !== raiz.origin || !url.pathname.startsWith(raiz.pathname)) {
     return { erro: 'Caminho sai do /b1s/v1 — recusado.' }
   }
@@ -121,13 +137,19 @@ Deno.serve(async (req) => {
   }
 
   // ---- o pedido ----
-  let corpo: { caminho?: string; paginas?: number }
+  let corpo: { caminho?: string; paginas?: number; ambiente?: string }
   try {
     corpo = await req.json()
   } catch {
-    return recusa('Corpo inválido: esperado JSON { caminho, paginas? }.')
+    return recusa('Corpo inválido: esperado JSON { caminho, paginas?, ambiente? }.')
   }
-  const primeira = resolveCaminho(corpo.caminho ?? '')
+  // default homolog: quem chama sem informar ambiente continua no que já
+  // testava antes de produção existir aqui — trocar de base é sempre um
+  // passo explícito do front, nunca um acidente de omitir o campo
+  const ambiente: Ambiente = corpo.ambiente === 'producao' ? 'producao' : 'homolog'
+  const { url: SAP_URL, db: SAP_DB } = BASES[ambiente]
+
+  const primeira = resolveCaminho(corpo.caminho ?? '', SAP_URL)
   if (primeira.erro) return recusa(primeira.erro)
   // segue odata.nextLink até este limite — evita varrer o cadastro inteiro
   const paginas = Math.min(Math.max(Math.trunc(corpo.paginas ?? 1), 1), 10)
@@ -154,7 +176,8 @@ Deno.serve(async (req) => {
     let lidas = 0
 
     while (proximaUrl && lidas < paginas) {
-      const resp = await fetch(proximaUrl, { headers: cabecalhos })
+      // método SEMPRE GET — laboratório é só leitura, em qualquer ambiente
+      const resp = await fetch(proximaUrl, { method: 'GET', headers: cabecalhos })
       const texto = await resp.text()
       let pagina: Record<string, unknown>
       try {
@@ -173,7 +196,7 @@ Deno.serve(async (req) => {
         // aponta para dentro do service root antes de refazer o fetch
         const link = pagina['odata.nextLink']
         if (typeof link === 'string') {
-          const prox = resolveCaminho(link.replace(/^\//, ''))
+          const prox = resolveCaminho(link.replace(/^\//, ''), SAP_URL)
           proximaUrl = prox.url ?? null
         } else {
           proximaUrl = null
@@ -186,6 +209,7 @@ Deno.serve(async (req) => {
     if (dados && Array.isArray(dados.value)) dados.value = acumulado
     return json({
       ok: true,
+      ambiente,
       base: SAP_DB,
       dados,
       paginasLidas: lidas,

@@ -24,20 +24,24 @@ import {
 } from '@/componentes/ui'
 
 /**
- * Laboratório do SAP em HOMOLOGAÇÃO.
+ * Laboratório do SAP — homologação (dados de teste) e, desde 12/08/2026,
+ * produção também (dados REAIS da empresa, com a mesma trava de só leitura).
  *
  * Aba visível só para o usuário da lista USUARIOS_SAP_TESTE (App.tsx); a
  * Edge Function `sap-teste` recusa qualquer outro login de novo, do lado do
- * servidor. Tudo aqui é LEITURA — a função só repassa GET.
+ * servidor. Tudo aqui é LEITURA — a função só repassa GET, em qualquer base.
  *
  * O objetivo é experimentar as consultas que vão virar a integração de
  * verdade (pedidos de venda, saldo por lote via TSI_SALDOS, itens) sem
  * PowerShell — os achados de docs/integracao-sap.md §6.4–§6.6 valem aqui.
  */
 
+type Ambiente = 'homolog' | 'producao'
+
 interface Resultado {
   dados: unknown
   base: string
+  ambiente: Ambiente
   paginasLidas: number
   temMais: boolean
   tempoMs: number
@@ -45,17 +49,17 @@ interface Resultado {
 }
 
 type RespostaSap =
-  | { ok: true; dados: unknown; base: string; paginasLidas: number; temMais: boolean }
+  | { ok: true; dados: unknown; base: string; ambiente: Ambiente; paginasLidas: number; temMais: boolean }
   | { ok: false; erro: string }
 
 /** Só a chamada de rede, sem tocar estado — reusada pelo `executar()` e
  *  pelo "Resumo do item". */
-async function chamarSap(caminho: string, paginas: number): Promise<RespostaSap> {
+async function chamarSap(caminho: string, paginas: number, ambiente: Ambiente): Promise<RespostaSap> {
   const problema = problemaNoCaminho(caminho)
   if (problema) return { ok: false, erro: problema }
   try {
     const { data, error } = await supabase.functions.invoke('sap-teste', {
-      body: { caminho, paginas },
+      body: { caminho, paginas, ambiente },
     })
     if (error) throw new Error(error.message)
     const r = data as {
@@ -63,6 +67,7 @@ async function chamarSap(caminho: string, paginas: number): Promise<RespostaSap>
       erro?: string
       sap?: unknown
       base?: string
+      ambiente?: Ambiente
       dados?: unknown
       paginasLidas?: number
       temMais?: boolean
@@ -74,6 +79,7 @@ async function chamarSap(caminho: string, paginas: number): Promise<RespostaSap>
       ok: true,
       dados: r.dados,
       base: r.base ?? 'SBOVENHOM',
+      ambiente: r.ambiente ?? 'homolog',
       paginasLidas: r.paginasLidas ?? 1,
       temMais: r.temMais ?? false,
     }
@@ -193,6 +199,9 @@ export default function SapTeste() {
   const [paginas, setPaginas] = useState(1)
   const [itemCode, setItemCode] = useState('SOJ00002')
   const [prefixo, setPrefixo] = useState('SOJ')
+  // homolog por padrão sempre — trocar para produção é ação explícita de
+  // quem está usando a tela, nunca o estado inicial (dados reais da empresa)
+  const [ambiente, setAmbiente] = useState<Ambiente>('homolog')
   const [carregando, setCarregando] = useState(false)
   const [progresso, setProgresso] = useState('')
   const [erro, setErro] = useState<string | null>(null)
@@ -210,7 +219,7 @@ export default function SapTeste() {
     setResumo(null) // um resultado por vez — some os outros painéis
     setRelatorio(null)
     const inicio = performance.now()
-    const r = await chamarSap(cam, pags)
+    const r = await chamarSap(cam, pags, ambiente)
     if (!r.ok) {
       setResultado(null)
       setErro(r.erro)
@@ -235,7 +244,7 @@ export default function SapTeste() {
     setResumo(null)
     setRelatorio(null)
 
-    const r = await chamarSap(`Items('${codigo}')`, 1)
+    const r = await chamarSap(`Items('${codigo}')`, 1, ambiente)
     if (!r.ok) {
       setErro(r.erro)
       setCarregando(false)
@@ -277,6 +286,7 @@ export default function SapTeste() {
       const r = await chamarSap(
         `Items?$filter=startswith(ItemCode,'${pref}')&$orderby=ItemCode&$top=${TAMANHO_LOTE}&$skip=${skip}`,
         1,
+        ambiente,
       )
       if (!r.ok) {
         setErro(r.erro)
@@ -304,8 +314,43 @@ export default function SapTeste() {
   return (
     <Pagina
       titulo="SAP — laboratório"
-      descricao="Consultas de LEITURA na base de homologação (SBOVENHOM), via Edge Function. Dados de teste — não é a produção."
+      descricao="Consultas de LEITURA, via Edge Function — nunca grava nada, em nenhuma base."
     >
+      <Cartao titulo="Ambiente" className="mb-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-md border border-stone-300 dark:border-stone-700">
+            <button
+              onClick={() => setAmbiente('homolog')}
+              className={`rounded-l-md px-3 py-2 text-sm font-medium sm:py-1.5 ${
+                ambiente === 'homolog'
+                  ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900'
+                  : 'text-stone-600 dark:text-stone-300'
+              }`}
+            >
+              Homologação (SBOVENHOM)
+            </button>
+            <button
+              onClick={() => setAmbiente('producao')}
+              className={`rounded-r-md px-3 py-2 text-sm font-medium sm:py-1.5 ${
+                ambiente === 'producao'
+                  ? 'bg-red-700 text-white'
+                  : 'text-stone-600 dark:text-stone-300'
+              }`}
+            >
+              Produção (SBOVENPRD)
+            </button>
+          </div>
+          {ambiente === 'producao' && (
+            <Tag cor="perigo">dados reais da empresa — só leitura</Tag>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-stone-500">
+          {ambiente === 'homolog'
+            ? 'Dados de teste — pode explorar sem medo de confundir com o real.'
+            : 'Isto é o SAP de verdade. A Edge Function só repassa GET (nunca cria/altera/apaga nada), mas o número que aparecer aqui é o número real.'}
+        </p>
+      </Cartao>
+
       <Cartao titulo="Consultas prontas" className="mb-5">
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p) => (
@@ -571,28 +616,31 @@ export default function SapTeste() {
         <Cartao
           titulo={`Resultado — ${resultado.base}`}
           acoes={
-            tabela && tabela.linhas.length > 0 ? (
-              <Botao
-                onClick={() =>
-                  exportarCsv('sap-teste', [
-                    tabela.colunas,
-                    // número vai cru para o exportarCsv trocar ponto por
-                    // vírgula (Excel pt-BR); nulo vira vazio (não "—", que
-                    // sujaria coluna numérica); objeto vira JSON
-                    ...tabela.linhas.map((l) =>
-                      tabela.colunas.map((c) => {
-                        const v = l[c]
-                        if (v === null || v === undefined) return ''
-                        if (typeof v === 'object') return textoCelula(v)
-                        return v as string | number
-                      }),
-                    ),
-                  ])
-                }
-              >
-                Exportar
-              </Botao>
-            ) : undefined
+            <>
+              {resultado.ambiente === 'producao' && <Tag cor="perigo">dados reais</Tag>}
+              {tabela && tabela.linhas.length > 0 && (
+                <Botao
+                  onClick={() =>
+                    exportarCsv('sap-teste', [
+                      tabela.colunas,
+                      // número vai cru para o exportarCsv trocar ponto por
+                      // vírgula (Excel pt-BR); nulo vira vazio (não "—", que
+                      // sujaria coluna numérica); objeto vira JSON
+                      ...tabela.linhas.map((l) =>
+                        tabela.colunas.map((c) => {
+                          const v = l[c]
+                          if (v === null || v === undefined) return ''
+                          if (typeof v === 'object') return textoCelula(v)
+                          return v as string | number
+                        }),
+                      ),
+                    ])
+                  }
+                >
+                  Exportar
+                </Botao>
+              )}
+            </>
           }
         >
           <p className="mb-2 text-xs text-stone-500">
