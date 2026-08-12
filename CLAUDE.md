@@ -384,7 +384,13 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 5. **Qualidade** — visual (Aprovado / Aprovado com observação / Reprovado) + retirada de amostra (S/N).
 6. **Indicadores** — produção por máquina e turno, relatório por ordem (planejado vs realizado bruto e
    líquido), produção por período (dia/semana/mês/geral) com tempo parado, Pareto de paradas
-   separando planejada de não planejada, export .xlsx.
+   separando planejada de não planejada, export .xlsx. Dois relatórios **por dia** que respondem
+   perguntas diferentes (11/08/2026): "Programado × finalizado" usa `data_prog` — o dia ATUAL da
+   ordem — então reprogramar apaga o programado de onde ela saiu, como se nunca tivesse sido a
+   intenção. "Planejado (antes de reprogramar) × executado" usa `data_prog_original` — carimbado
+   na primeira vez que a ordem ganha um dia e nunca muda — para as duas pontas (planejado e
+   executado): mostra quanto do que foi combinado para aquele dia saiu, não importa quando saiu de
+   fato. Divergência entre os dois é reprogramação mascarando atraso.
 6b. **Expedição** (07/08/2026) — upload do relatório **montagem de carga** da SimpleAgro
    (substituição total; colunas achadas pelo nome). Carregamentos agendados com filtros por
    período/status/cultivar/tratamento/embalagem e busca por cliente; **saldo dinâmico** por

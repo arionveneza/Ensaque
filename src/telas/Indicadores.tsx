@@ -13,6 +13,9 @@ import {
 
 type Janela = 'dia' | 'semana' | 'mes'
 
+/** Status em que a produção já terminou a ordem — o resto do ciclo é qualidade/AGROTIS. */
+const STATUS_FINALIZADO = new Set(['Finalizada', 'Qualidade apontada', 'Apontada'])
+
 export default function Indicadores() {
   // dia de produção LOCAL (07:30–03:00), não a data UTC: no fim da noite do
   // Brasil o toISOString já apontava amanhã e "Hoje" vinha vazio. Alinha com
@@ -176,27 +179,69 @@ export default function Indicadores() {
     return [...mapa.values()].sort((a, b) => b.pesoT - a.pesoT)
   }, [tempos, ordemPorId])
 
-  /** Produção e tempo parado por dia. */
+  /**
+   * Programado vs finalizado por dia.
+   *
+   * `tempos` só tem ordem que já foi INICIADA — uma ordem programada para
+   * hoje e ainda esperando lote não aparece ali, então o "programado" não
+   * pode vir dele. Peso e paradas continuam de `tempos` (só ordem iniciada
+   * tem tempo de máquina); programado e finalizado somam TODAS as ordens do
+   * dia em `ordens`, tocadas ou não pela produção.
+   */
   const porDia = useMemo(() => {
     const mapa = new Map<
       string,
-      { dia: string; ordens: number; bags: number; pesoT: number; parPlan: number; parNplan: number }
+      {
+        dia: string; ordens: number; programado: number; finalizado: number
+        pesoT: number; parPlan: number; parNplan: number
+      }
     >()
+    const vazio = (dia: string) =>
+      ({ dia, ordens: 0, programado: 0, finalizado: 0, pesoT: 0, parPlan: 0, parNplan: 0 })
     for (const t of tempos) {
       const chave = t.data_prog ?? 'sem-dia'
-      const o = ordemPorId.get(t.ordem_id)
-      const atual =
-        mapa.get(chave) ?? { dia: chave, ordens: 0, bags: 0, pesoT: 0, parPlan: 0, parNplan: 0 }
+      const atual = mapa.get(chave) ?? vazio(chave)
       atual.ordens++
-      // produzido quando existe; senão o planejado, igual ao indicador do topo
-      atual.bags += o?.bags_produzidos ?? o?.bags ?? 0
       atual.pesoT += Number(t.peso_t)
       atual.parPlan += Number(t.paradas_plan_s)
       atual.parNplan += Number(t.paradas_nplan_s)
       mapa.set(chave, atual)
     }
+    for (const o of ordens) {
+      if (!o.data_prog || o.data_prog < de || o.data_prog > hoje) continue
+      const atual = mapa.get(o.data_prog) ?? vazio(o.data_prog)
+      atual.programado += o.bags
+      if (STATUS_FINALIZADO.has(o.status_efetivo)) atual.finalizado += o.bags_produzidos ?? o.bags
+      mapa.set(o.data_prog, atual)
+    }
     return [...mapa.values()].sort((a, b) => a.dia.localeCompare(b.dia))
-  }, [tempos, ordemPorId])
+  }, [tempos, ordens, de, hoje])
+
+  /**
+   * Planejado (antes de reprogramar) × executado por dia.
+   *
+   * `porDia` acima usa `data_prog` — o dia ATUAL da ordem — então o
+   * "programado" se reescreve a cada reprogramação: uma ordem que saiu de
+   * segunda para quarta some do programado de segunda, como se nunca tivesse
+   * sido a intenção. Aqui a chave é `data_prog_original`, que o banco
+   * carimba na primeira vez que a ordem ganha um dia e nunca muda depois —
+   * é a foto de antes de qualquer reprogramação. Programado e finalizado
+   * ficam os dois presos a essa mesma foto: o que interessa é "do que foi
+   * combinado para este dia, quanto saiu", não importa quando saiu de fato.
+   */
+  const porDiaOriginal = useMemo(() => {
+    const mapa = new Map<string, { dia: string; programado: number; finalizado: number }>()
+    const vazio = (dia: string) => ({ dia, programado: 0, finalizado: 0 })
+    for (const o of ordens) {
+      const dia = o.data_prog_original ?? o.data_prog
+      if (!dia || dia < de || dia > hoje) continue
+      const atual = mapa.get(dia) ?? vazio(dia)
+      atual.programado += o.bags
+      if (STATUS_FINALIZADO.has(o.status_efetivo)) atual.finalizado += o.bags_produzidos ?? o.bags
+      mapa.set(dia, atual)
+    }
+    return [...mapa.values()].sort((a, b) => a.dia.localeCompare(b.dia))
+  }, [ordens, de, hoje])
 
   /** O relatório geral: uma linha por ordem, com tudo. */
   async function exportarGeral() {
@@ -391,25 +436,82 @@ export default function Indicadores() {
               </Tabela>
             </Cartao>
 
-            <Cartao titulo="Produção e paradas por dia">
-              <Tabela cabecalho={['Dia', '#Ordens', '#Bags produz.', '#Peso', '#Par. planej.', '#Par. não planej.']}>
-                {porDia.map((d) => (
-                  <tr key={d.dia} className="border-t border-stone-100 dark:border-stone-800/60">
-                    <td className="px-2 py-1.5 font-medium">
-                      {d.dia === 'sem-dia' ? '—' : diaCurto(d.dia)}
-                    </td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{d.ordens}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{d.bags}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{n(d.pesoT, 1)} t</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{formataHms(d.parPlan)}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right font-medium text-red-600 dark:text-red-400">
-                      {d.parNplan > 0 ? formataHms(d.parNplan) : '—'}
-                    </td>
-                  </tr>
-                ))}
+            <Cartao titulo="Programado × finalizado por dia">
+              <Tabela
+                cabecalho={['Dia', '#Programado', '#Finalizado', '%', '#Peso',
+                  '#Par. planej.', '#Par. não planej.']}
+              >
+                {porDia.map((d) => {
+                  const pct = d.programado > 0 ? (d.finalizado / d.programado) * 100 : null
+                  return (
+                    <tr key={d.dia} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <td className="px-2 py-1.5 font-medium">
+                        {d.dia === 'sem-dia' ? '—' : diaCurto(d.dia)}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{d.programado}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                        {d.finalizado}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {pct == null ? (
+                          '—'
+                        ) : (
+                          <Tag cor={pct >= 90 ? 'ok' : pct >= 70 ? 'alerta' : 'perigo'}>
+                            {n(pct, 0)}%
+                          </Tag>
+                        )}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{n(d.pesoT, 1)} t</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{formataHms(d.parPlan)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right font-medium text-red-600 dark:text-red-400">
+                        {d.parNplan > 0 ? formataHms(d.parNplan) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </Tabela>
+              <p className="mt-2 text-xs text-stone-500">
+                <b>Programado</b>: soma de bags de todas as ordens com esse dia programado,
+                iniciadas ou não. <b>Finalizado</b>: das que a produção já terminou
+                (Finalizada, Qualidade apontada ou Apontada), a quantidade declarada — ou o
+                planejado, para as sem quantidade declarada.
+              </p>
             </Cartao>
           </div>
+
+          <Cartao titulo="Planejado (antes de reprogramar) × executado por dia" className="mb-5">
+            <Tabela cabecalho={['Dia', '#Planejado', '#Executado', '%']}>
+              {porDiaOriginal.map((d) => {
+                const pct = d.programado > 0 ? (d.finalizado / d.programado) * 100 : null
+                return (
+                  <tr key={d.dia} className="border-t border-stone-100 dark:border-stone-800/60">
+                    <td className="px-2 py-1.5 font-medium">{diaCurto(d.dia)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{d.programado}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                      {d.finalizado}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      {pct == null ? (
+                        '—'
+                      ) : (
+                        <Tag cor={pct >= 90 ? 'ok' : pct >= 70 ? 'alerta' : 'perigo'}>
+                          {n(pct, 0)}%
+                        </Tag>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </Tabela>
+            <p className="mt-2 text-xs text-stone-500">
+              <b>Planejado</b>: bags das ordens cujo <b>primeiro dia programado</b> foi este —
+              não muda se a ordem for reprogramada depois, é a foto de antes do arrasto.
+              <b> Executado</b>: dessas mesmas ordens, quanto já foi finalizado (Finalizada,
+              Qualidade apontada ou Apontada) — mesmo que tenha rodado em outro dia. Um número
+              baixo aqui e alto no "Programado × finalizado" acima é sinal de reprogramação
+              mascarando atraso.
+            </p>
+          </Cartao>
 
           <Cartao
             titulo="Pareto de paradas"
