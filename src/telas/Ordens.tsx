@@ -1054,7 +1054,13 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
   const [conferencias, setConferencias] = useState<Record<string, EstadoConferenciaSap>>({})
 
   /** Chama a `sap-teste` e devolve os `dados` já validados, ou lança com o
-   *  detalhe cru do SAP — mesmo formato de erro nos dois usos abaixo. */
+   *  detalhe cru do SAP — mesmo formato de erro nos dois usos abaixo.
+   *  `-2028 "No matching records found"` é uma peculiaridade das SQLQueries
+   *  do SAP: consulta existe e rodou, só não achou linha — resultado vazio
+   *  válido, não falha (é o mesmo código que apareceria se a consulta nem
+   *  existisse, mas aqui já confirmamos que `LotesSASaldo` existe — ver
+   *  docs/integracao-sap.md §6.8). Tratar como erro faria toda conferência
+   *  falhar sempre que um lote de fato não tem linha de saldo recente. */
   const chamarSapTeste = useCallback(async (caminho: string, paginas: number): Promise<unknown> => {
     const { data, error } = await supabase.functions.invoke('sap-teste', {
       body: { caminho, paginas, ambiente: 'producao' },
@@ -1062,6 +1068,8 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
     if (error) throw new Error(error.message)
     const r = data as { ok: boolean; erro?: string; sap?: unknown; dados?: unknown }
     if (!r.ok) {
+      const codigoSap = (r.sap as { error?: { code?: number } } | undefined)?.error?.code
+      if (codigoSap === -2028) return { value: [] }
       const detalhe = r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : ''
       throw new Error((r.erro ?? 'SAP recusou a consulta.') + detalhe)
     }

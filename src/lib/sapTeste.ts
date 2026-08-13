@@ -242,8 +242,15 @@ export function relatorioComPedido(itensJson: unknown[], prefixo: string): Relat
  * `Quantity` lá é o que causa o SAP recusar com HTTP 400. Traz TODOS os
  * lotes atualizados desde `desde` (não filtra por lote no servidor); quem
  * chama filtra depois por `BatchNum`.
+ *
+ * `desde` bem antigo de propósito: `UpdateDate` na OIBT parece só mudar na
+ * criação do lote/primeira movimentação, não a cada apontamento do dia a
+ * dia — um corte recente (ex.: 2025) devolveu 0 linhas (`-2028`) mesmo com
+ * a consulta existindo, porque nenhum lote tinha UpdateDate depois disso.
+ * `2020-01-01` é a mesma data já validada com 100 linhas reais em produção
+ * (12/08/2026).
  */
-export function caminhoSaldoLotes(desde = '2025-01-01'): string {
+export function caminhoSaldoLotes(desde = '2020-01-01'): string {
   return `SQLQueries('LotesSASaldo')/List?updatedate='${desde}'`
 }
 
