@@ -1110,6 +1110,32 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
     return [...mapa.values()].sort((a, b) => b.total - a.total)
   }, [ordens])
 
+  const [conferindoTodos, setConferindoTodos] = useState(false)
+  const conferirTodos = useCallback(async () => {
+    if (conferindoTodos) return
+    setConferindoTodos(true)
+    // refetch de propósito: quem confere tudo quer o número de agora,
+    // não o guardado de um clique anterior nesta mesma sessão da tela
+    saldosSapRef.current = null
+    const ids = porLote.map((l) => l.loteId)
+    setConferencias(Object.fromEntries(ids.map((id) => [id, { carregando: true }])))
+    try {
+      const { dados, temMais } = await carregarSaldosSap()
+      setConferencias(
+        Object.fromEntries(
+          ids.map((id) => [
+            id,
+            { carregando: false, saldo: saldoLoteDe(dados, id), saldoTemMais: temMais },
+          ]),
+        ),
+      )
+    } catch (e) {
+      const erro = e instanceof Error ? e.message : String(e)
+      setConferencias(Object.fromEntries(ids.map((id) => [id, { carregando: false, erro }])))
+    }
+    setConferindoTodos(false)
+  }, [conferindoTodos, porLote, carregarSaldosSap])
+
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
     if (!termo) return porLote
@@ -1141,6 +1167,11 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
             placeholder="filtrar por lote ou cultivar…"
             className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
           />
+          {podeConferirSap && (
+            <Botao variante="primario" disabled={conferindoTodos} onClick={conferirTodos}>
+              {conferindoTodos ? 'Conferindo…' : 'Conferir todos no SAP'}
+            </Botao>
+          )}
           <Botao onClick={alternar}>Ocultar</Botao>
         </>
       }
@@ -1196,6 +1227,9 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                     {conf?.saldo && conf.saldo.encontrados === 0 && (
                       <div className="flex flex-wrap items-center gap-1">
                         <Tag cor="alerta">sem saldo no SAP</Tag>
+                        {l.total > 0 && (
+                          <Tag cor="perigo">saldo {inteiro(l.total)} bg ABAIXO do planejado</Tag>
+                        )}
                         <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
                         <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
                           {conf.saldo.totalLinhasSaldo === 0
@@ -1206,10 +1240,28 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                     )}
                     {conf?.saldo && conf.saldo.encontrados > 0 && (
                       <div className="text-xs">
-                        <p className="num-tabular font-semibold text-stone-900 dark:text-stone-100">
-                          SAP: {n(conf.saldo.quantidadeTotal, 0)}
-                          {conf.saldo.pms != null && ` · PMS ${n(conf.saldo.pms, 0)}`}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="num-tabular font-semibold text-stone-900 dark:text-stone-100">
+                            SAP: {n(conf.saldo.quantidadeTotal, 0)}
+                            {conf.saldo.pms != null && ` · PMS ${n(conf.saldo.pms, 0)}`}
+                          </p>
+                          {(() => {
+                            // planejado (todas as ordens do lote) × saldo atual no SAP.
+                            // Ordem já produzida consumiu o lote, então divergência aqui
+                            // é ponto de atenção pra conferir, não veredito automático.
+                            const dif = Math.round(conf.saldo.quantidadeTotal - l.total)
+                            if (dif === 0) return <Tag cor="ok">bate com o planejado</Tag>
+                            if (dif < 0)
+                              return (
+                                <Tag cor="perigo">
+                                  saldo {inteiro(-dif)} bg ABAIXO do planejado
+                                </Tag>
+                              )
+                            return (
+                              <Tag cor="alerta">saldo {inteiro(dif)} bg acima do planejado</Tag>
+                            )
+                          })()}
+                        </div>
                         <p className="text-stone-500 dark:text-stone-400">
                           {conf.saldo.tratamentoSap ?? '—'} · {conf.saldo.itemCodes.join(', ') || '—'}
                         </p>
