@@ -1214,6 +1214,11 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                             : 'lote não achado no SAP'}
                         </Tag>
                         <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
+                        <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
+                          {conf.saldo.totalLinhasSaldo === 0
+                            ? 'SAP devolveu 0 linhas de saldo no total (não é só este lote)'
+                            : `SAP tinha ${inteiro(conf.saldo.totalLinhasSaldo)} linha(s) de saldo; nenhuma com BatchNum "${l.loteId}"${conf.saldo.amostraBatchNum.length ? ` — ex.: ${conf.saldo.amostraBatchNum.join(', ')}` : ''}`}
+                        </p>
                       </div>
                     )}
                     {conf?.saldo && conf.saldo.encontrados > 0 && (

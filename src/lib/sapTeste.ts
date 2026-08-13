@@ -271,6 +271,14 @@ export interface SaldoLoteSap {
   loteId: string
   /** linhas de saldo (LotesSASaldo) que batem com este lote — 0 é resultado válido (não achou) */
   encontrados: number
+  /** total de linhas que o LotesSASaldo devolveu, de TODOS os lotes — 0 aqui
+   *  aponta pra busca vazia (data de corte, paginação); >0 com `encontrados`
+   *  zerado aponta pra BatchNum não bater com o formato de `lotes_semente.id` */
+  totalLinhasSaldo: number
+  /** alguns BatchNum reais devolvidos (de qualquer lote, não só este) — só
+   *  pra comparar o FORMATO visualmente com `loteId` quando `encontrados`
+   *  zera apesar de `totalLinhasSaldo` > 0 */
+  amostraBatchNum: string[]
   /** achou cadastro do lote (BatchNumberDetails) — pode ser true mesmo com encontrados=0 */
   cadastroEncontrado: boolean
   itemCodes: string[]
@@ -297,7 +305,8 @@ function linhasDe(dados: unknown): Record<string, unknown>[] {
  */
 export function saldoLoteDe(dadosSaldo: unknown, dadosCadastro: unknown, loteId: string): SaldoLoteSap {
   const alvo = loteId.trim()
-  const doLote = linhasDe(dadosSaldo).filter((l) => String(l.BatchNum ?? '').trim() === alvo)
+  const todasSaldo = linhasDe(dadosSaldo)
+  const doLote = todasSaldo.filter((l) => String(l.BatchNum ?? '').trim() === alvo)
   const cadastro = linhasDe(dadosCadastro)
   const linhaCadastro = cadastro[0]
 
@@ -310,6 +319,10 @@ export function saldoLoteDe(dadosSaldo: unknown, dadosCadastro: unknown, loteId:
   return {
     loteId,
     encontrados: doLote.length,
+    totalLinhasSaldo: todasSaldo.length,
+    amostraBatchNum: [
+      ...new Set(todasSaldo.map((l) => String(l.BatchNum ?? '')).filter(Boolean)),
+    ].slice(0, 3),
     cadastroEncontrado: cadastro.length > 0,
     itemCodes,
     quantidadeTotal: doLote.reduce((soma, l) => soma + Number(l.Quantity ?? 0), 0),

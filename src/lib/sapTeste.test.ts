@@ -285,6 +285,8 @@ describe('saldoLoteDe', () => {
     expect(r).toEqual({
       loteId: 'SV1',
       encontrados: 2,
+      totalLinhasSaldo: 3,
+      amostraBatchNum: ['SV1', 'SV2'],
       cadastroEncontrado: true,
       itemCodes: ['SOJ00012'],
       quantidadeTotal: 150,
@@ -296,8 +298,15 @@ describe('saldoLoteDe', () => {
   it('lote sem saldo (não achou nas linhas de LotesSASaldo): encontrados 0, sem quebrar', () => {
     const r = saldoLoteDe(saldoDeVariosLotes, { value: [] }, 'SV-INEXISTENTE')
     expect(r.encontrados).toBe(0)
+    expect(r.totalLinhasSaldo).toBe(3)
     expect(r.cadastroEncontrado).toBe(false)
     expect(r.quantidadeTotal).toBe(0)
+  })
+
+  it('busca de saldo vazia (0 linhas no total) — diferente de "não bateu" com dados existentes', () => {
+    const r = saldoLoteDe({ value: [] }, { value: [] }, 'SV1')
+    expect(r.totalLinhasSaldo).toBe(0)
+    expect(r.amostraBatchNum).toEqual([])
   })
 
   it('resposta sem value (erro/formato inesperado) não quebra — trata como 0 linhas', () => {
