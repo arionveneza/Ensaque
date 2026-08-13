@@ -12,6 +12,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import ModalOrdem from './ModalOrdem'
+import CalculadoraCalda from './CalculadoraCalda'
 
 const num = (v: number, casas = 1) =>
   v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })
@@ -36,6 +37,7 @@ export default function Execucao() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aberta, setAberta] = useState<string | null>(null)
+  const [caldaAberta, setCaldaAberta] = useState(false)
   const [agora, setAgora] = useState(() => Date.now())
 
   const podeApontar = permitido('execucao', 'apontar')
@@ -134,16 +136,27 @@ export default function Execucao() {
             Dia de produção das 07:30 às 03:00 — o turno 2 pertence ao dia que começou.
           </p>
         </div>
-        <label className="text-sm text-stone-600 dark:text-stone-300">
-          Dia
-          <input
-            type="date"
-            value={dia}
-            onChange={(e) => setDia(e.target.value)}
-            className="ml-2 rounded-md border border-stone-300 px-2 py-1 dark:border-stone-700 dark:bg-stone-800"
-          />
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setCaldaAberta(true)}
+            className="rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800"
+            title="Quantidade de cada químico para preparar a mistura"
+          >
+            Calda (MIX)
+          </button>
+          <label className="text-sm text-stone-600 dark:text-stone-300">
+            Dia
+            <input
+              type="date"
+              value={dia}
+              onChange={(e) => setDia(e.target.value)}
+              className="ml-2 rounded-md border border-stone-300 px-2 py-1 dark:border-stone-700 dark:bg-stone-800"
+            />
+          </label>
+        </div>
       </div>
+
+      {caldaAberta && <CalculadoraCalda onFechar={() => setCaldaAberta(false)} />}
 
       {erro && (
         <div className="mb-5 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
