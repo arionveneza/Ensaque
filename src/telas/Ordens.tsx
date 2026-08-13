@@ -15,7 +15,7 @@ import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
 import { useRascunho } from '@/lib/useRascunho'
 import { supabase } from '@/lib/supabase'
 import {
-  USUARIOS_SAP_TESTE, caminhoCadastroLote, caminhoSaldoLotes, saldoLoteDe, type SaldoLoteSap,
+  USUARIOS_SAP_TESTE, caminhoSaldoLotes, saldoLoteDe, type SaldoLoteSap,
 } from '@/lib/sapTeste'
 import { useRealtime } from '@/dados/useRealtime'
 import {
@@ -1030,6 +1030,9 @@ interface EstadoConferenciaSap {
   carregando: boolean
   erro?: string
   saldo?: SaldoLoteSap
+  /** a TSI_SALDOS tinha mais páginas além das 10 lidas — um "não achado"
+   *  pode estar na parte não lida */
+  saldoTemMais?: boolean
 }
 
 function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
@@ -1053,54 +1056,34 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
   )
   const [conferencias, setConferencias] = useState<Record<string, EstadoConferenciaSap>>({})
 
-  /** Chama a `sap-teste` e devolve os `dados` já validados, ou lança com o
-   *  detalhe cru do SAP. `-2028 "No matching records found"` é uma
-   *  peculiaridade das SQLQueries do SAP: quando a consulta EXISTE e só não
-   *  achou linha, o SAP devolve esse mesmo código — resultado vazio válido,
-   *  não falha. Mas isso só vale por LOTE (é normal um lote não ter cadastro
-   *  ainda); na busca em massa do `LotesSASaldo`, um -2028 é sempre
-   *  suspeito (a consulta com essa mesma data já devolveu 100 linhas reais
-   *  em 12/08 — docs/integracao-sap.md §6.8) e precisa aparecer como erro
-   *  de verdade, não virar silenciosamente "0 linhas". */
-  const chamarSapTeste = useCallback(
-    async (caminho: string, paginas: number, tratar2028ComoVazio: boolean): Promise<unknown> => {
-      const { data, error } = await supabase.functions.invoke('sap-teste', {
-        body: { caminho, paginas, ambiente: 'producao' },
-      })
-      if (error) throw new Error(error.message)
-      const r = data as { ok: boolean; erro?: string; sap?: unknown; dados?: unknown }
-      if (!r.ok) {
-        const codigoSap = (r.sap as { error?: { code?: number } } | undefined)?.error?.code
-        if (tratar2028ComoVazio && codigoSap === -2028) return { value: [] }
-        const detalhe = r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : ''
-        throw new Error((r.erro ?? 'SAP recusou a consulta.') + detalhe)
-      }
-      return r.dados
-    },
-    [],
-  )
-
-  // LotesSASaldo devolve TODOS os lotes atualizados desde a data, não um só
-  // — busca uma vez por sessão da tela e reaproveita entre cliques em
-  // "Conferir" de lotes diferentes, em vez de repetir a mesma busca grande.
-  const saldosSapRef = useRef<unknown | null>(null)
-  const carregarSaldosSap = useCallback(async (): Promise<unknown> => {
+  // A TSI_SALDOS devolve TODOS os lotes com saldo, não um só — busca uma vez
+  // por sessão da tela e reaproveita entre cliques em "Conferir" de lotes
+  // diferentes. `-2028` aqui é erro de verdade (consulta não criada ainda /
+  // problema real), nunca vira "0 linhas" silencioso.
+  const saldosSapRef = useRef<{ dados: unknown; temMais: boolean } | null>(null)
+  const carregarSaldosSap = useCallback(async (): Promise<{ dados: unknown; temMais: boolean }> => {
     if (saldosSapRef.current) return saldosSapRef.current
-    const dados = await chamarSapTeste(caminhoSaldoLotes(), 10, false)
-    saldosSapRef.current = dados
-    return dados
-  }, [chamarSapTeste])
+    const { data, error } = await supabase.functions.invoke('sap-teste', {
+      body: { caminho: caminhoSaldoLotes(), paginas: 10, ambiente: 'producao' },
+    })
+    if (error) throw new Error(error.message)
+    const r = data as { ok: boolean; erro?: string; sap?: unknown; dados?: unknown; temMais?: boolean }
+    if (!r.ok) {
+      const detalhe = r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : ''
+      throw new Error((r.erro ?? 'SAP recusou a consulta.') + detalhe)
+    }
+    const resultado = { dados: r.dados, temMais: r.temMais ?? false }
+    saldosSapRef.current = resultado
+    return resultado
+  }, [])
 
   const conferirNoSap = useCallback(async (loteId: string) => {
     setConferencias((s) => ({ ...s, [loteId]: { carregando: true } }))
     try {
-      const [dadosSaldo, dadosCadastro] = await Promise.all([
-        carregarSaldosSap(),
-        chamarSapTeste(caminhoCadastroLote(loteId), 1, true),
-      ])
+      const { dados, temMais } = await carregarSaldosSap()
       setConferencias((s) => ({
         ...s,
-        [loteId]: { carregando: false, saldo: saldoLoteDe(dadosSaldo, dadosCadastro, loteId) },
+        [loteId]: { carregando: false, saldo: saldoLoteDe(dados, loteId), saldoTemMais: temMais },
       }))
     } catch (e) {
       setConferencias((s) => ({
@@ -1108,7 +1091,7 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
         [loteId]: { carregando: false, erro: e instanceof Error ? e.message : String(e) },
       }))
     }
-  }, [carregarSaldosSap, chamarSapTeste])
+  }, [carregarSaldosSap])
 
   const porLote = useMemo(() => {
     const mapa = new Map<
@@ -1212,16 +1195,12 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                     )}
                     {conf?.saldo && conf.saldo.encontrados === 0 && (
                       <div className="flex flex-wrap items-center gap-1">
-                        <Tag cor="alerta">
-                          {conf.saldo.cadastroEncontrado
-                            ? 'cadastro achado, sem saldo recente'
-                            : 'lote não achado no SAP'}
-                        </Tag>
+                        <Tag cor="alerta">sem saldo no SAP</Tag>
                         <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
                         <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
                           {conf.saldo.totalLinhasSaldo === 0
-                            ? 'SAP devolveu 0 linhas de saldo no total (não é só este lote)'
-                            : `SAP tinha ${inteiro(conf.saldo.totalLinhasSaldo)} linha(s) de saldo; nenhuma com BatchNum "${l.loteId}"${conf.saldo.amostraBatchNum.length ? ` — ex.: ${conf.saldo.amostraBatchNum.join(', ')}` : ''}`}
+                            ? 'a TSI_SALDOS devolveu 0 linhas no total (não é só este lote)'
+                            : `a TSI_SALDOS trouxe ${inteiro(conf.saldo.totalLinhasSaldo)} linha(s); nenhuma com o lote "${l.loteId}"${conf.saldo.amostraBatchNum.length ? ` — ex.: ${conf.saldo.amostraBatchNum.join(', ')}` : ''}${conf.saldoTemMais ? ' · havia mais páginas não lidas' : ''}`}
                         </p>
                       </div>
                     )}
@@ -1244,9 +1223,9 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
         </Tabela>
         {podeConferirSap && (
           <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-            "SAP" é a quantidade crua devolvida por `BatchNumberDetails` (produção) para o
-            número do lote — ainda sem conversão de unidade. É uma conferência manual, não
-            substitui o total programado.
+            "SAP" é a quantidade em estoque da consulta TSI_SALDOS (produção), somada entre
+            os depósitos do lote — ainda sem conversão de unidade. É uma conferência manual,
+            não substitui o total programado.
           </p>
         )}
         </>

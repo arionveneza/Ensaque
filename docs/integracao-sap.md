@@ -625,6 +625,32 @@ Depois de criada a consulta, esta função fica obsoleta — pode ser apagada do
 card some sozinho se a função responder que a consulta já existe... na prática, basta não
 clicar de novo; um segundo POST falharia com "já existe", sem efeito).
 
+**Descobertas do dia, ao publicar (13/08/2026):**
+1. **A causa real do -2028 na conferência era a `sap-teste` DESATUALIZADA no ar**: o
+   `functions list` mostrou a versão 1, de ~06/08 — anterior ao seletor de ambiente (§6.8,
+   commit `ddc6a73` de 12/08, que nunca tinha sido publicado). Ou seja, todo `ambiente:
+   'producao'` que o front mandou foi **ignorado e atendido pela homolog** — onde a
+   `LotesSASaldo` não existe (ela só existe em produção, criada pela integração Python) →
+   `-2028`. E o "cadastro achado" do `BatchNumberDetails` vinha da homolog também. Lição:
+   **a Edge Function não sai no deploy do site** (GitHub/Cloudflare só publica o front);
+   depois de mexer em `supabase/functions/*`, SEMPRE conferir `npx supabase functions list`
+   (coluna `version`/`updated_at`) antes de diagnosticar erro em cima dela.
+2. **Aspas em query string viram `%27` no fetch** (padrão WHATWG de URL, navegador e Deno):
+   `?updatedate='2020-01-01'` sai como `?updatedate=%272020-01-01%27` — o PowerShell manda a
+   aspa crua. Comprovado localmente com `new URL(...)`; não confirmado se o Service Layer
+   rejeita `%27` (o teste ficou mascarado pelo item 1). Aspas em SEGMENTO DE CAMINHO
+   (`SQLQueries('X')`) não são codificadas — só na query string. Por isso a conferência da
+   tela Ordens usa a `TSI_SALDOS`, **sem parâmetro** — imune à dúvida.
+3. **Login do Supabase CLI em janela aberta por agente**: o CLI v2.114 detecta agente (env
+   herdada) e trava o modo interativo ("Cannot prompt for input in JSON output mode") —
+   `npx supabase login --agent no` restaura o fluxo normal (navegador + aprovação).
+
+Com a CLI logada, as duas funções foram publicadas em 13/08/2026 (`sap-criar-tsi-saldos` v1
+e `sap-teste` v2, agora de fato com produção). A conferência da tela Ordens passou a usar
+`SQLQueries('TSI_SALDOS')/List` em UMA chamada (quantidade+PMS+tratamento juntos, casando
+pelo alias `Nº do Lote` com fallback pros nomes crus), com cache entre cliques e aviso
+quando houver mais de 10 páginas.
+
 ## 7. Checklist de implantação
 
 - [x] Acesso a `SBOVENHOM` OK — 09/08/2026, via Basic Auth no **endpoint próprio de homolog** (§6.6)

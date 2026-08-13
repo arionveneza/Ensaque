@@ -234,53 +234,37 @@ export function relatorioComPedido(itensJson: unknown[], prefixo: string): Relat
 }
 
 /**
- * Caminho da consulta salva `LotesSASaldo` (`SELECT "ItemCode","BatchNum",
- * "WhsCode",…,"Quantity",… FROM "OIBT" WHERE "UpdateDate" > :updatedate`,
- * já confirmada rodando em SBOVENPRD — docs/integracao-sap.md §6.8). É a
- * ÚNICA fonte de quantidade por lote: `BatchNumberDetails` é só cadastro,
- * sem campo de saldo (confirmado 09/08/2026, mesma doc, §6.5) — pedir
- * `Quantity` lá é o que causa o SAP recusar com HTTP 400. Traz TODOS os
- * lotes atualizados desde `desde` (não filtra por lote no servidor); quem
- * chama filtra depois por `BatchNum`.
+ * Caminho da `TSI_SALDOS` — a consulta salva OBTN×OBTQ (nº do lote, PMS,
+ * tratamento, depósito, quantidade em estoque), a mesma do Gerador de
+ * Consultas do cliente B1 apontada pelo Arion ("essa consulta traz o saldo
+ * de cada lote", docs/integracao-sap.md §3.2), criada em produção via
+ * `sap-criar-tsi-saldos` em 13/08/2026 (§6.9).
  *
- * `desde` bem antigo de propósito: `UpdateDate` na OIBT parece só mudar na
- * criação do lote/primeira movimentação, não a cada apontamento do dia a
- * dia — um corte recente (ex.: 2025) devolveu 0 linhas (`-2028`) mesmo com
- * a consulta existindo, porque nenhum lote tinha UpdateDate depois disso.
- * `2020-01-01` é a mesma data já validada com 100 linhas reais em produção
- * (12/08/2026).
+ * SEM parâmetro de propósito: parâmetro de SQLQueries vai na query string
+ * (`?updatedate='...'`) e o padrão WHATWG de URL — o que o navegador e o
+ * Deno usam — codifica a aspa como `%27` na serialização, coisa que o
+ * PowerShell não faz. Consulta sem parâmetro não tem query string, então
+ * não depende de como o Service Layer trata `%27`. Quem chama filtra o
+ * lote depois, por `Nº do Lote`.
  */
-export function caminhoSaldoLotes(desde = '2020-01-01'): string {
-  return `SQLQueries('LotesSASaldo')/List?updatedate='${desde}'`
-}
-
-/**
- * Cadastro do lote (PMS, tratamento) — mesmo preset já validado em
- * `SapTeste.tsx` ("Lotes do item"), só trocando o filtro de `ItemCode` para
- * `Batch` (o número que o app já usa como `lotes_semente.id`, vindo da
- * coluna LOTE do relatório Saldos da SimpleAgro). `$select` fica restrito
- * aos campos já confirmados existentes nesta entidade — nada de `Quantity`
- * aqui. Aspas simples escapadas: o filtro OData quebra com uma solta.
- */
-export function caminhoCadastroLote(loteId: string): string {
-  const escapado = loteId.trim().replace(/'/g, "''")
-  return `BatchNumberDetails?$filter=Batch eq '${escapado}'&$select=Batch,U_AGRT_PMS,U_LoteTSI`
+export function caminhoSaldoLotes(): string {
+  return `SQLQueries('TSI_SALDOS')/List`
 }
 
 export interface SaldoLoteSap {
   loteId: string
-  /** linhas de saldo (LotesSASaldo) que batem com este lote — 0 é resultado válido (não achou) */
+  /** linhas da TSI_SALDOS que batem com este lote (uma por depósito) — 0 é
+   *  resultado válido: a consulta só traz Quantity > 0, então lote esgotado
+   *  não aparece */
   encontrados: number
-  /** total de linhas que o LotesSASaldo devolveu, de TODOS os lotes — 0 aqui
-   *  aponta pra busca vazia (data de corte, paginação); >0 com `encontrados`
-   *  zerado aponta pra BatchNum não bater com o formato de `lotes_semente.id` */
+  /** total de linhas devolvidas, de TODOS os lotes — 0 aqui aponta pra busca
+   *  vazia (consulta não criada, paginação); >0 com `encontrados` zerado
+   *  aponta pro nº do lote não bater com o formato de `lotes_semente.id` */
   totalLinhasSaldo: number
-  /** alguns BatchNum reais devolvidos (de qualquer lote, não só este) — só
-   *  pra comparar o FORMATO visualmente com `loteId` quando `encontrados`
-   *  zera apesar de `totalLinhasSaldo` > 0 */
+  /** alguns números de lote reais devolvidos (de qualquer lote) — só pra
+   *  comparar o FORMATO visualmente quando `encontrados` zera apesar de
+   *  `totalLinhasSaldo` > 0 */
   amostraBatchNum: string[]
-  /** achou cadastro do lote (BatchNumberDetails) — pode ser true mesmo com encontrados=0 */
-  cadastroEncontrado: boolean
   itemCodes: string[]
   quantidadeTotal: number
   pms: number | null
@@ -294,43 +278,52 @@ function linhasDe(dados: unknown): Record<string, unknown>[] {
   return []
 }
 
+/** Colunas da TSI_SALDOS vêm com os ALIASES do SQL ("Nº do Lote", "Qtd em
+ *  Estoque"…). Os fallbacks cobrem o caso de o Service Layer devolver o
+ *  nome cru da coluna em vez do alias (varia entre versões). */
+function campo(l: Record<string, unknown>, ...nomes: string[]): unknown {
+  for (const n of nomes) if (l[n] !== undefined) return l[n]
+  return undefined
+}
+
 /**
- * Combina as duas respostas (saldo + cadastro) num resultado exibível ao
- * lado do total programado. Ainda não converte para "bags" — falta
- * confirmar com dado real se `Quantity` é diretamente comparável; por ora
- * mostra o valor cru para conferência visual (CLAUDE.md, decisão de
- * 12/08/2026: teste primeiro, converter depois). `linhasSaldo` já vem
- * filtrado ou não — esta função filtra por `BatchNum === loteId` de novo,
- * então tanto faz passar o lote inteiro de `LotesSASaldo` quanto um recorte.
+ * Converte a resposta da TSI_SALDOS num resultado exibível ao lado do total
+ * programado — UMA chamada só: a consulta já traz quantidade, PMS e
+ * tratamento juntos (dispensou o `BatchNumberDetails`). Ainda não converte
+ * para "bags" — falta confirmar com dado real se a quantidade é diretamente
+ * comparável; por ora mostra o valor cru para conferência visual (decisão
+ * de 12/08/2026: teste primeiro, converter depois). Filtra por
+ * `Nº do Lote === loteId` aqui — tanto faz receber o retorno inteiro ou um
+ * recorte.
  */
-export function saldoLoteDe(dadosSaldo: unknown, dadosCadastro: unknown, loteId: string): SaldoLoteSap {
+export function saldoLoteDe(dadosSaldo: unknown, loteId: string): SaldoLoteSap {
   const alvo = loteId.trim()
   const todasSaldo = linhasDe(dadosSaldo)
-  const doLote = todasSaldo.filter((l) => String(l.BatchNum ?? '').trim() === alvo)
-  const cadastro = linhasDe(dadosCadastro)
-  const linhaCadastro = cadastro[0]
-
-  const itemCodes = [
-    ...new Set(
-      [...doLote.map((l) => String(l.ItemCode ?? ''))].filter(Boolean),
-    ),
-  ]
+  const numeroDoLote = (l: Record<string, unknown>) =>
+    String(campo(l, 'Nº do Lote', 'DistNumber') ?? '').trim()
+  const doLote = todasSaldo.filter((l) => numeroDoLote(l) === alvo)
+  const linhaComPms = doLote.find((l) => {
+    const v = campo(l, 'PMS (g)', 'U_AGRT_PMS')
+    return v !== null && v !== undefined && v !== ''
+  })
+  const linhaComTrat = doLote.find((l) => campo(l, 'Tratamento (TSI)', 'U_LoteTSI'))
 
   return {
     loteId,
     encontrados: doLote.length,
     totalLinhasSaldo: todasSaldo.length,
     amostraBatchNum: [
-      ...new Set(todasSaldo.map((l) => String(l.BatchNum ?? '')).filter(Boolean)),
+      ...new Set(todasSaldo.map(numeroDoLote).filter(Boolean)),
     ].slice(0, 3),
-    cadastroEncontrado: cadastro.length > 0,
-    itemCodes,
-    quantidadeTotal: doLote.reduce((soma, l) => soma + Number(l.Quantity ?? 0), 0),
-    pms:
-      linhaCadastro && linhaCadastro.U_AGRT_PMS !== null && linhaCadastro.U_AGRT_PMS !== undefined
-        ? Number(linhaCadastro.U_AGRT_PMS)
-        : null,
-    tratamentoSap: linhaCadastro && linhaCadastro.U_LoteTSI ? String(linhaCadastro.U_LoteTSI) : null,
+    itemCodes: [...new Set(doLote.map((l) => String(l.ItemCode ?? '')).filter(Boolean))],
+    quantidadeTotal: doLote.reduce(
+      (soma, l) => soma + Number(campo(l, 'Qtd em Estoque', 'Quantity') ?? 0),
+      0,
+    ),
+    pms: linhaComPms ? Number(campo(linhaComPms, 'PMS (g)', 'U_AGRT_PMS')) : null,
+    tratamentoSap: linhaComTrat
+      ? String(campo(linhaComTrat, 'Tratamento (TSI)', 'U_LoteTSI'))
+      : null,
   }
 }
 

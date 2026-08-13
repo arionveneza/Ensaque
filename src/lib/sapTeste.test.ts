@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_COLUNAS,
-  caminhoCadastroLote,
   caminhoSaldoLotes,
   entidadeDe,
   partesDoNome,
@@ -243,85 +242,70 @@ describe('relatorioComPedido', () => {
 })
 
 describe('caminhoSaldoLotes', () => {
-  it('monta o caminho da consulta salva LotesSASaldo, com a data', () => {
-    expect(caminhoSaldoLotes('2025-01-01')).toBe(
-      "SQLQueries('LotesSASaldo')/List?updatedate='2025-01-01'",
-    )
-  })
-
-  it('tem uma data padrão quando não informada', () => {
-    expect(caminhoSaldoLotes()).toContain("SQLQueries('LotesSASaldo')/List?updatedate=")
-  })
-})
-
-describe('caminhoCadastroLote', () => {
-  it('monta o filtro OData por Batch, sem pedir Quantity (BatchNumberDetails não tem esse campo)', () => {
-    expect(caminhoCadastroLote('SV12345')).toBe(
-      "BatchNumberDetails?$filter=Batch eq 'SV12345'&$select=Batch,U_AGRT_PMS,U_LoteTSI",
-    )
-  })
-
-  it('escapa aspas simples no id do lote — senão quebraria a sintaxe do filtro', () => {
-    expect(caminhoCadastroLote("O'BRIEN")).toContain("Batch eq 'O''BRIEN'")
-  })
-
-  it('remove espaços nas pontas', () => {
-    expect(caminhoCadastroLote('  SV1  ')).toContain("Batch eq 'SV1'")
+  it('é a TSI_SALDOS sem parâmetro nenhum — parâmetro na query string vira %27 no fetch', () => {
+    expect(caminhoSaldoLotes()).toBe("SQLQueries('TSI_SALDOS')/List")
   })
 })
 
 describe('saldoLoteDe', () => {
+  // linhas como a TSI_SALDOS devolve: colunas com os ALIASES do SQL
   const saldoDeVariosLotes = {
     value: [
-      { BatchNum: 'SV1', Quantity: 100, ItemCode: 'SOJ00012', WhsCode: 'VEN_GER' },
-      { BatchNum: 'SV1', Quantity: 50, ItemCode: 'SOJ00012', WhsCode: 'VEN_TER1' },
-      { BatchNum: 'SV2', Quantity: 999, ItemCode: 'SOJ00099', WhsCode: 'VEN_GER' },
+      { ItemCode: 'SOJ00012', 'Nº do Lote': 'SV1', 'PMS (g)': '171.00', 'Tratamento (TSI)': null, 'Depósito': 'VEN_GER', 'Qtd em Estoque': 100 },
+      { ItemCode: 'SOJ00012', 'Nº do Lote': 'SV1', 'PMS (g)': '171.00', 'Tratamento (TSI)': null, 'Depósito': 'VEN_TER1', 'Qtd em Estoque': 50 },
+      { ItemCode: 'SOJ00099', 'Nº do Lote': 'SV2', 'PMS (g)': '160.00', 'Tratamento (TSI)': 'FORTENZA DUO 60', 'Depósito': 'VEN_GER', 'Qtd em Estoque': 999 },
     ],
   }
-  const cadastroDoLote = { value: [{ Batch: 'SV1', U_AGRT_PMS: 171, U_LoteTSI: 'SEM TSI' }] }
 
-  it('filtra por BatchNum, soma Quantity dos depósitos do lote e ignora outros lotes', () => {
-    const r = saldoLoteDe(saldoDeVariosLotes, cadastroDoLote, 'SV1')
+  it('filtra por Nº do Lote, soma a quantidade entre depósitos e ignora outros lotes', () => {
+    const r = saldoLoteDe(saldoDeVariosLotes, 'SV1')
     expect(r).toEqual({
       loteId: 'SV1',
       encontrados: 2,
       totalLinhasSaldo: 3,
       amostraBatchNum: ['SV1', 'SV2'],
-      cadastroEncontrado: true,
       itemCodes: ['SOJ00012'],
       quantidadeTotal: 150,
       pms: 171,
-      tratamentoSap: 'SEM TSI',
+      tratamentoSap: null,
     })
   })
 
-  it('lote sem saldo (não achou nas linhas de LotesSASaldo): encontrados 0, sem quebrar', () => {
-    const r = saldoLoteDe(saldoDeVariosLotes, { value: [] }, 'SV-INEXISTENTE')
-    expect(r.encontrados).toBe(0)
-    expect(r.totalLinhasSaldo).toBe(3)
-    expect(r.cadastroEncontrado).toBe(false)
-    expect(r.quantidadeTotal).toBe(0)
+  it('lê PMS e tratamento das linhas do próprio lote (uma chamada só, sem BatchNumberDetails)', () => {
+    const r = saldoLoteDe(saldoDeVariosLotes, 'SV2')
+    expect(r.pms).toBe(160)
+    expect(r.tratamentoSap).toBe('FORTENZA DUO 60')
+    expect(r.quantidadeTotal).toBe(999)
   })
 
-  it('busca de saldo vazia (0 linhas no total) — diferente de "não bateu" com dados existentes', () => {
-    const r = saldoLoteDe({ value: [] }, { value: [] }, 'SV1')
+  it('lote sem linha na TSI_SALDOS (esgotado/inexistente): encontrados 0, sem quebrar', () => {
+    const r = saldoLoteDe(saldoDeVariosLotes, 'SV-INEXISTENTE')
+    expect(r.encontrados).toBe(0)
+    expect(r.totalLinhasSaldo).toBe(3)
+    expect(r.quantidadeTotal).toBe(0)
+    expect(r.pms).toBeNull()
+  })
+
+  it('busca vazia (0 linhas no total) — diferente de "não bateu" com dados existentes', () => {
+    const r = saldoLoteDe({ value: [] }, 'SV1')
     expect(r.totalLinhasSaldo).toBe(0)
     expect(r.amostraBatchNum).toEqual([])
   })
 
   it('resposta sem value (erro/formato inesperado) não quebra — trata como 0 linhas', () => {
-    expect(saldoLoteDe(null, null, 'SV1').encontrados).toBe(0)
-    expect(saldoLoteDe({}, {}, 'SV1').encontrados).toBe(0)
+    expect(saldoLoteDe(null, 'SV1').encontrados).toBe(0)
+    expect(saldoLoteDe({}, 'SV1').encontrados).toBe(0)
   })
 
-  it('aceita array puro (sem value), mesmo formato que tabelaDe já lida', () => {
+  it('fallback pros nomes crus das colunas, caso o Service Layer não aplique os aliases', () => {
     const r = saldoLoteDe(
-      [{ BatchNum: 'SV1', Quantity: 20, ItemCode: 'SOJ00012' }],
-      [{ Batch: 'SV1', U_AGRT_PMS: 171, U_LoteTSI: 'SEM TSI' }],
+      [{ ItemCode: 'SOJ00012', DistNumber: 'SV1', U_AGRT_PMS: '171.00', U_LoteTSI: 'SEM TSI', Quantity: 20 }],
       'SV1',
     )
     expect(r.encontrados).toBe(1)
     expect(r.quantidadeTotal).toBe(20)
+    expect(r.pms).toBe(171)
+    expect(r.tratamentoSap).toBe('SEM TSI')
   })
 })
 
