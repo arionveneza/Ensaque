@@ -233,6 +233,53 @@ export function relatorioComPedido(itensJson: unknown[], prefixo: string): Relat
   return { prefixo, totalLido: todos.length, itens, ignorados: comPedido.length - itens.length }
 }
 
+/**
+ * Caminho OData para conferir o saldo de UM lote de semente no SAP, pela
+ * tela Ordens ("Bags por lote"). `Batch` é o mesmo número que o app já usa
+ * como `lotes_semente.id` (vem da coluna LOTE do relatório Saldos da
+ * SimpleAgro — `src/dominio/importacao/simpleagro.ts`). Aspas simples
+ * escapadas: o filtro OData quebra a sintaxe se o valor tiver uma.
+ */
+export function caminhoSaldoLote(loteId: string): string {
+  const escapado = loteId.trim().replace(/'/g, "''")
+  return `BatchNumberDetails?$filter=Batch eq '${escapado}'&$select=Batch,Quantity,U_AGRT_PMS,U_LoteTSI,ItemCode`
+}
+
+export interface SaldoLoteSap {
+  loteId: string
+  /** linhas que o SAP devolveu para este Batch — 0 é resultado válido (não achou lá) */
+  encontrados: number
+  itemCodes: string[]
+  quantidadeTotal: number
+  pms: number | null
+  tratamentoSap: string | null
+}
+
+/**
+ * Converte a resposta de `BatchNumberDetails` filtrada por um lote em algo
+ * exibível ao lado do total programado. Ainda não converte para "bags" — o
+ * significado exato de `Quantity` (unidade, se já é saldo líquido por
+ * depósito) precisa ser confirmado com dado real antes de fazer essa conta;
+ * por ora mostra o valor cru para conferência visual (CLAUDE.md, decisão de
+ * 12/08/2026: teste primeiro, converter depois).
+ */
+export function saldoLoteDe(dados: unknown, loteId: string): SaldoLoteSap {
+  const corpo = dados as { value?: unknown } | null
+  const linhas = Array.isArray(corpo?.value) ? (corpo?.value as Record<string, unknown>[]) : []
+  const quantidadeTotal = linhas.reduce((soma, l) => soma + Number(l.Quantity ?? 0), 0)
+  const itemCodes = [...new Set(linhas.map((l) => String(l.ItemCode ?? '')).filter(Boolean))]
+  const linhaComPms = linhas.find((l) => l.U_AGRT_PMS !== null && l.U_AGRT_PMS !== undefined)
+  const linhaComTrat = linhas.find((l) => l.U_LoteTSI)
+  return {
+    loteId,
+    encontrados: linhas.length,
+    itemCodes,
+    quantidadeTotal,
+    pms: linhaComPms ? Number(linhaComPms.U_AGRT_PMS) : null,
+    tratamentoSap: linhaComTrat ? String(linhaComTrat.U_LoteTSI) : null,
+  }
+}
+
 /** Tamanho máximo de uma célula renderizada — trava JSON/valor gigante. */
 const MAX_CELULA = 200
 

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_COLUNAS,
+  caminhoSaldoLote,
   entidadeDe,
   partesDoNome,
   problemaNoCaminho,
   relatorioComPedido,
   resumoItem,
+  saldoLoteDe,
   tabelaDe,
   textoCelula,
 } from './sapTeste'
@@ -236,6 +238,61 @@ describe('relatorioComPedido', () => {
     const r = relatorioComPedido([comPedidoBB5M, { foo: 'bar' }, 'texto'], 'SOJ')
     expect(r.totalLido).toBe(1)
     expect(r.itens).toHaveLength(1)
+  })
+})
+
+describe('caminhoSaldoLote', () => {
+  it('monta o filtro OData por Batch, com os campos de conferência', () => {
+    expect(caminhoSaldoLote('SV12345')).toBe(
+      "BatchNumberDetails?$filter=Batch eq 'SV12345'&$select=Batch,Quantity,U_AGRT_PMS,U_LoteTSI,ItemCode",
+    )
+  })
+
+  it('escapa aspas simples no id do lote — senão quebraria a sintaxe do filtro', () => {
+    expect(caminhoSaldoLote("O'BRIEN")).toContain("Batch eq 'O''BRIEN'")
+  })
+
+  it('remove espaços nas pontas', () => {
+    expect(caminhoSaldoLote('  SV1  ')).toContain("Batch eq 'SV1'")
+  })
+})
+
+describe('saldoLoteDe', () => {
+  it('soma Quantity de todas as linhas e junta os ItemCodes únicos', () => {
+    const r = saldoLoteDe(
+      {
+        value: [
+          { Batch: 'SV1', Quantity: 100, ItemCode: 'SOJ00012', U_AGRT_PMS: 171, U_LoteTSI: 'SEM TSI' },
+          { Batch: 'SV1', Quantity: 50, ItemCode: 'SOJ00012', U_AGRT_PMS: 171, U_LoteTSI: 'SEM TSI' },
+        ],
+      },
+      'SV1',
+    )
+    expect(r).toEqual({
+      loteId: 'SV1',
+      encontrados: 2,
+      itemCodes: ['SOJ00012'],
+      quantidadeTotal: 150,
+      pms: 171,
+      tratamentoSap: 'SEM TSI',
+    })
+  })
+
+  it('lote não encontrado no SAP: encontrados 0, sem quebrar', () => {
+    const r = saldoLoteDe({ value: [] }, 'SV-INEXISTENTE')
+    expect(r).toEqual({
+      loteId: 'SV-INEXISTENTE',
+      encontrados: 0,
+      itemCodes: [],
+      quantidadeTotal: 0,
+      pms: null,
+      tratamentoSap: null,
+    })
+  })
+
+  it('resposta sem value (erro/formato inesperado) não quebra — trata como 0 linhas', () => {
+    expect(saldoLoteDe(null, 'SV1').encontrados).toBe(0)
+    expect(saldoLoteDe({}, 'SV1').encontrados).toBe(0)
   })
 })
 

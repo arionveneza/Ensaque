@@ -13,6 +13,10 @@ import {
 } from '@/dominio/importacao/ordens'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
 import { useRascunho } from '@/lib/useRascunho'
+import { supabase } from '@/lib/supabase'
+import {
+  USUARIOS_SAP_TESTE, caminhoSaldoLote, saldoLoteDe, type SaldoLoteSap,
+} from '@/lib/sapTeste'
 import { useRealtime } from '@/dados/useRealtime'
 import {
   analisaDemanda, bagsFaltando, bagsSobrando, podeCriarOrdem, resumoBalanco,
@@ -1022,6 +1026,12 @@ const ORDEM_STATUS = [
  * finalizado, apontado…) — a logística e o PCP perguntavam isso toda hora
  * sem ter onde olhar além de filtrar a lista ordem por ordem.
  */
+interface EstadoConferenciaSap {
+  carregando: boolean
+  erro?: string
+  saldo?: SaldoLoteSap
+}
+
 function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
   const [busca, setBusca] = useState('')
   // nasce oculto, e a preferência (inclusive a de mostrar) sobrevive ao recarregamento
@@ -1033,6 +1043,35 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
     setOculto(v)
     localStorage.setItem('tsi.resumoLotes.oculta', v ? '1' : '0')
   }
+
+  // teste pontual (12/08/2026): confere o saldo do lote direto no SAP de
+  // produção, ao lado do total programado. Restrito à mesma lista da aba
+  // "SAP (teste)" — é leitura de produção do SAP, mesma cautela de lá.
+  const { session } = useAuth()
+  const podeConferirSap = USUARIOS_SAP_TESTE.includes(
+    (session?.user.email ?? '').toLowerCase(),
+  )
+  const [conferencias, setConferencias] = useState<Record<string, EstadoConferenciaSap>>({})
+  const conferirNoSap = useCallback(async (loteId: string) => {
+    setConferencias((s) => ({ ...s, [loteId]: { carregando: true } }))
+    try {
+      const { data, error } = await supabase.functions.invoke('sap-teste', {
+        body: { caminho: caminhoSaldoLote(loteId), paginas: 1, ambiente: 'producao' },
+      })
+      if (error) throw new Error(error.message)
+      const r = data as { ok: boolean; erro?: string; sap?: unknown; dados?: unknown }
+      if (!r.ok) throw new Error(r.erro ?? 'SAP recusou a consulta.')
+      setConferencias((s) => ({
+        ...s,
+        [loteId]: { carregando: false, saldo: saldoLoteDe(r.dados, loteId) },
+      }))
+    } catch (e) {
+      setConferencias((s) => ({
+        ...s,
+        [loteId]: { carregando: false, erro: e instanceof Error ? e.message : String(e) },
+      }))
+    }
+  }, [])
 
   const porLote = useMemo(() => {
     const mapa = new Map<
@@ -1092,26 +1131,79 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
       ) : filtrados.length === 0 ? (
         <Vazio>Nenhum lote nesse filtro.</Vazio>
       ) : (
-        <Tabela cabecalho={['Lote', 'Cultivar', '#Total', 'Bags por status']}>
-          {filtrados.map((l) => (
-            <tr key={l.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
-              <td className="px-2 py-1.5 font-medium">{l.loteId}</td>
-              <td className="px-2 py-1.5">{l.cultivar}</td>
-              <td className="num-tabular px-2 py-1.5 text-right font-semibold">
-                {inteiro(l.total)}
-              </td>
-              <td className="px-2 py-1.5">
-                <div className="flex flex-wrap gap-1">
-                  {ORDEM_STATUS.filter((s) => l.porStatus.has(s)).map((s) => (
-                    <Tag key={s} cor={corDoStatus(s)}>
-                      {s}: {inteiro(l.porStatus.get(s)!)}
-                    </Tag>
-                  ))}
-                </div>
-              </td>
-            </tr>
-          ))}
+        <>
+        <Tabela
+          cabecalho={
+            podeConferirSap
+              ? ['Lote', 'Cultivar', '#Total', 'Bags por status', 'SAP (produção)']
+              : ['Lote', 'Cultivar', '#Total', 'Bags por status']
+          }
+        >
+          {filtrados.map((l) => {
+            const conf = conferencias[l.loteId]
+            return (
+              <tr key={l.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="px-2 py-1.5 font-medium">{l.loteId}</td>
+                <td className="px-2 py-1.5">{l.cultivar}</td>
+                <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                  {inteiro(l.total)}
+                </td>
+                <td className="px-2 py-1.5">
+                  <div className="flex flex-wrap gap-1">
+                    {ORDEM_STATUS.filter((s) => l.porStatus.has(s)).map((s) => (
+                      <Tag key={s} cor={corDoStatus(s)}>
+                        {s}: {inteiro(l.porStatus.get(s)!)}
+                      </Tag>
+                    ))}
+                  </div>
+                </td>
+                {podeConferirSap && (
+                  <td className="px-2 py-1.5">
+                    {!conf && (
+                      <Botao onClick={() => conferirNoSap(l.loteId)}>Conferir</Botao>
+                    )}
+                    {conf?.carregando && (
+                      <span className="text-xs text-stone-500 dark:text-stone-400">
+                        consultando…
+                      </span>
+                    )}
+                    {conf?.erro && (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Tag cor="perigo">{conf.erro}</Tag>
+                        <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
+                      </div>
+                    )}
+                    {conf?.saldo && conf.saldo.encontrados === 0 && (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Tag cor="alerta">lote não achado no SAP</Tag>
+                        <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
+                      </div>
+                    )}
+                    {conf?.saldo && conf.saldo.encontrados > 0 && (
+                      <div className="text-xs">
+                        <p className="num-tabular font-semibold text-stone-900 dark:text-stone-100">
+                          SAP: {n(conf.saldo.quantidadeTotal, 0)}
+                          {conf.saldo.pms != null && ` · PMS ${n(conf.saldo.pms, 0)}`}
+                        </p>
+                        <p className="text-stone-500 dark:text-stone-400">
+                          {conf.saldo.tratamentoSap ?? '—'} · {conf.saldo.itemCodes.join(', ') || '—'}
+                        </p>
+                      </div>
+                    )}
+                  </td>
+                )}
+              </tr>
+            )
+          })}
         </Tabela>
+        {podeConferirSap && (
+          <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+            "SAP" é a quantidade crua devolvida por `BatchNumberDetails` (produção) para o
+            número do lote — ainda sem conversão de unidade. É uma conferência manual, não
+            substitui o total programado.
+          </p>
+        )}
+        </>
       )}
     </Cartao>
   )
