@@ -16,7 +16,11 @@
 -- `baixar_lote`/lote_movimentos NÃO mudam de propósito: a logística
 -- movimenta os bags FÍSICOS do lote (semente branca na embalagem original),
 -- então o peso do movimento é mesmo o do lote.
+--
+-- Execute no SQL Editor do Supabase
 -- ============================================================
+
+set search_path = tsi, public;
 
 drop view if exists v_ordens cascade;
 
