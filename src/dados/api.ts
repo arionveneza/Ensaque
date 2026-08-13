@@ -52,6 +52,8 @@ export interface LinhaOrdem {
   lote_liberado_em: string | null
   /** PCP confirmou a ordem programada — antes disso é invisível à Logística (11/08/2026). */
   confirmada_em: string | null
+  /** Fator da embalagem DA ORDEM — o peso do bag da ordem é pms × fator (13/08/2026). */
+  embalagens: { fator_peso: number } | null
   lotes_semente: {
     id: string
     cultivar: string
@@ -84,6 +86,7 @@ const SELECT_ORDEM = `
   armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente, bags_produzidos,
   lote_liberado_em, confirmada_em,
+  embalagens ( fator_peso ),
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status ),
   receitas ( nome, receita_itens ( produto_id, dose ) ),
   ordem_produtos ( produto_id, tanque ),

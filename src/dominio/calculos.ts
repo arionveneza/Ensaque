@@ -22,6 +22,24 @@ export function pesoBagKg(pms: number, embalagem: Embalagem): number {
   return pms * embalagem.fatorPeso
 }
 
+/**
+ * Peso do bag DA ORDEM: PMS × fator da embalagem escolhida NA ORDEM — não o
+ * peso_bag_kg herdado do lote, que foi congelado com o fator da embalagem
+ * ORIGINAL dele na importação. Ordem MEIOBAG de lote big bag saía com o
+ * dobro de peso em tudo (13/08/2026). Fallback: sem PMS no cadastro do lote
+ * (coluna nullable) não há como recalcular — vale o peso do lote, o
+ * comportamento antigo.
+ */
+export function pesoBagDaOrdemKg(
+  pms: number | null,
+  fatorPesoOrdem: number | null | undefined,
+  pesoBagLoteKg: number,
+): number {
+  return pms != null && pms > 0 && fatorPesoOrdem != null && fatorPesoOrdem > 0
+    ? pms * fatorPesoOrdem
+    : pesoBagLoteKg
+}
+
 /** Peso total de semente da ordem, em kg. */
 export function pesoOrdemKg(bags: number, pesoBagKg: number): number {
   return bags * pesoBagKg

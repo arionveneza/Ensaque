@@ -1,4 +1,5 @@
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from './api'
+import { pesoBagDaOrdemKg } from '@/dominio/calculos'
 import type {
   AlocacaoProduto, MotivoParada, Ordem, ProdutoQuimico, Receita,
 } from '@/dominio/tipos'
@@ -92,4 +93,8 @@ export const mapaMotivos = (linhas: LinhaMotivo[]): Map<string, MotivoParada> =>
     linhas.map((m) => [m.id, { id: m.id, descricao: m.descricao, tipo: m.tipo }]),
   )
 
-export const pesoOrdemKg = (l: LinhaOrdem): number => l.bags * l.lotes_semente.peso_bag_kg
+/** Peso do bag DA ORDEM (pms × fator da embalagem da ordem; fallback: bag do lote). */
+export const pesoBagOrdemKg = (l: LinhaOrdem): number =>
+  pesoBagDaOrdemKg(l.lotes_semente.pms, l.embalagens?.fator_peso, l.lotes_semente.peso_bag_kg)
+
+export const pesoOrdemKg = (l: LinhaOrdem): number => l.bags * pesoBagOrdemKg(l)

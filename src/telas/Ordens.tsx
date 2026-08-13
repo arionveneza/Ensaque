@@ -1688,7 +1688,15 @@ function NovaOrdemForm({
         </Campo>
         <Campo rotulo="Peso resultante">
           <p className="num-tabular py-1.5 text-sm font-medium">
-            {lote && bags > 0 ? `${n((bags * lote.peso_bag_kg) / 1000, 2)} t` : '—'}
+            {(() => {
+              if (!lote || !(bags > 0)) return '—'
+              // peso do bag DA ORDEM: pms × fator da embalagem escolhida —
+              // não o peso do bag do lote, que veio da embalagem original dele
+              const fator = embalagens.find((e) => e.codigo === embalagem)?.fator_peso
+              const bagKg =
+                lote.pms != null && lote.pms > 0 && fator ? lote.pms * fator : lote.peso_bag_kg
+              return `${n((bags * bagKg) / 1000, 2)} t`
+            })()}
           </p>
         </Campo>
         <Campo rotulo="Cliente (opcional)">

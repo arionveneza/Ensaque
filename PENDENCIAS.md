@@ -146,6 +146,18 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       agir de propósito — corrigido acrescentando `confirmada_em is not null` ao `WHERE` da
       função. Backfill confirmou automaticamente 12 ordens já programadas, preservando o
       estado observável de antes da migração.
+- [ ] `supabase/peso-por-embalagem-da-ordem.sql` — **pendente de aplicar** (13/08/2026):
+      o peso de semente da ordem era `bags × peso_bag_kg do LOTE`, congelado na importação
+      com o fator da embalagem ORIGINAL do lote — ordem MEIOBAG de lote big bag saía com o
+      DOBRO em tudo (peso, químico planejado, ensaque, tempo planejado, ocupação; "o
+      cálculo do meio bag tá estranho", relato do Arion). A view `v_ordens` (e a cadeia
+      dependente) passa a usar `pms × fator_peso da embalagem DA ORDEM`, com fallback no
+      peso do lote quando o PMS é nulo. O front já foi corrigido no mesmo dia (helper
+      `pesoBagDaOrdemKg` em calculos.ts, usado por adaptadores/ModalOrdem/Painel/prévia de
+      criação) — **até o SQL ser aplicado, as telas que leem `v_ordens` (Programação,
+      Indicadores, Lotes, Calda) continuam com o número antigo**; as que calculam no front
+      (Execução/ModalOrdem/Painel) já mostram o certo. `baixar_lote`/`lote_movimentos` não
+      mudam de propósito: a logística movimenta os bags FÍSICOS do lote.
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 

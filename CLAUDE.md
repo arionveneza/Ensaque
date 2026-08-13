@@ -97,10 +97,25 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   densidade) continua — é dele que sai o peso de balança.
 
 ### Peso de ensaque
-`ensaque_por_bag = peso_do_bag_do_lote × 1,005 + (peso_químico_total_da_ordem ÷ bags_da_ordem)`
+`ensaque_por_bag = peso_do_bag_DA_ORDEM × 1,005 + (peso_químico_total_da_ordem ÷ bags_da_ordem)`
 
 O ×1,005 é a **margem de meio por cento sobre o peso do bag** (decisão de 05/08/2026);
 a margem não incide sobre a parcela de químico.
+
+- **O peso do bag que entra em TODA conta da ordem é o da embalagem DA ORDEM** (decisão de
+  13/08/2026): `pms × fator_peso(ordens.embalagem)`, com fallback no `peso_bag_kg` do lote
+  quando o PMS é nulo. O `lotes_semente.peso_bag_kg` é congelado na importação com o fator
+  da embalagem ORIGINAL do lote — usar ele numa ordem MEIOBAG de lote big bag dobrava peso
+  de semente, químico, ensaque, tempo planejado e ocupação. Vale no front
+  (`pesoBagDaOrdemKg`, calculos.ts) e na `v_ordens` (`peso_bag_ordem_kg`, `peso_kg`,
+  `peso_t` — migração `peso-por-embalagem-da-ordem.sql`). Exceção deliberada:
+  `baixar_lote`/`lote_movimentos` seguem no peso do LOTE — a logística movimenta os bags
+  físicos da embalagem original.
+
+- **Receita SEM PRODUTO é permitida** (decisão de 13/08/2026): é a receita de ensaque sem
+  tratamento (ex.: `SEM TSI`) — a ordem roda sem tanque, sem pesagem e com químico zero; o
+  "Confirmar início" dispensa a exigência de tanque montado nesse caso. O banco nunca
+  impediu (as validações são todas `count de pendência > 0`); as travas eram só do front.
 
 ---
 

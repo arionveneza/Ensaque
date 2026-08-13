@@ -9,6 +9,7 @@ import {
   montaTanques,
   produtosSemDestino,
   ocupacao,
+  pesoBagDaOrdemKg,
   pesoBagKg,
   pesoItemKg,
   pesoOrdemKg,
@@ -61,6 +62,27 @@ describe('peso do bag', () => {
 
   it('peso da ordem e bags x peso do bag', () => {
     expect(pesoOrdemKg(45, 855)).toBe(38_475)
+  })
+})
+
+describe('peso do bag DA ORDEM (embalagem da ordem, nao do lote)', () => {
+  it('ordem MEIOBAG de lote big bag usa o fator da ORDEM: metade, nao o peso do lote', () => {
+    // lote big bag: peso_bag_kg = 171 x 5 = 855; ordem MEIOBAG -> 171 x 2,5
+    expect(pesoBagDaOrdemKg(171, 2.5, 855)).toBe(427.5)
+  })
+
+  it('ordem BG5M de lote big bag da o mesmo numero de sempre', () => {
+    expect(pesoBagDaOrdemKg(171, 5, 855)).toBe(855)
+  })
+
+  it('lote sem PMS cai no peso do bag do lote (nao ha como recalcular)', () => {
+    expect(pesoBagDaOrdemKg(null, 2.5, 855)).toBe(855)
+    expect(pesoBagDaOrdemKg(0, 2.5, 855)).toBe(855)
+  })
+
+  it('sem fator da embalagem (embed ausente) tambem cai no peso do lote', () => {
+    expect(pesoBagDaOrdemKg(171, null, 855)).toBe(855)
+    expect(pesoBagDaOrdemKg(171, undefined, 855)).toBe(855)
   })
 })
 

@@ -172,7 +172,8 @@ export async function salvarReceita(
   receitaId?: string,
 ): Promise<string> {
   if (!nome.trim()) throw new Error('A receita precisa de um nome — use o código do comercial.')
-  if (itens.length === 0) throw new Error('A receita precisa de ao menos um produto.')
+  // zero produtos é permitido (13/08/2026): é a receita de ensaque sem
+  // tratamento (SEM TSI) — a ordem roda sem tanque e com químico zero
   if (itens.some((i) => !(i.dose > 0))) {
     throw new Error('Toda dose precisa ser maior que zero.')
   }
@@ -195,10 +196,12 @@ export async function salvarReceita(
     id = (ins.data as { id: string }).id
   }
 
-  const itensIns = await supabase
-    .from('receita_itens')
-    .insert(itens.map((i) => ({ receita_id: id, ...i })))
-  erro('gravar itens da receita', itensIns.error)
+  if (itens.length > 0) {
+    const itensIns = await supabase
+      .from('receita_itens')
+      .insert(itens.map((i) => ({ receita_id: id, ...i })))
+    erro('gravar itens da receita', itensIns.error)
+  }
   return id!
 }
 

@@ -715,8 +715,7 @@ function FormReceita({
             </label>
             <button
               onClick={() => setItens(itens.filter((_, idx) => idx !== i))}
-              disabled={itens.length === 1}
-              className="-m-1.5 rounded p-1.5 pb-1.5 text-xs text-red-600 underline disabled:opacity-30"
+              className="-m-1.5 rounded p-1.5 pb-1.5 text-xs text-red-600 underline"
             >
               remover
             </button>
@@ -729,8 +728,17 @@ function FormReceita({
           Adicionar produto
         </Botao>
         <span className="text-xs text-stone-500">
-          {itens.length} produto(s) — o <b>tanque</b> é informado pelo operador na ordem,
-          porque a distribuição muda a cada uma.
+          {itens.length === 0 ? (
+            <>
+              <b>Sem produto nenhum</b> — receita de ensaque sem tratamento (ex.:{' '}
+              <b>SEM TSI</b>): a ordem roda sem tanque e sem pesagem de químico.
+            </>
+          ) : (
+            <>
+              {itens.length} produto(s) — o <b>tanque</b> é informado pelo operador na
+              ordem, porque a distribuição muda a cada uma.
+            </>
+          )}
         </span>
       </div>
 

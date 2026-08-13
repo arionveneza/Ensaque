@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import type { LinhaMaquina, LinhaOrdem } from '@/dados/api'
 import * as g from '@/dados/api-gestao'
-import { mapaMotivos, paraOrdemDominio, pesoOrdemKg } from '@/dados/adaptadores'
+import { mapaMotivos, paraOrdemDominio, pesoBagOrdemKg, pesoOrdemKg } from '@/dados/adaptadores'
 import {
   calculaOee, checkFinalAprovado, diaDeProducao, formataHms,
   tempoPlanejadoS, temposOrdem,
@@ -124,7 +124,7 @@ export default function Painel({ onSair }: { onSair: () => void }) {
       // que foi produzido, não o que foi planejado.
       const bagsReais = o.bags_produzidos ?? o.bags
       bags += bagsReais
-      const t = (bagsReais * o.lotes_semente.peso_bag_kg) / 1000
+      const t = (bagsReais * pesoBagOrdemKg(o)) / 1000
       pesoT += t
       /**
        * O OEE inteiro sai da MESMA população: só ordens com qualidade final

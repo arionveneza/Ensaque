@@ -5,6 +5,7 @@ import {
   mapaMotivos,
   mapaProdutos,
   paraOrdemDominio,
+  pesoBagOrdemKg,
   pesoOrdemKg,
 } from '@/dados/adaptadores'
 import {
@@ -143,11 +144,11 @@ export default function ModalOrdem({
       urgente: ordem.prioridade === 'Urgente',
       pesoSementeT: num(kg / 1000, 2),
       quimicoTotalKg: quimicoTotal == null ? '—' : num(quimicoTotal),
-      pesoBagKg: num(ordem.lotes_semente.peso_bag_kg, 0),
+      pesoBagKg: num(pesoBagOrdemKg(ordem), 0),
       ensaqueBagKg:
         quimicoTotal == null
           ? '—'
-          : num(ensaquePorBagKg(ordem.lotes_semente.peso_bag_kg, quimicoTotal, ordem.bags), 1),
+          : num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags), 1),
       tanques: tanquesOrdenados.map((tq) => ({
         destino: rotuloTanque(tq),
         produtos: itens
@@ -167,8 +168,13 @@ export default function ModalOrdem({
     (i) => !ordem.ordem_produtos.some((op) => op.produto_id === i.produto_id),
   )
 
+  // receita SEM PRODUTO (ensaque sem tratamento, ex.: SEM TSI) não tem tanque
+  // para montar — exigir ordem_tanques > 0 travaria o início para sempre
+  const receitaSemProduto = ordem.receitas.receita_itens.length === 0
   const podeConfirmarInicio =
-    semDestino.length === 0 && ordem.ordem_tanques.length > 0 && semPesoInicial.length === 0
+    semDestino.length === 0 &&
+    semPesoInicial.length === 0 &&
+    (receitaSemProduto || ordem.ordem_tanques.length > 0)
   // peso final NÃO trava mais a finalização (o PCP digita no AGROTIS);
   // o que trava é a quantidade produzida
   const bagsProduzidos = parseInt(qtdProduzida, 10)
@@ -235,7 +241,7 @@ export default function ModalOrdem({
               valor={
                 quimicoTotal == null
                   ? '—'
-                  : `${num(ensaquePorBagKg(ordem.lotes_semente.peso_bag_kg, quimicoTotal, ordem.bags), 1)} kg`
+                  : `${num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags), 1)} kg`
               }
             />
           </dl>
@@ -276,7 +282,7 @@ export default function ModalOrdem({
           )}
 
           {/* -------- distribuição: o operador define o tanque de cada produto -------- */}
-          {!tocada && (
+          {!tocada && !receitaSemProduto && (
             <div className="mb-5">
               <h3 className="mb-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
                 Distribuição dos produtos
@@ -335,8 +341,17 @@ export default function ModalOrdem({
           {/* ---------------- tanques ---------------- */}
           {ordem.ordem_tanques.length === 0 ? (
             <p className="rounded-md bg-stone-50 px-4 py-6 text-center text-sm text-stone-500 dark:bg-stone-800/50 dark:text-stone-400">
-              Nenhum tanque montado ainda — escolha o destino dos produtos acima. O cronômetro
-              só começa no <b>Confirmar início</b>.
+              {receitaSemProduto ? (
+                <>
+                  Receita <b>sem produto químico</b> (ensaque sem tratamento) — não há tanque
+                  para montar nem peso para digitar. Pode <b>confirmar o início</b> direto.
+                </>
+              ) : (
+                <>
+                  Nenhum tanque montado ainda — escolha o destino dos produtos acima. O
+                  cronômetro só começa no <b>Confirmar início</b>.
+                </>
+              )}
             </p>
           ) : (
             <>
