@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
 import * as api from '@/dados/api'
+import * as g from '@/dados/api-gestao'
+import type { OrdemResumoReceita } from '@/dados/api-gestao'
 import {
   mapaMotivos,
   mapaProdutos,
@@ -12,6 +14,7 @@ import {
   ensaquePorBagKg,
   formataHms,
   montaTanques,
+  pesoItemKg,
   pesoQuimicoTotalKg,
   tempoPlanejadoS,
   temposOrdem,
@@ -85,6 +88,55 @@ export default function ModalOrdem({
       return null
     }
   }, [ordem, dominio.tanques, prods, kg])
+
+  // ---- calda: receita com mais de 5 produtos obriga misturar 2+ num tanque
+  // (só existem 5). Ajuda o operador a pesar a mistura mostrando a
+  // quantidade de CADA produto — considerando não só esta ordem, mas a soma
+  // de todas as ordens desta receita ainda por fazer ou em andamento (a
+  // calda normalmente serve mais de uma ordem, não vale remisturar em cada
+  // uma). É só um auxiliar de preparo: não altera o planejado por tanque
+  // (esse continua vindo só desta ordem, na tabela de baixo).
+  const receitaItens = ordem.receitas.receita_itens
+  const precisaCalda = receitaItens.length > 5
+  const [ordensDaReceita, setOrdensDaReceita] = useState<OrdemResumoReceita[]>([])
+  useEffect(() => {
+    if (!precisaCalda) return
+    let cancelado = false
+    g.listarOrdensDaReceita(ordem.receita_id)
+      .then((r) => {
+        if (!cancelado) setOrdensDaReceita(r)
+      })
+      .catch(() => {
+        if (!cancelado) setOrdensDaReceita([])
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [precisaCalda, ordem.receita_id])
+
+  const STATUS_ATIVOS_CALDA = ['Aguardando lote', 'Pronto para produzir', 'Em producao', 'Parada']
+  const ordensAtivasCalda = ordensDaReceita.filter((o) => STATUS_ATIVOS_CALDA.includes(o.status_efetivo))
+  const pesoCaldaAutoKg = ordensAtivasCalda.reduce((s, o) => s + o.peso_kg, 0)
+
+  // vazio = segue o automático; só passa a valer quando o operador digita
+  const [pesoCaldaManualT, setPesoCaldaManualT] = useState('')
+  const pesoCaldaManualKg = (() => {
+    const limpo = pesoCaldaManualT.replace(',', '.').trim()
+    if (limpo === '') return null
+    const v = Number(limpo) * 1000
+    return Number.isFinite(v) && v > 0 ? v : null
+  })()
+  const pesoCaldaKg = pesoCaldaManualKg ?? pesoCaldaAutoKg
+
+  function quantidadeProdutoCaldaKg(produtoId: string, dose: number): number | null {
+    const p = prods.get(produtoId)
+    if (!p || pesoCaldaKg <= 0) return null
+    try {
+      return pesoItemKg({ produtoId, dose }, p, pesoCaldaKg)
+    } catch {
+      return null
+    }
+  }
 
   async function acao(fn: () => Promise<void>) {
     setErro(null)
@@ -286,10 +338,40 @@ export default function ModalOrdem({
                 quem informa. Dois produtos no mesmo tanque = mistura, e o planejado passa a ser
                 a soma deles.
               </p>
+              {precisaCalda && (
+                <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800 dark:bg-amber-950/30">
+                  <p className="mb-1.5 text-amber-800 dark:text-amber-200">
+                    Receita com mais de 5 produtos — pelo menos um tanque vai juntar 2 ou mais.
+                    Quantidade abaixo já soma{' '}
+                    <b>{ordensAtivasCalda.length} ordem(ns)</b> desta receita ainda por fazer ou
+                    em andamento, pra facilitar preparar a calda de uma vez.
+                  </p>
+                  <label className="flex flex-wrap items-center gap-1.5">
+                    <span>Semente considerada (t):</span>
+                    <input
+                      inputMode="decimal"
+                      value={pesoCaldaManualT}
+                      onChange={(e) => setPesoCaldaManualT(e.target.value)}
+                      placeholder={num(pesoCaldaAutoKg / 1000, 2)}
+                      className="num-tabular w-24 rounded border border-stone-300 px-2 py-1 text-right dark:border-stone-700 dark:bg-stone-800"
+                    />
+                    {pesoCaldaManualKg != null && (
+                      <button
+                        type="button"
+                        onClick={() => setPesoCaldaManualT('')}
+                        className="text-stone-500 underline dark:text-stone-400"
+                      >
+                        voltar pro automático
+                      </button>
+                    )}
+                  </label>
+                </div>
+              )}
               <div className="space-y-1.5">
                 {ordem.receitas.receita_itens.map((i) => {
                   const p = prods.get(i.produto_id)
                   const atual = ordem.ordem_produtos.find((op) => op.produto_id === i.produto_id)
+                  const qtdCalda = precisaCalda ? quantidadeProdutoCaldaKg(i.produto_id, i.dose) : null
                   return (
                     <div
                       key={i.produto_id}
@@ -300,6 +382,11 @@ export default function ModalOrdem({
                         <span className="text-stone-500">
                           · {num(i.dose, 2)} {p?.unidade}
                         </span>
+                        {precisaCalda && (
+                          <span className="ml-1 font-semibold text-stone-700 dark:text-stone-300">
+                            · {qtdCalda == null ? '—' : `${num(qtdCalda, 2)} kg`}
+                          </span>
+                        )}
                       </span>
                       <select
                         disabled={!podeApontar || ocupado}

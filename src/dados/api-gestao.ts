@@ -69,6 +69,28 @@ export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisa
   return (data ?? []) as OrdemVisao[]
 }
 
+export interface OrdemResumoReceita {
+  id: string
+  numero: string
+  status_efetivo: string
+  peso_kg: number
+}
+
+/**
+ * Todas as ordens da mesma receita, com só o essencial pra somar tonelagem —
+ * usada pela tela de preparo (ModalOrdem) quando a receita tem mais de 5
+ * produtos e precisa de calda: a quantidade de cada produto passa a
+ * considerar a soma de várias ordens, não só a que está aberta.
+ */
+export async function listarOrdensDaReceita(receitaId: string): Promise<OrdemResumoReceita[]> {
+  const { data, error } = await supabase
+    .from('v_ordens')
+    .select('id, numero, status_efetivo, peso_kg')
+    .eq('receita_id', receitaId)
+  erro('ordens da receita', error)
+  return (data ?? []) as OrdemResumoReceita[]
+}
+
 /** Ordens sem máquina (pool) — não têm data_prog, então ficam fora do filtro por período. */
 export async function listarPool(): Promise<OrdemVisao[]> {
   const { data, error } = await supabase
