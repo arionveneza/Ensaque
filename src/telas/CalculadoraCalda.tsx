@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as g from '@/dados/api-gestao'
 import type { OrdemResumoReceita, ReceitaCompleta } from '@/dados/api-gestao'
 import { pesoItemKg, volumeItemL } from '@/dominio/calculos'
-import { Botao } from '@/componentes/ui'
+import { Botao, Tag } from '@/componentes/ui'
 import { imprimirTabela } from '@/lib/exportar'
 
 /**
@@ -100,11 +100,19 @@ export default function CalculadoraCalda({ onFechar }: Props) {
     })
   }, [receita, pesoKg])
 
+  // origem do peso em uso — estampada na tela e na folha impressa, porque a
+  // folha fica pregada na parede e alguém precisa saber se aquele número
+  // veio das ordens de um momento (envelhece) ou foi decidido por uma pessoa
+  const origemPeso =
+    manualKg != null
+      ? 'peso digitado manualmente'
+      : `peso das ordens (${ordensAtivas.length} por fazer/em andamento)`
+
   function imprimir() {
     if (!receita) return
     imprimirTabela(
       'Calda (MIX)',
-      `${receita.nome} · ${num(pesoKg, 0)} kg de semente`,
+      `${receita.nome} · ${num(pesoKg, 0)} kg de semente · ${origemPeso}`,
       ['Químico', 'Dose', 'Consumo (ideal)', 'Peso na balança (kg)'],
       linhas.map((l) => [
         l.nome,
@@ -171,28 +179,36 @@ export default function CalculadoraCalda({ onFechar }: Props) {
               value={kgManual}
               onChange={(e) => setKgManual(e.target.value)}
               placeholder={receitaId ? num(autoKg, 0) : '—'}
-              className="num-tabular mt-1 w-full rounded-md border border-stone-300 px-2 py-2 text-right dark:border-stone-700 dark:bg-stone-800"
+              className={`num-tabular mt-1 w-full rounded-md border px-2 py-2 text-right dark:bg-stone-800 ${
+                manualKg != null
+                  ? 'border-amber-400 dark:border-amber-700'
+                  : 'border-stone-300 dark:border-stone-700'
+              }`}
             />
-            {receitaId && (
+            {receitaId && manualKg != null && (
               <span className="mt-1 block text-xs text-stone-500 dark:text-stone-400">
-                {manualKg != null ? (
-                  <button
-                    type="button"
-                    onClick={() => setKgManual('')}
-                    className="underline"
-                  >
-                    voltar pro automático ({num(autoKg, 0)} kg)
-                  </button>
-                ) : (
-                  <>
-                    soma de {ordensAtivas.length} ordem(ns) desta receita por fazer ou em
-                    andamento — pode digitar outro valor
-                  </>
-                )}
+                <button type="button" onClick={() => setKgManual('')} className="underline">
+                  voltar pro peso das ordens ({num(autoKg, 0)} kg)
+                </button>
               </span>
             )}
           </label>
         </div>
+
+        {receita && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-stone-600 dark:text-stone-300">
+              Calculado para <b className="num-tabular">{num(pesoKg, 0)} kg</b> —
+            </span>
+            {manualKg != null ? (
+              <Tag cor="alerta">peso digitado manualmente</Tag>
+            ) : (
+              <Tag cor="info">
+                peso das ordens · {ordensAtivas.length} por fazer/em andamento
+              </Tag>
+            )}
+          </div>
+        )}
 
         {!receita ? (
           <p className="rounded-md bg-stone-50 px-4 py-6 text-center text-sm text-stone-500 dark:bg-stone-800/50 dark:text-stone-400">
