@@ -43,21 +43,26 @@ const json = (corpo: unknown) =>
 
 const recusa = (erro: string, sap?: unknown) => json({ ok: false, erro, sap })
 
-/** Mesmo SqlText já validado na homologação (docs/integracao-sap.md §3.2) —
- *  SEM prefixo de schema: roda no contexto da empresa já autenticada. */
+/** Mesma consulta validada na homologação (docs/integracao-sap.md §3.2), SEM
+ *  prefixo de schema (roda no contexto da empresa autenticada) e com aliases
+ *  100% ASCII: o primeiro clique (13/08/2026) gravou a versão com "Nº do
+ *  Lote" e o `º` se corrompeu no caminho até o HANA — a consulta salvou,
+ *  mas executava com `257 sql syntax error: unterminated quoted identifier:
+ *  line 3 col 26`, exatamente a coluna do `º`. Acento/símbolo em alias não
+ *  sobrevive a este transporte; os nomes legíveis ficam por conta da tela. */
 const SQL_TEXT = `SELECT
     Lote."ItemCode",
-    Lote."DistNumber" AS "Nº do Lote",
-    Lote."itemName" AS "Descrição do Item",
-    Lote."U_AGRT_ClassQualidade" AS "Classificação de Qualidade",
-    Lote."U_AGRT_CategoriaLote" AS "Categoria do Lote",
+    Lote."DistNumber" AS "NumLote",
+    Lote."itemName" AS "DescricaoItem",
+    Lote."U_AGRT_ClassQualidade" AS "ClassQualidade",
+    Lote."U_AGRT_CategoriaLote" AS "CategoriaLote",
     Lote."U_AGRT_Peneira" AS "Peneira",
-    Lote."U_AGRT_PMS" AS "PMS (g)",
-    Lote."U_AGRT_PesoBruto" AS "Peso Bruto",
-    Lote."U_LoteTSI" AS "Tratamento (TSI)",
-    Lote."U_Destinacao" AS "Destinação",
-    Saldo."WhsCode" AS "Depósito",
-    Saldo."Quantity" AS "Qtd em Estoque"
+    Lote."U_AGRT_PMS" AS "PMS",
+    Lote."U_AGRT_PesoBruto" AS "PesoBruto",
+    Lote."U_LoteTSI" AS "TratamentoTSI",
+    Lote."U_Destinacao" AS "Destinacao",
+    Saldo."WhsCode" AS "Deposito",
+    Saldo."Quantity" AS "QtdEstoque"
 FROM OBTN Lote
 INNER JOIN OBTQ Saldo
     ON Saldo."ItemCode" = Lote."ItemCode"
@@ -116,8 +121,31 @@ Deno.serve(async (req) => {
     } catch {
       corpoCriar = { resposta: textoCriar }
     }
+    let acao = 'criada'
     if (!criar.ok) {
-      return recusa(`SAP recusou criar a consulta (HTTP ${criar.status}).`, corpoCriar)
+      // consulta já existe (ex.: o primeiro clique gravou a versão com alias
+      // quebrado) → regrava o SqlText por cima. Mesmo alvo, mesma natureza
+      // de metadado — o conserto autorizado junto com a criação.
+      const atualizar = await fetch(`${SAP_URL}/SQLQueries('TSI_SALDOS')`, {
+        method: 'PATCH',
+        headers: cabecalhos,
+        body: JSON.stringify({ SqlText: SQL_TEXT }),
+      })
+      if (!atualizar.ok && atualizar.status !== 204) {
+        const textoAtualizar = await atualizar.text()
+        let corpoAtualizar: unknown
+        try {
+          corpoAtualizar = JSON.parse(textoAtualizar)
+        } catch {
+          corpoAtualizar = { resposta: textoAtualizar }
+        }
+        return recusa(
+          `SAP recusou criar (HTTP ${criar.status}) e também atualizar (HTTP ${atualizar.status}).`,
+          { criar: corpoCriar, atualizar: corpoAtualizar },
+        )
+      }
+      acao = 'atualizada'
+      corpoCriar = { atualizada: true }
     }
 
     // já executa uma vez, pra confirmar que funciona sem precisar de um segundo clique
@@ -135,6 +163,7 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true,
+      acao,
       criada: corpoCriar,
       execucao: {
         ok: executar.ok,

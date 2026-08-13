@@ -278,9 +278,10 @@ function linhasDe(dados: unknown): Record<string, unknown>[] {
   return []
 }
 
-/** Colunas da TSI_SALDOS vêm com os ALIASES do SQL ("Nº do Lote", "Qtd em
- *  Estoque"…). Os fallbacks cobrem o caso de o Service Layer devolver o
- *  nome cru da coluna em vez do alias (varia entre versões). */
+/** Colunas da TSI_SALDOS vêm com os ALIASES do SQL — 100% ASCII ("NumLote",
+ *  "QtdEstoque"…): alias com acento/º corrompeu no caminho até o HANA e
+ *  quebrou a consulta salva (13/08/2026). Os fallbacks cobrem o caso de o
+ *  Service Layer devolver o nome cru da coluna em vez do alias. */
 function campo(l: Record<string, unknown>, ...nomes: string[]): unknown {
   for (const n of nomes) if (l[n] !== undefined) return l[n]
   return undefined
@@ -300,13 +301,13 @@ export function saldoLoteDe(dadosSaldo: unknown, loteId: string): SaldoLoteSap {
   const alvo = loteId.trim()
   const todasSaldo = linhasDe(dadosSaldo)
   const numeroDoLote = (l: Record<string, unknown>) =>
-    String(campo(l, 'Nº do Lote', 'DistNumber') ?? '').trim()
+    String(campo(l, 'NumLote', 'DistNumber') ?? '').trim()
   const doLote = todasSaldo.filter((l) => numeroDoLote(l) === alvo)
   const linhaComPms = doLote.find((l) => {
-    const v = campo(l, 'PMS (g)', 'U_AGRT_PMS')
+    const v = campo(l, 'PMS', 'U_AGRT_PMS')
     return v !== null && v !== undefined && v !== ''
   })
-  const linhaComTrat = doLote.find((l) => campo(l, 'Tratamento (TSI)', 'U_LoteTSI'))
+  const linhaComTrat = doLote.find((l) => campo(l, 'TratamentoTSI', 'U_LoteTSI'))
 
   return {
     loteId,
@@ -317,12 +318,12 @@ export function saldoLoteDe(dadosSaldo: unknown, loteId: string): SaldoLoteSap {
     ].slice(0, 3),
     itemCodes: [...new Set(doLote.map((l) => String(l.ItemCode ?? '')).filter(Boolean))],
     quantidadeTotal: doLote.reduce(
-      (soma, l) => soma + Number(campo(l, 'Qtd em Estoque', 'Quantity') ?? 0),
+      (soma, l) => soma + Number(campo(l, 'QtdEstoque', 'Quantity') ?? 0),
       0,
     ),
-    pms: linhaComPms ? Number(campo(linhaComPms, 'PMS (g)', 'U_AGRT_PMS')) : null,
+    pms: linhaComPms ? Number(campo(linhaComPms, 'PMS', 'U_AGRT_PMS')) : null,
     tratamentoSap: linhaComTrat
-      ? String(campo(linhaComTrat, 'Tratamento (TSI)', 'U_LoteTSI'))
+      ? String(campo(linhaComTrat, 'TratamentoTSI', 'U_LoteTSI'))
       : null,
   }
 }

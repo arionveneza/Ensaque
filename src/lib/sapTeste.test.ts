@@ -248,16 +248,17 @@ describe('caminhoSaldoLotes', () => {
 })
 
 describe('saldoLoteDe', () => {
-  // linhas como a TSI_SALDOS devolve: colunas com os ALIASES do SQL
+  // linhas como a TSI_SALDOS devolve: aliases 100% ASCII (acento em alias
+  // corrompeu no caminho até o HANA e quebrou a consulta — 13/08/2026)
   const saldoDeVariosLotes = {
     value: [
-      { ItemCode: 'SOJ00012', 'Nº do Lote': 'SV1', 'PMS (g)': '171.00', 'Tratamento (TSI)': null, 'Depósito': 'VEN_GER', 'Qtd em Estoque': 100 },
-      { ItemCode: 'SOJ00012', 'Nº do Lote': 'SV1', 'PMS (g)': '171.00', 'Tratamento (TSI)': null, 'Depósito': 'VEN_TER1', 'Qtd em Estoque': 50 },
-      { ItemCode: 'SOJ00099', 'Nº do Lote': 'SV2', 'PMS (g)': '160.00', 'Tratamento (TSI)': 'FORTENZA DUO 60', 'Depósito': 'VEN_GER', 'Qtd em Estoque': 999 },
+      { ItemCode: 'SOJ00012', NumLote: 'SV1', PMS: '171.00', TratamentoTSI: null, Deposito: 'VEN_GER', QtdEstoque: 100 },
+      { ItemCode: 'SOJ00012', NumLote: 'SV1', PMS: '171.00', TratamentoTSI: null, Deposito: 'VEN_TER1', QtdEstoque: 50 },
+      { ItemCode: 'SOJ00099', NumLote: 'SV2', PMS: '160.00', TratamentoTSI: 'FORTENZA DUO 60', Deposito: 'VEN_GER', QtdEstoque: 999 },
     ],
   }
 
-  it('filtra por Nº do Lote, soma a quantidade entre depósitos e ignora outros lotes', () => {
+  it('filtra por NumLote, soma a quantidade entre depósitos e ignora outros lotes', () => {
     const r = saldoLoteDe(saldoDeVariosLotes, 'SV1')
     expect(r).toEqual({
       loteId: 'SV1',

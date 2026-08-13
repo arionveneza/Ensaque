@@ -647,9 +647,16 @@ clicar de novo; um segundo POST falharia com "já existe", sem efeito).
 
 Com a CLI logada, as duas funções foram publicadas em 13/08/2026 (`sap-criar-tsi-saldos` v1
 e `sap-teste` v2, agora de fato com produção). A conferência da tela Ordens passou a usar
-`SQLQueries('TSI_SALDOS')/List` em UMA chamada (quantidade+PMS+tratamento juntos, casando
-pelo alias `Nº do Lote` com fallback pros nomes crus), com cache entre cliques e aviso
-quando houver mais de 10 páginas.
+`SQLQueries('TSI_SALDOS')/List` em UMA chamada (quantidade+PMS+tratamento juntos), com cache
+entre cliques e aviso quando houver mais de 10 páginas.
+
+4. **Alias com acento/símbolo não sobrevive até o HANA**: o primeiro clique criou a
+   `TSI_SALDOS` com os aliases originais ("Nº do Lote", "Descrição do Item"…) e a consulta
+   salvou QUEBRADA — executar dava `257 sql syntax error: unterminated quoted identifier:
+   line 3 col 26`, exatamente onde está o `º`. A função foi corrigida para aliases 100%
+   ASCII (`NumLote`, `QtdEstoque`, `PMS`, `TratamentoTSI`, `Deposito`…) e ganhou o modo
+   conserto: se o POST falhar porque a consulta já existe, faz `PATCH` do `SqlText` por
+   cima. O front casa pelos aliases ASCII com fallback pros nomes crus das colunas.
 
 ## 7. Checklist de implantação
 
