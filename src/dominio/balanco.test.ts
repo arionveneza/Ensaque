@@ -77,6 +77,18 @@ describe('avisos: fortes, nunca bloqueantes', () => {
     expect(parado?.mensagem).toMatch(/MEIOBAG/)
     expect(podeCriarOrdem(a)).toBe(true)
   })
+
+  it('SEM TSI nunca avisa "sem pedido" — a importação exclui esse tratamento de propósito', () => {
+    const chaveSemTsi = { ...CHAVE, tratamento: 'SEM TSI' }
+    const a = analisaDemanda(chaveSemTsi, 40, [], [], [], true)
+    expect(a.avisos).toEqual([])
+    expect(podeCriarOrdem(a)).toBe(true)
+  })
+
+  it('SEM TSI tambem tolera variação de caixa/acento (sem tsi, Sem Tsi)', () => {
+    const a = analisaDemanda({ ...CHAVE, tratamento: 'sem tsi' }, 40, [], [], [], true)
+    expect(a.avisos).toEqual([])
+  })
 })
 
 describe('receita nao cadastrada', () => {

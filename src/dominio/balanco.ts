@@ -79,6 +79,14 @@ export interface AnaliseDemanda {
  * Único caso bloqueante: código de tratamento sem receita cadastrada. A demanda
  * existe e entra no balanço, mas sem receita não há como produzir.
  */
+/** Mesma normalização usada na importação (simpleagro.ts) — tolera acento/caixa/espaço. */
+const ehSemTsi = (tratamento: string) =>
+  tratamento
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toUpperCase() === 'SEM TSI'
+
 export function analisaDemanda(
   chave: ChaveDemanda,
   bagsNovos: number,
@@ -98,30 +106,38 @@ export function analisaDemanda(
     })
   }
 
-  if (b.pedidoAprovado === 0) {
-    avisos.push({
-      tipo: 'sem-pedido',
-      mensagem: `Sem pedido de venda aprovado para ${chave.cultivar} + ${chave.tratamento} + ${chave.embalagem}.`,
-      bloqueia: false,
-    })
-  } else if (b.estoquePa >= b.pedidoAprovado) {
-    avisos.push({
-      tipo: 'estoque-cobre',
-      mensagem: `Estoque já cobre o pedido: ${b.estoquePa} bg em estoque para ${b.pedidoAprovado} bg pedidos.`,
-      bloqueia: false,
-    })
-  } else if (b.saldo <= 0 && b.ordensAbertas > 0) {
-    avisos.push({
-      tipo: 'ja-planejado',
-      mensagem: `Já planejado: ${b.ordensAbertas} bg em ordens abertas atendem o pedido de ${b.pedidoAprovado} bg (estoque ${b.estoquePa} bg).`,
-      bloqueia: false,
-    })
-  } else if (bagsNovos > b.saldo) {
-    avisos.push({
-      tipo: 'excede-saldo',
-      mensagem: `Excede a necessidade: saldo descoberto é ${Math.max(0, b.saldo)} bg e a ordem tem ${bagsNovos} bg.`,
-      bloqueia: false,
-    })
+  // SEM TSI é semente branca (ensaque sem tratamento): a importação da
+  // SimpleAgro descarta esses pedidos de propósito ("SEM TSI → excluir, não
+  // gera trabalho de TSI") e o estoque correspondente vira lotes_semente,
+  // nunca estoque_pa. `pedidos`/`estoquePa` NUNCA vão ter linha pra essa
+  // combinação — os avisos abaixo dariam "sem pedido" toda vez, pra toda
+  // ordem SEM TSI, sem sinal real nenhum por trás.
+  if (!ehSemTsi(chave.tratamento)) {
+    if (b.pedidoAprovado === 0) {
+      avisos.push({
+        tipo: 'sem-pedido',
+        mensagem: `Sem pedido de venda aprovado para ${chave.cultivar} + ${chave.tratamento} + ${chave.embalagem}.`,
+        bloqueia: false,
+      })
+    } else if (b.estoquePa >= b.pedidoAprovado) {
+      avisos.push({
+        tipo: 'estoque-cobre',
+        mensagem: `Estoque já cobre o pedido: ${b.estoquePa} bg em estoque para ${b.pedidoAprovado} bg pedidos.`,
+        bloqueia: false,
+      })
+    } else if (b.saldo <= 0 && b.ordensAbertas > 0) {
+      avisos.push({
+        tipo: 'ja-planejado',
+        mensagem: `Já planejado: ${b.ordensAbertas} bg em ordens abertas atendem o pedido de ${b.pedidoAprovado} bg (estoque ${b.estoquePa} bg).`,
+        bloqueia: false,
+      })
+    } else if (bagsNovos > b.saldo) {
+      avisos.push({
+        tipo: 'excede-saldo',
+        mensagem: `Excede a necessidade: saldo descoberto é ${Math.max(0, b.saldo)} bg e a ordem tem ${bagsNovos} bg.`,
+        bloqueia: false,
+      })
+    }
   }
 
   // Estoque parado: mesmo cultivar + tratamento, em embalagem sem pedido de venda.
