@@ -595,6 +595,36 @@ qualquer clique.
     safra que `LotesSASaldo` não tem) em `SBOVENPRD` — é um `POST`, decisão separada e
     deliberada, não parte deste teste de leitura.
 
+### 6.9 Decisão: criar TSI_SALDOS em produção, via API (13/08/2026)
+
+O teste de conferência de saldo na tela Ordens (§6.8) esbarrou nos limites da composição
+`LotesSASaldo`+`BatchNumberDetails`: o `BatchNumberDetails` não tem quantidade (HTTP 400 ao
+pedir `Quantity`), e a `LotesSASaldo` devolveu 0 linhas em produção com
+`updatedate='2020-01-01'` — mesma chamada que devolvera 100 linhas via PowerShell em 12/08.
+O Arion então apontou a consulta OBTN×OBTQ (§3.2) como o caminho certo — "essa consulta traz
+o saldo de cada lote" — e, informado do impacto (POST único de metadado de consulta, nenhum
+dado de negócio tocado, reversível com DELETE), **decidiu criar a `TSI_SALDOS` em produção
+via API**.
+
+Como foi feito (mantendo a garantia da `sap-teste`):
+- **Edge Function separada, `sap-criar-tsi-saldos`**: faz exatamente UM `POST /SQLQueries`
+  com corpo FIXO (SqlCode/SqlName/SqlText embutidos no código — não aceita nenhum parâmetro
+  do chamador, não é proxy de escrita) e em seguida um `GET .../List` para confirmar. Mesma
+  autenticação e allowlist da `sap-teste`. A `sap-teste` continua GET-only, intocada.
+- **Botão na aba "SAP (teste)"**: card "Ação única: criar TSI_SALDOS em produção", visível
+  só com Produção selecionada, com `window.confirm` explicando a ação antes de disparar.
+- A exceção à regra "só leitura em produção" (CLAUDE.md §4) foi autorizada pelo Arion para
+  ESTA ação específica — criar metadado de consulta não é gravar dado de negócio. A regra
+  continua valendo para todo o resto.
+
+Deploy da função nova (mesmo caminho do §6.7):
+```
+supabase functions deploy sap-criar-tsi-saldos --no-verify-jwt
+```
+Depois de criada a consulta, esta função fica obsoleta — pode ser apagada do Supabase (e o
+card some sozinho se a função responder que a consulta já existe... na prática, basta não
+clicar de novo; um segundo POST falharia com "já existe", sem efeito).
+
 ## 7. Checklist de implantação
 
 - [x] Acesso a `SBOVENHOM` OK — 09/08/2026, via Basic Auth no **endpoint próprio de homolog** (§6.6)

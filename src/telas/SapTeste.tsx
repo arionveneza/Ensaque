@@ -209,6 +209,53 @@ export default function SapTeste() {
   const [resumo, setResumo] = useState<ResumoItem | null>(null)
   const [relatorio, setRelatorio] = useState<RelatorioComPedido | null>(null)
   const [relatorioCapAtingido, setRelatorioCapAtingido] = useState(false)
+  const [criandoConsulta, setCriandoConsulta] = useState(false)
+  const [criacaoResultado, setCriacaoResultado] = useState<string | null>(null)
+
+  /**
+   * Ação única: cria a TSI_SALDOS em produção via Edge Function própria
+   * (`sap-criar-tsi-saldos` — POST de corpo FIXO, não é o proxy genérico; a
+   * `sap-teste` continua só-leitura). Depois de criada, o preset "Saldo por
+   * lote (TSI_SALDOS)" passa a funcionar também com Produção selecionada.
+   */
+  async function criarTsiSaldos() {
+    if (criandoConsulta) return
+    if (!window.confirm(
+      'Criar a consulta salva TSI_SALDOS no SAP de PRODUÇÃO?\n\n' +
+      'É uma ação única de configuração (um POST). Não altera nenhum dado de ' +
+      'estoque/pedido — só registra a consulta (que é um SELECT) para poder ' +
+      'executá-la depois, como a LotesSASaldo já é hoje.',
+    )) return
+    setCriandoConsulta(true)
+    setCriacaoResultado(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('sap-criar-tsi-saldos', { body: {} })
+      if (error) throw new Error(error.message)
+      const r = data as {
+        ok: boolean
+        erro?: string
+        sap?: unknown
+        execucao?: { ok: boolean; status: number; dados?: unknown }
+      }
+      if (!r.ok) {
+        setCriacaoResultado(
+          `FALHOU: ${r.erro}${r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : ''}`,
+        )
+      } else {
+        const linhas = (r.execucao?.dados as { value?: unknown[] } | undefined)?.value?.length
+        setCriacaoResultado(
+          r.execucao?.ok
+            ? `CRIADA e executada com sucesso — ${linhas ?? '?'} linha(s) de saldo na primeira página. O preset "Saldo por lote (TSI_SALDOS)" já funciona em produção.`
+            : `Criada, mas a execução de teste falhou (HTTP ${r.execucao?.status}): ${JSON.stringify(r.execucao?.dados)}`,
+        )
+      }
+    } catch (e) {
+      setCriacaoResultado(
+        `Falha ao chamar a Edge Function sap-criar-tsi-saldos: ${e instanceof Error ? e.message : e}. Ela está publicada no Supabase?`,
+      )
+    }
+    setCriandoConsulta(false)
+  }
 
   async function executar(cam: string, pags: number) {
     if (carregando) return // Enter repetido não dispara consultas concorrentes
@@ -399,6 +446,29 @@ export default function SapTeste() {
           </Botao>
         </div>
       </Cartao>
+
+      {ambiente === 'producao' && (
+        <Cartao titulo="Ação única: criar TSI_SALDOS em produção" className="mb-5">
+          <p className="mb-2 text-xs text-stone-500">
+            A consulta de saldo por lote (join OBTN×OBTQ, mesma já validada na homologação)
+            ainda não existe em SBOVENPRD — é por isso que o preset "Saldo por lote" dá
+            -2028 lá. Este botão a cria <strong>uma vez</strong> (registro de configuração,
+            nenhum dado de estoque é alterado) e já executa pra conferir. Se falhar com erro
+            de autorização, falta o assunto "Modify SQL Queries in Service Layer" pro usuário
+            de integração do SAP.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Botao variante="primario" disabled={criandoConsulta} onClick={criarTsiSaldos}>
+              {criandoConsulta ? 'Criando…' : 'Criar TSI_SALDOS em produção'}
+            </Botao>
+          </div>
+          {criacaoResultado && (
+            <p className="mt-2 break-all text-xs text-stone-600 dark:text-stone-300">
+              {criacaoResultado}
+            </p>
+          )}
+        </Cartao>
+      )}
 
       <Cartao titulo="Relatório: itens com pedido em aberto" className="mb-5">
         <p className="mb-2 text-xs text-stone-500">
