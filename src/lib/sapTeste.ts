@@ -234,49 +234,83 @@ export function relatorioComPedido(itensJson: unknown[], prefixo: string): Relat
 }
 
 /**
- * Caminho OData para conferir o saldo de UM lote de semente no SAP, pela
- * tela Ordens ("Bags por lote"). `Batch` é o mesmo número que o app já usa
- * como `lotes_semente.id` (vem da coluna LOTE do relatório Saldos da
- * SimpleAgro — `src/dominio/importacao/simpleagro.ts`). Aspas simples
- * escapadas: o filtro OData quebra a sintaxe se o valor tiver uma.
+ * Caminho da consulta salva `LotesSASaldo` (`SELECT "ItemCode","BatchNum",
+ * "WhsCode",…,"Quantity",… FROM "OIBT" WHERE "UpdateDate" > :updatedate`,
+ * já confirmada rodando em SBOVENPRD — docs/integracao-sap.md §6.8). É a
+ * ÚNICA fonte de quantidade por lote: `BatchNumberDetails` é só cadastro,
+ * sem campo de saldo (confirmado 09/08/2026, mesma doc, §6.5) — pedir
+ * `Quantity` lá é o que causa o SAP recusar com HTTP 400. Traz TODOS os
+ * lotes atualizados desde `desde` (não filtra por lote no servidor); quem
+ * chama filtra depois por `BatchNum`.
  */
-export function caminhoSaldoLote(loteId: string): string {
+export function caminhoSaldoLotes(desde = '2025-01-01'): string {
+  return `SQLQueries('LotesSASaldo')/List?updatedate='${desde}'`
+}
+
+/**
+ * Cadastro do lote (PMS, tratamento) — mesmo preset já validado em
+ * `SapTeste.tsx` ("Lotes do item"), só trocando o filtro de `ItemCode` para
+ * `Batch` (o número que o app já usa como `lotes_semente.id`, vindo da
+ * coluna LOTE do relatório Saldos da SimpleAgro). `$select` fica restrito
+ * aos campos já confirmados existentes nesta entidade — nada de `Quantity`
+ * aqui. Aspas simples escapadas: o filtro OData quebra com uma solta.
+ */
+export function caminhoCadastroLote(loteId: string): string {
   const escapado = loteId.trim().replace(/'/g, "''")
-  return `BatchNumberDetails?$filter=Batch eq '${escapado}'&$select=Batch,Quantity,U_AGRT_PMS,U_LoteTSI,ItemCode`
+  return `BatchNumberDetails?$filter=Batch eq '${escapado}'&$select=Batch,U_AGRT_PMS,U_LoteTSI`
 }
 
 export interface SaldoLoteSap {
   loteId: string
-  /** linhas que o SAP devolveu para este Batch — 0 é resultado válido (não achou lá) */
+  /** linhas de saldo (LotesSASaldo) que batem com este lote — 0 é resultado válido (não achou) */
   encontrados: number
+  /** achou cadastro do lote (BatchNumberDetails) — pode ser true mesmo com encontrados=0 */
+  cadastroEncontrado: boolean
   itemCodes: string[]
   quantidadeTotal: number
   pms: number | null
   tratamentoSap: string | null
 }
 
-/**
- * Converte a resposta de `BatchNumberDetails` filtrada por um lote em algo
- * exibível ao lado do total programado. Ainda não converte para "bags" — o
- * significado exato de `Quantity` (unidade, se já é saldo líquido por
- * depósito) precisa ser confirmado com dado real antes de fazer essa conta;
- * por ora mostra o valor cru para conferência visual (CLAUDE.md, decisão de
- * 12/08/2026: teste primeiro, converter depois).
- */
-export function saldoLoteDe(dados: unknown, loteId: string): SaldoLoteSap {
+function linhasDe(dados: unknown): Record<string, unknown>[] {
   const corpo = dados as { value?: unknown } | null
-  const linhas = Array.isArray(corpo?.value) ? (corpo?.value as Record<string, unknown>[]) : []
-  const quantidadeTotal = linhas.reduce((soma, l) => soma + Number(l.Quantity ?? 0), 0)
-  const itemCodes = [...new Set(linhas.map((l) => String(l.ItemCode ?? '')).filter(Boolean))]
-  const linhaComPms = linhas.find((l) => l.U_AGRT_PMS !== null && l.U_AGRT_PMS !== undefined)
-  const linhaComTrat = linhas.find((l) => l.U_LoteTSI)
+  if (Array.isArray(corpo?.value)) return corpo?.value as Record<string, unknown>[]
+  if (Array.isArray(dados)) return dados as Record<string, unknown>[]
+  return []
+}
+
+/**
+ * Combina as duas respostas (saldo + cadastro) num resultado exibível ao
+ * lado do total programado. Ainda não converte para "bags" — falta
+ * confirmar com dado real se `Quantity` é diretamente comparável; por ora
+ * mostra o valor cru para conferência visual (CLAUDE.md, decisão de
+ * 12/08/2026: teste primeiro, converter depois). `linhasSaldo` já vem
+ * filtrado ou não — esta função filtra por `BatchNum === loteId` de novo,
+ * então tanto faz passar o lote inteiro de `LotesSASaldo` quanto um recorte.
+ */
+export function saldoLoteDe(dadosSaldo: unknown, dadosCadastro: unknown, loteId: string): SaldoLoteSap {
+  const alvo = loteId.trim()
+  const doLote = linhasDe(dadosSaldo).filter((l) => String(l.BatchNum ?? '').trim() === alvo)
+  const cadastro = linhasDe(dadosCadastro)
+  const linhaCadastro = cadastro[0]
+
+  const itemCodes = [
+    ...new Set(
+      [...doLote.map((l) => String(l.ItemCode ?? ''))].filter(Boolean),
+    ),
+  ]
+
   return {
     loteId,
-    encontrados: linhas.length,
+    encontrados: doLote.length,
+    cadastroEncontrado: cadastro.length > 0,
     itemCodes,
-    quantidadeTotal,
-    pms: linhaComPms ? Number(linhaComPms.U_AGRT_PMS) : null,
-    tratamentoSap: linhaComTrat ? String(linhaComTrat.U_LoteTSI) : null,
+    quantidadeTotal: doLote.reduce((soma, l) => soma + Number(l.Quantity ?? 0), 0),
+    pms:
+      linhaCadastro && linhaCadastro.U_AGRT_PMS !== null && linhaCadastro.U_AGRT_PMS !== undefined
+        ? Number(linhaCadastro.U_AGRT_PMS)
+        : null,
+    tratamentoSap: linhaCadastro && linhaCadastro.U_LoteTSI ? String(linhaCadastro.U_LoteTSI) : null,
   }
 }
 

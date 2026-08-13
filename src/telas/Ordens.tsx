@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
@@ -15,7 +15,7 @@ import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
 import { useRascunho } from '@/lib/useRascunho'
 import { supabase } from '@/lib/supabase'
 import {
-  USUARIOS_SAP_TESTE, caminhoSaldoLote, saldoLoteDe, type SaldoLoteSap,
+  USUARIOS_SAP_TESTE, caminhoCadastroLote, caminhoSaldoLotes, saldoLoteDe, type SaldoLoteSap,
 } from '@/lib/sapTeste'
 import { useRealtime } from '@/dados/useRealtime'
 import {
@@ -1052,18 +1052,43 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
     (session?.user.email ?? '').toLowerCase(),
   )
   const [conferencias, setConferencias] = useState<Record<string, EstadoConferenciaSap>>({})
+
+  /** Chama a `sap-teste` e devolve os `dados` já validados, ou lança com o
+   *  detalhe cru do SAP — mesmo formato de erro nos dois usos abaixo. */
+  const chamarSapTeste = useCallback(async (caminho: string, paginas: number): Promise<unknown> => {
+    const { data, error } = await supabase.functions.invoke('sap-teste', {
+      body: { caminho, paginas, ambiente: 'producao' },
+    })
+    if (error) throw new Error(error.message)
+    const r = data as { ok: boolean; erro?: string; sap?: unknown; dados?: unknown }
+    if (!r.ok) {
+      const detalhe = r.sap ? ` — resposta do SAP: ${JSON.stringify(r.sap)}` : ''
+      throw new Error((r.erro ?? 'SAP recusou a consulta.') + detalhe)
+    }
+    return r.dados
+  }, [])
+
+  // LotesSASaldo devolve TODOS os lotes atualizados desde a data, não um só
+  // — busca uma vez por sessão da tela e reaproveita entre cliques em
+  // "Conferir" de lotes diferentes, em vez de repetir a mesma busca grande.
+  const saldosSapRef = useRef<unknown | null>(null)
+  const carregarSaldosSap = useCallback(async (): Promise<unknown> => {
+    if (saldosSapRef.current) return saldosSapRef.current
+    const dados = await chamarSapTeste(caminhoSaldoLotes(), 10)
+    saldosSapRef.current = dados
+    return dados
+  }, [chamarSapTeste])
+
   const conferirNoSap = useCallback(async (loteId: string) => {
     setConferencias((s) => ({ ...s, [loteId]: { carregando: true } }))
     try {
-      const { data, error } = await supabase.functions.invoke('sap-teste', {
-        body: { caminho: caminhoSaldoLote(loteId), paginas: 1, ambiente: 'producao' },
-      })
-      if (error) throw new Error(error.message)
-      const r = data as { ok: boolean; erro?: string; sap?: unknown; dados?: unknown }
-      if (!r.ok) throw new Error(r.erro ?? 'SAP recusou a consulta.')
+      const [dadosSaldo, dadosCadastro] = await Promise.all([
+        carregarSaldosSap(),
+        chamarSapTeste(caminhoCadastroLote(loteId), 1),
+      ])
       setConferencias((s) => ({
         ...s,
-        [loteId]: { carregando: false, saldo: saldoLoteDe(r.dados, loteId) },
+        [loteId]: { carregando: false, saldo: saldoLoteDe(dadosSaldo, dadosCadastro, loteId) },
       }))
     } catch (e) {
       setConferencias((s) => ({
@@ -1071,7 +1096,7 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
         [loteId]: { carregando: false, erro: e instanceof Error ? e.message : String(e) },
       }))
     }
-  }, [])
+  }, [carregarSaldosSap, chamarSapTeste])
 
   const porLote = useMemo(() => {
     const mapa = new Map<
@@ -1175,7 +1200,11 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                     )}
                     {conf?.saldo && conf.saldo.encontrados === 0 && (
                       <div className="flex flex-wrap items-center gap-1">
-                        <Tag cor="alerta">lote não achado no SAP</Tag>
+                        <Tag cor="alerta">
+                          {conf.saldo.cadastroEncontrado
+                            ? 'cadastro achado, sem saldo recente'
+                            : 'lote não achado no SAP'}
+                        </Tag>
                         <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
                       </div>
                     )}
