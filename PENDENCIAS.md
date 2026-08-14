@@ -157,8 +157,8 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       calculos.ts, usado por adaptadores/ModalOrdem/Painel/prévia de criação).
       `baixar_lote`/`lote_movimentos` ficaram de fora dessa — ver o item seguinte, corrigido
       no mesmo dia depois que o Arion apontou que a baixa também estava errada.
-- [ ] `supabase/peso-por-embalagem-na-baixa-do-lote.sql` — **pendente de aplicar**
-      (13/08/2026): a migração acima corrigiu o peso da ORDEM mas deixou `baixar_lote` de
+- [x] `supabase/peso-por-embalagem-na-baixa-do-lote.sql` — **aplicada** (13/08/2026,
+      confirmada pelo Arion): a migração acima corrigiu o peso da ORDEM mas deixou `baixar_lote` de
       propósito ("a logística move os bags físicos do lote") — só que a conta de lá nunca
       foi por bag físico: é `soma(ordens.bags) × peso_bag_kg do LOTE`, e `ordens.bags` é
       contagem na embalagem DA ORDEM. Uma ordem MEIOBAG confirmada consumia 1 bag inteiro
