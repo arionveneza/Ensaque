@@ -226,8 +226,14 @@ export function Aviso({
  * `'hidden lg:table-cell'` para esconder no celular/tablet. Quando usar a
  * forma com objeto, aplique a MESMA className no `<td>` correspondente de
  * cada linha — o Tabela não controla as linhas, que vêm como `children`.
+ *
+ * `onClick` torna o cabeçalho clicável (ordenar por essa coluna); `ordem`
+ * mostra a seta de direção quando esta é a coluna ativa. Quem ordena as
+ * linhas de verdade é o dono da tabela (o Tabela só repassa `children`).
  */
-export type ColunaTabela = string | { texto: string; className?: string }
+export type ColunaTabela =
+  | string
+  | { texto: string; className?: string; onClick?: () => void; ordem?: 'asc' | 'desc' }
 
 export function Tabela({
   cabecalho, children,
@@ -250,12 +256,21 @@ export function Tabela({
               {cabecalho.map((c, i) => {
                 const texto = typeof c === 'string' ? c : c.texto
                 const extra = typeof c === 'string' ? '' : (c.className ?? '')
+                const onClick = typeof c === 'string' ? undefined : c.onClick
+                const ordem = typeof c === 'string' ? undefined : c.ordem
                 return (
                   <th
                     key={texto + i}
-                    className={`px-2 py-2 ${texto.startsWith('#') ? 'text-right' : ''} ${extra}`}
+                    onClick={onClick}
+                    className={`px-2 py-2 ${texto.startsWith('#') ? 'text-right' : ''} ${extra} ${
+                      onClick
+                        ? 'cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200'
+                        : ''
+                    }`}
                   >
                     {texto.replace(/^#/, '')}
+                    {ordem === 'asc' && ' ▲'}
+                    {ordem === 'desc' && ' ▼'}
                   </th>
                 )
               })}

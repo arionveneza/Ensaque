@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
@@ -212,6 +212,24 @@ export default function Ordens() {
     }
     return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [filtradas])
+
+  // ordenação dentro de cada máquina (pedido do Arion, 13/08/2026): a fila
+  // real (campo `seq`) só é editada na tela Programação — isto é só pra
+  // ENXERGAR melhor a lista aqui, clicando na coluna, sem mexer em nada.
+  type CampoOrdenacao = 'cultivar' | 'tratamento' | 'status' | 'peso'
+  const [ordenacao, setOrdenacao] = useState<{ campo: CampoOrdenacao; dir: 'asc' | 'desc' } | null>(
+    null,
+  )
+  const alternarOrdenacao = (campo: CampoOrdenacao) =>
+    setOrdenacao((o) =>
+      !o || o.campo !== campo
+        ? { campo, dir: 'asc' }
+        : o.dir === 'asc'
+          ? { campo, dir: 'desc' }
+          : null,
+    )
+  const setaOrdem = (campo: CampoOrdenacao): 'asc' | 'desc' | undefined =>
+    ordenacao?.campo === campo ? ordenacao.dir : undefined
 
   const statusDisponiveis = useMemo(
     () => [...new Set(ordens.map((o) => o.status_efetivo))].sort(),
@@ -709,13 +727,17 @@ export default function Ordens() {
         ) : (
           <Tabela
             cabecalho={[
-              { texto: 'Seq', className: 'hidden lg:table-cell' }, 'Ordem', 'Cultivar', 'Tratamento',
+              { texto: 'Seq', className: 'hidden lg:table-cell' }, 'Ordem',
+              { texto: 'Cultivar', onClick: () => alternarOrdenacao('cultivar'), ordem: setaOrdem('cultivar') },
+              { texto: 'Tratamento', onClick: () => alternarOrdenacao('tratamento'), ordem: setaOrdem('tratamento') },
               { texto: 'Emb.', className: 'hidden lg:table-cell' },
               { texto: 'Lote', className: 'hidden lg:table-cell' },
               { texto: 'Endereço', className: 'hidden lg:table-cell' },
-              '#Bags', '#Peso',
+              '#Bags',
+              { texto: '#Peso', onClick: () => alternarOrdenacao('peso'), ordem: setaOrdem('peso') },
               { texto: 'Cliente', className: 'hidden lg:table-cell' },
-              'Status', '',
+              { texto: 'Status', onClick: () => alternarOrdenacao('status'), ordem: setaOrdem('status') },
+              '',
             ]}
           >
             {porDia.map(([dia, lista]) => (
@@ -723,6 +745,8 @@ export default function Ordens() {
                 key={dia}
                 dia={dia}
                 lista={lista}
+                maquinas={maquinas}
+                ordenacao={ordenacao}
                 podeEditar={podeEditarOrdem}
                 podeExcluir={podeExcluir}
                 podePriorizar={podePriorizar}
@@ -1392,12 +1416,33 @@ const BOTAO_ACAO =
 const BOTAO_ACAO_PERIGO =
   'shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
 
+/** Compara duas ordens pelo campo escolhido — usado só dentro de cada
+ *  máquina; a sequência real (`seq`) continua intacta, isto é só exibição. */
+function comparadorOrdenacao(
+  ordenacao: { campo: 'cultivar' | 'tratamento' | 'status' | 'peso'; dir: 'asc' | 'desc' } | null,
+): ((a: OrdemVisao, b: OrdemVisao) => number) | null {
+  if (!ordenacao) return null
+  const sinal = ordenacao.dir === 'asc' ? 1 : -1
+  switch (ordenacao.campo) {
+    case 'cultivar':
+      return (a, b) => sinal * a.cultivar.localeCompare(b.cultivar)
+    case 'tratamento':
+      return (a, b) => sinal * a.receita_nome.localeCompare(b.receita_nome)
+    case 'status':
+      return (a, b) => sinal * a.status_efetivo.localeCompare(b.status_efetivo)
+    case 'peso':
+      return (a, b) => sinal * (a.peso_t - b.peso_t)
+  }
+}
+
 function FragmentoDia({
-  dia, lista, podeEditar, podeExcluir, podePriorizar,
+  dia, lista, maquinas, ordenacao, podeEditar, podeExcluir, podePriorizar,
   onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar,
 }: {
   dia: string
   lista: OrdemVisao[]
+  maquinas: api.LinhaMaquina[]
+  ordenacao: { campo: 'cultivar' | 'tratamento' | 'status' | 'peso'; dir: 'asc' | 'desc' } | null
   podeEditar: boolean
   podeExcluir: boolean
   podePriorizar: boolean
@@ -1408,6 +1453,27 @@ function FragmentoDia({
   onConfirmar: (id: string) => void
 }) {
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
+
+  // sub-agrupamento por máquina (pedido do Arion, 13/08/2026) — a lista já
+  // chega ordenada por maquina_id/seq (listarOrdens), então o Map preserva
+  // essa mesma ordem por padrão; "Sem máquina" (pool, ainda não programada)
+  // vai por último, depois das máquinas do cadastro.
+  const porMaquina = new Map<string, OrdemVisao[]>()
+  for (const o of lista) {
+    const chave = o.maquina_id ?? '__sem__'
+    const g = porMaquina.get(chave)
+    if (g) g.push(o)
+    else porMaquina.set(chave, [o])
+  }
+  const nomeMaquina = (id: string) =>
+    id === '__sem__' ? 'Sem máquina' : (maquinas.find((m) => m.id === id)?.nome ?? id)
+  const grupos = [...porMaquina.entries()].sort(([a], [b]) => {
+    if (a === '__sem__') return 1
+    if (b === '__sem__') return -1
+    return nomeMaquina(a).localeCompare(nomeMaquina(b))
+  })
+  const comparador = comparadorOrdenacao(ordenacao)
+
   return (
     <>
       {/* o corpo esconde 5 colunas em <lg (Seq, Emb., Lote, Endereço,
@@ -1426,107 +1492,127 @@ function FragmentoDia({
         <td className="hidden lg:table-cell" />
         <td colSpan={2} />
       </tr>
-      {lista.map((o) => {
-        const st = o.status_efetivo as StatusEfetivo
+      {grupos.map(([maquinaId, ordensMaquina]) => {
+        const linhas = comparador ? [...ordensMaquina].sort(comparador) : ordensMaquina
+        const totalMaquina = ordensMaquina.reduce((a, o) => a + o.peso_t, 0)
         return (
-          <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
-            <td className="hidden px-2 py-1.5 text-stone-400 lg:table-cell">{o.seq ?? '—'}</td>
-            {/*
-              min-w: achado testando no celular (08/08/2026) — table-layout
-              auto distribuiu a largura livre (5 colunas escondidas) para
-              Status/ações em vez desta, que agora carrega a linha
-              secundária; sem piso a legenda quebrava em várias linhas e
-              inflava a altura da linha inteira.
-            */}
-            <td className="min-w-36 px-2 py-1.5 font-medium lg:min-w-0">
-              {o.numero}
-              {o.prioridade === 'Urgente' && <span className="ml-1"><Tag cor="perigo">urgente</Tag></span>}
-              {!!o.reprogramacoes && o.reprogramacoes > 0 && (
-                <span
-                  className="ml-1 cursor-help text-xs font-normal text-amber-700 dark:text-amber-400"
-                  title={`Reprogramada ${o.reprogramacoes}× — estava para ${diaCurto(o.data_prog_original ?? null)}`}
-                >
-                  ↷{o.reprogramacoes}
-                </span>
-              )}
-              {/* lote/embalagem somem em lg: — mostra aqui embaixo. Endereço
-                  saiu da linha: é o texto mais longo e essa é a Ordem do
-                  PCP, não a separação (a Logística já tem endereço em
-                  destaque na tela dela). */}
-              <p className="text-xs font-normal text-stone-500 lg:hidden">
-                {o.embalagem} · lote {o.lote_id}
-              </p>
-            </td>
-            <td className="px-2 py-1.5">{o.cultivar}</td>
-            <td className="px-2 py-1.5">{o.receita_nome}</td>
-            <td className="hidden px-2 py-1.5 lg:table-cell">{o.embalagem}</td>
-            <td className="hidden px-2 py-1.5 font-medium lg:table-cell">{o.lote_id}</td>
-            <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">{enderecoLote(o)}</td>
-            <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
-            <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(o.peso_t, 1)} t</td>
-            <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
-              {o.cliente ?? '—'}
-            </td>
-            <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
-            {/*
-              editar+urgente+excluir como botão com borda pedem mais espaço
-              que o texto sublinhado de antes — por isso min-w-56, não
-              min-w-44. Continua valendo em qualquer largura: em lg:
-              aparecem MAIS colunas (Seq, Emb., Lote, Endereço, Cliente)
-              disputando espaço, não menos — zerar o mínimo ali seria o
-              oposto do que essa coluna precisa.
-            */}
-            <td className="min-w-56 px-2 py-1.5 text-right whitespace-nowrap">
-              <div className="inline-flex flex-wrap justify-end gap-1.5">
-                {podeEditar && pode(st, 'editar') && (
-                  <button
-                    onClick={() => onEditar(o)}
-                    className={BOTAO_ACAO}
-                    title="Editável enquanto a produção não toca a ordem"
-                  >
-                    editar
-                  </button>
-                )}
-                {/* programar não expõe a ordem para a Logística baixar o lote —
-                    só depois que o PCP confirma (11/08/2026) */}
-                {podeEditar && pode(st, 'confirmar') && (
-                  <button
-                    onClick={() => onConfirmar(o.id)}
-                    className={BOTAO_ACAO}
-                    title="Libera a ordem para a Logística ver e baixar o lote"
-                  >
-                    confirmar
-                  </button>
-                )}
-                {/* única correção liberada numa ordem já tocada pela produção:
-                    o número não entra em nenhum cálculo, então corrigi-lo não
-                    distorce tempo/consumo — diferente dos outros campos, que
-                    o gatilho de imutabilidade continua travando */}
-                {podeEditar && pode(st, 'renumerar') && (
-                  <button
-                    onClick={() => onRenumerar(o)}
-                    className={BOTAO_ACAO}
-                    title="Corrige o número da ordem mesmo em produção — os demais campos continuam travados"
-                  >
-                    renumerar
-                  </button>
-                )}
-                {podePriorizar && pode(st, 'priorizar') && (
-                  <button
-                    onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
-                    className={BOTAO_ACAO}
-                  >
-                    {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
-                  </button>
-                )}
-                {podeExcluir && pode(st, 'excluir') && (
-                  <button onClick={() => onExcluir(o.id)} className={BOTAO_ACAO_PERIGO}>
-                    excluir
-                  </button>
-                )}
-              </div>
-            </td>
-          </tr>
+          <Fragment key={maquinaId}>
+            {/* mesma estrutura de colSpan da faixa do dia, um nível mais leve */}
+            <tr className="bg-stone-50/60 dark:bg-stone-800/20">
+              <td colSpan={4} className="px-2 py-1 pl-4 text-xs font-medium text-stone-600 dark:text-stone-300">
+                {nomeMaquina(maquinaId)} · {ordensMaquina.length} ordem(ns)
+              </td>
+              <td className="hidden lg:table-cell" colSpan={4} />
+              <td className="num-tabular px-2 py-1 text-right text-xs font-medium whitespace-nowrap">
+                {n(totalMaquina, 1)} t
+              </td>
+              <td className="hidden lg:table-cell" />
+              <td colSpan={2} />
+            </tr>
+            {linhas.map((o) => {
+              const st = o.status_efetivo as StatusEfetivo
+              return (
+                <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                  <td className="hidden px-2 py-1.5 text-stone-400 lg:table-cell">{o.seq ?? '—'}</td>
+                  {/*
+                    min-w: achado testando no celular (08/08/2026) — table-layout
+                    auto distribuiu a largura livre (5 colunas escondidas) para
+                    Status/ações em vez desta, que agora carrega a linha
+                    secundária; sem piso a legenda quebrava em várias linhas e
+                    inflava a altura da linha inteira.
+                  */}
+                  <td className="min-w-36 px-2 py-1.5 font-medium lg:min-w-0">
+                    {o.numero}
+                    {o.prioridade === 'Urgente' && <span className="ml-1"><Tag cor="perigo">urgente</Tag></span>}
+                    {!!o.reprogramacoes && o.reprogramacoes > 0 && (
+                      <span
+                        className="ml-1 cursor-help text-xs font-normal text-amber-700 dark:text-amber-400"
+                        title={`Reprogramada ${o.reprogramacoes}× — estava para ${diaCurto(o.data_prog_original ?? null)}`}
+                      >
+                        ↷{o.reprogramacoes}
+                      </span>
+                    )}
+                    {/* lote/embalagem somem em lg: — mostra aqui embaixo. Endereço
+                        saiu da linha: é o texto mais longo e essa é a Ordem do
+                        PCP, não a separação (a Logística já tem endereço em
+                        destaque na tela dela). */}
+                    <p className="text-xs font-normal text-stone-500 lg:hidden">
+                      {o.embalagem} · lote {o.lote_id}
+                    </p>
+                  </td>
+                  <td className="px-2 py-1.5">{o.cultivar}</td>
+                  <td className="px-2 py-1.5">{o.receita_nome}</td>
+                  <td className="hidden px-2 py-1.5 lg:table-cell">{o.embalagem}</td>
+                  <td className="hidden px-2 py-1.5 font-medium lg:table-cell">{o.lote_id}</td>
+                  <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">{enderecoLote(o)}</td>
+                  <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
+                  <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(o.peso_t, 1)} t</td>
+                  <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
+                    {o.cliente ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
+                  {/*
+                    editar+urgente+excluir como botão com borda pedem mais espaço
+                    que o texto sublinhado de antes — por isso min-w-56, não
+                    min-w-44. Continua valendo em qualquer largura: em lg:
+                    aparecem MAIS colunas (Seq, Emb., Lote, Endereço, Cliente)
+                    disputando espaço, não menos — zerar o mínimo ali seria o
+                    oposto do que essa coluna precisa.
+                  */}
+                  <td className="min-w-56 px-2 py-1.5 text-right whitespace-nowrap">
+                    <div className="inline-flex flex-wrap justify-end gap-1.5">
+                      {podeEditar && pode(st, 'editar') && (
+                        <button
+                          onClick={() => onEditar(o)}
+                          className={BOTAO_ACAO}
+                          title="Editável enquanto a produção não toca a ordem"
+                        >
+                          editar
+                        </button>
+                      )}
+                      {/* programar não expõe a ordem para a Logística baixar o lote —
+                          só depois que o PCP confirma (11/08/2026) */}
+                      {podeEditar && pode(st, 'confirmar') && (
+                        <button
+                          onClick={() => onConfirmar(o.id)}
+                          className={BOTAO_ACAO}
+                          title="Libera a ordem para a Logística ver e baixar o lote"
+                        >
+                          confirmar
+                        </button>
+                      )}
+                      {/* única correção liberada numa ordem já tocada pela produção:
+                          o número não entra em nenhum cálculo, então corrigi-lo não
+                          distorce tempo/consumo — diferente dos outros campos, que
+                          o gatilho de imutabilidade continua travando */}
+                      {podeEditar && pode(st, 'renumerar') && (
+                        <button
+                          onClick={() => onRenumerar(o)}
+                          className={BOTAO_ACAO}
+                          title="Corrige o número da ordem mesmo em produção — os demais campos continuam travados"
+                        >
+                          renumerar
+                        </button>
+                      )}
+                      {podePriorizar && pode(st, 'priorizar') && (
+                        <button
+                          onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
+                          className={BOTAO_ACAO}
+                        >
+                          {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
+                        </button>
+                      )}
+                      {podeExcluir && pode(st, 'excluir') && (
+                        <button onClick={() => onExcluir(o.id)} className={BOTAO_ACAO_PERIGO}>
+                          excluir
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </Fragment>
         )
       })}
     </>
