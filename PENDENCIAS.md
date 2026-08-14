@@ -155,8 +155,22 @@ endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao
       `pms × fator_peso da embalagem DA ORDEM`, com fallback no peso do lote quando o PMS é
       nulo. O front já tinha sido corrigido no mesmo dia (helper `pesoBagDaOrdemKg` em
       calculos.ts, usado por adaptadores/ModalOrdem/Painel/prévia de criação).
-      `baixar_lote`/`lote_movimentos` não mudam de propósito: a logística movimenta os bags
-      FÍSICOS do lote.
+      `baixar_lote`/`lote_movimentos` ficaram de fora dessa — ver o item seguinte, corrigido
+      no mesmo dia depois que o Arion apontou que a baixa também estava errada.
+- [ ] `supabase/peso-por-embalagem-na-baixa-do-lote.sql` — **pendente de aplicar**
+      (13/08/2026): a migração acima corrigiu o peso da ORDEM mas deixou `baixar_lote` de
+      propósito ("a logística move os bags físicos do lote") — só que a conta de lá nunca
+      foi por bag físico: é `soma(ordens.bags) × peso_bag_kg do LOTE`, e `ordens.bags` é
+      contagem na embalagem DA ORDEM. Uma ordem MEIOBAG confirmada consumia 1 bag inteiro
+      do lote big bag na baixa, quando deveria consumir meio ("cada meio bag consome
+      metade de um bag de 5 milhões, e 2 meio bag consomem 1 bag inteiro", relato do
+      Arion). `baixar_lote` passa a somar `bags × (pms do lote × fator_peso da EMBALAGEM DE
+      CADA ORDEM liberada)`, mesma fórmula de `v_ordens.peso_kg`. `ordens.bags` cru
+      continua servindo de contador informativo no relatório de baixas — só o `peso_t`
+      gravado em `lote_movimentos` mudou. Sem backfill: uma linha de `lote_movimentos`
+      agrega várias ordens sem guardar quais, não dá pra recalcular o histórico com
+      segurança — a correção vale só das próximas baixas em diante. `estornar_liberacao`
+      não muda (já não gravava `peso_t` nenhum; lacuna pré-existente, à parte).
 
 ## 5. RPC executável por anônimo — achado na validação de 08/08/2026, corrigir já
 

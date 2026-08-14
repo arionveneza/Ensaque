@@ -102,15 +102,20 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 O ×1,005 é a **margem de meio por cento sobre o peso do bag** (decisão de 05/08/2026);
 a margem não incide sobre a parcela de químico.
 
-- **O peso do bag que entra em TODA conta da ordem é o da embalagem DA ORDEM** (decisão de
+- **O peso do bag que entra em TODA conta é o da embalagem DA ORDEM** (decisão de
   13/08/2026): `pms × fator_peso(ordens.embalagem)`, com fallback no `peso_bag_kg` do lote
   quando o PMS é nulo. O `lotes_semente.peso_bag_kg` é congelado na importação com o fator
   da embalagem ORIGINAL do lote — usar ele numa ordem MEIOBAG de lote big bag dobrava peso
   de semente, químico, ensaque, tempo planejado e ocupação. Vale no front
-  (`pesoBagDaOrdemKg`, calculos.ts) e na `v_ordens` (`peso_bag_ordem_kg`, `peso_kg`,
-  `peso_t` — migração `peso-por-embalagem-da-ordem.sql`). Exceção deliberada:
-  `baixar_lote`/`lote_movimentos` seguem no peso do LOTE — a logística movimenta os bags
-  físicos da embalagem original.
+  (`pesoBagDaOrdemKg`, calculos.ts), na `v_ordens` (`peso_bag_ordem_kg`, `peso_kg`,
+  `peso_t` — migração `peso-por-embalagem-da-ordem.sql`) **e em `baixar_lote`**
+  (`peso-por-embalagem-na-baixa-do-lote.sql`): 1 bag MEIOBAG consome **meio** bag do lote
+  (2,5 milhões de sementes num lote de 5 milhões), não um bag inteiro — a primeira
+  migração corrigiu a ordem e deixou a baixa de propósito ("a logística move os bags
+  físicos do lote"), mas a conta da baixa nunca foi por bag físico do lote: é
+  `soma(ordens.bags) × peso do lote`, e `ordens.bags` é contagem na embalagem DA ORDEM.
+  `ordens.bags` cru (sem peso) continua valendo como contador informativo no relatório de
+  baixas — só o `peso_t` gravado em `lote_movimentos` passou a ser por ordem.
 
 - **Receita SEM PRODUTO é permitida** (decisão de 13/08/2026): é a receita de ensaque sem
   tratamento (ex.: `SEM TSI`) — a ordem roda sem tanque, sem pesagem e com químico zero; o
