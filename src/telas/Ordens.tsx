@@ -1096,15 +1096,26 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
   const porLote = useMemo(() => {
     const mapa = new Map<
       string,
-      { loteId: string; cultivar: string; total: number; porStatus: Map<string, number> }
+      {
+        loteId: string
+        cultivar: string
+        total: number
+        porStatus: Map<string, number>
+        pesoKg: number
+        pesoBagLoteKg: number
+      }
     >()
     for (const o of ordens) {
       let e = mapa.get(o.lote_id)
       if (!e) {
-        e = { loteId: o.lote_id, cultivar: o.cultivar, total: 0, porStatus: new Map() }
+        e = {
+          loteId: o.lote_id, cultivar: o.cultivar, total: 0, porStatus: new Map(),
+          pesoKg: 0, pesoBagLoteKg: o.peso_bag_kg,
+        }
         mapa.set(o.lote_id, e)
       }
       e.total += o.bags
+      e.pesoKg += o.peso_kg
       e.porStatus.set(o.status_efetivo, (e.porStatus.get(o.status_efetivo) ?? 0) + o.bags)
     }
     return [...mapa.values()].sort((a, b) => b.total - a.total)
@@ -1224,49 +1235,73 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                         <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
                       </div>
                     )}
-                    {conf?.saldo && conf.saldo.encontrados === 0 && (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Tag cor="alerta">sem saldo no SAP</Tag>
-                        {l.total > 0 && (
-                          <Tag cor="perigo">saldo {inteiro(l.total)} bg ABAIXO do planejado</Tag>
-                        )}
-                        <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
-                        <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
-                          {conf.saldo.totalLinhasSaldo === 0
-                            ? 'a TSI_SALDOS devolveu 0 linhas no total (não é só este lote)'
-                            : `a TSI_SALDOS trouxe ${inteiro(conf.saldo.totalLinhasSaldo)} linha(s); nenhuma com o lote "${l.loteId}"${conf.saldo.amostraBatchNum.length ? ` — ex.: ${conf.saldo.amostraBatchNum.join(', ')}` : ''}${conf.saldoTemMais ? ' · havia mais páginas não lidas' : ''}`}
-                        </p>
-                      </div>
-                    )}
-                    {conf?.saldo && conf.saldo.encontrados > 0 && (
-                      <div className="text-xs">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="num-tabular font-semibold text-stone-900 dark:text-stone-100">
-                            SAP: {n(conf.saldo.quantidadeTotal, 0)}
-                            {conf.saldo.pms != null && ` · PMS ${n(conf.saldo.pms, 0)}`}
-                          </p>
-                          {(() => {
-                            // planejado (todas as ordens do lote) × saldo atual no SAP.
-                            // Ordem já produzida consumiu o lote, então divergência aqui
-                            // é ponto de atenção pra conferir, não veredito automático.
-                            const dif = Math.round(conf.saldo.quantidadeTotal - l.total)
-                            if (dif === 0) return <Tag cor="ok">bate com o planejado</Tag>
-                            if (dif < 0)
-                              return (
+                    {conf?.saldo && (() => {
+                      // O SAP conta em bags DO LOTE (a embalagem original dele, ex.:
+                      // big bag de 5 milhões) — "#Total" conta em bags DE CADA ORDEM,
+                      // na embalagem que ELA escolheu. 2 ordens MEIOBAG (2,5 milhões)
+                      // são 1 bag do lote, não 2 — comparar direto com #Total super-
+                      // contava toda ordem MEIOBAG em 2× (relato do Arion, 13/08/2026).
+                      // Peso já é por-ordem-embalagem (v_ordens); dividir pelo peso do
+                      // BAG DO LOTE converte pra "quantos bags do lote" isso representa.
+                      const totalBagsLote =
+                        l.pesoBagLoteKg > 0 ? l.pesoKg / l.pesoBagLoteKg : l.total
+                      const divergeDoTotal = Math.round(totalBagsLote) !== l.total
+                      return (
+                        <>
+                          {conf.saldo.encontrados === 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Tag cor="alerta">sem saldo no SAP</Tag>
+                              {totalBagsLote > 0 && (
                                 <Tag cor="perigo">
-                                  saldo {inteiro(-dif)} bg ABAIXO do planejado
+                                  saldo {n(totalBagsLote, 1)} bg do lote ABAIXO do planejado
                                 </Tag>
-                              )
-                            return (
-                              <Tag cor="alerta">saldo {inteiro(dif)} bg acima do planejado</Tag>
-                            )
-                          })()}
-                        </div>
-                        <p className="text-stone-500 dark:text-stone-400">
-                          {conf.saldo.tratamentoSap ?? '—'} · {conf.saldo.itemCodes.join(', ') || '—'}
-                        </p>
-                      </div>
-                    )}
+                              )}
+                              <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
+                              <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
+                                {conf.saldo.totalLinhasSaldo === 0
+                                  ? 'a TSI_SALDOS devolveu 0 linhas no total (não é só este lote)'
+                                  : `a TSI_SALDOS trouxe ${inteiro(conf.saldo.totalLinhasSaldo)} linha(s); nenhuma com o lote "${l.loteId}"${conf.saldo.amostraBatchNum.length ? ` — ex.: ${conf.saldo.amostraBatchNum.join(', ')}` : ''}${conf.saldoTemMais ? ' · havia mais páginas não lidas' : ''}`}
+                              </p>
+                            </div>
+                          )}
+                          {conf.saldo.encontrados > 0 && (
+                            <div className="text-xs">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <p className="num-tabular font-semibold text-stone-900 dark:text-stone-100">
+                                  SAP: {n(conf.saldo.quantidadeTotal, 0)}
+                                  {conf.saldo.pms != null && ` · PMS ${n(conf.saldo.pms, 0)}`}
+                                </p>
+                                {(() => {
+                                  // Ordem já produzida consumiu o lote, então divergência
+                                  // aqui é ponto de atenção pra conferir, não veredito
+                                  // automático.
+                                  const dif = Math.round(conf.saldo.quantidadeTotal - totalBagsLote)
+                                  if (dif === 0) return <Tag cor="ok">bate com o planejado</Tag>
+                                  if (dif < 0)
+                                    return (
+                                      <Tag cor="perigo">
+                                        saldo {inteiro(-dif)} bg ABAIXO do planejado
+                                      </Tag>
+                                    )
+                                  return (
+                                    <Tag cor="alerta">saldo {inteiro(dif)} bg acima do planejado</Tag>
+                                  )
+                                })()}
+                              </div>
+                              <p className="text-stone-500 dark:text-stone-400">
+                                {conf.saldo.tratamentoSap ?? '—'} · {conf.saldo.itemCodes.join(', ') || '—'}
+                              </p>
+                            </div>
+                          )}
+                          {divergeDoTotal && (
+                            <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
+                              planejado em bags do lote: {n(totalBagsLote, 1)} (≠ #Total{' '}
+                              {inteiro(l.total)} — tem ordem em embalagem diferente da do lote)
+                            </p>
+                          )}
+                        </>
+                      )
+                    })()}
                   </td>
                 )}
               </tr>
