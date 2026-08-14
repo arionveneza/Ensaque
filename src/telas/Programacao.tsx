@@ -798,66 +798,81 @@ export default function Programacao() {
                               {ord.receita_nome} · lote {ord.lote_id} · {n(ord.peso_t, 1)} t
                             </p>
                           </div>
-                          {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
-                          <Tag cor={corDoStatus(ord.status_efetivo)}>{ord.status_efetivo}</Tag>
-                          {movivel && (
-                            <>
+                          {/* tags num bloco à parte, empurrado com ml-auto: sem
+                              isso, a tag de status "flutuava" pra posições
+                              diferentes conforme a linha tinha ou não
+                              mover+setas depois dela (padronização pedida
+                              pelo Arion, 13/08/2026) */}
+                          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+                            {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
+                            <Tag cor={corDoStatus(ord.status_efetivo)}>{ord.status_efetivo}</Tag>
+                          </div>
+                          {/* bloco de ações sempre OCUPA o mesmo espaço, mesmo
+                              quando não é movível (fica só invisível) — é o
+                              que mantém a tag acima ancorada no mesmo lugar
+                              em toda linha, movível ou não. */}
+                          <div
+                            className={`flex shrink-0 items-center gap-2 ${movivel ? '' : 'invisible'}`}
+                            aria-hidden={!movivel}
+                          >
+                            <button
+                              tabIndex={movivel ? 0 : -1}
+                              onClick={() => setMovendo(movendo === ord.id ? null : ord.id)}
+                              title="Mover para outro dia ou máquina (funciona no tablet, onde arrastar não funciona)"
+                              className="rounded border border-stone-300 px-3 py-2 text-xs uppercase tracking-wide text-stone-500 hover:bg-stone-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] dark:border-stone-600 dark:hover:bg-stone-700"
+                            >
+                              mover
+                            </button>
+                            {/* as setas trocam com o vizinho do MESMO GRUPO
+                                (mesmo status), não com o vizinho literal da
+                                lista real — que agora pode ser uma ordem já
+                                concluída ou em produção, renderizada em
+                                outra parte da tela. Trocar com um vizinho
+                                invisível pareceria não fazer nada, que foi
+                                exatamente o defeito corrigido hoje de manhã
+                                para a urgência; aqui a troca sempre aparece
+                                dentro do próprio bloco visível. Com filtro
+                                de status ativo, ficam desabilitadas — o
+                                vizinho do grupo pode estar oculto. */}
+                            <div className="flex flex-col">
                               <button
-                                onClick={() => setMovendo(movendo === ord.id ? null : ord.id)}
-                                title="Mover para outro dia ou máquina (funciona no tablet, onde arrastar não funciona)"
-                                className="rounded border border-stone-300 px-3 py-2 text-xs uppercase tracking-wide text-stone-500 hover:bg-stone-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] dark:border-stone-600 dark:hover:bg-stone-700"
+                                tabIndex={movivel ? 0 : -1}
+                                disabled={posNoGrupo <= 0 || filtroStatus.size > 0}
+                                title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
+                                onClick={() =>
+                                  comErro(async () => {
+                                    const vizinho = grupo[posNoGrupo - 1]
+                                    const copia = [...lista]
+                                    const iA = copia.indexOf(ord)
+                                    const iB = copia.indexOf(vizinho)
+                                    ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
+                                    await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
+                                  })
+                                }
+                                className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
                               >
-                                mover
+                                ▲
                               </button>
-                              {/* as setas trocam com o vizinho do MESMO GRUPO
-                                  (mesmo status), não com o vizinho literal da
-                                  lista real — que agora pode ser uma ordem já
-                                  concluída ou em produção, renderizada em
-                                  outra parte da tela. Trocar com um vizinho
-                                  invisível pareceria não fazer nada, que foi
-                                  exatamente o defeito corrigido hoje de manhã
-                                  para a urgência; aqui a troca sempre aparece
-                                  dentro do próprio bloco visível. Com filtro
-                                  de status ativo, ficam desabilitadas — o
-                                  vizinho do grupo pode estar oculto. */}
-                              <div className="flex flex-col">
-                                <button
-                                  disabled={posNoGrupo <= 0 || filtroStatus.size > 0}
-                                  title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
-                                  onClick={() =>
-                                    comErro(async () => {
-                                      const vizinho = grupo[posNoGrupo - 1]
-                                      const copia = [...lista]
-                                      const iA = copia.indexOf(ord)
-                                      const iB = copia.indexOf(vizinho)
-                                      ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
-                                      await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
-                                    })
-                                  }
-                                  className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
-                                >
-                                  ▲
-                                </button>
-                                <button
-                                  disabled={posNoGrupo < 0 || posNoGrupo === grupo.length - 1 || filtroStatus.size > 0}
-                                  title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
-                                  onClick={() =>
-                                    comErro(async () => {
-                                      const vizinho = grupo[posNoGrupo + 1]
-                                      const copia = [...lista]
-                                      const iA = copia.indexOf(ord)
-                                      const iB = copia.indexOf(vizinho)
-                                      ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
-                                      await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
-                                    })
-                                  }
-                                  className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
-                                >
-                                  ▼
-                                </button>
-                              </div>
-                            </>
-                          )}
+                              <button
+                                tabIndex={movivel ? 0 : -1}
+                                disabled={posNoGrupo < 0 || posNoGrupo === grupo.length - 1 || filtroStatus.size > 0}
+                                title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
+                                onClick={() =>
+                                  comErro(async () => {
+                                    const vizinho = grupo[posNoGrupo + 1]
+                                    const copia = [...lista]
+                                    const iA = copia.indexOf(ord)
+                                    const iB = copia.indexOf(vizinho)
+                                    ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
+                                    await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
+                                  })
+                                }
+                                className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
+                              >
+                                ▼
+                              </button>
+                            </div>
+                          </div>
                         </div>
                         {movendo === ord.id && (
                           <PainelMover
