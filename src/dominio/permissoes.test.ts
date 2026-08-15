@@ -67,6 +67,19 @@ describe('matriz padrao', () => {
         expect(permitidoPadrao('Gestor', recurso, acao)).toBe(true)
   })
 
+  it('Balanca so enxerga veiculos, nada mais', () => {
+    for (const [recurso, acoes] of Object.entries(ACOES_POR_RECURSO)) {
+      if (recurso === 'veiculos') continue
+      for (const acao of acoes)
+        expect(
+          permitidoPadrao('Balanca', recurso, acao),
+          `Balanca nao pode ${acao} em ${recurso}`,
+        ).toBe(false)
+    }
+    for (const acao of ['ver', 'chamar', 'checklist'])
+      expect(permitidoPadrao('Balanca', 'veiculos', acao)).toBe(true)
+  })
+
   it('nenhum perfil concede acao que o recurso nao tem', () => {
     // protege contra typo no padrao ('bajxar_lote' viraria permissao morta)
     for (const [perfil, recursos] of Object.entries(MATRIZ_PADRAO))

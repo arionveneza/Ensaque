@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import * as adm from '@/dados/api-admin'
+import * as v from '@/dados/api-veiculos'
 import type { ReceitaCompleta } from '@/dados/api-gestao'
 import { capacidadeDiaT, pesoItemKg } from '@/dominio/calculos'
 import {
@@ -20,7 +21,7 @@ const REFERENCIA_KG = 40_000
 const INPUT =
   'rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1 dark:border-stone-700 dark:bg-stone-800'
 
-type Aba = 'quimicos' | 'receitas' | 'maquinas' | 'embalagens' | 'motivos' | 'lotes'
+type Aba = 'quimicos' | 'receitas' | 'maquinas' | 'embalagens' | 'motivos' | 'lotes' | 'checklist'
 
 const ABAS: { id: Aba; nome: string }[] = [
   { id: 'quimicos', nome: 'Produtos químicos' },
@@ -29,6 +30,7 @@ const ABAS: { id: Aba; nome: string }[] = [
   { id: 'embalagens', nome: 'Embalagens' },
   { id: 'motivos', nome: 'Motivos de parada' },
   { id: 'lotes', nome: 'Lotes de semente' },
+  { id: 'checklist', nome: 'Checklist de veículos' },
 ]
 
 export default function Cadastros() {
@@ -47,16 +49,17 @@ export default function Cadastros() {
   const [turnos, setTurnos] = useState<g.TurnoLinha[]>([])
   const [lotes, setLotes] = useState<g.LoteSementeLinha[]>([])
   const [principios, setPrincipios] = useState<adm.PrincipioLinha[]>([])
+  const [tiposChecklist, setTiposChecklist] = useState<v.TipoChecklist[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
   const recarregar = useCallback(async () => {
-    const [c, r, e, t, l, pa] = await Promise.all([
+    const [c, r, e, t, l, pa, tc] = await Promise.all([
       api.carregarCadastros(), g.listarReceitas(), g.listarEmbalagens(),
-      g.listarTurnos(), g.listarLotes(), adm.listarPrincipios(),
+      g.listarTurnos(), g.listarLotes(), adm.listarPrincipios(), v.listarTiposChecklist(),
     ])
     setCad(c); setReceitas(r); setEmbalagens(e); setTurnos(t); setLotes(l)
-    setPrincipios(pa)
+    setPrincipios(pa); setTiposChecklist(tc)
   }, [])
 
   useEffect(() => {
@@ -138,6 +141,9 @@ export default function Cadastros() {
       )}
       {aba === 'lotes' && (
         <AbaLotes lotes={lotes} podeEditar={!!podeEditar} acao={acao} />
+      )}
+      {aba === 'checklist' && (
+        <AbaChecklist tipos={tiposChecklist} podeEditar={!!podeEditar} acao={acao} />
       )}
     </Pagina>
   )
@@ -1336,6 +1342,231 @@ function FormNovoLote({
         >
           Cadastrar lote
         </Botao>
+      </div>
+    </div>
+  )
+}
+
+// ================================================================
+// Checklist de veículos — tipos + perguntas (configurável, sem
+// conteúdo fixo: quem define as perguntas reais é quem usa a tela)
+// ================================================================
+
+function AbaChecklist({
+  tipos, podeEditar, acao,
+}: {
+  tipos: v.TipoChecklist[]
+  podeEditar: boolean
+  acao: Acao
+}) {
+  // qual tipo está aberto sobrevive a recarregar a página, mesmo padrão de
+  // AbaReceitas — sem isto o rascunho ficava salvo mas invisível
+  const abertoRasc = useRascunho<{ aberto: string | 'novo' | null }>(
+    'cadastros-checklist-aberto',
+    { aberto: null },
+  )
+  const editando = abertoRasc.valor.aberto
+  const setEditando = (val: string | 'novo' | null) => abertoRasc.definir({ aberto: val })
+
+  return (
+    <>
+      <div className="mb-4">
+        <Aviso>
+          Cada <b>tipo</b> (pré-carregamento, pós-carregamento, faturamento…) tem sua própria
+          lista de perguntas. Pergunta <b>obrigatória</b> trava o "Salvar" do checklist até ser
+          respondida; as demais podem ficar em branco.
+        </Aviso>
+      </div>
+
+      {podeEditar && (
+        <div className="mb-4">
+          <Botao variante="primario" onClick={() => setEditando(editando === 'novo' ? null : 'novo')}>
+            {editando === 'novo' ? 'Cancelar' : 'Novo tipo de checklist'}
+          </Botao>
+        </div>
+      )}
+
+      {editando === 'novo' && (
+        <Cartao titulo="Novo tipo de checklist" className="mb-5">
+          <FormTipoChecklist
+            onSalvar={(nome, perguntas) =>
+              acao(async () => { await adm.salvarTipoChecklist(nome, perguntas); setEditando(null) })
+            }
+            onCancelar={() => setEditando(null)}
+          />
+        </Cartao>
+      )}
+
+      {tipos.length === 0 ? (
+        <Vazio>Nenhum tipo de checklist cadastrado.</Vazio>
+      ) : (
+        tipos.map((t) => (
+          <Cartao
+            key={t.id}
+            titulo={t.nome}
+            acoes={
+              podeEditar ? (
+                <>
+                  <Botao onClick={() => setEditando(editando === t.id ? null : t.id)}>
+                    {editando === t.id ? 'Cancelar' : 'Editar'}
+                  </Botao>
+                  <Botao
+                    variante="perigo"
+                    onClick={() => {
+                      if (!confirm(`Excluir o tipo de checklist ${t.nome}?`)) return
+                      acao(() => adm.excluirTipoChecklist(t.id))
+                    }}
+                  >
+                    Excluir
+                  </Botao>
+                </>
+              ) : undefined
+            }
+            className="mb-4"
+          >
+            {editando === t.id ? (
+              <FormTipoChecklist
+                inicialNome={t.nome}
+                inicialPerguntas={t.checklist_perguntas.map((p) => ({
+                  texto: p.texto, obrigatoria: p.obrigatoria,
+                }))}
+                onSalvar={(nome, perguntas) =>
+                  acao(async () => {
+                    await adm.salvarTipoChecklist(nome, perguntas, t.id)
+                    setEditando(null)
+                  })
+                }
+                onCancelar={() => setEditando(null)}
+              />
+            ) : (
+              <TabelaPerguntas tipo={t} />
+            )}
+          </Cartao>
+        ))
+      )}
+    </>
+  )
+}
+
+function TabelaPerguntas({ tipo }: { tipo: v.TipoChecklist }) {
+  if (tipo.checklist_perguntas.length === 0) {
+    return <Vazio>Nenhuma pergunta cadastrada ainda — clique em Editar para adicionar.</Vazio>
+  }
+  return (
+    <Tabela cabecalho={['Pergunta', 'Obrigatória']}>
+      {tipo.checklist_perguntas.map((p) => (
+        <tr key={p.id} className="border-t border-stone-100 dark:border-stone-800/60">
+          <td className="px-2 py-1.5">{p.texto}</td>
+          <td className="px-2 py-1.5">
+            <Tag cor={p.obrigatoria ? 'alerta' : 'neutro'}>{p.obrigatoria ? 'Sim' : 'Não'}</Tag>
+          </td>
+        </tr>
+      ))}
+    </Tabela>
+  )
+}
+
+function FormTipoChecklist({
+  inicialNome = '', inicialPerguntas = [], onSalvar, onCancelar,
+}: {
+  inicialNome?: string
+  inicialPerguntas?: adm.PerguntaChecklistEdicao[]
+  onSalvar: (nome: string, perguntas: adm.PerguntaChecklistEdicao[]) => void
+  onCancelar: () => void
+}) {
+  const inicial = useMemo(
+    () => ({
+      nome: inicialNome,
+      perguntas: inicialPerguntas.length > 0 ? inicialPerguntas : [{ texto: '', obrigatoria: true }],
+    }),
+    [inicialNome, inicialPerguntas],
+  )
+  const { valor, definir, limpar, recuperado } = useRascunho(
+    inicialNome ? `checklist-tipo.${inicialNome}` : 'checklist-tipo.novo',
+    inicial,
+  )
+  const { nome, perguntas } = valor
+  const setNome = (val: string) => definir({ nome: val })
+  const setPerguntas = (val: adm.PerguntaChecklistEdicao[]) => definir({ perguntas: val })
+
+  const atualizar = (i: number, campo: Partial<adm.PerguntaChecklistEdicao>) =>
+    setPerguntas(perguntas.map((p, idx) => (idx === i ? { ...p, ...campo } : p)))
+
+  return (
+    <div>
+      {recuperado && (
+        <div className="mb-3">
+          <Aviso>
+            <b>Rascunho recuperado.</b> O tipo de checklist que você estava montando foi
+            restaurado.{' '}
+            <button onClick={limpar} className="underline">descartar</button>
+          </Aviso>
+        </div>
+      )}
+      <label className="text-xs text-stone-500">
+        Nome do tipo (ex.: Pré-carregamento)
+        <input
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          className={`${INPUT} mt-1 block w-64`}
+        />
+      </label>
+
+      <div className="mt-4 space-y-2">
+        {perguntas.map((p, i) => (
+          <div key={i} className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-stone-500">
+              Pergunta
+              <input
+                value={p.texto}
+                onChange={(e) => atualizar(i, { texto: e.target.value })}
+                placeholder="ex.: Pneus em bom estado?"
+                className={`${INPUT} mt-1 block w-80`}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 pb-1.5 text-xs text-stone-500">
+              <input
+                type="checkbox"
+                checked={p.obrigatoria}
+                onChange={(e) => atualizar(i, { obrigatoria: e.target.checked })}
+              />
+              obrigatória
+            </label>
+            <button
+              onClick={() => setPerguntas(perguntas.filter((_, idx) => idx !== i))}
+              className="-m-1.5 rounded p-1.5 pb-1.5 text-xs text-red-600 underline"
+            >
+              remover
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Botao onClick={() => setPerguntas([...perguntas, { texto: '', obrigatoria: true }])}>
+          Adicionar pergunta
+        </Botao>
+        <span className="text-xs text-stone-500">
+          {perguntas.length === 0 ? (
+            <>Sem pergunta nenhuma — o checklist fica só com fotos e observação geral.</>
+          ) : (
+            <>{perguntas.length} pergunta(s).</>
+          )}
+        </span>
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        <Botao
+          variante="primario"
+          disabled={!nome.trim() || perguntas.some((p) => !p.texto.trim())}
+          onClick={() => {
+            onSalvar(nome, perguntas)
+            limpar() // gravou: o rascunho não serve mais
+          }}
+        >
+          Salvar tipo de checklist
+        </Botao>
+        <Botao onClick={onCancelar}>Cancelar</Botao>
       </div>
     </div>
   )

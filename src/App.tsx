@@ -16,16 +16,18 @@ const Qualidade = lazy(() => import('@/telas/Qualidade'))
 const Agrotis = lazy(() => import('@/telas/Agrotis'))
 const Etapas = lazy(() => import('@/telas/Etapas'))
 const Expedicao = lazy(() => import('@/telas/Expedicao'))
+const Veiculos = lazy(() => import('@/telas/Veiculos'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
 const Painel = lazy(() => import('@/telas/Painel'))
+const PainelChamada = lazy(() => import('@/telas/PainelChamada'))
 const SapTeste = lazy(() => import('@/telas/SapTeste'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
-  | 'agrotis' | 'etapas' | 'expedicao' | 'indicadores' | 'cadastros' | 'administracao'
-  | 'sap'
+  | 'agrotis' | 'etapas' | 'expedicao' | 'veiculos' | 'indicadores' | 'cadastros'
+  | 'administracao' | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -36,6 +38,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'agrotis', nome: 'AGROTIS' },
   { id: 'etapas', nome: 'Etapas' },
   { id: 'expedicao', nome: 'Expedição' },
+  { id: 'veiculos', nome: 'Veículos' },
   { id: 'indicadores', nome: 'Indicadores' },
   { id: 'cadastros', nome: 'Cadastros' },
   { id: 'administracao', nome: 'Administração' },
@@ -47,6 +50,8 @@ function Shell() {
   const [tela, setTela] = useState<TelaId>('execucao')
   // modo TV: tela cheia, fora do shell. Quem enxerga Execução pode abrir.
   const [painel, setPainel] = useState(false)
+  // idem, para o painel de chamada de motorista no pátio.
+  const [painelChamada, setPainelChamada] = useState(false)
   // no celular a nav rola; sem isto a aba ativa pode nascer fora da vista,
   // sem nenhuma pista de que dá pra rolar até ela
   const navRef = useRef<HTMLElement>(null)
@@ -98,12 +103,21 @@ function Shell() {
   ).map((t) => t.id)
   const atual = permitidas.includes(tela) ? tela : permitidas[0]
   const podePainel = permitido('execucao', 'ver')
+  const podePainelChamada = permitido('veiculos', 'ver')
 
   // modo TV ocupa a tela inteira, sem o shell — quem vê Execução pode abrir
   if (painel && podePainel) {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-stone-950" />}>
         <Painel onSair={() => setPainel(false)} />
+      </Suspense>
+    )
+  }
+
+  if (painelChamada && podePainelChamada) {
+    return (
+      <Suspense fallback={<div className="fixed inset-0 bg-stone-950" />}>
+        <PainelChamada onSair={() => setPainelChamada(false)} />
       </Suspense>
     )
   }
@@ -159,6 +173,15 @@ function Shell() {
                 Painel TV
               </button>
             )}
+            {podePainelChamada && (
+              <button
+                onClick={() => setPainelChamada(true)}
+                title="Painel de chamada de motorista em tela cheia, para a TV do pátio"
+                className="rounded-md border border-stone-300 px-3 py-2.5 text-stone-600 transition-colors hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+              >
+                Painel de Chamada
+              </button>
+            )}
             <button
               onClick={sair}
               className="rounded-md border border-stone-300 px-3 py-2.5 text-stone-600 transition-colors hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
@@ -200,6 +223,7 @@ function Shell() {
           {atual === 'agrotis' && <Agrotis />}
           {atual === 'etapas' && <Etapas />}
           {atual === 'expedicao' && <Expedicao />}
+          {atual === 'veiculos' && <Veiculos />}
           {atual === 'indicadores' && <Indicadores />}
           {atual === 'cadastros' && <Cadastros />}
           {atual === 'administracao' && <Administracao />}

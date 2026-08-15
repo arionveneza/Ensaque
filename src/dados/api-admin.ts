@@ -210,6 +210,56 @@ export async function excluirReceita(id: string): Promise<void> {
   erro('excluir receita', error)
 }
 
+// ---------------- checklist de veículos (tipos + perguntas) ----------------
+
+/** Mesmo padrão de `ItemReceitaEdicao`: cadastro comum, substituição total ao salvar. */
+export interface PerguntaChecklistEdicao {
+  texto: string
+  obrigatoria: boolean
+}
+
+export async function salvarTipoChecklist(
+  nome: string,
+  perguntas: PerguntaChecklistEdicao[],
+  tipoId?: string,
+): Promise<string> {
+  if (!nome.trim()) throw new Error('O tipo de checklist precisa de um nome.')
+  if (perguntas.some((p) => !p.texto.trim())) {
+    throw new Error('Toda pergunta precisa de um texto.')
+  }
+
+  let id = tipoId
+  if (id) {
+    const up = await supabase.from('checklist_tipos').update({ nome: nome.trim() }).eq('id', id)
+    erro('salvar tipo de checklist', up.error)
+    const del = await supabase.from('checklist_perguntas').delete().eq('tipo_id', id)
+    erro('limpar perguntas do checklist', del.error)
+  } else {
+    const ins = await supabase
+      .from('checklist_tipos')
+      .insert({ nome: nome.trim() })
+      .select('id')
+      .single()
+    erro('criar tipo de checklist', ins.error)
+    id = (ins.data as { id: string }).id
+  }
+
+  if (perguntas.length > 0) {
+    const perguntasIns = await supabase
+      .from('checklist_perguntas')
+      .insert(perguntas.map((p, i) => ({
+        tipo_id: id, texto: p.texto.trim(), obrigatoria: p.obrigatoria, ordem: i,
+      })))
+    erro('gravar perguntas do checklist', perguntasIns.error)
+  }
+  return id!
+}
+
+export async function excluirTipoChecklist(id: string): Promise<void> {
+  const { error } = await supabase.from('checklist_tipos').delete().eq('id', id)
+  erro('excluir tipo de checklist', error)
+}
+
 // ---------------- motivos de parada ----------------
 
 export async function salvarMotivo(m: {
@@ -300,7 +350,7 @@ export interface PermissaoLinha {
 
 export const RECURSOS = [
   'ordens', 'programacao', 'lotes', 'execucao', 'qualidade', 'indicadores', 'cadastros',
-  'expedicao',
+  'expedicao', 'veiculos',
 ] as const
 
 export const ACOES = [

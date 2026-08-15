@@ -308,3 +308,38 @@ export function exportarCsv(nome: string, linhas: (string | number)[][]): void {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/**
+ * Toggle OK / Fora do padrão — usado em checklists (Qualidade, veículo).
+ * `ok: null` = ainda sem resposta: nenhum dos dois botões fica destacado.
+ */
+export function AlternadorOkFora({
+  rotulo, ok, onMudar,
+}: {
+  rotulo: string
+  ok: boolean | null
+  onMudar: (v: boolean) => void
+}) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{rotulo}</p>
+      <div className="mt-1 flex gap-2">
+        {([true, false] as const).map((v) => (
+          <button
+            key={String(v)}
+            onClick={() => onMudar(v)}
+            className={`rounded-md border px-3 py-2.5 text-sm sm:py-1.5 ${
+              ok === v
+                ? v
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-amber-500 bg-amber-500 text-white'
+                : 'border-stone-300 dark:border-stone-700'
+            }`}
+          >
+            {v ? 'OK' : 'Fora do padrão'}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}

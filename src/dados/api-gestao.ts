@@ -704,33 +704,8 @@ export async function removerFotoQualidade(caminho: string): Promise<void> {
   await supabase.storage.from(BUCKET_FOTOS).remove([caminho])
 }
 
-/**
- * Foto da câmera → dataURL JPEG de no máximo 1600 px.
- *
- * Roda na SELEÇÃO, não no envio: (1) a foto original tem vários MB e
- * travaria o upload na rede do galpão; (2) o dataURL é texto e cabe no
- * rascunho persistente — é o que faz o teste sobreviver quando o Android
- * mata a aba para abrir a câmera; (3) soltar o File original cedo alivia a
- * memória do tablet, que é justamente quem mata a aba.
- */
-export async function fotoParaDataUrl(
-  arquivo: File,
-  maxLado = 1600,
-  qualidade = 0.8,
-): Promise<string> {
-  const bitmap = await createImageBitmap(arquivo)
-  const escala = Math.min(1, maxLado / Math.max(bitmap.width, bitmap.height))
-  const w = Math.round(bitmap.width * escala)
-  const h = Math.round(bitmap.height * escala)
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Este navegador não consegue processar a imagem.')
-  ctx.drawImage(bitmap, 0, 0, w, h)
-  bitmap.close()
-  return canvas.toDataURL('image/jpeg', qualidade)
-}
+/** Reexportado por compatibilidade — a implementação mora em `@/lib/imagem` (compartilhada com o checklist de veículo). */
+export { fotoParaDataUrl } from '@/lib/imagem'
 
 /** Em processo: vários por ordem, cada verificação vira um registro com hora. */
 export async function registrarCheckProcesso(

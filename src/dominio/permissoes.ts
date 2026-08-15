@@ -23,6 +23,7 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   indicadores: ['ver'],
   cadastros: ['ver', 'editar'],
   expedicao: ['ver', 'importar'],
+  veiculos: ['ver', 'chamar', 'checklist'],
 }
 
 export const ROTULO_ACAO: Record<string, string> = {
@@ -37,6 +38,8 @@ export const ROTULO_ACAO: Record<string, string> = {
   qualidade: 'Apontar qualidade',
   lancar: 'Lançar no AGROTIS',
   importar: 'Importar planilha',
+  chamar: 'Chamar motorista',
+  checklist: 'Preencher checklist',
 }
 
 /**
@@ -56,6 +59,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     indicadores: ['ver'],
     cadastros: ['ver', 'editar'],
     expedicao: ['ver', 'importar'],
+    veiculos: ['ver', 'chamar', 'checklist'],
   },
   Logistica: {
     programacao: ['ver'],
@@ -64,6 +68,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     indicadores: ['ver'],
     // os carregamentos são agenda da logística tanto quanto do PCP
     expedicao: ['ver', 'importar'],
+    veiculos: ['ver', 'chamar', 'checklist'],
   },
   Producao: {
     programacao: ['ver'],
@@ -93,6 +98,15 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     indicadores: ['ver'],
     cadastros: ['ver'],
     expedicao: ['ver'],
+    veiculos: ['ver'],
+  },
+  /**
+   * Balança (15/08/2026): perfil do pátio/portaria — só o checklist de
+   * veículo e a chamada de motorista. Nenhuma outra chave aqui de propósito;
+   * é a definição de "só isso" pedida pelo Arion.
+   */
+  Balanca: {
+    veiculos: ['ver', 'chamar', 'checklist'],
   },
   Gestor: { ...ACOES_POR_RECURSO },
 }

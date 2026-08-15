@@ -6,9 +6,13 @@
  * mas nunca são persistidos na coluna status.
  */
 
-/** `Direcao` é somente leitura: enxerga tudo e exporta, não altera nada. */
+/**
+ * `Direcao` é somente leitura: enxerga tudo e exporta, não altera nada.
+ * `Balanca` é o oposto: só enxerga o módulo de veículos (checklist/chamada),
+ * nada do resto da operação.
+ */
 export type Perfil =
-  | 'PCP' | 'Logistica' | 'Producao' | 'Qualidade' | 'Direcao' | 'Gestor'
+  | 'PCP' | 'Logistica' | 'Producao' | 'Qualidade' | 'Direcao' | 'Gestor' | 'Balanca'
 
 /**
  * As bulas de TSI costumam expressar a dose por 100 kg de semente; algumas

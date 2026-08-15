@@ -44,6 +44,10 @@ vi.mock('@/dados/api-admin', () => ({
   listarPrincipios: () => Promise.resolve([]),
 }))
 
+vi.mock('@/dados/api-veiculos', () => ({
+  listarTiposChecklist: () => Promise.resolve([]),
+}))
+
 const { default: Cadastros } = await import('./Cadastros')
 
 describe('Cadastros sobrevive a recarregar a página', () => {
