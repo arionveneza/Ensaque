@@ -358,11 +358,23 @@ câmera → tela limpa → câmera: o estado do formulário (nota, fotos já tir
 estava aberta) vivia em `useState` e morria a cada volta. A correção tem duas partes —
 (1) persistir em `useRascunho` **qual formulário está aberto**, não só o conteúdo dele,
 porque a própria pergunta "que tela eu estava vendo" também não sobrevive; (2) fotos como
-**dataURL (texto)**, nunca `File`: o objeto `File` é referência a um blob que a navegação
-descartada invalida, e o rascunho (localStorage) só guarda texto/JSON. Reduzir a imagem
-(1600 px) ANTES de guardar no rascunho evita explodir a cota do localStorage com o Base64
-de uma foto de 8 MB. Ao criar qualquer tela nova com `<input type="file" capture="...">`,
-repetir o padrão.
+**caminho no Storage (texto curto)**, nunca `File` nem dataURL inteira.
+
+**RETROSPECTO 15/08/2026 — nenhuma foto de qualidade jamais chegou a ser salva em
+produção.** A ideia original desta seção era reduzir a imagem (1600 px) e guardar a
+dataURL Base64 no rascunho, achando que 1600 px bastava pra caber na cota do localStorage.
+Não bastou: confirmado direto no banco (bucket `qualidade` vazio, `fotos=[]` em TODOS os
+checklists finais recentes) que a foto nunca sobrevivia. `useRascunho.setItem` está dentro
+de um `try/catch` que engole qualquer erro (de propósito, pra não quebrar o formulário sem
+storage) — inclusive `QuotaExceededError`: a foto ficava certinha no `useState` em memória,
+mas nunca era gravada, e o próprio reload que a foto deveria sobreviver era o que a matava.
+Fix (`Qualidade.tsx` `SeletorFotos` + `api-gestao.ts`): cada foto sobe pro Storage **no
+instante da seleção**, não no envio do checklist — o rascunho guarda só o caminho (poucos
+bytes, nunca chega perto de cota nenhuma). Prévia usa a dataURL local enquanto a foto está
+fresca (não persistida — não precisa, a foto já está segura no Storage); depois de um
+reload, sem a prévia em memória, busca a URL assinada do próprio Storage. **Lição pra
+qualquer tela nova com foto: nunca guardar a dataURL em localStorage, mesmo reduzida —
+subir pro Storage assim que a foto é tirada e guardar só o caminho.**
 
 **A parte (1) acima ("qual formulário está aberto") foi esquecida em Cadastros — achado em
 10/08/2026, relatado pelo Arion: "o de receita fica vazio" depois de Alt+Tab no Chrome
