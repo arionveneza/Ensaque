@@ -172,6 +172,7 @@ export default function Qualidade() {
                   {aberta === idForm && (
                     <FormChecklist
                       chave={chaveForm(idForm)}
+                      ordemId={o.id}
                       rotuloSalvar="Registrar verificação"
                       comOrigem
                       onSalvar={(d) =>
@@ -225,6 +226,7 @@ export default function Qualidade() {
                   {aberta === idForm && (
                     <FormChecklist
                       chave={chaveForm(idForm)}
+                      ordemId={o.id}
                       rotuloSalvar="Salvar qualidade final"
                       comFotos
                       onSalvar={(d) =>
@@ -486,7 +488,7 @@ interface FormChecklistValor {
   umidadeOk: boolean
   poOk: boolean
   obs: string
-  /** dataURLs JPEG já reduzidas — texto, então cabem no localStorage. */
+  /** Caminhos no Storage — já enviados na seleção, texto curto no localStorage. */
   fotos: string[]
 }
 
@@ -511,9 +513,10 @@ const FORM_VAZIO: FormChecklistValor = {
  * desmontado quando o sucesso chega).
  */
 function FormChecklist({
-  chave, rotuloSalvar, comOrigem = false, comFotos = false, onSalvar,
+  chave, ordemId, rotuloSalvar, comOrigem = false, comFotos = false, onSalvar,
 }: {
   chave: string
+  ordemId: string
   rotuloSalvar: string
   comOrigem?: boolean
   /** Até 3 imagens — só na etapa final. */
@@ -585,7 +588,7 @@ function FormChecklist({
         placeholder="observação (opcional)"
         className="mt-3 w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
       />
-      {comFotos && <SeletorFotos fotos={fotos} onMudar={setFotos} />}
+      {comFotos && <SeletorFotos ordemId={ordemId} fotos={fotos} onMudar={setFotos} />}
       <div className="mt-3">
         <Botao
           variante="primario"
@@ -620,35 +623,67 @@ function FormChecklist({
  * câmera traseira direto, em vez da galeria — no chão de fábrica a foto é
  * tirada na hora, e um passo a menos importa com luva na mão.
  *
- * As fotos viram dataURL reduzida (1600 px) NA SELEÇÃO e vivem no rascunho
- * do formulário: se a câmera derrubar a aba, o que já foi fotografado volta
- * junto com o resto. As prévias usam a própria dataURL — sem URL de objeto,
- * sem revogação, sem File preso na memória.
+ * Cada foto é enviada ao Storage NA SELEÇÃO, uma por vez — o rascunho do
+ * formulário guarda só o CAMINHO (texto curto), nunca a dataURL inteira.
+ * Antes a dataURL (200 KB a poucos MB por foto) ia inteira pro rascunho, e
+ * `useRascunho` engole em silêncio qualquer erro do `localStorage.setItem` —
+ * cota estourada não dava erro nenhum, só não gravava, e a foto sumia no
+ * próximo reload (o que o Android faz sempre que a câmera abre por cima da
+ * aba). Caminho é texto curto: nunca chega perto da cota. A prévia de uma
+ * foto recém-tirada usa a dataURL local (`previasLocais`, não persistida);
+ * depois de um reload, sem essa prévia em memória, busca a URL assinada do
+ * Storage — a mesma foto já está segura lá.
  */
 function SeletorFotos({
-  fotos, onMudar,
+  ordemId, fotos, onMudar,
 }: {
+  ordemId: string
   fotos: string[]
   onMudar: (f: string[]) => void
 }) {
   const MAX = 3
   const [processando, setProcessando] = useState(false)
   const [erroFoto, setErroFoto] = useState<string | null>(null)
+  const [previasLocais, setPreviasLocais] = useState<Record<string, string>>({})
+  const [urlsAssinadas, setUrlsAssinadas] = useState<Record<string, string | null>>({})
+  const chaveFotos = fotos.join('|')
+
+  useEffect(() => {
+    const faltando = fotos.filter((c) => !(c in previasLocais) && !(c in urlsAssinadas))
+    if (!faltando.length) return
+    let vivo = true
+    Promise.all(faltando.map(async (c) => [c, await g.urlFotoQualidade(c)] as const)).then((pares) => {
+      if (!vivo) return
+      setUrlsAssinadas((u) => ({ ...u, ...Object.fromEntries(pares) }))
+    })
+    return () => { vivo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveFotos])
 
   async function aoEscolher(arquivos: File[]) {
     setErroFoto(null)
     setProcessando(true)
     try {
-      const novas: string[] = []
+      let atuais = fotos
       for (const a of arquivos.slice(0, MAX - fotos.length)) {
-        novas.push(await g.fotoParaDataUrl(a))
+        const dataUrl = await g.fotoParaDataUrl(a)
+        const [caminho] = await g.enviarFotosQualidade(ordemId, [dataUrl])
+        setPreviasLocais((p) => ({ ...p, [caminho]: dataUrl }))
+        atuais = [...atuais, caminho].slice(0, MAX)
+        // grava no rascunho a cada foto — se a próxima falhar (ou a aba
+        // morrer no meio), as já enviadas não se perdem
+        onMudar(atuais)
       }
-      onMudar([...fotos, ...novas].slice(0, MAX))
     } catch (e) {
       setErroFoto(e instanceof Error ? e.message : String(e))
     } finally {
       setProcessando(false)
     }
+  }
+
+  function remover(caminho: string) {
+    onMudar(fotos.filter((c) => c !== caminho))
+    void g.removerFotoQualidade(caminho)
   }
 
   return (
@@ -657,26 +692,35 @@ function SeletorFotos({
         Fotos do teste (até {MAX})
       </p>
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        {fotos.map((f, i) => (
-          <div key={`${i}-${f.length}`} className="relative">
-            <img
-              src={f}
-              alt={`Foto ${i + 1}`}
-              className="h-20 w-20 rounded-md border border-stone-200 object-cover dark:border-stone-700"
-            />
-            <button
-              onClick={() => onMudar(fotos.filter((_, j) => j !== i))}
-              title="Remover"
-              className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white"
-            >
-              ×
-            </button>
-          </div>
-        ))}
+        {fotos.map((c) => {
+          const src = previasLocais[c] ?? urlsAssinadas[c]
+          return (
+            <div key={c} className="relative">
+              {src ? (
+                <img
+                  src={src}
+                  alt="Foto do teste"
+                  className="h-20 w-20 rounded-md border border-stone-200 object-cover dark:border-stone-700"
+                />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-md border border-dashed border-stone-300 text-center text-[10px] text-stone-400 dark:border-stone-700">
+                  {urlsAssinadas[c] === null ? 'falha ao carregar' : 'carregando…'}
+                </div>
+              )}
+              <button
+                onClick={() => remover(c)}
+                title="Remover"
+                className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white"
+              >
+                ×
+              </button>
+            </div>
+          )
+        })}
         {fotos.length < MAX && (
           <label className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-stone-300 text-xs text-stone-500 hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800">
             {processando ? (
-              <span className="animate-pulse text-[10px]">processando…</span>
+              <span className="animate-pulse text-[10px]">enviando…</span>
             ) : (
               <>
                 <span className="text-lg leading-none">+</span>
@@ -702,7 +746,7 @@ function SeletorFotos({
       </div>
       {erroFoto && (
         <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-          Não deu para usar a foto: {erroFoto}
+          Não deu para enviar a foto: {erroFoto}
         </p>
       )}
     </div>

@@ -638,10 +638,12 @@ export interface DadosChecklist {
   poOk: boolean
   observacao: string | null
   /**
-   * Fotos como dataURL JPEG já reduzidas (1600 px), não File: o objeto File
-   * morre junto com a página quando o Android descarta a aba para abrir a
-   * câmera — dataURL é texto, vive no rascunho (localStorage) e sobrevive.
-   * Viram caminhos no Storage ao salvar.
+   * Caminhos já enviados ao Storage (não dataURL): o upload acontece na
+   * SELEÇÃO da foto (`SeletorFotos`), não aqui. Guardar a dataURL inteira
+   * no rascunho (localStorage) estourava a cota em silêncio — o
+   * `localStorage.setItem` falhava, o catch engolia o erro, e a foto
+   * desaparecia sem aviso no próximo reload (o que o Android faz sempre
+   * que a câmera abre). O caminho é texto curto: cabe folgado.
    */
   fotos?: string[]
 }
@@ -670,6 +672,8 @@ const BUCKET_FOTOS = 'qualidade'
 
 /**
  * Sobe as fotos (dataURLs já reduzidas na seleção) e devolve os caminhos.
+ * Chamada uma foto por vez, no instante da seleção (`SeletorFotos`) — não
+ * no envio do checklist.
  */
 export async function enviarFotosQualidade(ordemId: string, fotos: string[]): Promise<string[]> {
   const caminhos: string[] = []
@@ -693,6 +697,11 @@ export async function urlFotoQualidade(caminho: string): Promise<string | null> 
     .createSignedUrl(caminho, 3600)
   if (error) return null
   return data?.signedUrl ?? null
+}
+
+/** Remove uma foto já enviada (ex.: o inspetor tirou de novo). Best-effort: falhar aqui só deixa um arquivo órfão no bucket privado, sem consequência. */
+export async function removerFotoQualidade(caminho: string): Promise<void> {
+  await supabase.storage.from(BUCKET_FOTOS).remove([caminho])
 }
 
 /**
@@ -752,16 +761,15 @@ export async function apontarQualidadeFinal(
   ordemId: string,
   d: DadosChecklist,
 ): Promise<void> {
-  // as fotos sobem ANTES: se o envio falhar, nada é gravado e o inspetor
-  // repete o teste inteiro em vez de ficar com um registro sem imagem
-  const fotos = d.fotos?.length ? await enviarFotosQualidade(ordemId, d.fotos) : []
+  // as fotos já subiram na seleção (SeletorFotos) — `d.fotos` aqui são
+  // caminhos, não dataURLs; nada para enviar de novo
   const { error } = await supabase.rpc('apontar_qualidade_final', {
     p_ordem: ordemId,
     p_recobrimento: d.recobrimento,
     p_umidade_ok: d.umidadeOk,
     p_po_ok: d.poOk,
     p_obs: d.observacao,
-    p_fotos: fotos,
+    p_fotos: d.fotos ?? [],
   })
   erro('apontar qualidade final', error)
 }
