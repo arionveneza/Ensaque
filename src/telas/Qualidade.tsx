@@ -418,16 +418,38 @@ function ListaChecks({
  */
 function Fotos({ caminhos }: { caminhos: string[] }) {
   const [urls, setUrls] = useState<(string | null)[]>([])
+  const [prontos, setProntos] = useState(false)
+
+  /**
+   * A dependência é o CONTEÚDO dos caminhos, não a referência do array: a
+   * tela recarrega via realtime toda hora que `ordens`/`qualidade_checks`
+   * mudam (qualquer apontamento do dia) e o pai recria um array NOVO com os
+   * MESMOS caminhos a cada vez. Com `[caminhos]`, o efeito reiniciava antes
+   * do link assinado voltar — se o realtime disparasse de novo dentro desse
+   * intervalo, a foto nunca chegava a aparecer, ficava "carregando…" pra
+   * sempre (achado 14/08/2026, "não aparece a foto").
+   */
+  const chaveCaminhos = JSON.stringify(caminhos)
 
   useEffect(() => {
     let vivo = true
+    setProntos(false)
     Promise.all(caminhos.map((c) => g.urlFotoQualidade(c)))
-      .then((r) => vivo && setUrls(r))
-      .catch(() => vivo && setUrls([]))
+      .then((r) => {
+        if (!vivo) return
+        setUrls(r)
+        setProntos(true)
+      })
+      .catch(() => {
+        if (!vivo) return
+        setUrls(caminhos.map(() => null))
+        setProntos(true)
+      })
     return () => {
       vivo = false
     }
-  }, [caminhos])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveCaminhos])
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">
@@ -446,7 +468,10 @@ function Fotos({ caminhos }: { caminhos: string[] }) {
             key={c}
             className="flex h-24 w-24 items-center justify-center rounded-md border border-dashed border-stone-300 text-[10px] text-stone-400 dark:border-stone-700"
           >
-            carregando…
+            {/* distinto de "carregando" — sem isso, um link assinado que
+                falha (RLS, arquivo apagado) parecia eternamente pendente,
+                sem nenhum sinal de que algo deu errado de verdade */}
+            {prontos ? 'falha ao carregar' : 'carregando…'}
           </div>
         )
       })}
