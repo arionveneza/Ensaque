@@ -80,7 +80,7 @@ export interface AnaliseDemanda {
  * existe e entra no balanço, mas sem receita não há como produzir.
  */
 /** Mesma normalização usada na importação (simpleagro.ts) — tolera acento/caixa/espaço. */
-const ehSemTsi = (tratamento: string) =>
+export const ehSemTsi = (tratamento: string) =>
   tratamento
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
@@ -181,7 +181,16 @@ export function podeCriarOrdem(analise: AnaliseDemanda): boolean {
  */
 export type SituacaoDemanda = 'descoberto' | 'coberto' | 'sobra' | 'sem-pedido'
 
-/** O recorte do balanço que classifica a situação — vem da v_balanco_demanda. */
+/**
+ * O recorte do balanço que classifica a situação — vem da v_balanco_demanda.
+ *
+ * NÃO sabe o tratamento da linha, então não sabe filtrar SEM TSI sozinha:
+ * quem chama com uma lista de `v_balanco_demanda` (que tem `tratamento`)
+ * precisa excluir as linhas `ehSemTsi(tratamento)` ANTES de passar aqui —
+ * senão toda ordem SEM TSI programada aparece como `sem-pedido`, alarme
+ * falso (essa demanda é rastreada por `lotes_semente`, nunca por
+ * `pedidos_venda`/`estoque_pa`). Ver `PainelDemanda` em `Ordens.tsx`.
+ */
 export interface LinhaBalanco {
   pedido_aprovado: number
   estoque_pa: number

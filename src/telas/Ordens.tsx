@@ -19,7 +19,7 @@ import {
 } from '@/lib/sapTeste'
 import { useRealtime } from '@/dados/useRealtime'
 import {
-  analisaDemanda, bagsFaltando, bagsSobrando, podeCriarOrdem, resumoBalanco,
+  analisaDemanda, bagsFaltando, bagsSobrando, ehSemTsi, podeCriarOrdem, resumoBalanco,
   situacaoDemanda, type SituacaoDemanda,
 } from '@/dominio/balanco'
 import { pode } from '@/dominio/status'
@@ -847,7 +847,15 @@ function ModalRenumerar({
  * sobrar sem comprador. São leituras opostas, então a tabela rotula a situação
  * de cada linha e o topo resume os dois totais separados.
  */
-function PainelDemanda({ balanco }: { balanco: BalancoLinha[] }) {
+function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
+  // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
+  // essa demanda é rastreada por lotes_semente, fora deste painel de
+  // tratamento. Sem este filtro toda ordem SEM TSI programada aparecia aqui
+  // como "sem pedido", um alarme falso — o mesmo problema que já foi
+  // corrigido nos avisos de criar ordem (`ehSemTsi` em `analisaDemanda`),
+  // só que `situacaoDemanda` (usada só aqui) nunca tinha ganho a mesma
+  // correção.
+  const balanco = useMemo(() => balancoTodo.filter((b) => !ehSemTsi(b.tratamento)), [balancoTodo])
   const [filtro, setFiltro] = useState<'tudo' | SituacaoDemanda | 'sem-receita'>('tudo')
   // a tabela é comprida; nasce oculto, e a preferência (inclusive a de
   // mostrar) sobrevive ao recarregamento
