@@ -11,7 +11,10 @@ import {
   n, somaDias,
 } from '@/componentes/ui'
 
-type Janela = 'dia' | 'semana' | 'mes'
+type Janela = 'dia' | 'semana' | 'mes' | 'geral'
+
+/** Sentinela "desde sempre": qualquer ordem real tem data_prog depois disto. */
+const DESDE_SEMPRE = '2000-01-01'
 
 /** Status em que a produção já terminou a ordem — o resto do ciclo é qualidade/AGROTIS. */
 const STATUS_FINALIZADO = new Set(['Finalizada', 'Qualidade apontada', 'Apontada'])
@@ -31,7 +34,12 @@ export default function Indicadores() {
   const [erro, setErro] = useState<string | null>(null)
 
   const de = useMemo(
-    () => (janela === 'dia' ? hoje : somaDias(hoje, janela === 'semana' ? -7 : -30)),
+    () =>
+      janela === 'dia'
+        ? hoje
+        : janela === 'geral'
+          ? DESDE_SEMPRE
+          : somaDias(hoje, janela === 'semana' ? -7 : -30),
     [janela, hoje],
   )
 
@@ -246,7 +254,7 @@ export default function Indicadores() {
   /** O relatório geral: uma linha por ordem, com tudo. */
   async function exportarGeral() {
     await exportarXlsx(
-      `producao-geral-${de}-a-${hoje}`,
+      janela === 'geral' ? 'producao-geral' : `producao-geral-${de}-a-${hoje}`,
       [
         { titulo: 'Dia', largura: 12 }, { titulo: 'Máquina', largura: 10 },
         { titulo: 'Turno', largura: 8 }, { titulo: 'Ordem', largura: 14 },
@@ -285,9 +293,9 @@ export default function Indicadores() {
       descricao="Disponibilidade bruta penaliza toda parada; a operacional desconta as planejadas."
       acoes={
         <>
-          {(['dia', 'semana', 'mes'] as Janela[]).map((j) => (
+          {(['dia', 'semana', 'mes', 'geral'] as Janela[]).map((j) => (
             <Botao key={j} variante={janela === j ? 'primario' : 'normal'} onClick={() => setJanela(j)}>
-              {j === 'dia' ? 'Hoje' : j === 'semana' ? '7 dias' : '30 dias'}
+              {j === 'dia' ? 'Hoje' : j === 'semana' ? '7 dias' : j === 'mes' ? '30 dias' : 'Geral'}
             </Botao>
           ))}
           <Botao
