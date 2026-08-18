@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
 import * as api from '@/dados/api'
+import type { ConferenciaLinha } from '@/dados/api-gestao'
 import {
   mapaMotivos,
   mapaProdutos,
@@ -18,7 +19,7 @@ import {
   temposOrdem,
 } from '@/dominio/calculos'
 import { jaIniciada, statusEfetivo } from '@/dominio/status'
-import { Aviso, diaCurto, enderecoLote, rotuloTanque } from '@/componentes/ui'
+import { Aviso, dataHoraCurta, diaCurto, enderecoLote, inteiro, rotuloTanque } from '@/componentes/ui'
 import { imprimirOrdemProducao } from '@/lib/exportar'
 
 const num = (v: number | null | undefined, casas = 1) =>
@@ -34,6 +35,8 @@ interface Props {
   agora: number
   /** Capacidade (t/h) da máquina da ordem — dá o tempo planejado do quadro. */
   capacidadeTh?: number | null
+  /** Conferência de estoque da logística, quando já existir para esta ordem. */
+  conferencia?: ConferenciaLinha | null
   onFechar: () => void
   onMudou: () => Promise<void>
 }
@@ -45,6 +48,7 @@ export default function ModalOrdem({
   podeApontar,
   agora,
   capacidadeTh,
+  conferencia,
   onFechar,
   onMudou,
 }: Props) {
@@ -244,6 +248,28 @@ export default function ModalOrdem({
                   : `${num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags), 1)} kg`
               }
             />
+            {ordem.bags_produzidos != null && (
+              <Info
+                rotulo="Bags produzidos"
+                valor={inteiro(ordem.bags_produzidos)}
+                detalhe={
+                  ordem.bags_produzidos === ordem.bags
+                    ? `= o planejado (${inteiro(ordem.bags)})`
+                    : `${ordem.bags_produzidos > ordem.bags ? '+' : ''}${ordem.bags_produzidos - ordem.bags} vs ${inteiro(ordem.bags)} planejados`
+                }
+              />
+            )}
+            {conferencia && (
+              <Info
+                rotulo="Conferido (logística)"
+                valor={inteiro(conferencia.bags_contados)}
+                detalhe={
+                  ordem.bags_produzidos != null && conferencia.bags_contados !== ordem.bags_produzidos
+                    ? `divergente do produzido (${inteiro(ordem.bags_produzidos)})`
+                    : dataHoraCurta(conferencia.ts)
+                }
+              />
+            )}
           </dl>
 
           {tempos && (
@@ -759,10 +785,12 @@ function Info({
   rotulo,
   valor,
   destaque,
+  detalhe,
 }: {
   rotulo: string
   valor: string
   destaque?: boolean
+  detalhe?: string
 }) {
   return (
     <div className="rounded-md bg-stone-50 px-3 py-2 dark:bg-stone-800/50">
@@ -774,6 +802,7 @@ function Info({
       >
         {valor}
       </dd>
+      {detalhe && <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{detalhe}</p>}
     </div>
   )
 }

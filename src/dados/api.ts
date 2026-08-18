@@ -143,6 +143,22 @@ export async function carregarOrdens(dia: string): Promise<LinhaOrdem[]> {
 }
 
 /**
+ * Uma ordem específica, com o mesmo detalhe rico de `carregarOrdens` (tanques,
+ * paradas, receita) mas SEM recorte de dia — para abrir qualquer ordem do
+ * histórico (tela Ordens) fora do dia atual, que é o que `carregarOrdens`
+ * exige.
+ */
+export async function carregarOrdemPorId(id: string): Promise<LinhaOrdem | null> {
+  const { data, error } = await supabase
+    .from('ordens')
+    .select(SELECT_ORDEM)
+    .eq('id', id)
+    .maybeSingle()
+  erro('ordem', error)
+  return data as unknown as LinhaOrdem | null
+}
+
+/**
  * Define o destino de um produto nesta ordem (1–5 ou 0 = transferidor;
  * null desfaz). Vai por RPC porque uma escolha mexe em duas tabelas: cria o
  * tanque quando ele passa a ser usado e remove o que ficou sem produto.

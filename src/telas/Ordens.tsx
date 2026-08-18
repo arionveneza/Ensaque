@@ -1,8 +1,12 @@
 ﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as api from '@/dados/api'
+import type { LinhaOrdem } from '@/dados/api'
 import * as g from '@/dados/api-gestao'
-import type { BalancoLinha, LoteSementeLinha, OrdemVisao, ReceitaCompleta } from '@/dados/api-gestao'
+import type {
+  BalancoLinha, ConferenciaLinha, LoteSementeLinha, OrdemVisao, ReceitaCompleta,
+} from '@/dados/api-gestao'
+import ModalOrdem from './ModalOrdem'
 import {
   EMBALAGEM_DEPARA,
   converterPedidos, converterSaldos, ehRelatorioPedidos, ehRelatorioSaldos,
@@ -99,10 +103,34 @@ export default function Ordens() {
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[]>([])
   const [maquinas, setMaquinas] = useState<api.LinhaMaquina[]>([])
+  const [motivos, setMotivos] = useState<api.LinhaMotivo[]>([])
+  const [produtos, setProdutos] = useState<api.LinhaProduto[]>([])
+  const [conferencias, setConferencias] = useState<ConferenciaLinha[]>([])
   const [balanco, setBalanco] = useState<BalancoLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+
+  // "detalhes": abre qualquer ordem (não só as do dia atual, ao contrário da
+  // Execução) mostrando tempos, tanques, bags produzidos e conferência —
+  // pedido do Arion, 18/08/2026: "na tela de execução, quando abro a ordem,
+  // não tem" (a Execução só lista ordem do dia escolhido).
+  const [ordemAberta, setOrdemAberta] = useState<LinhaOrdem | null>(null)
+  const [abrindoId, setAbrindoId] = useState<string | null>(null)
+
+  async function abrirOrdem(id: string) {
+    setAbrindoId(id)
+    setErro(null)
+    try {
+      const o = await api.carregarOrdemPorId(id)
+      if (!o) throw new Error('Ordem não encontrada.')
+      setOrdemAberta(o)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAbrindoId(null)
+    }
+  }
 
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
@@ -113,9 +141,10 @@ export default function Ordens() {
   const [previaOrdens, setPreviaOrdens] = useState<ResultadoOrdens | null>(null)
 
   const recarregar = useCallback(async () => {
-    const [o, b] = await Promise.all([g.listarOrdens(), g.listarBalanco()])
+    const [o, b, cf] = await Promise.all([g.listarOrdens(), g.listarBalanco(), g.listarConferencias()])
     setOrdens(o)
     setBalanco(b)
+    setConferencias(cf)
   }, [])
 
   useEffect(() => {
@@ -123,19 +152,23 @@ export default function Ordens() {
     setCarregando(true)
     Promise.all([
       g.listarOrdens(), g.listarLotes(), g.listarReceitas(),
-      g.listarEmbalagens(), api.carregarCadastros(), g.listarBalanco(),
+      g.listarEmbalagens(), api.carregarCadastros(), g.listarBalanco(), g.listarConferencias(),
     ])
-      .then(([o, l, r, e, c, b]) => {
+      .then(([o, l, r, e, c, b, cf]) => {
         if (!vivo) return
         setOrdens(o); setLotes(l); setReceitas(r)
-        setEmbalagens(e); setMaquinas(c.maquinas); setBalanco(b)
+        setEmbalagens(e); setMaquinas(c.maquinas); setMotivos(c.motivos); setProdutos(c.produtos)
+        setBalanco(b); setConferencias(cf)
       })
       .catch((x) => vivo && setErro(x instanceof Error ? x.message : String(x)))
       .finally(() => vivo && setCarregando(false))
     return () => { vivo = false }
   }, [])
 
-  useRealtime(['ordens', 'lotes_semente', 'pedidos_venda', 'estoque_pa'], recarregar)
+  useRealtime(
+    ['ordens', 'lotes_semente', 'pedidos_venda', 'estoque_pa', 'ordem_conferencias'],
+    recarregar,
+  )
 
   async function comErro(fn: () => Promise<void>) {
     try {
@@ -765,6 +798,8 @@ export default function Ordens() {
                 }
                 onRenumerar={(o) => setRenumerando(o)}
                 onConfirmar={(id) => comErro(() => g.confirmarOrdem(id, usuario!.id))}
+                onAbrir={abrirOrdem}
+                abrindoId={abrindoId}
               />
             ))}
           </Tabela>
@@ -781,6 +816,24 @@ export default function Ordens() {
               setRenumerando(null)
             })
           }
+        />
+      )}
+
+      {ordemAberta && (
+        <ModalOrdem
+          ordem={ordemAberta}
+          produtos={produtos}
+          motivos={motivos}
+          podeApontar={permitido('execucao', 'apontar')}
+          agora={Date.now()}
+          capacidadeTh={maquinas.find((m) => m.id === ordemAberta.maquina_id)?.capacidade_th}
+          conferencia={conferencias.find((c) => c.ordem_id === ordemAberta.id) ?? null}
+          onFechar={() => setOrdemAberta(null)}
+          onMudou={async () => {
+            await recarregar()
+            const o = await api.carregarOrdemPorId(ordemAberta.id)
+            if (o) setOrdemAberta(o)
+          }}
         />
       )}
     </Pagina>
@@ -1445,7 +1498,7 @@ function comparadorOrdenacao(
 
 function FragmentoDia({
   dia, lista, maquinas, ordenacao, podeEditar, podeExcluir, podePriorizar,
-  onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar,
+  onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar, onAbrir, abrindoId,
 }: {
   dia: string
   lista: OrdemVisao[]
@@ -1459,6 +1512,9 @@ function FragmentoDia({
   onPrioridade: (id: string, p: 'Normal' | 'Urgente') => void
   onRenumerar: (o: OrdemVisao) => void
   onConfirmar: (id: string) => void
+  /** Abre o detalhe completo (tempos, tanques, produzido, conferência) — qualquer status. */
+  onAbrir: (id: string) => void
+  abrindoId: string | null
 }) {
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
 
@@ -1569,6 +1625,14 @@ function FragmentoDia({
                   */}
                   <td className="min-w-56 px-2 py-1.5 text-right whitespace-nowrap">
                     <div className="inline-flex flex-wrap justify-end gap-1.5">
+                      <button
+                        onClick={() => onAbrir(o.id)}
+                        disabled={abrindoId === o.id}
+                        className={BOTAO_ACAO}
+                        title="Tempos, tanques, bags produzidos e conferência da logística"
+                      >
+                        {abrindoId === o.id ? 'abrindo…' : 'detalhes'}
+                      </button>
                       {podeEditar && pode(st, 'editar') && (
                         <button
                           onClick={() => onEditar(o)}
