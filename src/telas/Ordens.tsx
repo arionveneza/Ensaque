@@ -893,13 +893,8 @@ function ModalRenumerar({
   )
 }
 
-/**
- * Demanda × Estoque × Planejado.
- *
- * O `saldo` sozinho engana: positivo é trabalho a fazer, negativo é bag que vai
- * sobrar sem comprador. São leituras opostas, então a tabela rotula a situação
- * de cada linha e o topo resume os dois totais separados.
- */
+type CampoOrdenacaoDemanda = 'pedido' | 'aguardando' | 'estoque' | 'planejado' | 'falta' | 'sobra'
+
 /** Valor bruto ou derivado de cada coluna numérica, para o clique no cabeçalho ordenar. */
 function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): number {
   switch (campo) {
@@ -912,8 +907,84 @@ function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): numbe
   }
 }
 
-type CampoOrdenacaoDemanda = 'pedido' | 'aguardando' | 'estoque' | 'planejado' | 'falta' | 'sobra'
+/**
+ * Seleção múltipla compacta: um botão que abre um checklist com rolagem,
+ * fecha ao clicar fora. Chips soltos (um por valor) viravam parede de
+ * botões com listas de 20-30+ cultivares/tratamentos — feio e difícil de
+ * usar (achado do Arion, 18/08/2026).
+ */
+function SeletorMultiplo({
+  rotulo, opcoes, selecionados, onMudar,
+}: {
+  rotulo: string
+  opcoes: string[]
+  selecionados: Set<string>
+  onMudar: (s: Set<string>) => void
+}) {
+  const [aberto, setAberto] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    if (!aberto) return
+    const aoClicarFora = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false)
+    }
+    document.addEventListener('mousedown', aoClicarFora)
+    return () => document.removeEventListener('mousedown', aoClicarFora)
+  }, [aberto])
+
+  const alternar = (v: string) => {
+    const novo = new Set(selecionados)
+    if (novo.has(v)) novo.delete(v)
+    else novo.add(v)
+    onMudar(novo)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((a) => !a)}
+        className={`rounded-md border px-3 py-1.5 text-xs ${
+          selecionados.size > 0
+            ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+            : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+        }`}
+      >
+        {rotulo}{selecionados.size > 0 ? ` (${selecionados.size})` : ''} ▾
+      </button>
+      {aberto && (
+        <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-2 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+          {selecionados.size > 0 && (
+            <button
+              onClick={() => onMudar(new Set())}
+              className="mb-1.5 block text-xs text-stone-500 underline"
+            >
+              limpar seleção
+            </button>
+          )}
+          {opcoes.map((o) => (
+            <label
+              key={o}
+              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
+            >
+              <input type="checkbox" checked={selecionados.has(o)} onChange={() => alternar(o)} />
+              {o}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Demanda × Estoque × Planejado.
+ *
+ * O `saldo` sozinho engana: positivo é trabalho a fazer, negativo é bag que vai
+ * sobrar sem comprador. São leituras opostas, então a tabela rotula a situação
+ * de cada linha e o topo resume os dois totais separados.
+ */
 function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
   // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
   // essa demanda é rastreada por lotes_semente, fora deste painel de
@@ -953,13 +1024,6 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
     )
   const setaOrdem = (campo: CampoOrdenacaoDemanda): 'asc' | 'desc' | undefined =>
     ordenacao?.campo === campo ? ordenacao.dir : undefined
-
-  const alternaSel = (set: Set<string>, setFn: (s: Set<string>) => void, v: string) => {
-    const novo = new Set(set)
-    if (novo.has(v)) novo.delete(v)
-    else novo.add(v)
-    setFn(novo)
-  }
 
   const cultivares = useMemo(
     () => [...new Set(balanco.map((b) => b.cultivar))].sort(),
@@ -1101,69 +1165,24 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
               ))}
           </div>
 
-          {cultivares.length > 1 && (
-            <div className="mb-2">
-              <p className="mb-1 text-xs text-stone-500">
-                Cultivar
-                {cultivarSel.size > 0 && (
-                  <>
-                    {' · '}
-                    <button onClick={() => setCultivarSel(new Set())} className="underline">
-                      limpar
-                    </button>
-                  </>
-                )}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {cultivares.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => alternaSel(cultivarSel, setCultivarSel, c)}
-                    className={`rounded border px-2 py-1 text-xs ${
-                      cultivarSel.has(c)
-                        ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
-                        : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {tratamentos.length > 1 && (
-            <div className="mb-3">
-              <p className="mb-1 text-xs text-stone-500">
-                Tratamento
-                {tratamentoSel.size > 0 && (
-                  <>
-                    {' · '}
-                    <button onClick={() => setTratamentoSel(new Set())} className="underline">
-                      limpar
-                    </button>
-                  </>
-                )}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {tratamentos.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => alternaSel(tratamentoSel, setTratamentoSel, t)}
-                    className={`rounded border px-2 py-1 text-xs ${
-                      tratamentoSel.has(t)
-                        ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
-                        : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="mb-3 flex flex-wrap gap-2">
+            {cultivares.length > 1 && (
+              <SeletorMultiplo
+                rotulo="Cultivar"
+                opcoes={cultivares}
+                selecionados={cultivarSel}
+                onMudar={setCultivarSel}
+              />
+            )}
+            {tratamentos.length > 1 && (
+              <SeletorMultiplo
+                rotulo="Tratamento"
+                opcoes={tratamentos}
+                selecionados={tratamentoSel}
+                onMudar={setTratamentoSel}
+              />
+            )}
+          </div>
 
           {linhas.length === 0 ? (
             <Vazio>Nenhuma combinação nesse filtro.</Vazio>
