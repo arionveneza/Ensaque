@@ -900,6 +900,20 @@ function ModalRenumerar({
  * sobrar sem comprador. São leituras opostas, então a tabela rotula a situação
  * de cada linha e o topo resume os dois totais separados.
  */
+/** Valor bruto ou derivado de cada coluna numérica, para o clique no cabeçalho ordenar. */
+function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): number {
+  switch (campo) {
+    case 'pedido': return b.pedido_aprovado
+    case 'aguardando': return b.pedido_pendente
+    case 'estoque': return b.estoque_pa
+    case 'planejado': return b.ordens_abertas
+    case 'falta': return bagsFaltando(b)
+    case 'sobra': return bagsSobrando(b)
+  }
+}
+
+type CampoOrdenacaoDemanda = 'pedido' | 'aguardando' | 'estoque' | 'planejado' | 'falta' | 'sobra'
+
 function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
   // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
   // essa demanda é rastreada por lotes_semente, fora deste painel de
@@ -910,6 +924,14 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
   // correção.
   const balanco = useMemo(() => balancoTodo.filter((b) => !ehSemTsi(b.tratamento)), [balancoTodo])
   const [filtro, setFiltro] = useState<'tudo' | SituacaoDemanda | 'sem-receita'>('tudo')
+  // múltiplos cultivares/tratamentos ao mesmo tempo (pedido do Arion,
+  // 18/08/2026) — vazio quer dizer "sem filtro", igual ao statusSel da
+  // Expedição: marcar um item não esconde os demais.
+  const [cultivarSel, setCultivarSel] = useState<Set<string>>(new Set())
+  const [tratamentoSel, setTratamentoSel] = useState<Set<string>>(new Set())
+  const [ordenacao, setOrdenacao] = useState<
+    { campo: CampoOrdenacaoDemanda; dir: 'asc' | 'desc' } | null
+  >(null)
   // a tabela é comprida; nasce oculto, e a preferência (inclusive a de
   // mostrar) sobrevive ao recarregamento
   const [oculto, setOculto] = useState(
@@ -921,20 +943,56 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
     localStorage.setItem('tsi.demanda.oculta', v ? '1' : '0')
   }
 
+  const alternarOrdenacao = (campo: CampoOrdenacaoDemanda) =>
+    setOrdenacao((o) =>
+      !o || o.campo !== campo
+        ? { campo, dir: 'asc' }
+        : o.dir === 'asc'
+          ? { campo, dir: 'desc' }
+          : null,
+    )
+  const setaOrdem = (campo: CampoOrdenacaoDemanda): 'asc' | 'desc' | undefined =>
+    ordenacao?.campo === campo ? ordenacao.dir : undefined
+
+  const alternaSel = (set: Set<string>, setFn: (s: Set<string>) => void, v: string) => {
+    const novo = new Set(set)
+    if (novo.has(v)) novo.delete(v)
+    else novo.add(v)
+    setFn(novo)
+  }
+
+  const cultivares = useMemo(
+    () => [...new Set(balanco.map((b) => b.cultivar))].sort(),
+    [balanco],
+  )
+  const tratamentos = useMemo(
+    () => [...new Set(balanco.map((b) => b.tratamento))].sort(),
+    [balanco],
+  )
+
   const resumo = useMemo(() => resumoBalanco(balanco), [balanco])
 
   const linhas = useMemo(() => {
-    const lista =
+    let lista =
       filtro === 'tudo'
         ? balanco
         : filtro === 'sem-receita'
           ? balanco.filter((b) => !b.receita_cadastrada)
           : balanco.filter((b) => situacaoDemanda(b) === filtro)
-    // maior descoberto primeiro; ao filtrar sobra, o maior excesso vem no topo
+    if (cultivarSel.size > 0) lista = lista.filter((b) => cultivarSel.has(b.cultivar))
+    if (tratamentoSel.size > 0) lista = lista.filter((b) => tratamentoSel.has(b.tratamento))
     return lista
       .slice()
-      .sort((a, b) => (filtro === 'tudo' ? b.saldo - a.saldo : a.saldo - b.saldo))
-  }, [balanco, filtro])
+      .sort((a, b) => {
+        if (ordenacao) {
+          const diff = valorCampoDemanda(a, ordenacao.campo) - valorCampoDemanda(b, ordenacao.campo)
+          return ordenacao.dir === 'asc' ? diff : -diff
+        }
+        // sem coluna escolhida: maior descoberto primeiro; ao filtrar sobra,
+        // o maior excesso vem no topo
+        return filtro === 'tudo' ? b.saldo - a.saldo : a.saldo - b.saldo
+      })
+  }, [balanco, filtro, cultivarSel, tratamentoSel, ordenacao])
 
   const semReceita = balanco.filter((b) => !b.receita_cadastrada).length
   const chips: { id: typeof filtro; texto: string; ativo: boolean }[] = [
@@ -1043,12 +1101,84 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
               ))}
           </div>
 
+          {cultivares.length > 1 && (
+            <div className="mb-2">
+              <p className="mb-1 text-xs text-stone-500">
+                Cultivar
+                {cultivarSel.size > 0 && (
+                  <>
+                    {' · '}
+                    <button onClick={() => setCultivarSel(new Set())} className="underline">
+                      limpar
+                    </button>
+                  </>
+                )}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {cultivares.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => alternaSel(cultivarSel, setCultivarSel, c)}
+                    className={`rounded border px-2 py-1 text-xs ${
+                      cultivarSel.has(c)
+                        ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                        : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tratamentos.length > 1 && (
+            <div className="mb-3">
+              <p className="mb-1 text-xs text-stone-500">
+                Tratamento
+                {tratamentoSel.size > 0 && (
+                  <>
+                    {' · '}
+                    <button onClick={() => setTratamentoSel(new Set())} className="underline">
+                      limpar
+                    </button>
+                  </>
+                )}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {tratamentos.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => alternaSel(tratamentoSel, setTratamentoSel, t)}
+                    className={`rounded border px-2 py-1 text-xs ${
+                      tratamentoSel.has(t)
+                        ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                        : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {linhas.length === 0 ? (
             <Vazio>Nenhuma combinação nesse filtro.</Vazio>
           ) : (
             <Tabela
-              cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Pedido', '#Aguardando',
-                '#Estoque', '#Planejado', '#Falta', '#Sobra', 'Situação']}
+              cabecalho={[
+                'Cultivar', 'Tratamento', 'Emb.',
+                { texto: '#Pedido', onClick: () => alternarOrdenacao('pedido'), ordem: setaOrdem('pedido') },
+                { texto: '#Aguardando', onClick: () => alternarOrdenacao('aguardando'), ordem: setaOrdem('aguardando') },
+                { texto: '#Estoque', onClick: () => alternarOrdenacao('estoque'), ordem: setaOrdem('estoque') },
+                { texto: '#Planejado', onClick: () => alternarOrdenacao('planejado'), ordem: setaOrdem('planejado') },
+                { texto: '#Falta', onClick: () => alternarOrdenacao('falta'), ordem: setaOrdem('falta') },
+                { texto: '#Sobra', onClick: () => alternarOrdenacao('sobra'), ordem: setaOrdem('sobra') },
+                'Situação',
+              ]}
             >
               {linhas.map((b, i) => {
                 const s = situacaoDemanda(b)
