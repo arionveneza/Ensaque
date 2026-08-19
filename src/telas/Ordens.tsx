@@ -911,16 +911,15 @@ function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): numbe
 }
 
 /**
- * Seleção múltipla compacta: um botão que abre um checklist com rolagem,
- * fecha ao clicar fora. Chips soltos (um por valor) viravam parede de
- * botões com listas de 20-30+ cultivares/tratamentos — feio e difícil de
- * usar (achado do Arion, 18/08/2026).
- */
-/**
- * Igual a um campo de tags: digita para filtrar a lista, ↑/↓ move o
- * destaque, Enter escolhe, Backspace com a busca vazia apaga a última
- * selecionada — clicar item a item numa lista de 20-30+ era lento demais
- * (achado do Arion, 18/08/2026).
+ * Fechado, mostra só a contagem — nunca os chips: com muita coisa marcada
+ * (ex.: 23 tratamentos) a caixa virava uma parede de várias linhas cobrindo
+ * a tela (achado do Arion, 18/08/2026). Clicar abre o editor: campo de
+ * busca + chips removíveis + lista. Aí funciona como campo de tags: digita
+ * pra filtrar, ↑/↓ move o destaque (rolando a lista pra acompanhar), Espaço
+ * alterna o destacado quando a busca está vazia (igual ao Excel, que nem
+ * tem campo de texto ali — com busca em andamento o espaço volta a ser
+ * texto, porque nome de tratamento/cultivar tem espaço no meio), Enter
+ * também alterna, Backspace com a busca vazia apaga a última selecionada.
  */
 function SeletorMultiplo({
   rotulo, opcoes, selecionados, onMudar,
@@ -935,6 +934,7 @@ function SeletorMultiplo({
   const [destacado, setDestacado] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const filtradas = useMemo(
     () => opcoes.filter((o) => o.toLowerCase().includes(busca.trim().toLowerCase())),
@@ -956,6 +956,14 @@ function SeletorMultiplo({
     setDestacado((d) => Math.min(d, Math.max(0, filtradas.length - 1)))
   }, [filtradas.length])
 
+  // ↑/↓ move o destaque mas a lista tem overflow-y-auto: sem isto, passar do
+  // que já está visível parecia travado — o destaque ia embora da tela e
+  // nada mostrava que a seta continuava funcionando
+  useEffect(() => {
+    if (!aberto) return
+    itemRefs.current[destacado]?.scrollIntoView({ block: 'nearest' })
+  }, [destacado, aberto])
+
   function alternar(v: string) {
     onMudar(selecionados.includes(v) ? selecionados.filter((s) => s !== v) : [...selecionados, v])
   }
@@ -963,11 +971,14 @@ function SeletorMultiplo({
   function aoTeclar(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setAberto(true)
       setDestacado((d) => Math.min(d + 1, filtradas.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setDestacado((d) => Math.max(d - 1, 0))
+    } else if (e.key === ' ' && busca === '') {
+      e.preventDefault()
+      const alvo = filtradas[destacado]
+      if (alvo) alternar(alvo)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const alvo = filtradas[destacado]
@@ -979,19 +990,25 @@ function SeletorMultiplo({
     }
   }
 
-  return (
-    <div ref={ref} className="relative">
-      <div
-        onClick={() => {
-          setAberto(true)
-          inputRef.current?.focus()
-        }}
-        className={`flex min-w-40 max-w-xs cursor-text flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className={`rounded-md border px-3 py-1.5 text-xs ${
           selecionados.length > 0
-            ? 'border-stone-800 dark:border-stone-200'
-            : 'border-stone-300 dark:border-stone-700'
+            ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+            : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
         }`}
       >
+        {rotulo}{selecionados.length > 0 ? ` (${selecionados.length})` : ''} ▾
+      </button>
+    )
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex min-w-40 max-w-xs flex-wrap items-center gap-1 rounded-md border border-stone-800 px-2 py-1 text-xs dark:border-stone-200">
         <span className="text-stone-500">{rotulo}</span>
         {selecionados.map((s) => (
           <span
@@ -1001,10 +1018,7 @@ function SeletorMultiplo({
             {s}
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                alternar(s)
-              }}
+              onClick={() => alternar(s)}
               title="Remover"
               className="leading-none"
             >
@@ -1014,45 +1028,43 @@ function SeletorMultiplo({
         ))}
         <input
           ref={inputRef}
+          autoFocus
           value={busca}
           onChange={(e) => {
             setBusca(e.target.value)
-            setAberto(true)
             setDestacado(0)
           }}
-          onFocus={() => setAberto(true)}
           onKeyDown={aoTeclar}
           placeholder={selecionados.length === 0 ? 'buscar…' : ''}
           className="min-w-16 flex-1 bg-transparent outline-none"
         />
       </div>
-      {aberto && (
-        <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
-          {filtradas.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-stone-400">nada encontrado</p>
-          ) : (
-            filtradas.map((o, i) => (
-              <button
-                key={o}
-                type="button"
-                onClick={() => alternar(o)}
-                onMouseEnter={() => setDestacado(i)}
-                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm ${
-                  i === destacado ? 'bg-stone-100 dark:bg-stone-800' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selecionados.includes(o)}
-                  readOnly
-                  className="pointer-events-none"
-                />
-                {o}
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+        {filtradas.length === 0 ? (
+          <p className="px-2 py-1.5 text-xs text-stone-400">nada encontrado</p>
+        ) : (
+          filtradas.map((o, i) => (
+            <button
+              key={o}
+              ref={(el) => { itemRefs.current[i] = el }}
+              type="button"
+              onClick={() => alternar(o)}
+              onMouseEnter={() => setDestacado(i)}
+              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm ${
+                i === destacado ? 'bg-stone-100 dark:bg-stone-800' : ''
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={selecionados.includes(o)}
+                readOnly
+                className="pointer-events-none"
+              />
+              {o}
+            </button>
+          ))
+        )}
+      </div>
     </div>
   )
 }
