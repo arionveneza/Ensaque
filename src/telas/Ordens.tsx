@@ -1,4 +1,7 @@
-﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+﻿import {
+  Fragment, useCallback, useEffect, useMemo, useRef, useState,
+  type ChangeEvent, type KeyboardEvent,
+} from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as api from '@/dados/api'
 import type { LinhaOrdem } from '@/dados/api'
@@ -913,16 +916,30 @@ function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): numbe
  * botões com listas de 20-30+ cultivares/tratamentos — feio e difícil de
  * usar (achado do Arion, 18/08/2026).
  */
+/**
+ * Igual a um campo de tags: digita para filtrar a lista, ↑/↓ move o
+ * destaque, Enter escolhe, Backspace com a busca vazia apaga a última
+ * selecionada — clicar item a item numa lista de 20-30+ era lento demais
+ * (achado do Arion, 18/08/2026).
+ */
 function SeletorMultiplo({
   rotulo, opcoes, selecionados, onMudar,
 }: {
   rotulo: string
   opcoes: string[]
-  selecionados: Set<string>
-  onMudar: (s: Set<string>) => void
+  selecionados: string[]
+  onMudar: (s: string[]) => void
 }) {
   const [aberto, setAberto] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [destacado, setDestacado] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const filtradas = useMemo(
+    () => opcoes.filter((o) => o.toLowerCase().includes(busca.trim().toLowerCase())),
+    [opcoes, busca],
+  )
 
   useEffect(() => {
     if (!aberto) return
@@ -933,45 +950,107 @@ function SeletorMultiplo({
     return () => document.removeEventListener('mousedown', aoClicarFora)
   }, [aberto])
 
-  const alternar = (v: string) => {
-    const novo = new Set(selecionados)
-    if (novo.has(v)) novo.delete(v)
-    else novo.add(v)
-    onMudar(novo)
+  // a busca muda o tamanho da lista filtrada — o destaque não pode ficar
+  // apontando para um índice que não existe mais
+  useEffect(() => {
+    setDestacado((d) => Math.min(d, Math.max(0, filtradas.length - 1)))
+  }, [filtradas.length])
+
+  function alternar(v: string) {
+    onMudar(selecionados.includes(v) ? selecionados.filter((s) => s !== v) : [...selecionados, v])
+  }
+
+  function aoTeclar(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setAberto(true)
+      setDestacado((d) => Math.min(d + 1, filtradas.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setDestacado((d) => Math.max(d - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const alvo = filtradas[destacado]
+      if (alvo) alternar(alvo)
+    } else if (e.key === 'Backspace' && busca === '' && selecionados.length > 0) {
+      onMudar(selecionados.slice(0, -1))
+    } else if (e.key === 'Escape') {
+      setAberto(false)
+    }
   }
 
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setAberto((a) => !a)}
-        className={`rounded-md border px-3 py-1.5 text-xs ${
-          selecionados.size > 0
-            ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
-            : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+      <div
+        onClick={() => {
+          setAberto(true)
+          inputRef.current?.focus()
+        }}
+        className={`flex min-w-40 max-w-xs cursor-text flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+          selecionados.length > 0
+            ? 'border-stone-800 dark:border-stone-200'
+            : 'border-stone-300 dark:border-stone-700'
         }`}
       >
-        {rotulo}{selecionados.size > 0 ? ` (${selecionados.size})` : ''} ▾
-      </button>
-      {aberto && (
-        <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-2 shadow-lg dark:border-stone-700 dark:bg-stone-900">
-          {selecionados.size > 0 && (
+        <span className="text-stone-500">{rotulo}</span>
+        {selecionados.map((s) => (
+          <span
+            key={s}
+            className="flex items-center gap-1 rounded bg-stone-800 px-1.5 py-0.5 text-white dark:bg-stone-200 dark:text-stone-900"
+          >
+            {s}
             <button
-              onClick={() => onMudar(new Set())}
-              className="mb-1.5 block text-xs text-stone-500 underline"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                alternar(s)
+              }}
+              title="Remover"
+              className="leading-none"
             >
-              limpar seleção
+              ×
             </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          value={busca}
+          onChange={(e) => {
+            setBusca(e.target.value)
+            setAberto(true)
+            setDestacado(0)
+          }}
+          onFocus={() => setAberto(true)}
+          onKeyDown={aoTeclar}
+          placeholder={selecionados.length === 0 ? 'buscar…' : ''}
+          className="min-w-16 flex-1 bg-transparent outline-none"
+        />
+      </div>
+      {aberto && (
+        <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+          {filtradas.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-stone-400">nada encontrado</p>
+          ) : (
+            filtradas.map((o, i) => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => alternar(o)}
+                onMouseEnter={() => setDestacado(i)}
+                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm ${
+                  i === destacado ? 'bg-stone-100 dark:bg-stone-800' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selecionados.includes(o)}
+                  readOnly
+                  className="pointer-events-none"
+                />
+                {o}
+              </button>
+            ))
           )}
-          {opcoes.map((o) => (
-            <label
-              key={o}
-              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
-            >
-              <input type="checkbox" checked={selecionados.has(o)} onChange={() => alternar(o)} />
-              {o}
-            </label>
-          ))}
         </div>
       )}
     </div>
@@ -994,15 +1073,24 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
   // só que `situacaoDemanda` (usada só aqui) nunca tinha ganho a mesma
   // correção.
   const balanco = useMemo(() => balancoTodo.filter((b) => !ehSemTsi(b.tratamento)), [balancoTodo])
-  const [filtro, setFiltro] = useState<'tudo' | SituacaoDemanda | 'sem-receita'>('tudo')
-  // múltiplos cultivares/tratamentos ao mesmo tempo (pedido do Arion,
-  // 18/08/2026) — vazio quer dizer "sem filtro", igual ao statusSel da
-  // Expedição: marcar um item não esconde os demais.
-  const [cultivarSel, setCultivarSel] = useState<Set<string>>(new Set())
-  const [tratamentoSel, setTratamentoSel] = useState<Set<string>>(new Set())
-  const [ordenacao, setOrdenacao] = useState<
-    { campo: CampoOrdenacaoDemanda; dir: 'asc' | 'desc' } | null
-  >(null)
+
+  // Filtro/ordenação sobrevivem a recarregar (`useRascunho`, mesmo padrão da
+  // aba de Cadastros): sem isto, qualquer atualização em tempo real de
+  // `ordens` (que é constante) desmontava e remontava a tela ao navegar para
+  // fora e voltar, e a seleção sumia — achado do Arion, 18/08/2026. Sets não
+  // sobrevivem a JSON.stringify (viram `{}`), por isso os dois filtros
+  // guardam array, não Set.
+  const rasc = useRascunho<{
+    filtro: 'tudo' | SituacaoDemanda | 'sem-receita'
+    cultivares: string[]
+    tratamentos: string[]
+    ordenacao: { campo: CampoOrdenacaoDemanda; dir: 'asc' | 'desc' } | null
+  }>('ordens-demanda-filtro', { filtro: 'tudo', cultivares: [], tratamentos: [], ordenacao: null })
+  const { filtro, cultivares: cultivarSel, tratamentos: tratamentoSel, ordenacao } = rasc.valor
+  const setFiltro = (v: typeof filtro) => rasc.definir({ filtro: v })
+  const setCultivarSel = (v: string[]) => rasc.definir({ cultivares: v })
+  const setTratamentoSel = (v: string[]) => rasc.definir({ tratamentos: v })
+
   // a tabela é comprida; nasce oculto, e a preferência (inclusive a de
   // mostrar) sobrevive ao recarregamento
   const [oculto, setOculto] = useState(
@@ -1015,13 +1103,14 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
   }
 
   const alternarOrdenacao = (campo: CampoOrdenacaoDemanda) =>
-    setOrdenacao((o) =>
-      !o || o.campo !== campo
-        ? { campo, dir: 'asc' }
-        : o.dir === 'asc'
-          ? { campo, dir: 'desc' }
-          : null,
-    )
+    rasc.definir({
+      ordenacao:
+        !ordenacao || ordenacao.campo !== campo
+          ? { campo, dir: 'asc' }
+          : ordenacao.dir === 'asc'
+            ? { campo, dir: 'desc' }
+            : null,
+    })
   const setaOrdem = (campo: CampoOrdenacaoDemanda): 'asc' | 'desc' | undefined =>
     ordenacao?.campo === campo ? ordenacao.dir : undefined
 
@@ -1043,8 +1132,8 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
         : filtro === 'sem-receita'
           ? balanco.filter((b) => !b.receita_cadastrada)
           : balanco.filter((b) => situacaoDemanda(b) === filtro)
-    if (cultivarSel.size > 0) lista = lista.filter((b) => cultivarSel.has(b.cultivar))
-    if (tratamentoSel.size > 0) lista = lista.filter((b) => tratamentoSel.has(b.tratamento))
+    if (cultivarSel.length > 0) lista = lista.filter((b) => cultivarSel.includes(b.cultivar))
+    if (tratamentoSel.length > 0) lista = lista.filter((b) => tratamentoSel.includes(b.tratamento))
     return lista
       .slice()
       .sort((a, b) => {
