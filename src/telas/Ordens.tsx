@@ -935,6 +935,12 @@ function SeletorMultiplo({
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // ↑/↓ rola a lista (scrollIntoView) e o cursor do mouse, parado, passa a
+  // sobrepor um item DIFERENTE — o navegador dispara mouseenter mesmo sem o
+  // mouse se mexer, e o destaque "voltava pra cima do nada" no meio da
+  // navegação por teclado (achado do Arion, 18/08/2026). Só deixa o hover
+  // mudar o destaque depois de um mousemove de verdade.
+  const mouseAtivo = useRef(true)
 
   const filtradas = useMemo(
     () => opcoes.filter((o) => o.toLowerCase().includes(busca.trim().toLowerCase())),
@@ -971,9 +977,11 @@ function SeletorMultiplo({
   function aoTeclar(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      mouseAtivo.current = false
       setDestacado((d) => Math.min(d + 1, filtradas.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
+      mouseAtivo.current = false
       setDestacado((d) => Math.max(d - 1, 0))
     } else if (e.key === ' ' && busca === '') {
       e.preventDefault()
@@ -1039,7 +1047,19 @@ function SeletorMultiplo({
           className="min-w-16 flex-1 bg-transparent outline-none"
         />
       </div>
-      <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+      <div
+        onMouseMove={() => { mouseAtivo.current = true }}
+        className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
+      >
+        {selecionados.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onMudar([])}
+            className="mb-1 block w-full px-2 py-1 text-left text-xs text-stone-500 underline"
+          >
+            limpar seleção
+          </button>
+        )}
         {filtradas.length === 0 ? (
           <p className="px-2 py-1.5 text-xs text-stone-400">nada encontrado</p>
         ) : (
@@ -1049,7 +1069,7 @@ function SeletorMultiplo({
               ref={(el) => { itemRefs.current[i] = el }}
               type="button"
               onClick={() => alternar(o)}
-              onMouseEnter={() => setDestacado(i)}
+              onMouseEnter={() => { if (mouseAtivo.current) setDestacado(i) }}
               className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm ${
                 i === destacado ? 'bg-stone-100 dark:bg-stone-800' : ''
               }`}
@@ -1158,6 +1178,11 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
         return filtro === 'tudo' ? b.saldo - a.saldo : a.saldo - b.saldo
       })
   }, [balanco, filtro, cultivarSel, tratamentoSel, ordenacao])
+
+  const filtroAtivo =
+    filtro !== 'tudo' || cultivarSel.length > 0 || tratamentoSel.length > 0 || ordenacao !== null
+  const limparFiltros = () =>
+    rasc.substituir({ filtro: 'tudo', cultivares: [], tratamentos: [], ordenacao: null })
 
   const semReceita = balanco.filter((b) => !b.receita_cadastrada).length
   const chips: { id: typeof filtro; texto: string; ativo: boolean }[] = [
@@ -1282,6 +1307,15 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
                 selecionados={tratamentoSel}
                 onMudar={setTratamentoSel}
               />
+            )}
+            {filtroAtivo && (
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="rounded-md border border-stone-300 px-3 py-1.5 text-xs text-stone-600 underline hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+              >
+                Limpar filtros
+              </button>
             )}
           </div>
 
