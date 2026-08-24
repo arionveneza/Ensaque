@@ -2440,46 +2440,34 @@ function NovaOrdemForm({
             />
           </div>
         </Campo>
-        {/* ocupa as 2 colunas restantes da linha: espremido numa célula de
-            1/3, os 3 sub-campos desalinhavam do resto do formulário
-            (pedido do Arion, 25/08/2026) */}
-        <div className="sm:col-span-2">
         <Campo rotulo="Endereço do lote (opcional)">
-          {/* empilha no celular (célula estreita) — a partir de lg: 1 linha */}
-          <div className="flex flex-col gap-2 lg:flex-row">
-            <div className="lg:flex-1">
-              <p className="text-xs text-stone-500">Armazém</p>
-              <input
-                value={armazem}
-                onChange={(e) => definir({ armazem: e.target.value.toUpperCase() })}
-                placeholder="ex.: ARMAZEM C"
-                title="Armazém — onde buscar o lote para esta ordem"
-                className={INPUT}
-              />
-            </div>
-            <div className="flex gap-2">
-              <div className="w-1/2 lg:w-24">
-                <p className="text-xs text-stone-500">Bloco</p>
-                <input
-                  value={bloco}
-                  onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
-                  placeholder="BL01"
-                  className={INPUT}
-                />
-              </div>
-              <div className="w-1/2 lg:w-24">
-                <p className="text-xs text-stone-500">Quadra</p>
-                <input
-                  value={quadra}
-                  onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
-                  placeholder="QD04"
-                  className={INPUT}
-                />
-              </div>
-            </div>
+          {/* sem sub-rótulo em cima de cada input: eles empurravam os campos
+              pra baixo da linha dos vizinhos (achado do Arion, 25/08/2026) —
+              placeholder + tooltip dizem o que é cada um */}
+          <div className="flex gap-2">
+            <input
+              value={armazem}
+              onChange={(e) => definir({ armazem: e.target.value.toUpperCase() })}
+              placeholder="ARMAZÉM"
+              title="Armazém — onde buscar o lote para esta ordem"
+              className={`${INPUT} min-w-0 flex-1`}
+            />
+            <input
+              value={bloco}
+              onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
+              placeholder="BL01"
+              title="Bloco"
+              className={`${INPUT} w-16 shrink-0`}
+            />
+            <input
+              value={quadra}
+              onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
+              placeholder="QD04"
+              title="Quadra"
+              className={`${INPUT} w-16 shrink-0`}
+            />
           </div>
         </Campo>
-        </div>
       </div>
 
       {lote && (
