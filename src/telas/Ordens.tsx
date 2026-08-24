@@ -2333,7 +2333,9 @@ function NovaOrdemForm({
             ))}
           </select>
         </Campo>
-        <Campo rotulo="Bags">
+        {/* "Qtd emb", não "Bags": com SC10/SC20 a unidade pode ser saco
+            (pedido do Arion, 24/08/2026) — o campo continua ordens.bags */}
+        <Campo rotulo="Qtd emb (bags ou sacos)">
           <input
             type="number" min={1} value={bags || ''}
             onChange={(e) => definir({ bags: Number(e.target.value) })} className={INPUT}
