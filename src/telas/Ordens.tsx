@@ -2440,10 +2440,12 @@ function NovaOrdemForm({
             />
           </div>
         </Campo>
+        {/* ocupa as 2 colunas restantes da linha: espremido numa célula de
+            1/3, os 3 sub-campos desalinhavam do resto do formulário
+            (pedido do Arion, 25/08/2026) */}
+        <div className="sm:col-span-2">
         <Campo rotulo="Endereço do lote (opcional)">
-          {/* empilha no celular/tablet (grid pai já é 3 colunas em sm:, então
-              cada campo tem só ~220px) — os 3 inputs murchavam para ~2-3
-              caracteres visíveis. A partir de lg: volta a ficar em 1 linha. */}
+          {/* empilha no celular (célula estreita) — a partir de lg: 1 linha */}
           <div className="flex flex-col gap-2 lg:flex-row">
             <div className="lg:flex-1">
               <p className="text-xs text-stone-500">Armazém</p>
@@ -2477,6 +2479,7 @@ function NovaOrdemForm({
             </div>
           </div>
         </Campo>
+        </div>
       </div>
 
       {lote && (
