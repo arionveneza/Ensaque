@@ -279,21 +279,26 @@ export interface EtiquetaDm {
  * (decisão de 25/08/2026); quando houver arquivo de logo, entra aqui.
  */
 export function imprimirEtiquetaDm(e: EtiquetaDm): void {
+  // etiqueta física de 97 × 63 mm (pedido do Arion, 25/08/2026): a página
+  // de impressão É a etiqueta — o driver da impressora de etiquetas casa
+  // com a mídia; numa A4 sai no canto, no tamanho certo, pra recortar
   const html = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta DM ${esc(e.loteId)}</title>
 <style>
-  @page { size: A4 portrait; margin: 12mm; }
-  body { font: 13px system-ui, sans-serif; color: #000; }
-  table { width: 148mm; border-collapse: collapse; }
-  td { border: 1.5px solid #000; padding: 4px 8px; vertical-align: middle; }
-  .cab { text-align: center; font-size: 12px; padding: 2px 8px; }
-  .cab b { font-size: 15px; }
-  .soja { text-align: center; font-weight: bold; font-size: 16px; }
-  .rotulo { font-weight: bold; font-size: 16px; white-space: nowrap; width: 1%; }
-  .gigante { font-size: 34px; font-weight: bold; letter-spacing: .01em; }
-  .medio { font-size: 20px; font-weight: bold; }
-  .mini { font-size: 12px; font-weight: bold; }
-  .rodape { text-align: center; font-size: 11px; font-weight: bold; padding: 2px 8px; }
+  @page { size: 97mm 63mm; margin: 0; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; color: #000; margin: 0;
+         width: 97mm; height: 63mm; padding: 1.5mm; }
+  table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; }
+  td { border: 0.4mm solid #000; padding: 0.4mm 1.2mm; vertical-align: middle; }
+  .cab { text-align: center; font-size: 5.5pt; line-height: 1.25; padding: 0.4mm; }
+  .cab b { font-size: 7pt; }
+  .soja { text-align: center; font-weight: bold; font-size: 8pt; }
+  .rotulo { font-weight: bold; font-size: 8pt; white-space: nowrap; width: 22%; }
+  .gigante { font-size: 17pt; font-weight: bold; letter-spacing: .01em; white-space: nowrap; }
+  .medio { font-size: 10pt; font-weight: bold; }
+  .mini { font-size: 6.5pt; font-weight: bold; }
+  .rodape { text-align: center; font-size: 6pt; font-weight: bold; padding: 0.4mm; }
 </style></head><body>
 <table>
   <tr><td colspan="4" class="cab">
@@ -328,7 +333,7 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
     <td colspan="2" class="mini">PUREZA: ${PUREZA}</td>
   </tr>
   <tr>
-    <td class="rotulo" style="font-size:13px">TRATAMENTO:</td>
+    <td class="rotulo" style="font-size:6.5pt">TRATAMENTO:</td>
     <td colspan="3" class="mini">${esc(e.tratamento)}</td>
   </tr>
   <tr><td colspan="4" class="rodape">${esc(EMPRESA.renasem)}</td></tr>
