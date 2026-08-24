@@ -11,8 +11,24 @@ export type Linha = (string | number | Date | boolean | null | undefined)[]
 
 export const txt = (v: unknown): string => (v == null ? '' : String(v).trim())
 
+/**
+ * Número em qualquer um dos formatos que as origens mandam:
+ * - célula numérica de verdade (o leitor de xlsx devolve `number`) → direto;
+ * - texto brasileiro ("1.234,56", ponto = milhar) → remove pontos, vírgula vira decimal;
+ * - texto com PONTO DECIMAL ("161.0", como o SAP exporta o PMS) → parse direto.
+ *
+ * A distinção do último caso: sem vírgula e com 1-2 dígitos depois do único
+ * ponto, o ponto só pode ser decimal — agrupamento de milhar tem sempre 3.
+ * Sem isso, "161.0" virava 1610 e a importação do SAP corrompeu o PMS de
+ * 659 lotes em 10× — peso de semente, químico e ensaque de toda ordem
+ * desses lotes saíram 10× maiores (achado do Arion, 24/08/2026, ordem
+ * 134299).
+ */
 export const num = (v: unknown): number => {
-  const n = parseFloat(txt(v).replace(/\./g, '').replace(',', '.'))
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  const s = txt(v)
+  const pontoDecimal = !s.includes(',') && /^-?\d+\.\d{1,2}$/.test(s)
+  const n = pontoDecimal ? parseFloat(s) : parseFloat(s.replace(/\./g, '').replace(',', '.'))
   return Number.isNaN(n) ? 0 : n
 }
 

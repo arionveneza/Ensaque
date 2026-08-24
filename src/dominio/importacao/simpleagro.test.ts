@@ -5,6 +5,7 @@ import {
   ehRelatorioPedidos,
   ehRelatorioSaldos,
   normalizaCultivar,
+  num,
   type Linha,
 } from './simpleagro'
 
@@ -226,6 +227,34 @@ describe('conversao de pedidos', () => {
     ])
     expect(r.linhas[0].cooperado).toBe(false)
     expect(r.resumo.bagsCooperado).toBe(0)
+  })
+})
+
+describe('num: os tres formatos que as origens mandam', () => {
+  it('celula numerica de verdade passa direto, com decimal intacto', () => {
+    expect(num(176.4)).toBe(176.4)
+    expect(num(161)).toBe(161)
+  })
+
+  it('texto brasileiro: ponto de milhar, virgula decimal', () => {
+    expect(num('1.234,56')).toBe(1234.56)
+    expect(num('1.234')).toBe(1234)
+    expect(num('12,5')).toBe(12.5)
+  })
+
+  // O PMS do SAP vinha "161.0" e o parser brasileiro removia o ponto como
+  // milhar: 161 virava 1610, e TODOS os pesos das ordens desses lotes
+  // saíam 10x maiores (ordem 134299, 24/08/2026)
+  it('texto com ponto decimal (SAP): 1-2 digitos depois do ponto e sem virgula', () => {
+    expect(num('161.0')).toBe(161)
+    expect(num('176.45')).toBe(176.45)
+    expect(num('-3.5')).toBe(-3.5)
+  })
+
+  it('vazio e lixo dao zero', () => {
+    expect(num('')).toBe(0)
+    expect(num(null)).toBe(0)
+    expect(num('abc')).toBe(0)
   })
 })
 
