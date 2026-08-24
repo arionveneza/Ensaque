@@ -98,7 +98,7 @@ dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireci
 endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
-- [ ] `supabase/ordem-fora-do-estoque.sql` — **PENDENTE** (24/08/2026): coluna
+- [x] `supabase/ordem-fora-do-estoque.sql` — **aplicada** (24/08/2026, confirmada por consulta direta): coluna
       `ordens.fora_balanco` + filtro em `ordens_abertas` na `v_balanco_demanda` (ordens da
       sacaria: produção que não vira estoque). Rodar ANTES do deploy do front desta feature
       (criar ordem grava a coluna nova). Gatilhos intactos de propósito — ver comentário do
