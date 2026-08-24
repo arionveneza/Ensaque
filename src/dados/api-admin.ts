@@ -53,14 +53,32 @@ export async function salvarTurno(t: {
 
 // ---------------- embalagens ----------------
 
+/**
+ * Toda embalagem é OU por sementes (sementes + fator, peso do bag = PMS ×
+ * fator) OU por peso fixo (saco de 10/20 kg, mesmo peso em qualquer lote) —
+ * o CHECK `embalagem_modo_valido` no banco espelha esta validação.
+ */
 export async function salvarEmbalagem(e: {
   codigo: string
   codigo_ext: string | null
   descricao: string
-  sementes: number
-  fator_peso: number
+  sementes: number | null
+  fator_peso: number | null
+  peso_fixo_kg: number | null
 }): Promise<void> {
-  const { error } = await supabase.from('embalagens').upsert(e, { onConflict: 'codigo' })
+  if (!e.codigo.trim()) throw new Error('A embalagem precisa de um código.')
+  if (!e.descricao.trim()) throw new Error('A embalagem precisa de uma descrição.')
+  const porPeso = e.peso_fixo_kg != null && e.peso_fixo_kg > 0
+  const porSementes =
+    e.sementes != null && e.sementes > 0 && e.fator_peso != null && e.fator_peso > 0
+  if (!porPeso && !porSementes) {
+    throw new Error(
+      'Embalagem inválida: informe o peso fixo (kg) OU a quantidade de sementes com o fator de peso.',
+    )
+  }
+  const { error } = await supabase
+    .from('embalagens')
+    .upsert({ ...e, codigo: e.codigo.trim().toUpperCase() }, { onConflict: 'codigo' })
   erro('salvar embalagem', error)
 }
 

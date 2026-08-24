@@ -93,8 +93,8 @@ export const mapaMotivos = (linhas: LinhaMotivo[]): Map<string, MotivoParada> =>
     linhas.map((m) => [m.id, { id: m.id, descricao: m.descricao, tipo: m.tipo }]),
   )
 
-/** Peso do bag DA ORDEM (pms × fator da embalagem da ordem; fallback: bag do lote). */
+/** Peso do bag DA ORDEM (peso fixo da embalagem → pms × fator → bag do lote). */
 export const pesoBagOrdemKg = (l: LinhaOrdem): number =>
-  pesoBagDaOrdemKg(l.lotes_semente.pms, l.embalagens?.fator_peso, l.lotes_semente.peso_bag_kg)
+  pesoBagDaOrdemKg(l.lotes_semente.pms, l.embalagens, l.lotes_semente.peso_bag_kg)
 
 export const pesoOrdemKg = (l: LinhaOrdem): number => l.bags * pesoBagOrdemKg(l)

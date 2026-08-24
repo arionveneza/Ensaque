@@ -44,10 +44,26 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   máquinas mostra a capacidade de cada turno e a do dia.
 
 ### Embalagens
-| Código app | Código comercial (SimpleAgro) | Sementes | Fator peso |
+| Código app | Código comercial (SimpleAgro) | Sementes | Peso do bag |
 |---|---|---|---|
 | BG5M | BB5M | 5.000.000 | PMS × 5 |
 | MEIOBAG | BMB | 2.500.000 | PMS × 2,5 |
+| SC10 | — | — | **10 kg fixo** |
+| SC20 | — | — | **20 kg fixo** |
+
+- **Dois modos de embalagem** (decisão de 24/08/2026): por SEMENTES (peso do bag = PMS ×
+  fator, varia por lote) ou por PESO FIXO (`embalagens.peso_fixo_kg`, mesmo peso em qualquer
+  lote — o PMS só muda quantas sementes cabem no saco). CHECK `embalagem_modo_valido` exige
+  exatamente um dos modos. Precedência do peso do bag da ordem, idêntica no front
+  (`pesoBagDaOrdemKg`) e no banco (`v_ordens`/`baixar_lote`, migração
+  `embalagem-peso-fixo.sql`): `peso_fixo_kg → pms × fator_peso → peso_bag_kg do lote`.
+- **SC10/SC20 vivem FORA dos ERPs** (decisão do Arion, 24/08/2026): pedido e saldo dessas
+  embalagens não existem no SAP nem na SimpleAgro — nenhum importador as conhece
+  (`EMBALAGEM_DEPARA` segue só BB5M/BMB) e o painel Demanda × Estoque × Planejado as isenta
+  (mesmo padrão do SEM TSI: "sem pedido" seria alarme falso permanente). A baixa do lote
+  generaliza sozinha: 1 saco de 10 kg consome `10 ÷ peso_bag_do_lote` bags do lote.
+- Cadastro: a aba Embalagens cria embalagem nova (por sementes ou por peso fixo) e valida os
+  modos — antes era só edição, sem validação nenhuma.
 
 ### Lotes de semente
 - Vêm da planilha de **Saldos** da SimpleAgro (upload) — ver §4.

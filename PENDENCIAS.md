@@ -98,6 +98,12 @@ dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireci
 endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
+- [x] `supabase/embalagem-peso-fixo.sql` — **aplicada** (24/08/2026, confirmada por consulta
+      direta: SC10/SC20 no cadastro com `peso_fixo_kg`, `v_ordens` respondendo, CHECK
+      `embalagem_modo_valido` no lugar). Embalagens de peso fixo (10/20 kg) + precedência
+      `peso_fixo_kg → pms × fator → peso_bag_kg do lote` nas views e no `baixar_lote`; o
+      `nullif(..., 0)` de brinde fechou a divergência front/SQL do fator zero (SQL produzia
+      ordem de 0 kg onde o front caía no fallback).
 - [x] `supabase/pedido-cooperado.sql` — **aplicada** (21/08/2026, confirmada por consulta
       direta: coluna e `pedido_cooperado` na view respondem, 0 linhas marcadas na carga
       vigente — anterior à migração). O destaque "X coop." só aparece a partir do

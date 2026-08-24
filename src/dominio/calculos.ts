@@ -22,21 +22,35 @@ export function pesoBagKg(pms: number, embalagem: Embalagem): number {
   return pms * embalagem.fatorPeso
 }
 
+/** O recorte da embalagem da ordem que decide o peso do bag. */
+export interface EmbalagemPeso {
+  fator_peso: number | null
+  /** Embalagem por peso (saco de 10/20 kg): vence o PMS × fator (24/08/2026). */
+  peso_fixo_kg: number | null
+}
+
 /**
- * Peso do bag DA ORDEM: PMS × fator da embalagem escolhida NA ORDEM — não o
- * peso_bag_kg herdado do lote, que foi congelado com o fator da embalagem
- * ORIGINAL dele na importação. Ordem MEIOBAG de lote big bag saía com o
- * dobro de peso em tudo (13/08/2026). Fallback: sem PMS no cadastro do lote
- * (coluna nullable) não há como recalcular — vale o peso do lote, o
- * comportamento antigo.
+ * Peso do bag DA ORDEM, na precedência (idêntica à v_ordens no banco):
+ *
+ *   peso_fixo_kg (>0)  →  PMS × fator_peso (ambos >0)  →  peso_bag_kg do lote
+ *
+ * Embalagem de peso fixo (saco de 10/20 kg, 24/08/2026) pesa o mesmo em
+ * qualquer lote — o PMS só muda quantas sementes cabem no saco. As por
+ * sementes (BG5M/MEIOBAG) seguem `PMS × fator da embalagem escolhida NA
+ * ORDEM` — não o peso_bag_kg herdado do lote, congelado com o fator da
+ * embalagem ORIGINAL dele na importação: ordem MEIOBAG de lote big bag saía
+ * com o dobro de peso em tudo (13/08/2026). Fallback final: sem PMS no
+ * cadastro do lote (coluna nullable) não há como recalcular — vale o peso
+ * do lote, o comportamento antigo.
  */
 export function pesoBagDaOrdemKg(
   pms: number | null,
-  fatorPesoOrdem: number | null | undefined,
+  embalagem: EmbalagemPeso | null | undefined,
   pesoBagLoteKg: number,
 ): number {
-  return pms != null && pms > 0 && fatorPesoOrdem != null && fatorPesoOrdem > 0
-    ? pms * fatorPesoOrdem
+  if (embalagem?.peso_fixo_kg != null && embalagem.peso_fixo_kg > 0) return embalagem.peso_fixo_kg
+  return pms != null && pms > 0 && embalagem?.fator_peso != null && embalagem.fator_peso > 0
+    ? pms * embalagem.fator_peso
     : pesoBagLoteKg
 }
 
@@ -113,15 +127,19 @@ export const MARGEM_ENSAQUE = 0.005
 
 /**
  * Peso de ensaque por bag:
- *   peso_do_bag_do_lote × (1 + margem) + (peso_químico_total_da_ordem ÷ bags_da_ordem)
+ *   peso_do_bag_DA_ORDEM × (1 + margem) + (peso_químico_total_da_ordem ÷ bags_da_ordem)
+ *
+ * O peso é o da embalagem DA ORDEM (CLAUDE.md §1) — o parâmetro se chamava
+ * `pesoBagLoteKg` por herança de antes da correção de 13/08/2026, mas os
+ * chamadores sempre passam `pesoBagOrdemKg(ordem)`.
  */
 export function ensaquePorBagKg(
-  pesoBagLoteKg: number,
+  pesoBagOrdemKg: number,
   pesoQuimicoTotalKg: number,
   bags: number,
 ): number {
   if (bags <= 0) throw new Error('Ordem sem bags: ensaque indefinido.')
-  return pesoBagLoteKg * (1 + MARGEM_ENSAQUE) + pesoQuimicoTotalKg / bags
+  return pesoBagOrdemKg * (1 + MARGEM_ENSAQUE) + pesoQuimicoTotalKg / bags
 }
 
 /**

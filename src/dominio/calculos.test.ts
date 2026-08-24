@@ -65,24 +65,40 @@ describe('peso do bag', () => {
   })
 })
 
+/** Embalagem por sementes (BG5M/MEIOBAG): só o fator preenchido. */
+const porSementes = (fator: number) => ({ fator_peso: fator, peso_fixo_kg: null })
+/** Embalagem por peso (saco de 10/20 kg): só o peso fixo preenchido. */
+const porPesoFixo = (kg: number) => ({ fator_peso: null, peso_fixo_kg: kg })
+
 describe('peso do bag DA ORDEM (embalagem da ordem, nao do lote)', () => {
   it('ordem MEIOBAG de lote big bag usa o fator da ORDEM: metade, nao o peso do lote', () => {
     // lote big bag: peso_bag_kg = 171 x 5 = 855; ordem MEIOBAG -> 171 x 2,5
-    expect(pesoBagDaOrdemKg(171, 2.5, 855)).toBe(427.5)
+    expect(pesoBagDaOrdemKg(171, porSementes(2.5), 855)).toBe(427.5)
   })
 
   it('ordem BG5M de lote big bag da o mesmo numero de sempre', () => {
-    expect(pesoBagDaOrdemKg(171, 5, 855)).toBe(855)
+    expect(pesoBagDaOrdemKg(171, porSementes(5), 855)).toBe(855)
   })
 
   it('lote sem PMS cai no peso do bag do lote (nao ha como recalcular)', () => {
-    expect(pesoBagDaOrdemKg(null, 2.5, 855)).toBe(855)
-    expect(pesoBagDaOrdemKg(0, 2.5, 855)).toBe(855)
+    expect(pesoBagDaOrdemKg(null, porSementes(2.5), 855)).toBe(855)
+    expect(pesoBagDaOrdemKg(0, porSementes(2.5), 855)).toBe(855)
   })
 
   it('sem fator da embalagem (embed ausente) tambem cai no peso do lote', () => {
+    expect(pesoBagDaOrdemKg(171, { fator_peso: null, peso_fixo_kg: null }, 855)).toBe(855)
     expect(pesoBagDaOrdemKg(171, null, 855)).toBe(855)
     expect(pesoBagDaOrdemKg(171, undefined, 855)).toBe(855)
+  })
+
+  it('embalagem de peso fixo (saco de 10 kg) vence o PMS x fator, em qualquer lote', () => {
+    expect(pesoBagDaOrdemKg(171, porPesoFixo(10), 855)).toBe(10)
+    expect(pesoBagDaOrdemKg(null, porPesoFixo(20), 855)).toBe(20)
+  })
+
+  it('peso fixo zerado nao vale: segue a precedencia normal', () => {
+    expect(pesoBagDaOrdemKg(171, { fator_peso: 5, peso_fixo_kg: 0 }, 900)).toBe(855)
+    expect(pesoBagDaOrdemKg(null, { fator_peso: null, peso_fixo_kg: 0 }, 900)).toBe(900)
   })
 })
 

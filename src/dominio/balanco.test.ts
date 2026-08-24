@@ -89,6 +89,19 @@ describe('avisos: fortes, nunca bloqueantes', () => {
     const a = analisaDemanda({ ...CHAVE, tratamento: 'sem tsi' }, 40, [], [], [], true)
     expect(a.avisos).toEqual([])
   })
+
+  it('embalagem fora do balanco (peso fixo, ex. saco 10 kg) nunca avisa "sem pedido"', () => {
+    // pedido/saldo dessas embalagens nao existem nos ERPs — alarme seria falso sempre
+    const chaveSaco = { ...CHAVE, embalagem: 'SC10' }
+    const a = analisaDemanda(chaveSaco, 40, [], [], [], true, true)
+    expect(a.avisos).toEqual([])
+    expect(podeCriarOrdem(a)).toBe(true)
+  })
+
+  it('fora do balanco nao desliga o bloqueio de receita nao cadastrada', () => {
+    const a = analisaDemanda({ ...CHAVE, embalagem: 'SC10' }, 40, [], [], [], false, true)
+    expect(a.avisos.some((x) => x.tipo === 'receita-nao-cadastrada' && x.bloqueia)).toBe(true)
+  })
 })
 
 describe('receita nao cadastrada', () => {

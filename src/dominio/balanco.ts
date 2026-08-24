@@ -94,6 +94,12 @@ export function analisaDemanda(
   estoquePa: LinhaDemanda[],
   ordensAbertas: LinhaDemanda[],
   receitaCadastrada: boolean,
+  /**
+   * Embalagem fora dos ERPs (peso fixo, ex. saco de 10/20 kg — 24/08/2026):
+   * pedido e saldo dela nunca chegam por upload, então os avisos da família
+   * "sem pedido" seriam alarme falso permanente — mesmo motivo do SEM TSI.
+   */
+  foraDoBalanco = false,
 ): AnaliseDemanda {
   const b = balanco(chave, pedidos, estoquePa, ordensAbertas)
   const avisos: Aviso[] = []
@@ -111,8 +117,9 @@ export function analisaDemanda(
   // gera trabalho de TSI") e o estoque correspondente vira lotes_semente,
   // nunca estoque_pa. `pedidos`/`estoquePa` NUNCA vão ter linha pra essa
   // combinação — os avisos abaixo dariam "sem pedido" toda vez, pra toda
-  // ordem SEM TSI, sem sinal real nenhum por trás.
-  if (!ehSemTsi(chave.tratamento)) {
+  // ordem SEM TSI, sem sinal real nenhum por trás. `foraDoBalanco` é o
+  // mesmo raciocínio pela embalagem (saco de 10/20 kg, fora dos ERPs).
+  if (!ehSemTsi(chave.tratamento) && !foraDoBalanco) {
     if (b.pedidoAprovado === 0) {
       avisos.push({
         tipo: 'sem-pedido',

@@ -32,6 +32,7 @@ import {
   analisaDemanda, bagsFaltando, bagsSobrando, ehSemTsi, podeCriarOrdem, resumoBalanco,
   situacaoDemanda, type SituacaoDemanda,
 } from '@/dominio/balanco'
+import { pesoBagDaOrdemKg } from '@/dominio/calculos'
 import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -858,7 +859,12 @@ export default function Ordens() {
       )}
 
       {/* ---------------- painel de demanda ---------------- */}
-      <PainelDemanda balanco={balanco} />
+      <PainelDemanda
+        balanco={balanco}
+        foraDoBalanco={new Set(
+          embalagens.filter((e) => (e.peso_fixo_kg ?? 0) > 0).map((e) => e.codigo),
+        )}
+      />
 
       {/* ---------------- bags por lote ---------------- */}
       <ResumoBagsPorLote ordens={ordens} />
@@ -1235,15 +1241,25 @@ function SeletorMultiplo({
  * sobrar sem comprador. São leituras opostas, então a tabela rotula a situação
  * de cada linha e o topo resume os dois totais separados.
  */
-function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
+function PainelDemanda({
+  balanco: balancoTodo,
+  foraDoBalanco,
+}: {
+  balanco: BalancoLinha[]
+  /** Embalagens de peso fixo (saco 10/20 kg): pedido/saldo fora dos ERPs — mesma isenção do SEM TSI. */
+  foraDoBalanco: Set<string>
+}) {
   // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
   // essa demanda é rastreada por lotes_semente, fora deste painel de
   // tratamento. Sem este filtro toda ordem SEM TSI programada aparecia aqui
   // como "sem pedido", um alarme falso — o mesmo problema que já foi
   // corrigido nos avisos de criar ordem (`ehSemTsi` em `analisaDemanda`),
   // só que `situacaoDemanda` (usada só aqui) nunca tinha ganho a mesma
-  // correção.
-  const balanco = useMemo(() => balancoTodo.filter((b) => !ehSemTsi(b.tratamento)), [balancoTodo])
+  // correção. Embalagem de peso fixo é o mesmo raciocínio, pela embalagem.
+  const balanco = useMemo(
+    () => balancoTodo.filter((b) => !ehSemTsi(b.tratamento) && !foraDoBalanco.has(b.embalagem)),
+    [balancoTodo, foraDoBalanco],
+  )
 
   // Filtro/ordenação sobrevivem a recarregar (`useRascunho`, mesmo padrão da
   // aba de Cadastros): sem isto, qualquer atualização em tempo real de
@@ -2232,8 +2248,11 @@ function NovaOrdemForm({
           o.receita_nome === chave.tratamento && o.embalagem === chave.embalagem)
         .map((o) => ({ ...chave, bags: o.bags })),
       true,
+      // embalagem de peso fixo (saco 10/20 kg): pedido/saldo não existem nos
+      // ERPs — a família de avisos "sem pedido" seria alarme falso sempre
+      (embalagens.find((e) => e.codigo === embalagem)?.peso_fixo_kg ?? 0) > 0,
     )
-  }, [lote, receita, embalagem, bags, balanco, ordens])
+  }, [lote, receita, embalagem, bags, balanco, ordens, embalagens])
 
   if (!aberto && !editando) {
     return (
@@ -2324,11 +2343,8 @@ function NovaOrdemForm({
           <p className="num-tabular py-1.5 text-sm font-medium">
             {(() => {
               if (!lote || !(bags > 0)) return '—'
-              // peso do bag DA ORDEM: pms × fator da embalagem escolhida —
-              // não o peso do bag do lote, que veio da embalagem original dele
-              const fator = embalagens.find((e) => e.codigo === embalagem)?.fator_peso
-              const bagKg =
-                lote.pms != null && lote.pms > 0 && fator ? lote.pms * fator : lote.peso_bag_kg
+              const emb = embalagens.find((e) => e.codigo === embalagem)
+              const bagKg = pesoBagDaOrdemKg(lote.pms, emb ?? null, lote.peso_bag_kg)
               return `${n((bags * bagKg) / 1000, 2)} t`
             })()}
           </p>

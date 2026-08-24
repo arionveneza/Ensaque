@@ -941,16 +941,30 @@ function LinhaTurnoEdit({
 // Embalagens e motivos
 // ================================================================
 
+/** Texto → número (vírgula ou ponto); vazio/inválido vira null. */
+const numeroOuNull = (txt: string): number | null => {
+  const v = parseFloat(txt.trim().replace(',', '.'))
+  return Number.isFinite(v) && v > 0 ? v : null
+}
+
 function AbaEmbalagens({
   embalagens, podeEditar, acao,
 }: { embalagens: g.EmbalagemLinha[]; podeEditar: boolean; acao: Acao }) {
+  const [nova, setNova] = useState(false)
   return (
-    <Cartao titulo="Embalagens">
+    <Cartao
+      titulo="Embalagens"
+      acoes={podeEditar ? (
+        <Botao onClick={() => setNova(!nova)}>{nova ? 'Cancelar' : 'Nova embalagem'}</Botao>
+      ) : undefined}
+    >
       <p className="mb-3 text-sm text-stone-500">
-        O fator de peso multiplica o PMS do lote para dar o peso do bag. Mudá-lo altera o peso de
-        toda ordem futura que use a embalagem.
+        Embalagem <b>por sementes</b> (BG5M, MEIOBAG): o peso do bag é PMS × fator, varia por
+        lote. Embalagem <b>por peso fixo</b> (saco de 10/20 kg): pesa o mesmo em qualquer lote.
+        Mudar qualquer um altera o peso de toda ordem futura que use a embalagem.
       </p>
-      <Tabela cabecalho={['Código', 'SimpleAgro', 'Descrição', '#Sementes', '#Fator', '']}>
+      {nova && <FormNovaEmbalagem acao={acao} aoSalvar={() => setNova(false)} />}
+      <Tabela cabecalho={['Código', 'SimpleAgro', 'Descrição', '#Sementes', '#Peso do bag', '']}>
         {embalagens.map((e) => (
           <LinhaEmbalagemEdit key={e.codigo} emb={e} podeEditar={podeEditar} acao={acao} />
         ))}
@@ -959,13 +973,121 @@ function AbaEmbalagens({
   )
 }
 
+function FormNovaEmbalagem({ acao, aoSalvar }: { acao: Acao; aoSalvar: () => void }) {
+  const [codigo, setCodigo] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [modo, setModo] = useState<'peso' | 'sementes'>('peso')
+  const [pesoFixo, setPesoFixo] = useState('')
+  const [sementes, setSementes] = useState('')
+  const [fator, setFator] = useState('')
+
+  const valido =
+    codigo.trim() !== '' && descricao.trim() !== '' &&
+    (modo === 'peso'
+      ? numeroOuNull(pesoFixo) != null
+      : numeroOuNull(sementes) != null && numeroOuNull(fator) != null)
+
+  return (
+    <div className="mb-4 rounded-md border border-stone-200 p-3 dark:border-stone-700">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-stone-500">
+          Código
+          <input
+            value={codigo}
+            onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+            placeholder="ex.: SC10"
+            className={`${INPUT} mt-1 block w-24`}
+          />
+        </label>
+        <label className="text-xs text-stone-500">
+          Descrição
+          <input
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
+            placeholder="ex.: Saco 10 kg"
+            className={`${INPUT} mt-1 block w-48`}
+          />
+        </label>
+        <label className="text-xs text-stone-500">
+          Tipo
+          <select
+            value={modo}
+            onChange={(e) => setModo(e.target.value as 'peso' | 'sementes')}
+            className={`${INPUT} mt-1 block`}
+          >
+            <option value="peso">peso fixo (kg)</option>
+            <option value="sementes">por sementes (PMS × fator)</option>
+          </select>
+        </label>
+        {modo === 'peso' ? (
+          <label className="text-xs text-stone-500">
+            Peso fixo (kg)
+            <input
+              inputMode="decimal"
+              value={pesoFixo}
+              onChange={(e) => setPesoFixo(e.target.value)}
+              placeholder="ex.: 10"
+              className={`${INPUT} mt-1 block w-24 text-right`}
+            />
+          </label>
+        ) : (
+          <>
+            <label className="text-xs text-stone-500">
+              Sementes
+              <input
+                inputMode="numeric"
+                value={sementes}
+                onChange={(e) => setSementes(e.target.value)}
+                placeholder="ex.: 5000000"
+                className={`${INPUT} mt-1 block w-28 text-right`}
+              />
+            </label>
+            <label className="text-xs text-stone-500">
+              Fator (× PMS)
+              <input
+                inputMode="decimal"
+                value={fator}
+                onChange={(e) => setFator(e.target.value)}
+                placeholder="ex.: 5"
+                className={`${INPUT} mt-1 block w-20 text-right`}
+              />
+            </label>
+          </>
+        )}
+        <Botao
+          variante="primario"
+          disabled={!valido}
+          onClick={() =>
+            acao(async () => {
+              await adm.salvarEmbalagem({
+                codigo,
+                codigo_ext: null,
+                descricao: descricao.trim(),
+                sementes: modo === 'sementes' ? numeroOuNull(sementes) : null,
+                fator_peso: modo === 'sementes' ? numeroOuNull(fator) : null,
+                peso_fixo_kg: modo === 'peso' ? numeroOuNull(pesoFixo) : null,
+              })
+              aoSalvar()
+            })
+          }
+        >
+          Criar embalagem
+        </Botao>
+      </div>
+    </div>
+  )
+}
+
 function LinhaEmbalagemEdit({
   emb, podeEditar, acao,
 }: { emb: g.EmbalagemLinha; podeEditar: boolean; acao: Acao }) {
   const [edit, setEdit] = useState(false)
   const [descricao, setDescricao] = useState(emb.descricao)
-  const [fator, setFator] = useState(String(emb.fator_peso))
+  const [fator, setFator] = useState(emb.fator_peso == null ? '' : String(emb.fator_peso))
+  const [pesoFixo, setPesoFixo] = useState(emb.peso_fixo_kg == null ? '' : String(emb.peso_fixo_kg))
   const [codigoExt, setCodigoExt] = useState(emb.codigo_ext ?? '')
+
+  const porPeso = (emb.peso_fixo_kg ?? 0) > 0
 
   if (!edit) {
     return (
@@ -973,8 +1095,12 @@ function LinhaEmbalagemEdit({
         <td className="px-2 py-2 font-medium">{emb.codigo}</td>
         <td className="px-2 py-2 text-stone-500">{emb.codigo_ext ?? '—'}</td>
         <td className="px-2 py-2">{emb.descricao}</td>
-        <td className="num-tabular px-2 py-2 text-right">{inteiro(emb.sementes)}</td>
-        <td className="num-tabular px-2 py-2 text-right whitespace-nowrap">PMS × {n(emb.fator_peso, 1)}</td>
+        <td className="num-tabular px-2 py-2 text-right">
+          {emb.sementes == null ? '—' : inteiro(emb.sementes)}
+        </td>
+        <td className="num-tabular px-2 py-2 text-right whitespace-nowrap">
+          {porPeso ? `${n(emb.peso_fixo_kg, 0)} kg fixo` : `PMS × ${n(emb.fator_peso, 1)}`}
+        </td>
         <td className="px-2 py-2 text-right">
           {podeEditar && <button onClick={() => setEdit(true)} className="-m-1.5 rounded p-1.5 text-xs underline">editar</button>}
         </td>
@@ -986,15 +1112,27 @@ function LinhaEmbalagemEdit({
       <td className="px-2 py-2 font-medium">{emb.codigo}</td>
       <td className="px-2 py-2"><input value={codigoExt} onChange={(e) => setCodigoExt(e.target.value)} className={`${INPUT} w-20`} /></td>
       <td className="px-2 py-2"><input value={descricao} onChange={(e) => setDescricao(e.target.value)} className={`${INPUT} w-56`} /></td>
-      <td className="num-tabular px-2 py-2 text-right">{inteiro(emb.sementes)}</td>
-      <td className="px-2 py-2 text-right"><input value={fator} onChange={(e) => setFator(e.target.value)} className={`${INPUT} w-16 text-right`} /></td>
+      <td className="num-tabular px-2 py-2 text-right">
+        {emb.sementes == null ? '—' : inteiro(emb.sementes)}
+      </td>
+      <td className="px-2 py-2 text-right">
+        {porPeso ? (
+          <span className="whitespace-nowrap">
+            <input value={pesoFixo} onChange={(e) => setPesoFixo(e.target.value)} className={`${INPUT} w-16 text-right`} /> kg
+          </span>
+        ) : (
+          <input value={fator} onChange={(e) => setFator(e.target.value)} className={`${INPUT} w-16 text-right`} />
+        )}
+      </td>
       <td className="px-2 py-2 text-right whitespace-nowrap">
         <button
           onClick={() =>
             acao(async () => {
               await adm.salvarEmbalagem({
                 codigo: emb.codigo, codigo_ext: codigoExt.trim() || null, descricao,
-                sementes: emb.sementes, fator_peso: Number(fator.replace(',', '.')),
+                sementes: emb.sementes,
+                fator_peso: porPeso ? emb.fator_peso : numeroOuNull(fator),
+                peso_fixo_kg: porPeso ? numeroOuNull(pesoFixo) : emb.peso_fixo_kg,
               })
               setEdit(false)
             })

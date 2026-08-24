@@ -1019,8 +1019,11 @@ export interface EmbalagemLinha {
   codigo: string
   codigo_ext: string | null
   descricao: string
-  sementes: number
-  fator_peso: number
+  /** Nulos numa embalagem de peso fixo (saco de 10/20 kg). */
+  sementes: number | null
+  fator_peso: number | null
+  /** Preenchido = embalagem por peso, fora dos ERPs; vence o pms × fator. */
+  peso_fixo_kg: number | null
 }
 
 export async function listarEmbalagens(): Promise<EmbalagemLinha[]> {
