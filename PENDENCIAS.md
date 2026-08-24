@@ -98,12 +98,10 @@ dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireci
 endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
-- [ ] `supabase/pedido-cooperado.sql` — **PENDENTE** (21/08/2026): coluna
-      `pedidos_venda.cooperado` + `pedido_cooperado` na `v_balanco_demanda`, para o
-      destaque "X coop." no painel Demanda × Estoque × Planejado. O front já está no ar
-      e tolera o banco sem a migração (importa sem a marcação e o painel só não mostra
-      o destaque) — mas o destaque SÓ aparece depois de rodar este script E reimportar
-      os pedidos.
+- [x] `supabase/pedido-cooperado.sql` — **aplicada** (21/08/2026, confirmada por consulta
+      direta: coluna e `pedido_cooperado` na view respondem, 0 linhas marcadas na carga
+      vigente — anterior à migração). O destaque "X coop." só aparece a partir do
+      PRÓXIMO upload de pedidos.
 - [x] `supabase/turnos-por-dia.sql` — confirmado aplicado em produção (validação de
       08/08/2026: `dias_producao.turno1/turno2` e `ordens.data_prog_original` existem).
 - [x] `supabase/fecha-rpc-sem-guarda.sql` — aplicado e confirmado em produção em 08/08/2026
