@@ -23,11 +23,27 @@ export const EMBALAGEM_DEPARA: Record<string, { codigo: string; fator: number }>
 }
 
 /**
- * Cultivar canônico: caixa alta e espaços colapsados. O balanço cruza os dois
- * relatórios por texto — qualquer diferença de grafia quebra o casamento.
+ * Nomes de cultivar que alguma origem grava truncado/errado, corrigidos
+ * pra não quebrar o casamento entre pedido, estoque e produção. As chaves
+ * já são o resultado de colapsar espaço e caixa alta — cresce conforme o
+ * caso aparecer, não dá pra prever de antemão (achado do Arion, 20/08/2026:
+ * "O700 I2X no relatório do SimpleAgro está com outro nome"). Mesmo
+ * espírito do `EMBALAGEM_DEPARA`, só que pra cultivar.
  */
-export const normalizaCultivar = (s: string): string =>
-  s.replace(/\s+/g, ' ').trim().toUpperCase()
+const CULTIVAR_DEPARA: Record<string, string> = {
+  'O700 I2X': 'NEO700 I2X',
+}
+
+/**
+ * Cultivar canônico: caixa alta e espaços colapsados, com o de-para de
+ * apelidos conhecidos por cima. O balanço cruza os relatórios (Pedidos,
+ * Saldos, SAP) por texto — qualquer diferença de grafia quebra o
+ * casamento, e cada relatório erra o nome de um jeito diferente.
+ */
+export const normalizaCultivar = (s: string): string => {
+  const canon = s.replace(/\s+/g, ' ').trim().toUpperCase()
+  return CULTIVAR_DEPARA[canon] ?? canon
+}
 
 // ================================================================
 // 1. Pedidos Analítico Resumido

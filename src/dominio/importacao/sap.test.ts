@@ -142,4 +142,24 @@ describe('conversao de saldos do SAP', () => {
     ])
     expect(r.resumo.unidades).toEqual({ SC: 1, KG: 1 })
   })
+
+  it('corrige tratamento grafado diferente no SAP (VeP -> V&P), senao nunca casa com o pedido', () => {
+    const r = converterSaldoSap([
+      CAB_SAP,
+      linha('761 I2X', 'SV014', 'VeP', 'BB5M', 171, '2026-02-10', 'SC', 12),
+    ])
+    expect(r.estoquePa).toHaveLength(1)
+    expect(r.estoquePa[0].tratamento).toBe('V&P')
+  })
+
+  it('tolera caixa diferente na correcao de tratamento (vep, VEP)', () => {
+    const r = converterSaldoSap([
+      CAB_SAP,
+      linha('761 I2X', 'SV015', 'vep', 'BB5M', 171, '2026-02-10', 'SC', 5),
+      linha('761 I2X', 'SV016', 'VEP', 'BB5M', 171, '2026-02-10', 'SC', 5),
+    ])
+    // mesma combinacao apos a correcao: agrega numa linha so
+    expect(r.estoquePa).toHaveLength(1)
+    expect(r.estoquePa[0]).toMatchObject({ tratamento: 'V&P', bags: 10 })
+  })
 })

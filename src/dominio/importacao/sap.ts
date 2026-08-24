@@ -38,6 +38,20 @@ const paraData = (v: unknown): Date | null => {
 /** Só lote com entrada a partir daqui conta como estoque disponível — lote velho já baixado no SAP não deve reentrar (pedido do Arion, 19/08/2026). */
 export const CORTE_SALDO_SAP = new Date('2026-01-01T00:00:00')
 
+/**
+ * O SAP grafa alguns tratamentos diferente do nome comercial/receita — ex.:
+ * "VeP" em vez de "V&P" (provavelmente por não aceitar "&" no export). Sem
+ * corrigir aqui, a linha vira estoque com um nome próprio, sem receita
+ * cadastrada, e nunca casa com o pedido do mesmo tratamento no painel
+ * Demanda × Estoque × Planejado (achado do Arion, 20/08/2026). Cresce
+ * conforme aparecer novo caso — mesmo espírito do `EMBALAGEM_DEPARA`.
+ */
+const TRATAMENTO_DEPARA_SAP: Record<string, string> = {
+  VEP: 'V&P',
+}
+const corrigeTratamentoSap = (bruto: string): string =>
+  TRATAMENTO_DEPARA_SAP[normaliza(bruto)] ?? bruto
+
 export interface ResumoSaldoSap {
   totalLinhas: number
   /** Sem embalagem reconhecida (BB5M/BMB) → ignorado (granel/pré-lote). */
@@ -133,7 +147,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
     resumo.unidades[um] = (resumo.unidades[um] ?? 0) + 1
 
     const cultivar = normalizaCultivar(txt(r[iCult]))
-    const tratamento = txt(r[iTrat])
+    const tratamento = corrigeTratamentoSap(txt(r[iTrat]))
     const pms = iPms >= 0 ? num(r[iPms]) : 0
 
     if (!tratamento || tratamento.toUpperCase() === 'SEM TSI') {

@@ -94,9 +94,11 @@ quando('conversao contra os arquivos reais de 28/07/2026', () => {
   it('saldos: cultivares truncados na origem sao recuperados pelo nome', async () => {
     const rows = await ler(ARQ_SALDOS)
     const r = converterSaldos(rows)
-    // os dois casos reais da carga de 28/07 — e nenhum lote fica com o truncado
+    // O700 I2X agora entra pelo de-para ESTÁTICO de `normalizaCultivar`
+    // (20/08/2026: o mesmo apelido também aparece no relatório de Pedidos,
+    // que não tem o nome completo do produto pra corrigir dinamicamente) —
+    // só sobra o caso ainda não mapeado pra o contador dinâmico "descobrir"
     expect(Object.keys(r.resumo.cultivarCorrigidos).sort()).toEqual([
-      'O700 I2X → NEO700 I2X',
       'O801 CE → NEO801 CE',
     ])
     const cultivares = new Set(r.lotes.map((l) => l.cultivar))

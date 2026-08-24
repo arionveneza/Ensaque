@@ -4,6 +4,7 @@ import {
   converterSaldos,
   ehRelatorioPedidos,
   ehRelatorioSaldos,
+  normalizaCultivar,
   type Linha,
 } from './simpleagro'
 
@@ -191,6 +192,25 @@ describe('conversao de pedidos', () => {
     ])
     expect(r.totalAprovado).toBe(12.5)
   })
+
+  it('corrige cultivar truncado tambem no relatorio de Pedidos, nao so em Saldos', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'Aprovado', 'O700 I2X - O700 I2X', 'FTZ60', 'BB5M', 10),
+    ])
+    expect(r.linhas[0].cultivar).toBe('NEO700 I2X')
+  })
+})
+
+describe('normalizaCultivar', () => {
+  it('colapsa espaco e caixa alta', () => {
+    expect(normalizaCultivar('  761   i2x ')).toBe('761 I2X')
+  })
+
+  it('corrige apelidos conhecidos (achado no relatorio de Pedidos, 20/08/2026)', () => {
+    expect(normalizaCultivar('O700 I2X')).toBe('NEO700 I2X')
+    expect(normalizaCultivar('o700 i2x')).toBe('NEO700 I2X')
+  })
 })
 
 // ---------------------------------------------------------------
@@ -231,16 +251,30 @@ describe('conversao de saldos', () => {
     expect(r.lotes[0].pesoBagKg).toBe(428) // 427,5 arredondado
   })
 
-  // Caso real: pedidos dizem NEO700, saldos dizem O700 na coluna CULTIVAR —
+  // Caso real: pedidos dizem NEO900, saldos dizem O900 na coluna CULTIVAR —
   // mas o nome do produto tem o nome completo. Sem corrigir, o balanço nunca
-  // casa demanda com estoque para esses cultivares.
-  it('recupera cultivar truncado pelo nome do produto', () => {
+  // casa demanda com estoque para esses cultivares. Usa um cultivar
+  // SINTÉTICO (não o O700 I2X real, que agora entra pelo de-para estático
+  // de `normalizaCultivar` antes mesmo de chegar aqui) pra continuar
+  // testando o mecanismo DINÂMICO, que é o que pega os casos ainda
+  // desconhecidos.
+  it('recupera cultivar truncado pelo nome do produto (mecanismo dinamico, caso ainda nao mapeado)', () => {
+    const r = converterSaldos([
+      CAB_SALDOS,
+      saldo('SS NEO900 XYZ BB5M', 'O900 XYZ', 'SV001', 'SEM TSI', 171, 7),
+    ])
+    expect(r.lotes[0].cultivar).toBe('NEO900 XYZ')
+    expect(r.resumo.cultivarCorrigidos).toEqual({ 'O900 XYZ → NEO900 XYZ': 1 })
+  })
+
+  it('cultivar ja conhecido (O700 I2X) chega corrigido pelo de-para estatico, antes do mecanismo dinamico', () => {
     const r = converterSaldos([
       CAB_SALDOS,
       saldo('SS NEO700 I2X BB5M', 'O700 I2X', 'SV001', 'SEM TSI', 171, 7),
     ])
     expect(r.lotes[0].cultivar).toBe('NEO700 I2X')
-    expect(r.resumo.cultivarCorrigidos).toEqual({ 'O700 I2X → NEO700 I2X': 1 })
+    // já veio certo do de-para estático — o dinâmico não tem mais nada a corrigir aqui
+    expect(r.resumo.cultivarCorrigidos).toEqual({})
   })
 
   it('corrige tambem no estoque de produto acabado', () => {
