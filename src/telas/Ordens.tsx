@@ -2444,28 +2444,37 @@ function NovaOrdemForm({
           {/* sem sub-rótulo em cima de cada input: eles empurravam os campos
               pra baixo da linha dos vizinhos (achado do Arion, 25/08/2026) —
               placeholder + tooltip dizem o que é cada um */}
+          {/* larguras nos WRAPPERS, não nos inputs: INPUT já tem w-full, e
+              w-16 no mesmo elemento perde a briga de classes — o Armazém
+              murchava a nada e Bloco/Quadra estouravam a grade */}
           <div className="flex gap-2">
-            <input
-              value={armazem}
-              onChange={(e) => definir({ armazem: e.target.value.toUpperCase() })}
-              placeholder="ARMAZÉM"
-              title="Armazém — onde buscar o lote para esta ordem"
-              className={`${INPUT} min-w-0 flex-1`}
-            />
-            <input
-              value={bloco}
-              onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
-              placeholder="BL01"
-              title="Bloco"
-              className={`${INPUT} w-16 shrink-0`}
-            />
-            <input
-              value={quadra}
-              onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
-              placeholder="QD04"
-              title="Quadra"
-              className={`${INPUT} w-16 shrink-0`}
-            />
+            <div className="min-w-0 flex-1">
+              <input
+                value={armazem}
+                onChange={(e) => definir({ armazem: e.target.value.toUpperCase() })}
+                placeholder="ARMAZÉM"
+                title="Armazém — onde buscar o lote para esta ordem"
+                className={INPUT}
+              />
+            </div>
+            <div className="w-16 shrink-0">
+              <input
+                value={bloco}
+                onChange={(e) => definir({ bloco: e.target.value.toUpperCase() })}
+                placeholder="BL01"
+                title="Bloco"
+                className={INPUT}
+              />
+            </div>
+            <div className="w-16 shrink-0">
+              <input
+                value={quadra}
+                onChange={(e) => definir({ quadra: e.target.value.toUpperCase() })}
+                placeholder="QD04"
+                title="Quadra"
+                className={INPUT}
+              />
+            </div>
           </div>
         </Campo>
       </div>
