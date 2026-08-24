@@ -10,9 +10,14 @@
 --
 -- O importador passa a dividir a combinação em linha própria quando é
 -- cooperado (mesmo desenho do flag `aprovado`), e a v_balanco_demanda soma
--- a parcela cooperada do pedido aprovado numa coluna nova no FIM da view
--- (create or replace só aceita acrescentar coluna no fim — mudar/remover
--- é 42P16).
+-- a parcela cooperada em colunas novas no FIM da view (create or replace
+-- só aceita acrescentar coluna no fim — mudar/remover é 42P16).
+--
+-- SEGUNDA EXECUÇÃO (24/08/2026): ganhou `pedido_cooperado_pendente` — no
+-- arquivo real a maior parte do cooperado está AGUARDANDO liberação
+-- financeira (1.073 bg contra 151 aprovados na referência de 28/07), e só
+-- destacar a parcela aprovada escondia quase tudo. Reexecutar por cima é
+-- seguro: idempotente.
 -- ============================================================
 
 set search_path = tsi, public;
@@ -28,7 +33,8 @@ with ult_ped as (select id from cargas_demanda where tipo='pedidos' order by cri
 ped as (select cultivar, tratamento, embalagem,
                sum(bags) filter (where aprovado)     as ped_aprov,
                sum(bags) filter (where not aprovado) as ped_pend,
-               sum(bags) filter (where aprovado and cooperado) as ped_coop
+               sum(bags) filter (where aprovado and cooperado)     as ped_coop,
+               sum(bags) filter (where not aprovado and cooperado) as ped_coop_pend
         from pedidos_venda where carga_id = (select id from ult_ped) group by 1,2,3),
 est as (select cultivar, tratamento, embalagem, sum(bags) as est_bags
         from estoque_pa where carga_id = (select id from ult_est) group by 1,2,3),
@@ -45,7 +51,8 @@ select coalesce(p.cultivar, e.cultivar, a.cultivar)       as cultivar,
        coalesce(p.ped_aprov,0) - coalesce(e.est_bags,0) - coalesce(a.abertas,0) as saldo,
        exists(select 1 from receitas r where r.nome = coalesce(p.tratamento,e.tratamento,a.tratamento))
          as receita_cadastrada,
-       coalesce(p.ped_coop,0)  as pedido_cooperado
+       coalesce(p.ped_coop,0)      as pedido_cooperado,
+       coalesce(p.ped_coop_pend,0) as pedido_cooperado_pendente
 from ped p
 full join est e on (e.cultivar,e.tratamento,e.embalagem) = (p.cultivar,p.tratamento,p.embalagem)
 full join abe a on (a.cultivar,a.tratamento,a.embalagem) = (coalesce(p.cultivar,e.cultivar),
@@ -62,9 +69,10 @@ select 'coluna cooperado' as item, (count(*) = 1)::text as ok
   from information_schema.columns
  where table_schema = 'tsi' and table_name = 'pedidos_venda' and column_name = 'cooperado'
 union all
-select 'view com pedido_cooperado', (count(*) = 1)::text
+select 'view com pedido_cooperado e pendente', (count(*) = 2)::text
   from information_schema.columns
- where table_schema = 'tsi' and table_name = 'v_balanco_demanda' and column_name = 'pedido_cooperado'
+ where table_schema = 'tsi' and table_name = 'v_balanco_demanda'
+   and column_name in ('pedido_cooperado', 'pedido_cooperado_pendente')
 union all
 select 'view manteve security_invoker',
        (position('security_invoker=true' in array_to_string(c.reloptions, ',')) > 0)::text

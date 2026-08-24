@@ -510,6 +510,8 @@ export interface BalancoLinha {
   receita_cadastrada: boolean
   /** Parcela do pedido aprovado que é VENDA COOPERADO — ausente até a migração pedido-cooperado.sql rodar. */
   pedido_cooperado?: number
+  /** Idem para o pedido aguardando liberação financeira — a maior parte do cooperado vive aqui. */
+  pedido_cooperado_pendente?: number
 }
 
 /** Estoque de produto acabado (tratado) da carga vigente, linha a linha. */

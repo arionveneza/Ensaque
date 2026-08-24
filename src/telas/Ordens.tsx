@@ -1495,6 +1495,14 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
                     </td>
                     <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
                       {inteiro(b.pedido_pendente)}
+                      {(b.pedido_cooperado_pendente ?? 0) > 0 && (
+                        <div
+                          className="whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400"
+                          title="Parcela do pedido aguardando liberação financeira que é VENDA COOPERADO"
+                        >
+                          {inteiro(b.pedido_cooperado_pendente ?? 0)} coop.
+                        </div>
+                      )}
                     </td>
                     <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.estoque_pa)}</td>
                     <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.ordens_abertas)}</td>
