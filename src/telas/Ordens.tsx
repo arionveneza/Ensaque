@@ -2342,14 +2342,33 @@ function NovaOrdemForm({
           />
         </Campo>
         <Campo rotulo="Peso resultante">
-          <p className="num-tabular py-1.5 text-sm font-medium">
-            {(() => {
-              if (!lote || !(bags > 0)) return '—'
-              const emb = embalagens.find((e) => e.codigo === embalagem)
-              const bagKg = pesoBagDaOrdemKg(lote.pms, emb ?? null, lote.peso_bag_kg)
-              return `${n((bags * bagKg) / 1000, 2)} t`
-            })()}
-          </p>
+          {(() => {
+            if (!lote || !(bags > 0)) {
+              return <p className="num-tabular py-1.5 text-sm font-medium">—</p>
+            }
+            const emb = embalagens.find((e) => e.codigo === embalagem)
+            const bagKg = pesoBagDaOrdemKg(lote.pms, emb ?? null, lote.peso_bag_kg)
+            const pesoKg = bags * bagKg
+            // quantos bags FÍSICOS do lote a ordem consome — é assim que a
+            // baixa desconta (proporcional ao peso). Só aparece quando a
+            // embalagem da ordem difere da do lote (SC10/SC20, MEIOBAG em
+            // lote big bag); ordem na embalagem do lote é 1 pra 1.
+            const bagsDoLote = lote.peso_bag_kg > 0 ? pesoKg / lote.peso_bag_kg : null
+            const difere = bagsDoLote != null && Math.abs(bagsDoLote - bags) > 0.01
+            return (
+              <div className="py-1.5">
+                <p className="num-tabular text-sm font-medium">{n(pesoKg / 1000, 2)} t</p>
+                {difere && (
+                  <p
+                    className="num-tabular text-xs text-stone-500"
+                    title="Peso total da ordem ÷ peso do bag do lote — é o que a baixa do lote desconta"
+                  >
+                    ≈ {n(bagsDoLote, 1)} bags do lote
+                  </p>
+                )}
+              </div>
+            )
+          })()}
         </Campo>
         <Campo rotulo="Cliente (opcional)">
           <input value={cliente} onChange={(e) => definir({ cliente: e.target.value })} className={INPUT} />
