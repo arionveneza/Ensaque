@@ -20,7 +20,7 @@ import {
 } from '@/dominio/calculos'
 import { jaIniciada, statusEfetivo } from '@/dominio/status'
 import { Aviso, dataHoraCurta, diaCurto, enderecoLote, inteiro, rotuloTanque } from '@/componentes/ui'
-import { imprimirOrdemProducao } from '@/lib/exportar'
+import { imprimirEtiquetaDm, imprimirOrdemProducao } from '@/lib/exportar'
 
 const num = (v: number | null | undefined, casas = 1) =>
   v == null || Number.isNaN(v)
@@ -204,6 +204,27 @@ export default function ModalOrdem({
             </p>
           </div>
           <div className="flex gap-1.5">
+            <button
+              onClick={() =>
+                imprimirEtiquetaDm({
+                  cultivar: ordem.cultivar,
+                  loteId: ordem.lote_id,
+                  peneira: ordem.lotes_semente.peneira,
+                  categoria: ordem.lotes_semente.categoria,
+                  pesoKg: num(pesoBagOrdemKg(ordem), 0),
+                  pms: ordem.lotes_semente.pms == null ? null : num(ordem.lotes_semente.pms, 2),
+                  // na etiqueta o SEM TSI sai como na planilha original
+                  tratamento:
+                    ordem.receitas.nome.trim().toUpperCase() === 'SEM TSI'
+                      ? 'SEM TRATAMENTO'
+                      : ordem.receitas.nome,
+                })
+              }
+              title="Etiqueta de Difusão de Mercado com os dados do lote desta ordem — cópias pelo diálogo de impressão"
+              className="rounded-md border border-stone-300 px-3 py-1.5 text-sm dark:border-stone-700"
+            >
+              Etiqueta DM
+            </button>
             <button
               onClick={imprimir}
               title="Folha da ordem para o apontamento manual no chão de fábrica"

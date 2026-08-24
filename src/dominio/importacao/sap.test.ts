@@ -7,6 +7,8 @@ const CAB_SAP = [
   'Data de Entrada', 'UM Estoque', 'Qtd em Estoque',
 ]
 
+const CAB_SAP_COMPLETO = [...CAB_SAP, 'Peneira', 'Categoria do Lote']
+
 /** Embalagem crua igual à origem: BB5M/BMB — o de-para converte pra BG5M/MEIOBAG (mesmo código da SimpleAgro, confirmado pelo Arion). */
 const linha = (
   cultivar: string, lote: string, tratamento: string, embalagem: string,
@@ -150,6 +152,22 @@ describe('conversao de saldos do SAP', () => {
     ])
     expect(r.estoquePa).toHaveLength(1)
     expect(r.estoquePa[0].tratamento).toBe('V&P')
+  })
+
+  it('grava peneira e categoria do lote quando as colunas existem (etiqueta DM)', () => {
+    const r = converterSaldoSap([
+      CAB_SAP_COMPLETO,
+      [...linha('761 I2X', 'SV017', 'SEM TSI', 'BB5M', 171, '2026-02-10', 'SC', 20), 'P 6.75 mm', 'S2'],
+    ])
+    expect(r.lotes[0]).toMatchObject({ peneira: 'P 6.75 mm', categoria: 'S2' })
+  })
+
+  it('sem as colunas de peneira/categoria (export antigo), ficam null', () => {
+    const r = converterSaldoSap([
+      CAB_SAP,
+      linha('761 I2X', 'SV018', 'SEM TSI', 'BB5M', 171, '2026-02-10', 'SC', 20),
+    ])
+    expect(r.lotes[0]).toMatchObject({ peneira: null, categoria: null })
   })
 
   it('tolera caixa diferente na correcao de tratamento (vep, VEP)', () => {

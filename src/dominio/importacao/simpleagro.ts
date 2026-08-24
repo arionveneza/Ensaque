@@ -270,6 +270,9 @@ export interface LoteConvertido {
   pms: number
   pesoBagKg: number
   bags: number
+  /** Só o SAP traz (colunas Peneira/Categoria do Lote) — null na SimpleAgro. Saem na etiqueta DM. */
+  peneira: string | null
+  categoria: string | null
 }
 
 export interface EstoquePaConvertido {
@@ -382,6 +385,9 @@ export function converterSaldos(rows: Linha[]): ResultadoSaldos {
           pms,
           pesoBagKg: Math.round(pms * emb.fator),
           bags,
+          // a SimpleAgro não exporta peneira/categoria — só o SAP tem
+          peneira: null,
+          categoria: null,
         })
     } else {
       const chave = [cultivar, tratamento, emb.codigo].join('|')

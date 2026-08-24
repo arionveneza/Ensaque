@@ -63,6 +63,9 @@ export interface LinhaOrdem {
     pms: number | null
     peso_bag_kg: number
     status: 'Em estoque' | 'Baixado'
+    /** Do export do SAP — null em lote da SimpleAgro. Saem na etiqueta DM. */
+    peneira: string | null
+    categoria: string | null
   }
   receitas: {
     nome: string
@@ -90,7 +93,7 @@ const SELECT_ORDEM = `
   prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente, bags_produzidos,
   lote_liberado_em, confirmada_em,
   embalagens ( fator_peso, peso_fixo_kg ),
-  lotes_semente ( id, cultivar, pms, peso_bag_kg, status ),
+  lotes_semente ( id, cultivar, pms, peso_bag_kg, status, peneira, categoria ),
   receitas ( nome, receita_itens ( produto_id, dose ) ),
   ordem_produtos ( produto_id, tanque ),
   ordem_eventos ( tipo, ts ),

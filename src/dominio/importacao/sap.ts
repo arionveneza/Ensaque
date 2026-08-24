@@ -107,6 +107,9 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
   const iData = h.findIndex((x) => x.includes('ENTRADA'))
   const iUm = ix('UM ESTOQUE')
   const iPms = h.findIndex((x) => x.includes('PMS'))
+  // pra etiqueta DM (25/08/2026) — por "inclui", tolerante a variação
+  const iPeneira = h.findIndex((x) => x.includes('PENEIRA'))
+  const iCategoria = h.findIndex((x) => x.includes('CATEGORIA'))
 
   const lotes = new Map<string, LoteConvertido>()
   const estoque = new Map<string, EstoquePaConvertido>()
@@ -164,6 +167,8 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
           pms,
           pesoBagKg: Math.round(pms * emb.fator),
           bags,
+          peneira: iPeneira >= 0 ? txt(r[iPeneira]) || null : null,
+          categoria: iCategoria >= 0 ? txt(r[iCategoria]) || null : null,
         })
     } else {
       const chave = [cultivar, tratamento, emb.codigo].join('|')

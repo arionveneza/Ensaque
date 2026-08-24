@@ -473,7 +473,11 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 - **Qualidade reprovada**: hoje é só um carimbo. Retrabalho? Bloqueio do lote? Nova ordem?
 - **Estoque de químicos**: o app aponta consumo real mas não sabe o saldo de insumo — falta alertar
   "o Fortenza não cobre a programação da semana".
-- **Etiquetas**: a planilha antiga tinha ~15 abas de etiquetas; ficaram fora do escopo.
+- **Etiquetas**: a planilha antiga tinha ~15 abas de etiquetas; ficaram fora do escopo —
+  EXCETO a **etiqueta DM** (25/08/2026): botão "Etiqueta DM" no detalhe da ordem
+  (`imprimirEtiquetaDm` em `exportar.ts`), com peneira/categoria vindas do saldo do SAP
+  (`lotes_semente.peneira/categoria`, migração `lote-peneira-categoria.sql`), germinação
+  80% e pureza 99% fixos, logo em texto por enquanto.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

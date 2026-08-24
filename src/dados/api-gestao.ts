@@ -639,12 +639,26 @@ export async function importarLotes(linhas: LoteConvertido[]): Promise<number> {
     pms: l.pms || null,
     peso_bag_kg: l.pesoBagKg,
     bags_disp: l.bags,
+    peneira: l.peneira,
+    categoria: l.categoria,
     atualizado_em: new Date().toISOString(),
   }))
+  // peneira/categoria nasceram depois (lote-peneira-categoria.sql): na
+  // janela entre publicar o front e rodar o SQL, importa sem elas em vez
+  // de travar a carga — mesmo padrão do cooperado em importarPedidos
+  let comPeneira = true
   for (let i = 0; i < registros.length; i += 500) {
-    const { error } = await supabase
+    const fatia = registros.slice(i, i + 500)
+    const semPeneira = () => fatia.map(({ peneira: _p, categoria: _c, ...resto }) => resto)
+    let { error } = await supabase
       .from('lotes_semente')
-      .upsert(registros.slice(i, i + 500), { onConflict: 'id' })
+      .upsert(comPeneira ? fatia : semPeneira(), { onConflict: 'id' })
+    if (error && comPeneira && (error.message.includes('peneira') || error.message.includes('categoria'))) {
+      comPeneira = false
+      ;({ error } = await supabase
+        .from('lotes_semente')
+        .upsert(semPeneira(), { onConflict: 'id' }))
+    }
     erro('importar lotes', error)
   }
   return registros.length

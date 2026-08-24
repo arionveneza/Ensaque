@@ -240,3 +240,100 @@ apontamento oficial é o do sistema.</footer>
 
   abrirParaImpressao(html)
 }
+
+// ================================================================
+// Etiqueta DM — réplica da aba ETQ. DM da planilha DM 2025
+// ================================================================
+
+/** Constantes da empresa impressas na etiqueta — mudar aqui muda em toda etiqueta futura. */
+const EMPRESA = {
+  nome: 'SEMENTES VENEZA LTDA',
+  cnpj: 'CNPJ: 34.457.781/0001-60',
+  ie: 'INSCRIÇÃO ESTADUAL: 10.775.604-8',
+  endereco: 'Endereço: Rodovia GO - 174 - Sentido Montividiu - Iporá, km 314 A Direita',
+  renasem: 'RENASEM: GO-02708/2019',
+}
+
+/** Fixos por decisão do Arion (25/08/2026) — sem campo pra mudar. */
+const GERMINACAO_MINIMA = '80%'
+const PUREZA = '99%'
+
+export interface EtiquetaDm {
+  cultivar: string
+  loteId: string
+  /** "P 6.75 mm" — do lote (export do SAP); null imprime "—". */
+  peneira: string | null
+  /** "S2" — idem. */
+  categoria: string | null
+  /** Peso do bag DA ORDEM, já formatado (ex.: "10"). */
+  pesoKg: string
+  /** PMS formatado (ex.: "210,00"); null imprime "—". */
+  pms: string | null
+  /** Nome da receita — SEM TSI vira "SEM TRATAMENTO" no chamador. */
+  tratamento: string
+}
+
+/**
+ * Etiqueta de DM (Difusão de Mercado), uma por página — cópias pelo
+ * diálogo de impressão do navegador. Logo em texto por enquanto
+ * (decisão de 25/08/2026); quando houver arquivo de logo, entra aqui.
+ */
+export function imprimirEtiquetaDm(e: EtiquetaDm): void {
+  const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta DM ${esc(e.loteId)}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font: 13px system-ui, sans-serif; color: #000; }
+  table { width: 148mm; border-collapse: collapse; }
+  td { border: 1.5px solid #000; padding: 4px 8px; vertical-align: middle; }
+  .cab { text-align: center; font-size: 12px; padding: 2px 8px; }
+  .cab b { font-size: 15px; }
+  .soja { text-align: center; font-weight: bold; font-size: 16px; }
+  .rotulo { font-weight: bold; font-size: 16px; white-space: nowrap; width: 1%; }
+  .gigante { font-size: 34px; font-weight: bold; letter-spacing: .01em; }
+  .medio { font-size: 20px; font-weight: bold; }
+  .mini { font-size: 12px; font-weight: bold; }
+  .rodape { text-align: center; font-size: 11px; font-weight: bold; padding: 2px 8px; }
+</style></head><body>
+<table>
+  <tr><td colspan="4" class="cab">
+    <b>${esc(EMPRESA.nome)}</b><br>
+    ${esc(EMPRESA.cnpj)}<br>
+    ${esc(EMPRESA.ie)}<br>
+    ${esc(EMPRESA.endereco)}
+  </td></tr>
+  <tr><td colspan="4" class="soja">SEMENTE DE SOJA</td></tr>
+  <tr>
+    <td class="rotulo">CULTIVAR:</td>
+    <td colspan="3" class="gigante">${esc(e.cultivar)}</td>
+  </tr>
+  <tr>
+    <td class="rotulo">LOTE:</td>
+    <td colspan="3" class="gigante">${esc(e.loteId)}</td>
+  </tr>
+  <tr>
+    <td class="rotulo">PENEIRA:</td>
+    <td class="medio">${esc(e.peneira) || '—'}</td>
+    <td class="rotulo">CATEGORIA:</td>
+    <td class="medio">${esc(e.categoria) || '—'}</td>
+  </tr>
+  <tr>
+    <td class="rotulo">PESO:</td>
+    <td class="medio">${esc(e.pesoKg)} kg</td>
+    <td class="rotulo">PMS:</td>
+    <td class="medio">${esc(e.pms) || '—'}</td>
+  </tr>
+  <tr>
+    <td colspan="2" class="mini">GERMINAÇÃO MÍNIMA: ${GERMINACAO_MINIMA}</td>
+    <td colspan="2" class="mini">PUREZA: ${PUREZA}</td>
+  </tr>
+  <tr>
+    <td class="rotulo" style="font-size:13px">TRATAMENTO:</td>
+    <td colspan="3" class="mini">${esc(e.tratamento)}</td>
+  </tr>
+  <tr><td colspan="4" class="rodape">${esc(EMPRESA.renasem)}</td></tr>
+</table>
+</body></html>`
+
+  abrirParaImpressao(html)
+}

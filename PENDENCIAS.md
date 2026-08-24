@@ -98,6 +98,10 @@ dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireci
 endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
+- [x] `supabase/lote-peneira-categoria.sql` — **aplicada** (25/08/2026, confirmada por
+      consulta direta): `lotes_semente.peneira/categoria` pra etiqueta DM, preenchidas pela
+      importação de saldo do SAP. **Reimportar o saldo do SAP** pra popular os lotes
+      existentes — até lá a etiqueta imprime "—" nesses campos.
 - [x] `supabase/ordem-fora-do-estoque.sql` — **aplicada** (24/08/2026, confirmada por consulta direta): coluna
       `ordens.fora_balanco` + filtro em `ordens_abertas` na `v_balanco_demanda` (ordens da
       sacaria: produção que não vira estoque). Rodar ANTES do deploy do front desta feature
