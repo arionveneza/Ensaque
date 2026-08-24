@@ -98,6 +98,11 @@ dia se queira voltar. A branch `gh-pages` guarda apenas uma página que redireci
 endereço antigo dar 404, e quem tem o link salvo no tablet merece ser levado ao lugar certo.
 
 ### SQL pendente de execução
+- [ ] `supabase/ordem-fora-do-estoque.sql` — **PENDENTE** (24/08/2026): coluna
+      `ordens.fora_balanco` + filtro em `ordens_abertas` na `v_balanco_demanda` (ordens da
+      sacaria: produção que não vira estoque). Rodar ANTES do deploy do front desta feature
+      (criar ordem grava a coluna nova). Gatilhos intactos de propósito — ver comentário do
+      arquivo.
 - [x] `supabase/embalagem-peso-fixo.sql` — **aplicada** (24/08/2026, confirmada por consulta
       direta: SC10/SC20 no cadastro com `peso_fixo_kg`, `v_ordens` respondendo, CHECK
       `embalagem_modo_valido` no lugar). Embalagens de peso fixo (10/20 kg) + precedência

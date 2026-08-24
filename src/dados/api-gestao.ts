@@ -58,6 +58,12 @@ export interface OrdemVisao {
    */
   confirmada_em: string | null
   confirmada_por: string | null
+  /**
+   * Produção que NÃO vira estoque vendável (ex.: bags pra reensaque na
+   * sacaria, 24/08/2026): fora de ordens_abertas no balanço; baixa do lote
+   * e execução normais. Editável em qualquer status exceto Apontada.
+   */
+  fora_balanco: boolean
 }
 
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
@@ -119,6 +125,8 @@ export interface NovaOrdem {
   maquina_id?: string | null
   data_prog?: string | null
   seq?: number | null
+  /** Produção que não vira estoque (sacaria): fora do balanço de demanda. */
+  fora_balanco?: boolean
 }
 
 export async function criarOrdem(o: NovaOrdem): Promise<void> {
@@ -182,6 +190,24 @@ export async function atualizarOrdem(id: string, campos: Partial<NovaOrdem>): Pr
 export async function excluirOrdem(id: string): Promise<void> {
   const { error } = await supabase.from('ordens').delete().eq('id', id)
   erro('excluir ordem', error)
+}
+
+/**
+ * Marca/desmarca a produção da ordem como fora do estoque (sacaria).
+ * Editável em qualquer status exceto Apontada (o front esconde o botão lá;
+ * depois de apontada a ordem já saiu do balanço sozinha). RLS + o catch-all
+ * de fn_ordens_por_acao exigem ordens/editar.
+ */
+export async function definirForaBalanco(id: string, valor: boolean): Promise<void> {
+  const { data, error } = await supabase
+    .from('ordens')
+    .update({ fora_balanco: valor })
+    .eq('id', id)
+    .select('id')
+  erro('marcar fora do estoque', error)
+  if ((data ?? []).length === 0) {
+    throw new Error('marcar fora do estoque: o banco não alterou nenhuma linha — seu perfil não tem a ação Editar ordens')
+  }
 }
 
 export async function definirPrioridade(

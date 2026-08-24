@@ -290,8 +290,16 @@ registro. Aparece no relatório de ordens (colunas *Dia original* e *Reprogramad
 ```
 saldo = pedidos_APROVADOS − estoque_PA − ordens_abertas
 ```
-- `ordens_abertas` = todas com status ≠ `Apontada` (ordem apontada sai do balanço e reaparece
-  no estoque do próximo upload).
+- `ordens_abertas` = todas com status ≠ `Apontada` **e não marcadas `fora_balanco`** (ordem
+  apontada sai do balanço e reaparece no estoque do próximo upload).
+- **Ordem "fora do estoque"** (`ordens.fora_balanco`, decisão de 24/08/2026): produção que
+  não vira estoque vendável — ex.: bags BG5M pra reensaque na **sacaria**. Sai do balanço e
+  da conta de produção futura da Expedição; baixa do lote, execução, tempos e qualidade
+  seguem normais. Marcável no formulário da ordem e alternável **em qualquer status exceto
+  `Apontada`** (botão "sem estoque"/"volta ao estoque" na tela Ordens, ação de
+  `ordens/editar`; tag roxa "sem estoque" na lista). Os gatilhos de imutabilidade e de
+  coluna-por-ação ficaram intactos de propósito: a coluna fora das listas deles já dá
+  exatamente esse comportamento (migração `ordem-fora-do-estoque.sql`).
 - Avisos **fortes, nunca bloqueantes** (decisão do PCP): sem pedido de venda · estoque já cobre ·
   já planejado · excede o saldo · **estoque parado** (mesmo cultivar+tratamento em embalagem sem pedido).
 - Pedido de venda com código de tratamento **sem receita cadastrada** entra no balanço (a demanda

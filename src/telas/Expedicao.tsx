@@ -124,7 +124,9 @@ export default function Expedicao() {
           .map((l) => ({ cultivar: l.cultivar, bags: l.bags_disp ?? 0 })),
         estoquePa,
         ordens
-          .filter((o) => ABERTAS.includes(o.status_efetivo))
+          // fora_balanco (sacaria): a produção não vira estoque vendável —
+          // não pode contar como material garantido/futuro pros caminhões
+          .filter((o) => ABERTAS.includes(o.status_efetivo) && !o.fora_balanco)
           .map((o) => ({
             cultivar: o.cultivar,
             tratamento: (o.receita_nome ?? '').toUpperCase(),

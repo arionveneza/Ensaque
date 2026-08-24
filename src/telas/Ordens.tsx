@@ -948,6 +948,7 @@ export default function Ordens() {
                 onConfirmar={(id) => comErro(() => g.confirmarOrdem(id, usuario!.id))}
                 onAbrir={abrirOrdem}
                 abrindoId={abrindoId}
+                onForaBalanco={(o) => comErro(() => g.definirForaBalanco(o.id, !o.fora_balanco))}
               />
             ))}
           </Tabela>
@@ -1956,6 +1957,7 @@ function comparadorOrdenacao(
 function FragmentoDia({
   dia, lista, maquinas, ordenacao, podeEditar, podeExcluir, podePriorizar,
   onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar, onAbrir, abrindoId,
+  onForaBalanco,
 }: {
   dia: string
   lista: OrdemVisao[]
@@ -1972,6 +1974,8 @@ function FragmentoDia({
   /** Abre o detalhe completo (tempos, tanques, produzido, conferência) — qualquer status. */
   onAbrir: (id: string) => void
   abrindoId: string | null
+  /** Alterna a marcação "não entra no estoque" (sacaria) — qualquer status exceto Apontada. */
+  onForaBalanco: (o: OrdemVisao) => void
 }) {
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
 
@@ -2071,7 +2075,14 @@ function FragmentoDia({
                   <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
                     {o.cliente ?? '—'}
                   </td>
-                  <td className="px-2 py-1.5"><Tag cor={corDoStatus(st)}>{st}</Tag></td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
+                    <Tag cor={corDoStatus(st)}>{st}</Tag>
+                    {o.fora_balanco && (
+                      <span className="ml-1" title="Produção que não vira estoque (ex.: sacaria) — fora do balanço de demanda">
+                        <Tag cor="roxo">sem estoque</Tag>
+                      </span>
+                    )}
+                  </td>
                   {/*
                     editar+urgente+excluir como botão com borda pedem mais espaço
                     que o texto sublinhado de antes — por isso min-w-56, não
@@ -2121,6 +2132,19 @@ function FragmentoDia({
                           title="Corrige o número da ordem mesmo em produção — os demais campos continuam travados"
                         >
                           renumerar
+                        </button>
+                      )}
+                      {/* qualquer status exceto Apontada: apontada já saiu do
+                          balanço sozinha, alternar não muda mais nada */}
+                      {podeEditar && st !== 'Apontada' && (
+                        <button
+                          onClick={() => onForaBalanco(o)}
+                          className={BOTAO_ACAO}
+                          title={o.fora_balanco
+                            ? 'Voltar a contar esta produção no estoque/balanço de demanda'
+                            : 'Marcar como produção que NÃO vira estoque (ex.: sacaria) — sai do balanço de demanda; baixa do lote e execução seguem normais'}
+                        >
+                          {o.fora_balanco ? 'volta ao estoque' : 'sem estoque'}
                         </button>
                       )}
                       {podePriorizar && pode(st, 'priorizar') && (
@@ -2185,6 +2209,7 @@ function NovaOrdemForm({
       quadra: editando?.quadra ?? '',
       maquinaId: editando?.maquina_id ?? '',
       dataProg: editando?.data_prog ?? '',
+      foraBalanco: editando?.fora_balanco ?? false,
     }),
     [editando, embalagens],
   )
@@ -2192,7 +2217,7 @@ function NovaOrdemForm({
   const { valor: f, definir, limpar, recuperado } = useRascunho(chaveRascunho, inicial)
   const {
     numero, loteId, receitaId, embalagem, bags, cliente, observacao,
-    armazem, bloco, quadra, maquinaId, dataProg,
+    armazem, bloco, quadra, maquinaId, dataProg, foraBalanco,
   } = f
 
   // rascunho com nº digitado reabre o formulário sozinho — senão o trabalho
@@ -2244,15 +2269,19 @@ function NovaOrdemForm({
         : [],
       linhaBalanco ? [{ ...chave, bags: linhaBalanco.estoque_pa }] : [],
       ordens
-        .filter((o) => o.status_efetivo !== 'Apontada' && o.cultivar === chave.cultivar &&
+        // ordem fora do estoque (sacaria) não conta como "já planejado"
+        // cobrindo pedido real — a produção dela não vira saldo
+        .filter((o) => o.status_efetivo !== 'Apontada' && !o.fora_balanco &&
+          o.cultivar === chave.cultivar &&
           o.receita_nome === chave.tratamento && o.embalagem === chave.embalagem)
         .map((o) => ({ ...chave, bags: o.bags })),
       true,
       // embalagem de peso fixo (saco 10/20 kg): pedido/saldo não existem nos
-      // ERPs — a família de avisos "sem pedido" seria alarme falso sempre
-      (embalagens.find((e) => e.codigo === embalagem)?.peso_fixo_kg ?? 0) > 0,
+      // ERPs; ordem marcada fora do estoque (sacaria) idem — a família de
+      // avisos "sem pedido" seria alarme falso sempre
+      (embalagens.find((e) => e.codigo === embalagem)?.peso_fixo_kg ?? 0) > 0 || foraBalanco,
     )
-  }, [lote, receita, embalagem, bags, balanco, ordens, embalagens])
+  }, [lote, receita, embalagem, bags, balanco, ordens, embalagens, foraBalanco])
 
   if (!aberto && !editando) {
     return (
@@ -2379,6 +2408,19 @@ function NovaOrdemForm({
             placeholder="ex.: SEM GRAFITE" className={INPUT}
           />
         </Campo>
+        <Campo rotulo="Estoque">
+          <label
+            className="flex items-center gap-2 py-1.5 text-sm normal-case"
+            title="Produção que não vira estoque vendável (ex.: bags pra reensaque na sacaria): consome o lote normalmente, mas fica fora do balanço de demanda e não gera alarme de pedido"
+          >
+            <input
+              type="checkbox"
+              checked={foraBalanco}
+              onChange={(e) => definir({ foraBalanco: e.target.checked })}
+            />
+            Não entra no estoque (ex.: sacaria)
+          </label>
+        </Campo>
         <Campo rotulo="Máquina e dia (opcional)">
           <div className="flex gap-2">
             {/* min-w: sem isto o select murchava para ~64px no tablet, com a
@@ -2481,6 +2523,7 @@ function NovaOrdemForm({
                 quadra: quadra.trim() || null,
                 maquina_id: maquinaId || null,
                 data_prog: dataProg || null,
+                fora_balanco: foraBalanco,
               }
               if (editando) {
                 await g.atualizarOrdem(editando.id, dados)
