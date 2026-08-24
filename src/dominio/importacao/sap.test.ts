@@ -79,13 +79,32 @@ describe('conversao de saldos do SAP', () => {
     expect(r.resumo.antesDoCorte).toBe(1)
   })
 
-  it('ignora linha sem data de entrada valida', () => {
+  it('ignora e reporta separadamente linha sem data de entrada legivel', () => {
     const r = converterSaldoSap([
       CAB_SAP,
       linha('761 I2X', 'SV006', 'SEM TSI', 'BB5M', 171, '', 'SC', 20),
     ])
     expect(r.lotes).toHaveLength(0)
-    expect(r.resumo.antesDoCorte).toBe(1)
+    expect(r.resumo.dataInvalida).toBe(1)
+    expect(r.resumo.antesDoCorte).toBe(0)
+  })
+
+  it('le data no formato brasileiro dia/mes/ano, nao mes/dia', () => {
+    // 15/03/2026 tem dia > 12: se o parser confundisse mes/dia isso quebraria
+    const depoisDoCorte = converterSaldoSap([
+      CAB_SAP,
+      linha('761 I2X', 'SV012', 'SEM TSI', 'BB5M', 171, '15/03/2026', 'SC', 20),
+    ])
+    expect(depoisDoCorte.lotes).toHaveLength(1)
+    expect(depoisDoCorte.resumo.dataInvalida).toBe(0)
+
+    const antesDoCorte = converterSaldoSap([
+      CAB_SAP,
+      linha('761 I2X', 'SV013', 'SEM TSI', 'BB5M', 171, '15/03/2025', 'SC', 20),
+    ])
+    expect(antesDoCorte.lotes).toHaveLength(0)
+    expect(antesDoCorte.resumo.antesDoCorte).toBe(1)
+    expect(antesDoCorte.resumo.dataInvalida).toBe(0)
   })
 
   it('ignora granel/pre-lote sem embalagem reconhecida', () => {

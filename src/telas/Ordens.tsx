@@ -662,9 +662,20 @@ export default function Ordens() {
                 <li className="text-stone-500">
                   Fora: {previaSaldoSap.resumo.granel} linha(s) de pré-lote/granel ·{' '}
                   {previaSaldoSap.resumo.saldoZeroOuNegativo} sem saldo ·{' '}
-                  {previaSaldoSap.resumo.antesDoCorte} anterior(es) a 01/01/2026
+                  {previaSaldoSap.resumo.antesDoCorte} anterior(es) a 01/01/2026 ·{' '}
+                  {previaSaldoSap.resumo.dataInvalida} sem data legível
                 </li>
               </ul>
+              {previaSaldoSap.resumo.dataInvalida > previaSaldoSap.resumo.totalLinhas / 2 && (
+                <div className="mt-3">
+                  <Aviso gravidade="bloqueio">
+                    <b>Quase todas as linhas ficaram sem data legível</b> — não é lote antigo,
+                    é a coluna "Data de Entrada" não sendo entendida (formato diferente do
+                    esperado, ou nome de coluna diferente no export). Confira antes de importar:
+                    se seguir assim, o estoque some inteiro.
+                  </Aviso>
+                </div>
+              )}
               {previaSaldoSap.resumo.negativos.length > 0 && (
                 <div className="mt-3">
                   <Aviso>

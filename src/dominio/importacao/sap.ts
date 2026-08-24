@@ -11,10 +11,26 @@ import {
   type EstoquePaConvertido, type Linha, type LoteConvertido,
 } from './simpleagro'
 
+/**
+ * O leitor de xlsx devolve data como `Date` quando a célula é célula de
+ * data de verdade — mas exports de relatório (SAP incluso) costumam sair
+ * como TEXTO formatado, e aí o formato brasileiro (`15/03/2026`,
+ * dia/mês/ano) quebra o construtor nativo de `Date`: ele tenta mês/dia,
+ * "15/03" vira mês 15 (inválido) em vez de dia 15 do mês 3. Sem tratar
+ * isso à parte, toda linha cai como "sem data" e o corte de 2026 rejeita o
+ * arquivo inteiro — foi o que aconteceu na primeira tentativa real
+ * (achado do Arion, 19/08/2026: "o estoque ficou zerado").
+ */
 const paraData = (v: unknown): Date | null => {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v
   const s = txt(v)
   if (!s) return null
+  const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (br) {
+    const [, d, m, a] = br
+    const data = new Date(Number(a), Number(m) - 1, Number(d))
+    return Number.isNaN(data.getTime()) ? null : data
+  }
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? null : d
 }
@@ -26,8 +42,10 @@ export interface ResumoSaldoSap {
   totalLinhas: number
   /** Sem embalagem reconhecida (BB5M/BMB) → ignorado (granel/pré-lote). */
   granel: number
-  /** Sem Data de Entrada válida, ou anterior ao corte → ignorado. */
+  /** Data de Entrada anterior ao corte → ignorado. */
   antesDoCorte: number
+  /** Data de Entrada ausente ou ilegível (formato inesperado) → ignorado. Alto aqui é sinal de coluna errada ou formato novo, não de lote antigo. */
+  dataInvalida: number
   saldoZeroOuNegativo: number
   /** Saldo negativo na origem: ignorado, mas reportado. */
   negativos: { lote: string; bags: number }[]
@@ -69,7 +87,10 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
   const iTrat = ix('TRATAMENTO (TSI)')
   const iEmb = ix('EMBALAGEM')
   const iSaldo = ix('QTD EM ESTOQUE')
-  const iData = ix('DATA DE ENTRADA')
+  // por "inclui", não igualdade: tolera espaçamento/acento diferente do
+  // esperado sem cair silenciosamente em "coluna não encontrada" — só
+  // "Data de Entrada" tem "ENTRADA" no cabeçalho (Criação/Validade/Vencer não têm)
+  const iData = h.findIndex((x) => x.includes('ENTRADA'))
   const iUm = ix('UM ESTOQUE')
   const iPms = h.findIndex((x) => x.includes('PMS'))
 
@@ -79,6 +100,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
     totalLinhas: Math.max(0, rows.length - 1),
     granel: 0,
     antesDoCorte: 0,
+    dataInvalida: 0,
     saldoZeroOuNegativo: 0,
     negativos: [],
     semPms: 0,
@@ -92,8 +114,12 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
       resumo.granel++
       continue
     }
-    const dataEntrada = paraData(r[iData])
-    if (!dataEntrada || dataEntrada < CORTE_SALDO_SAP) {
+    const dataEntrada = iData >= 0 ? paraData(r[iData]) : null
+    if (!dataEntrada) {
+      resumo.dataInvalida++
+      continue
+    }
+    if (dataEntrada < CORTE_SALDO_SAP) {
       resumo.antesDoCorte++
       continue
     }
