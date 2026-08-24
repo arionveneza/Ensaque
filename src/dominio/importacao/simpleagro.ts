@@ -9,9 +9,9 @@
 /** Uma linha da planilha. O leitor de xlsx devolve datas como Date, não texto. */
 export type Linha = (string | number | Date | boolean | null | undefined)[]
 
-const txt = (v: unknown): string => (v == null ? '' : String(v).trim())
+export const txt = (v: unknown): string => (v == null ? '' : String(v).trim())
 
-const num = (v: unknown): number => {
+export const num = (v: unknown): number => {
   const n = parseFloat(txt(v).replace(/\./g, '').replace(',', '.'))
   return Number.isNaN(n) ? 0 : n
 }
@@ -71,7 +71,7 @@ export interface ResumoPedidos {
  * zero demanda — indistinguível de "não há pedido". Falha calada é pior que
  * falha barulhenta.
  */
-const normaliza = (s: string): string =>
+export const normaliza = (s: string): string =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
 
 /**

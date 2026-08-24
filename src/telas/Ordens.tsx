@@ -16,6 +16,9 @@ import {
   type Linha, type ResultadoPedidos, type ResultadoSaldos,
 } from '@/dominio/importacao/simpleagro'
 import {
+  converterSaldoSap, ehRelatorioSaldoSap, type ResultadoSaldoSap,
+} from '@/dominio/importacao/sap'
+import {
   converterOrdens, ehPlanilhaDeOrdens, type ResultadoOrdens,
 } from '@/dominio/importacao/ordens'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
@@ -141,6 +144,7 @@ export default function Ordens() {
 
   const [previaPedidos, setPreviaPedidos] = useState<ResultadoPedidos | null>(null)
   const [previaSaldos, setPreviaSaldos] = useState<ResultadoSaldos | null>(null)
+  const [previaSaldoSap, setPreviaSaldoSap] = useState<ResultadoSaldoSap | null>(null)
   const [previaOrdens, setPreviaOrdens] = useState<ResultadoOrdens | null>(null)
 
   const recarregar = useCallback(async () => {
@@ -184,23 +188,30 @@ export default function Ordens() {
   }
 
   // ---------------- importação de planilha ----------------
+
+  /** Lê o .xlsx em memória — mesmo formato que o read-excel-file devolve nos dois importadores. */
+  async function linhasDoArquivo(arquivo: File): Promise<Linha[]> {
+    const bruto = (await readXlsxFile(arquivo)) as unknown
+    const arr = bruto as { data?: Linha[] }[]
+    return Array.isArray(arr) && arr.length > 0 && !Array.isArray(arr[0]) && Array.isArray(arr[0]?.data)
+      ? (arr[0].data as Linha[])
+      : (bruto as Linha[])
+  }
+
   async function lerArquivo(ev: ChangeEvent<HTMLInputElement>) {
     const arquivo = ev.target.files?.[0]
     if (!arquivo) return
     setErro(null); setMsg(null)
-    setPreviaPedidos(null); setPreviaSaldos(null); setPreviaOrdens(null)
+    setPreviaPedidos(null); setPreviaSaldos(null); setPreviaSaldoSap(null); setPreviaOrdens(null)
     try {
-      const bruto = (await readXlsxFile(arquivo)) as unknown
-      const arr = bruto as { data?: Linha[] }[]
-      const rows: Linha[] =
-        Array.isArray(arr) && arr.length > 0 && !Array.isArray(arr[0]) && Array.isArray(arr[0]?.data)
-          ? (arr[0].data as Linha[])
-          : (bruto as Linha[])
+      const rows = await linhasDoArquivo(arquivo)
 
       if (ehRelatorioPedidos(rows)) {
         setPreviaPedidos(converterPedidos(rows, receitas.map((r) => r.nome)))
       } else if (ehRelatorioSaldos(rows)) {
         setPreviaSaldos(converterSaldos(rows))
+      } else if (ehRelatorioSaldoSap(rows)) {
+        setPreviaSaldoSap(converterSaldoSap(rows))
       } else if (ehPlanilhaDeOrdens(rows)) {
         setPreviaOrdens(
           converterOrdens(rows, {
@@ -213,10 +224,39 @@ export default function Ordens() {
       } else {
         setErro(
           'Planilha não reconhecida. Esperado o "Pedidos Analítico Resumido", a exportação de ' +
-            '"Saldos" da SimpleAgro, ou uma planilha de ordens com as colunas Ordem, Lote, ' +
-            'Tratamento, Embalagem e Bags.',
+            '"Saldos" da SimpleAgro, o export de saldos do SAP, ou uma planilha de ordens com as ' +
+            'colunas Ordem, Lote, Tratamento, Embalagem e Bags.',
         )
       }
+    } catch (e) {
+      setErro(`Não consegui ler o arquivo: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      ev.target.value = ''
+    }
+  }
+
+  /**
+   * Botão dedicado (pedido do Arion, 19/08/2026): enquanto o TI não resolve
+   * o relatório de Saldos da SimpleAgro, esse export do SAP substitui os
+   * dois destinos (lotes de semente + estoque de produto acabado). Separado
+   * do botão genérico de propósito — o auto-detect acima também reconhece
+   * esse formato, mas aqui o erro é específico se vier arquivo errado.
+   */
+  async function lerArquivoSap(ev: ChangeEvent<HTMLInputElement>) {
+    const arquivo = ev.target.files?.[0]
+    if (!arquivo) return
+    setErro(null); setMsg(null)
+    setPreviaSaldoSap(null)
+    try {
+      const rows = await linhasDoArquivo(arquivo)
+      if (!ehRelatorioSaldoSap(rows)) {
+        setErro(
+          'Esse arquivo não parece o export de saldos do SAP — esperado colunas como ' +
+            '"Nº do Lote", "Tratamento (TSI)" e "Qtd em Estoque".',
+        )
+        return
+      }
+      setPreviaSaldoSap(converterSaldoSap(rows))
     } catch (e) {
       setErro(`Não consegui ler o arquivo: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -376,6 +416,13 @@ export default function Ordens() {
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium dark:border-stone-700">
               Carregar planilha (.xlsx)
               <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerArquivo} />
+            </label>
+            <label
+              title="Enquanto o TI não resolve o relatório de Saldos da SimpleAgro: mesmo destino (lotes de semente + estoque de produto acabado), lido do export do SAP"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium dark:border-stone-700"
+            >
+              Importar saldo do SAP
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerArquivoSap} />
             </label>
             <Botao
               titulo="Baixa uma planilha de exemplo já com as colunas certas e duas linhas preenchidas"
@@ -591,6 +638,81 @@ export default function Ordens() {
                       const qtd = await g.importarEstoquePa(previaSaldos.estoquePa, usuario!.id)
                       setMsg(`${qtd} linha(s) de estoque importadas.`)
                       setPreviaSaldos(null)
+                    })
+                  }
+                >
+                  Importar estoque
+                </Botao>
+              </div>
+            </div>
+          )}
+
+          {previaSaldoSap && (
+            <div className="mt-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
+              <h4 className="text-sm font-semibold">Saldo do SAP (substituto temporário)</h4>
+              <ul className="mt-2 space-y-1 text-sm text-stone-600 dark:text-stone-300">
+                <li>
+                  <b>{previaSaldoSap.lotes.length} lote(s) de semente</b> ·{' '}
+                  {inteiro(previaSaldoSap.totalBagsLotes)} bags
+                </li>
+                <li>
+                  {previaSaldoSap.estoquePa.length} combinação(ões) de estoque tratado ·{' '}
+                  {inteiro(previaSaldoSap.totalBagsEstoque)} bags
+                </li>
+                <li className="text-stone-500">
+                  Fora: {previaSaldoSap.resumo.granel} linha(s) de pré-lote/granel ·{' '}
+                  {previaSaldoSap.resumo.saldoZeroOuNegativo} sem saldo ·{' '}
+                  {previaSaldoSap.resumo.antesDoCorte} anterior(es) a 01/01/2026
+                </li>
+              </ul>
+              {previaSaldoSap.resumo.negativos.length > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Saldo negativo na origem</b> (ignorado, verificar no SAP):{' '}
+                    {previaSaldoSap.resumo.negativos.map((x) => `${x.lote} (${x.bags})`).join(', ')}
+                  </Aviso>
+                </div>
+              )}
+              {previaSaldoSap.resumo.semPms > 0 && (
+                <div className="mt-3">
+                  <Aviso gravidade="bloqueio">
+                    {previaSaldoSap.resumo.semPms} lote(s) sem PMS — o peso do bag fica zero.
+                    Corrigir na origem antes de produzir.
+                  </Aviso>
+                </div>
+              )}
+              {Object.keys(previaSaldoSap.resumo.unidades).length > 1 && (
+                <div className="mt-3">
+                  <Aviso gravidade="bloqueio">
+                    <b>Mais de uma unidade em "UM Estoque"</b> — pode estar somando kg junto com
+                    bag:{' '}
+                    {Object.entries(previaSaldoSap.resumo.unidades)
+                      .map(([um, linhas]) => `${um} (${linhas} linha${linhas > 1 ? 's' : ''})`)
+                      .join(' · ')}
+                    . Confira a planilha antes de importar.
+                  </Aviso>
+                </div>
+              )}
+              <div className="mt-3 flex gap-2">
+                <Botao
+                  variante="primario"
+                  onClick={() =>
+                    comErro(async () => {
+                      const qtd = await g.importarLotes(previaSaldoSap.lotes)
+                      setMsg(`${qtd} lote(s) importados (via SAP).`)
+                      setPreviaSaldoSap(null)
+                    })
+                  }
+                >
+                  Importar lotes
+                </Botao>
+                <Botao
+                  disabled={previaSaldoSap.estoquePa.length === 0}
+                  onClick={() =>
+                    comErro(async () => {
+                      const qtd = await g.importarEstoquePa(previaSaldoSap.estoquePa, usuario!.id)
+                      setMsg(`${qtd} linha(s) de estoque importadas (via SAP).`)
+                      setPreviaSaldoSap(null)
                     })
                   }
                 >
