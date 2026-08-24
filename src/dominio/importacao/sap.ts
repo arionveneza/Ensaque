@@ -7,22 +7,9 @@
  */
 
 import {
-  normaliza, normalizaCultivar, num, txt,
+  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, txt,
   type EstoquePaConvertido, type Linha, type LoteConvertido,
 } from './simpleagro'
-
-/**
- * De-para de embalagem do SAP → código do app. Diferente da SimpleAgro
- * (`EMBALAGEM_DEPARA` em `simpleagro.ts`, cuja chave é `BB5M`): o SAP já
- * exporta a embalagem tratada como `BG5M`, o código do próprio app — só
- * `BMB` (meio bag) precisa virar `MEIOBAG`. Usar o mapa da SimpleAgro aqui
- * faria toda linha BG5M cair em "granel não reconhecido" (achado ao rodar
- * os testes: chave errada, resultado sempre vazio).
- */
-const EMBALAGEM_DEPARA_SAP: Record<string, { codigo: string; fator: number }> = {
-  BG5M: { codigo: 'BG5M', fator: 5 },
-  BMB: { codigo: 'MEIOBAG', fator: 2.5 },
-}
 
 const paraData = (v: unknown): Date | null => {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v
@@ -37,7 +24,7 @@ export const CORTE_SALDO_SAP = new Date('2026-01-01T00:00:00')
 
 export interface ResumoSaldoSap {
   totalLinhas: number
-  /** Sem embalagem reconhecida (BG5M/BMB) → ignorado (granel/pré-lote). */
+  /** Sem embalagem reconhecida (BB5M/BMB) → ignorado (granel/pré-lote). */
   granel: number
   /** Sem Data de Entrada válida, ou anterior ao corte → ignorado. */
   antesDoCorte: number
@@ -63,13 +50,14 @@ export const ehRelatorioSaldoSap = (rows: Linha[]): boolean => {
 }
 
 /**
- * Um arquivo, dois destinos — mesma regra da Saldos da SimpleAgro:
+ * Um arquivo, dois destinos — mesma regra da Saldos da SimpleAgro, e o
+ * mesmo de-para de embalagem (BB5M→BG5M, BMB→MEIOBAG):
  * - Tratamento (TSI) = SEM TSI (ou vazio) → lotes de semente
  * - Tratamento real                       → estoque de produto acabado
  * - Sem embalagem reconhecida (granel/pré-lote) → ignorado
  *
  * Duas diferenças da SimpleAgro: (1) a Embalagem já vem numa coluna própria
- * (BG5M/BMB) — não precisa extrair do nome do produto, e por isso a
+ * (BB5M/BMB) — não precisa extrair do nome do produto, e por isso a
  * correção de CULTIVAR truncado (peculiaridade de lá) não se aplica aqui;
  * (2) só conta lote com Data de Entrada a partir de `CORTE_SALDO_SAP`.
  */
@@ -99,7 +87,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
 
   for (const r of rows.slice(1)) {
     const embRaw = txt(r[iEmb])
-    const emb = EMBALAGEM_DEPARA_SAP[normaliza(embRaw)]
+    const emb = EMBALAGEM_DEPARA[normaliza(embRaw)]
     if (!emb) {
       resumo.granel++
       continue
