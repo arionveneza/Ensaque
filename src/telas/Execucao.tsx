@@ -203,7 +203,8 @@ export default function Execucao() {
                 <th className="hidden px-3 py-2 lg:table-cell">Cultivar</th>
                 <th className="px-2 py-2 lg:px-3">Tratamento</th>
                 <th className="px-2 py-2 lg:px-3">Lote</th>
-                <th className="px-2 py-2 lg:px-3 text-right">Bags</th>
+                <th className="px-2 py-2 lg:px-3">Emb.</th>
+                <th className="px-2 py-2 lg:px-3 text-right">Qtd</th>
                 <th className="px-2 py-2 lg:px-3 text-right">Peso</th>
                 <th className="px-2 py-2 lg:px-3">Status</th>
                 <th className="px-2 py-2 lg:px-3"></th>
@@ -287,8 +288,8 @@ function FragmentoMaquina({
             : 'bg-stone-600 text-white dark:bg-stone-700'
         }
       >
-        {/* colSpan 5 + célula fantasma: acompanha a coluna Cultivar, que some em tela estreita */}
-        <td colSpan={5} className="px-2 py-2.5 lg:px-3">
+        {/* colSpan 6 + célula fantasma: acompanha a coluna Cultivar, que some em tela estreita */}
+        <td colSpan={6} className="px-2 py-2.5 lg:px-3">
           <span className="text-lg font-bold tracking-tight">{nome}</span>
         </td>
         <td className="hidden lg:table-cell" />
@@ -319,6 +320,7 @@ function FragmentoMaquina({
             <td className="hidden px-3 py-2 lg:table-cell">{o.cultivar}</td>
             <td className="px-2 py-2 lg:px-3">{o.receitas.nome}</td>
             <td className="px-2 py-2 font-medium lg:px-3">{o.lote_id}</td>
+            <td className="px-2 py-2 lg:px-3">{o.embalagem}</td>
             <td className="num-tabular px-2 py-2 text-right lg:px-3">{o.bags}</td>
             <td className="num-tabular px-2 py-2 text-right whitespace-nowrap lg:px-3">
               {num(pesoOrdemKg(o) / 1000, 1)} t
@@ -460,7 +462,8 @@ function CardMaquina({
               {atual.numero} · {atual.cultivar} · {atual.receitas.nome}
             </button>
             <p className="text-xs text-stone-500 dark:text-stone-400">
-              Lote {atual.lote_id} · {atual.bags} bags · {num(pesoOrdemKg(atual) / 1000, 1)} t
+              Lote {atual.lote_id} · {atual.bags} × {atual.embalagem} ·{' '}
+              {num(pesoOrdemKg(atual) / 1000, 1)} t
             </p>
           </div>
 
