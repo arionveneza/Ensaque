@@ -42,7 +42,20 @@ quando('conversao contra os arquivos reais de 28/07/2026', () => {
     const r = converterPedidos(rows)
     expect(r.totalAprovado).toBe(1018)
     expect(r.totalPendente).toBe(4674)
-    expect(r.linhas.length).toBe(247)
+    // 288, não mais 247: combinação que mistura VENDA COOPERADO com outros
+    // tipos de venda se divide em duas linhas (21/08/2026) — os totais de
+    // bags acima não mudam
+    expect(r.linhas.length).toBe(288)
+  })
+
+  it('pedidos: VENDA COOPERADO marcado pela coluna Tipo Venda', async () => {
+    const rows = await ler(ARQ_PEDIDOS)
+    const r = converterPedidos(rows)
+    const soma = (f: (l: (typeof r.linhas)[0]) => boolean) =>
+      r.linhas.filter(f).reduce((a, l) => a + l.bags, 0)
+    expect(soma((l) => l.cooperado && l.aprovado)).toBe(151)
+    expect(soma((l) => l.cooperado && !l.aprovado)).toBe(1073)
+    expect(r.resumo.bagsCooperado).toBe(151 + 1073)
   })
 
   it('pedidos: 26 codigos distintos, 22 deles sem receita cadastrada', async () => {

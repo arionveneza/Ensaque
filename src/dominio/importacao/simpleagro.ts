@@ -56,6 +56,13 @@ export interface PedidoConvertido {
   bags: number
   /** Coluna H = 'Aprovado'. Só aprovado entra no balanço. */
   aprovado: boolean
+  /**
+   * Coluna L `Tipo Venda` = VENDA COOPERADO. Compromisso com cooperado tem
+   * peso diferente pro PCP — o painel destaca quanto do pedido é isso
+   * (pedido do Arion, 21/08/2026). Divide a combinação em linha própria,
+   * como o `aprovado` já faz.
+   */
+  cooperado: boolean
 }
 
 export interface ResumoPedidos {
@@ -79,6 +86,8 @@ export interface ResumoPedidos {
   porStatusFora: Record<string, { linhas: number; bags: number }>
   /** Valores distintos de Status Financeiro vistos → bags. */
   porStatusFinanceiro: Record<string, number>
+  /** Bags de VENDA COOPERADO entre as linhas aproveitadas (aprovado + aguardando). */
+  bagsCooperado: number
 }
 
 /**
@@ -135,6 +144,8 @@ export function converterPedidos(
   const iTrat = ix('Tratamento')
   const iEmb = ix('Embalagem')
   const iSaldo = ix('Saldo a Faturar')
+  // coluna L; export antigo sem ela só deixa de marcar cooperado, não trava
+  const iTipoVenda = ix('Tipo Venda')
 
   const receitas = new Set(receitasCadastradas.map((r) => r.toUpperCase()))
   const agregado = new Map<string, PedidoConvertido>()
@@ -148,6 +159,7 @@ export function converterPedidos(
     embalagemDesconhecida: {},
     porStatusFora: {},
     porStatusFinanceiro: {},
+    bagsCooperado: 0,
   }
 
   for (const r of rows.slice(1)) {
@@ -195,7 +207,11 @@ export function converterPedidos(
     // aprovação financeira NÃO filtra a importação: define só quem conta no
     // saldo. O não aprovado entra visível, fora da conta
     const aprovado = normaliza(finRaw) === FINANCEIRO_APROVADO
-    const chave = [cultivar, tratamento, emb.codigo, aprovado ? 'A' : 'P'].join('|')
+    // por "inclui": o valor real é "VENDA COOPERADO", mas uma variação de
+    // grafia na origem não pode silenciosamente desligar o destaque
+    const cooperado = iTipoVenda >= 0 && normaliza(txt(r[iTipoVenda])).includes('COOPERADO')
+    if (cooperado) resumo.bagsCooperado += bags
+    const chave = [cultivar, tratamento, emb.codigo, aprovado ? 'A' : 'P', cooperado ? 'C' : 'N'].join('|')
 
     const atual = agregado.get(chave)
     if (atual) atual.bags += bags
@@ -206,6 +222,7 @@ export function converterPedidos(
         embalagem: emb.codigo,
         bags,
         aprovado,
+        cooperado,
       })
     resumo.aproveitadas++
   }

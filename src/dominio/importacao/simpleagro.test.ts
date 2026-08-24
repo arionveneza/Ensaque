@@ -200,6 +200,33 @@ describe('conversao de pedidos', () => {
     ])
     expect(r.linhas[0].cultivar).toBe('NEO700 I2X')
   })
+
+  it('marca VENDA COOPERADO pela coluna Tipo Venda e separa em linha propria', () => {
+    const CAB_COM_TIPO = [...CAB_PEDIDOS, 'Tipo Venda']
+    const r = converterPedidos([
+      CAB_COM_TIPO,
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 80), 'VENDA DISTRIBUIDOR'],
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 20), 'VENDA COOPERADO'],
+    ])
+    // mesma combinacao, flags diferentes: duas linhas — como aprovado ja faz
+    expect(r.linhas).toHaveLength(2)
+    const coop = r.linhas.find((l) => l.cooperado)
+    const normal = r.linhas.find((l) => !l.cooperado)
+    expect(coop?.bags).toBe(20)
+    expect(normal?.bags).toBe(80)
+    expect(r.resumo.bagsCooperado).toBe(20)
+    // o total da combinacao continua 100 — so a marcacao divide
+    expect(r.totalAprovado).toBe(100)
+  })
+
+  it('sem a coluna Tipo Venda (export antigo), nada vira cooperado', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10),
+    ])
+    expect(r.linhas[0].cooperado).toBe(false)
+    expect(r.resumo.bagsCooperado).toBe(0)
+  })
 })
 
 describe('normalizaCultivar', () => {

@@ -484,6 +484,12 @@ export default function Ordens() {
                   <b>{inteiro(previaPedidos.totalAprovado)} bags aprovados</b> ·{' '}
                   {inteiro(previaPedidos.totalPendente)} aguardando aprovação financeira
                 </li>
+                {previaPedidos.resumo.bagsCooperado > 0 && (
+                  <li className="font-medium text-amber-600 dark:text-amber-400">
+                    {inteiro(previaPedidos.resumo.bagsCooperado)} bg de VENDA COOPERADO — destacados
+                    no painel de demanda
+                  </li>
+                )}
                 <li className="text-stone-500">
                   Fora: {previaPedidos.resumo.foraStatus} sem status firme (Aprovado/Integrado) ·{' '}
                   {previaPedidos.resumo.semTsi} SEM TSI · {previaPedidos.resumo.saldoZero} sem saldo
@@ -1476,7 +1482,17 @@ function PainelDemanda({ balanco: balancoTodo }: { balanco: BalancoLinha[] }) {
                     <td className="px-2 py-1.5">{b.cultivar}</td>
                     <td className="px-2 py-1.5">{b.tratamento}</td>
                     <td className="whitespace-nowrap px-2 py-1.5"><Emb codigo={b.embalagem} /></td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.pedido_aprovado)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {inteiro(b.pedido_aprovado)}
+                      {(b.pedido_cooperado ?? 0) > 0 && (
+                        <div
+                          className="whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400"
+                          title="Parcela do pedido aprovado que é VENDA COOPERADO (coluna Tipo Venda da SimpleAgro)"
+                        >
+                          {inteiro(b.pedido_cooperado ?? 0)} coop.
+                        </div>
+                      )}
+                    </td>
                     <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
                       {inteiro(b.pedido_pendente)}
                     </td>

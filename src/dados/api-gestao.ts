@@ -508,6 +508,8 @@ export interface BalancoLinha {
   ordens_abertas: number
   saldo: number
   receita_cadastrada: boolean
+  /** Parcela do pedido aprovado que é VENDA COOPERADO — ausente até a migração pedido-cooperado.sql rodar. */
+  pedido_cooperado?: number
 }
 
 /** Estoque de produto acabado (tratado) da carga vigente, linha a linha. */
@@ -555,9 +557,20 @@ export async function importarPedidos(
     embalagem: l.embalagem,
     bags: l.bags,
     aprovado: l.aprovado,
+    cooperado: l.cooperado,
   }))
+  // a coluna `cooperado` nasceu depois (migração pedido-cooperado.sql): na
+  // janela entre publicar o front e rodar o SQL, importa sem a marcação em
+  // vez de travar a carga do dia inteira
+  let comCooperado = true
   for (let i = 0; i < registros.length; i += 500) {
-    const { error } = await supabase.from('pedidos_venda').insert(registros.slice(i, i + 500))
+    const fatia = registros.slice(i, i + 500)
+    const semCoop = () => fatia.map(({ cooperado: _c, ...resto }) => resto)
+    let { error } = await supabase.from('pedidos_venda').insert(comCooperado ? fatia : semCoop())
+    if (error && comCooperado && error.message.includes('cooperado')) {
+      comCooperado = false
+      ;({ error } = await supabase.from('pedidos_venda').insert(semCoop()))
+    }
     erro('inserir pedidos', error)
   }
   return registros.length
