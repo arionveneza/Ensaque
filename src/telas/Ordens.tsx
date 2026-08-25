@@ -1933,8 +1933,30 @@ function Placar({
 /** Botões de ação da linha da ordem — mesmas cores do Botao, tamanho compacto para caber na tabela. */
 const BOTAO_ACAO =
   'shrink-0 rounded-md border border-stone-300 px-2 py-1 text-xs font-medium transition-colors hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
-const BOTAO_ACAO_PERIGO =
-  'shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
+
+/** Um item do menu "ações ▾" da linha da ordem. `perigo` = ação destrutiva (excluir). */
+function ItemMenuAcao({
+  rotulo, titulo, perigo, onClick,
+}: {
+  rotulo: string
+  titulo?: string
+  perigo?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={titulo}
+      className={`block w-full rounded px-2 py-1.5 text-left text-sm ${
+        perigo
+          ? 'text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
+          : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+      }`}
+    >
+      {rotulo}
+    </button>
+  )
+}
 
 /** Compara duas ordens pelo campo escolhido — usado só dentro de cada
  *  máquina; a sequência real (`seq`) continua intacta, isto é só exibição. */
@@ -1979,6 +2001,8 @@ function FragmentoDia({
   onForaBalanco: (o: OrdemVisao) => void
 }) {
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
+  /** Qual linha está com o menu "ações ▾" aberto — um por vez. */
+  const [menuAberto, setMenuAberto] = useState<string | null>(null)
 
   // sub-agrupamento por máquina (pedido do Arion, 13/08/2026) — a lista já
   // chega ordenada por maquina_id/seq (listarOrdens), então o Map preserva
@@ -2084,84 +2108,83 @@ function FragmentoDia({
                       </span>
                     )}
                   </td>
-                  {/*
-                    editar+urgente+excluir como botão com borda pedem mais espaço
-                    que o texto sublinhado de antes — por isso min-w-56, não
-                    min-w-44. Continua valendo em qualquer largura: em lg:
-                    aparecem MAIS colunas (Seq, Emb., Lote, Endereço, Cliente)
-                    disputando espaço, não menos — zerar o mínimo ali seria o
-                    oposto do que essa coluna precisa.
-                  */}
-                  <td className="min-w-56 px-2 py-1.5 text-right whitespace-nowrap">
-                    <div className="inline-flex flex-wrap justify-end gap-1.5">
-                      <button
-                        onClick={() => onAbrir(o.id)}
-                        disabled={abrindoId === o.id}
-                        className={BOTAO_ACAO}
-                        title="Tempos, tanques, bags produzidos e conferência da logística"
-                      >
-                        {abrindoId === o.id ? 'abrindo…' : 'detalhes'}
-                      </button>
-                      {podeEditar && pode(st, 'editar') && (
-                        <button
-                          onClick={() => onEditar(o)}
-                          className={BOTAO_ACAO}
-                          title="Editável enquanto a produção não toca a ordem"
-                        >
-                          editar
-                        </button>
-                      )}
-                      {/* programar não expõe a ordem para a Logística baixar o lote —
-                          só depois que o PCP confirma (11/08/2026) */}
-                      {podeEditar && pode(st, 'confirmar') && (
-                        <button
-                          onClick={() => onConfirmar(o.id)}
-                          className={BOTAO_ACAO}
-                          title="Libera a ordem para a Logística ver e baixar o lote"
-                        >
-                          confirmar
-                        </button>
-                      )}
-                      {/* única correção liberada numa ordem já tocada pela produção:
-                          o número não entra em nenhum cálculo, então corrigi-lo não
-                          distorce tempo/consumo — diferente dos outros campos, que
-                          o gatilho de imutabilidade continua travando */}
-                      {podeEditar && pode(st, 'renumerar') && (
-                        <button
-                          onClick={() => onRenumerar(o)}
-                          className={BOTAO_ACAO}
-                          title="Corrige o número da ordem mesmo em produção — os demais campos continuam travados"
-                        >
-                          renumerar
-                        </button>
-                      )}
-                      {/* qualquer status exceto Apontada: apontada já saiu do
-                          balanço sozinha, alternar não muda mais nada */}
-                      {podeEditar && st !== 'Apontada' && (
-                        <button
-                          onClick={() => onForaBalanco(o)}
-                          className={BOTAO_ACAO}
-                          title={o.fora_balanco
-                            ? 'Voltar a contar esta produção no estoque/balanço de demanda'
-                            : 'Marcar como produção que NÃO vira estoque (ex.: sacaria) — sai do balanço de demanda; baixa do lote e execução seguem normais'}
-                        >
-                          {o.fora_balanco ? 'volta ao estoque' : 'sem estoque'}
-                        </button>
-                      )}
-                      {podePriorizar && pode(st, 'priorizar') && (
-                        <button
-                          onClick={() => onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')}
-                          className={BOTAO_ACAO}
-                        >
-                          {o.prioridade === 'Urgente' ? 'normal' : 'urgente'}
-                        </button>
-                      )}
-                      {podeExcluir && pode(st, 'excluir') && (
-                        <button onClick={() => onExcluir(o.id)} className={BOTAO_ACAO_PERIGO}>
-                          excluir
-                        </button>
-                      )}
-                    </div>
+                  {/* um botão só por linha (pedido do Arion, 25/08/2026):
+                      o varal de até 7 botões virou o menu "ações ▾" — as
+                      MESMAS condições de status/permissão de antes decidem
+                      quais itens aparecem */}
+                  <td className="relative px-2 py-1.5 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => setMenuAberto(menuAberto === o.id ? null : o.id)}
+                      disabled={abrindoId === o.id}
+                      className={BOTAO_ACAO}
+                    >
+                      {abrindoId === o.id ? 'abrindo…' : 'ações ▾'}
+                    </button>
+                    {menuAberto === o.id && (
+                      <>
+                        {/* véu invisível: clicar fora fecha, sem listener global */}
+                        <div className="fixed inset-0 z-10" onClick={() => setMenuAberto(null)} />
+                        <div className="absolute right-2 z-20 mt-1 w-48 rounded-md border border-stone-300 bg-white p-1 text-left shadow-lg dark:border-stone-700 dark:bg-stone-900">
+                          <ItemMenuAcao
+                            rotulo="detalhes"
+                            titulo="Tempos, tanques, bags produzidos e conferência da logística"
+                            onClick={() => { setMenuAberto(null); onAbrir(o.id) }}
+                          />
+                          {podeEditar && pode(st, 'editar') && (
+                            <ItemMenuAcao
+                              rotulo="editar"
+                              titulo="Editável enquanto a produção não toca a ordem"
+                              onClick={() => { setMenuAberto(null); onEditar(o) }}
+                            />
+                          )}
+                          {/* programar não expõe a ordem para a Logística baixar o
+                              lote — só depois que o PCP confirma (11/08/2026) */}
+                          {podeEditar && pode(st, 'confirmar') && (
+                            <ItemMenuAcao
+                              rotulo="confirmar"
+                              titulo="Libera a ordem para a Logística ver e baixar o lote"
+                              onClick={() => { setMenuAberto(null); onConfirmar(o.id) }}
+                            />
+                          )}
+                          {/* única correção liberada numa ordem já tocada pela
+                              produção: o número não entra em cálculo nenhum */}
+                          {podeEditar && pode(st, 'renumerar') && (
+                            <ItemMenuAcao
+                              rotulo="renumerar"
+                              titulo="Corrige o número da ordem mesmo em produção — os demais campos continuam travados"
+                              onClick={() => { setMenuAberto(null); onRenumerar(o) }}
+                            />
+                          )}
+                          {/* qualquer status exceto Apontada: apontada já saiu do
+                              balanço sozinha, alternar não muda mais nada */}
+                          {podeEditar && st !== 'Apontada' && (
+                            <ItemMenuAcao
+                              rotulo={o.fora_balanco ? 'volta ao estoque' : 'sem estoque'}
+                              titulo={o.fora_balanco
+                                ? 'Voltar a contar esta produção no estoque/balanço de demanda'
+                                : 'Marcar como produção que NÃO vira estoque (ex.: sacaria) — sai do balanço de demanda; baixa do lote e execução seguem normais'}
+                              onClick={() => { setMenuAberto(null); onForaBalanco(o) }}
+                            />
+                          )}
+                          {podePriorizar && pode(st, 'priorizar') && (
+                            <ItemMenuAcao
+                              rotulo={o.prioridade === 'Urgente' ? 'voltar a normal' : 'marcar urgente'}
+                              onClick={() => {
+                                setMenuAberto(null)
+                                onPrioridade(o.id, o.prioridade === 'Urgente' ? 'Normal' : 'Urgente')
+                              }}
+                            />
+                          )}
+                          {podeExcluir && pode(st, 'excluir') && (
+                            <ItemMenuAcao
+                              rotulo="excluir"
+                              perigo
+                              onClick={() => { setMenuAberto(null); onExcluir(o.id) }}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
                   </td>
                 </tr>
               )
