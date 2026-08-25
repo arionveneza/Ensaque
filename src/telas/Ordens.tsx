@@ -22,7 +22,7 @@ import {
   converterOrdens, ehPlanilhaDeOrdens, type ResultadoOrdens,
 } from '@/dominio/importacao/ordens'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
-import { useRascunho } from '@/lib/useRascunho'
+import { temRascunho, useRascunho } from '@/lib/useRascunho'
 import { supabase } from '@/lib/supabase'
 import {
   USUARIOS_SAP_TESTE, caminhoSaldoLotes, saldoLoteDe, type SaldoLoteSap,
@@ -950,10 +950,10 @@ export default function Ordens() {
               ))}
             </select>
             <div className="hidden h-6 w-px bg-stone-200 sm:block dark:bg-stone-700" />
-            <Botao onClick={() => setDiasAbertos(new Set(porDia.map(([dia]) => dia)))}>
-              abrir todos os dias
-            </Botao>
-            <Botao onClick={() => setDiasAbertos(new Set())}>fechar todos os dias</Botao>
+            <BotaoMenuDias
+              onAbrirTodos={() => setDiasAbertos(new Set(porDia.map(([dia]) => dia)))}
+              onFecharTodos={() => setDiasAbertos(new Set())}
+            />
           </div>
         }
       >
@@ -1294,6 +1294,12 @@ function SeletorMultiplo({
   )
 }
 
+/** Chave do rascunho de "Programar" — uma por combinação, sobrevive a fechar
+ *  o modal e até a sair da tela (pedido do Arion, 25/08/2026: não quer
+ *  escolher os lotes de novo se parar no meio). */
+const chaveProgramar = (cultivar: string, tratamento: string, embalagem: string) =>
+  `programar.${cultivar}.${tratamento}.${embalagem}`
+
 /**
  * Demanda × Estoque × Planejado.
  *
@@ -1611,9 +1617,16 @@ function PainelDemanda({
                           <button
                             type="button"
                             onClick={() => setProgramando(b)}
+                            title={
+                              temRascunho(chaveProgramar(b.cultivar, b.tratamento, b.embalagem))
+                                ? 'Já tem lote(s) escolhido(s) aqui — continue de onde parou'
+                                : undefined
+                            }
                             className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
                           >
-                            Programar
+                            {temRascunho(chaveProgramar(b.cultivar, b.tratamento, b.embalagem))
+                              ? 'Continuar programação'
+                              : 'Programar'}
                           </button>
                         )}
                       </div>
@@ -1675,7 +1688,11 @@ function ModalProgramarDemanda({
     () => lotes.filter((l) => l.cultivar === cultivar && l.status === 'Em estoque'),
     [lotes, cultivar],
   )
-  const [linhas, setLinhas] = useState<{ loteId: string; bags: string }[]>([{ loteId: '', bags: '' }])
+  const rascunho = useRascunho<{ linhas: { loteId: string; bags: string }[] }>(
+    chaveProgramar(cultivar, tratamento, embalagem),
+    { linhas: [{ loteId: '', bags: '' }] },
+  )
+  const linhas = rascunho.valor.linhas
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<g.ResultadoLote | null>(null)
@@ -1684,9 +1701,9 @@ function ModalProgramarDemanda({
   const validas = linhas.filter((l) => l.loteId && Number(l.bags) > 0)
 
   const atualizarLinha = (i: number, campo: 'loteId' | 'bags', valor: string) =>
-    setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
-  const adicionarLinha = () => setLinhas((ls) => [...ls, { loteId: '', bags: '' }])
-  const removerLinha = (i: number) => setLinhas((ls) => ls.filter((_, idx) => idx !== i))
+    rascunho.substituir({ linhas: linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)) })
+  const adicionarLinha = () => rascunho.substituir({ linhas: [...linhas, { loteId: '', bags: '' }] })
+  const removerLinha = (i: number) => rascunho.substituir({ linhas: linhas.filter((_, idx) => idx !== i) })
 
   async function confirmar() {
     if (!receita || validas.length === 0) return
@@ -1704,7 +1721,10 @@ function ModalProgramarDemanda({
       }))
       const r = await g.criarOrdensEmLote(lista)
       setResultado(r)
-      if (r.jaExistiam.length === 0) onCriado()
+      if (r.jaExistiam.length === 0) {
+        onCriado()
+        rascunho.limpar()
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     } finally {
@@ -2205,6 +2225,50 @@ function Placar({
 /** Botões de ação da linha da ordem — mesmas cores do Botao, tamanho compacto para caber na tabela. */
 const BOTAO_ACAO =
   'shrink-0 rounded-md border border-stone-300 px-2 py-1 text-xs font-medium transition-colors hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+
+/**
+ * Botão pequeno com ícone de tabela — abre um menu com "abrir/fechar todos
+ * os dias". Antes eram dois botões de texto full-size disputando espaço com
+ * o resto da barra de filtros (pedido do Arion, 25/08/2026: "ficou ridículo").
+ */
+function BotaoMenuDias({
+  onAbrirTodos, onFecharTodos,
+}: {
+  onAbrirTodos: () => void
+  onFecharTodos: () => void
+}) {
+  const [aberto, setAberto] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        title="Abrir ou fechar todos os dias"
+        className="flex h-[38px] w-[38px] items-center justify-center rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="2" y="2" width="12" height="12" rx="1" />
+          <path d="M2 6.3h12M2 10.7h12M6.3 2v12M10.7 2v12" />
+        </svg>
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setAberto(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-stone-300 bg-white p-1 text-left shadow-lg dark:border-stone-700 dark:bg-stone-900">
+            <ItemMenuAcao
+              rotulo="abrir todos os dias"
+              onClick={() => { setAberto(false); onAbrirTodos() }}
+            />
+            <ItemMenuAcao
+              rotulo="fechar todos os dias"
+              onClick={() => { setAberto(false); onFecharTodos() }}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 /** Um item do menu "ações ▾" da linha da ordem. `perigo` = ação destrutiva (excluir). */
 function ItemMenuAcao({
