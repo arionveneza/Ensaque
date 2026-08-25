@@ -118,7 +118,9 @@ export default function Etapas() {
                   </td>
                 ))}
                 <td className="px-2 py-1.5">
-                  <Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag>
+                  <Tag cor={corDoStatus(o.status_efetivo)} className="min-w-36 text-center">
+                    {o.status_efetivo}
+                  </Tag>
                 </td>
               </tr>
             ))}
@@ -133,7 +135,7 @@ function ChipEtapa({ etapa }: { etapa: EtapaOrdem }) {
   if (etapa.situacao === 'feita') {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+        className="inline-flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300"
         title={etapa.detalhe}
       >
         ✓{etapa.detalhe ? ` ${etapa.detalhe}` : ''}

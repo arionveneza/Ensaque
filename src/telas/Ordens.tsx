@@ -1909,13 +1909,13 @@ function Placar({
 }) {
   const borda = {
     neutro: 'border-stone-200 dark:border-stone-800',
-    ok: 'border-emerald-200 dark:border-emerald-900',
+    ok: 'border-green-200 dark:border-green-900',
     alerta: 'border-amber-300 dark:border-amber-800',
     perigo: 'border-red-300 dark:border-red-800',
   }[cor]
   const numero = {
     neutro: 'text-stone-800 dark:text-stone-100',
-    ok: 'text-emerald-700 dark:text-emerald-400',
+    ok: 'text-green-700 dark:text-green-400',
     alerta: 'text-amber-700 dark:text-amber-400',
     perigo: 'text-red-700 dark:text-red-400',
   }[cor]
@@ -2101,25 +2101,38 @@ function FragmentoDia({
                     {o.cliente ?? '—'}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
-                    <Tag cor={corDoStatus(st)}>{st}</Tag>
-                    {o.fora_balanco && (
-                      <span className="ml-1" title="Produção que não vira estoque (ex.: sacaria) — fora do balanço de demanda">
-                        <Tag cor="roxo">sem estoque</Tag>
-                      </span>
-                    )}
+                    {/* min-w = largura do maior rótulo ("Pronto para produzir",
+                        ~130px) — todas as caixas de status ficam do mesmo
+                        tamanho, em vez de cada uma no tamanho do próprio texto
+                        (pedido do Arion, 25/08/2026) */}
+                    <Tag cor={corDoStatus(st)} className="min-w-36 text-center">
+                      {st}
+                    </Tag>
                   </td>
                   {/* um botão só por linha (pedido do Arion, 25/08/2026):
                       o varal de até 7 botões virou o menu "ações ▾" — as
                       MESMAS condições de status/permissão de antes decidem
-                      quais itens aparecem */}
+                      quais itens aparecem. "sem estoque" mora colada nele
+                      (não na coluna Status): o texto do status varia de
+                      tamanho e empurrava a tag pra uma posição diferente em
+                      cada linha — grudada no botão ela sempre alinha, porque
+                      o botão em si já é de largura fixa (pedido do Arion,
+                      25/08/2026). */}
                   <td className="relative px-2 py-1.5 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => setMenuAberto(menuAberto === o.id ? null : o.id)}
-                      disabled={abrindoId === o.id}
-                      className={BOTAO_ACAO}
-                    >
-                      {abrindoId === o.id ? 'abrindo…' : 'ações ▾'}
-                    </button>
+                    <span className="inline-flex items-center gap-1.5">
+                      {o.fora_balanco && (
+                        <span title="Produção que não vira estoque (ex.: sacaria) — fora do balanço de demanda">
+                          <Tag cor="roxo">sem estoque</Tag>
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setMenuAberto(menuAberto === o.id ? null : o.id)}
+                        disabled={abrindoId === o.id}
+                        className={BOTAO_ACAO}
+                      >
+                        {abrindoId === o.id ? 'abrindo…' : 'ações ▾'}
+                      </button>
+                    </span>
                     {menuAberto === o.id && (
                       <>
                         {/* véu invisível: clicar fora fecha, sem listener global */}

@@ -478,7 +478,7 @@ export default function Programacao() {
                           : o.pct > 85
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
                             : o.pct > 0
-                              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                              ? 'bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-300'
                               : 'text-stone-400'
                     return (
                       <td key={d} className="px-1 py-1.5 text-center">
@@ -495,7 +495,7 @@ export default function Programacao() {
                             soltar(m.id, d, null)
                           }}
                           className={`num-tabular w-full rounded px-2 py-1.5 text-xs ${cor} ${
-                            destacado ? 'ring-2 ring-emerald-500' : ''
+                            destacado ? 'ring-2 ring-green-500' : ''
                           }`}
                         >
                           {o.cap <= 0 ? (
@@ -604,7 +604,7 @@ export default function Programacao() {
             const ativo = filtroStatus.has(status)
             const cores = {
               neutro: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300',
-              ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+              ok: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
               alerta: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
               perigo: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
               info: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
@@ -727,7 +727,7 @@ export default function Programacao() {
                 }}
                 className={`min-h-24 space-y-1.5 rounded-md border border-dashed p-2 ${
                   naCelula
-                    ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20'
+                    ? 'border-green-500 bg-green-50/40 dark:bg-green-950/20'
                     : 'border-stone-300 dark:border-stone-700'
                 }`}
               >
@@ -805,7 +805,9 @@ export default function Programacao() {
                               pelo Arion, 13/08/2026) */}
                           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
                             {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
-                            <Tag cor={corDoStatus(ord.status_efetivo)}>{ord.status_efetivo}</Tag>
+                            <Tag cor={corDoStatus(ord.status_efetivo)} className="min-w-36 text-center">
+                              {ord.status_efetivo}
+                            </Tag>
                           </div>
                           {/* bloco de ações sempre OCUPA o mesmo espaço, mesmo
                               quando não é movível (fica só invisível) — é o
@@ -1004,7 +1006,7 @@ export default function Programacao() {
 
 /** Onde a ordem arrastada vai entrar. */
 function LinhaDeInsercao() {
-  return <div className="my-1 h-0.5 rounded-full bg-emerald-500" />
+  return <div className="my-1 h-0.5 rounded-full bg-green-500" />
 }
 
 /**

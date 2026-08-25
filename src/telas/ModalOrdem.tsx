@@ -551,7 +551,7 @@ export default function ModalOrdem({
                               c?.desvioPct == null
                                 ? 'text-stone-400'
                                 : Math.abs(c.desvioPct) <= 5
-                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  ? 'text-green-600 dark:text-green-400'
                                   : Math.abs(c.desvioPct) <= 10
                                     ? 'text-amber-600 dark:text-amber-400'
                                     : 'text-red-600 dark:text-red-400'
@@ -663,7 +663,7 @@ export default function ModalOrdem({
                                 c?.desvioPct == null
                                   ? 'text-stone-400'
                                   : Math.abs(c.desvioPct) <= 5
-                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    ? 'text-green-600 dark:text-green-400'
                                     : Math.abs(c.desvioPct) <= 10
                                       ? 'text-amber-600 dark:text-amber-400'
                                       : 'text-red-600 dark:text-red-400'
@@ -722,7 +722,7 @@ export default function ModalOrdem({
             <button
               disabled={ocupado || !podeConfirmarInicio}
               onClick={() => acao(() => api.confirmarInicio(ordem.id))}
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             >
               Confirmar início
             </button>
@@ -742,7 +742,7 @@ export default function ModalOrdem({
                 <button
                   disabled={ocupado}
                   onClick={() => acao(() => api.retomar(ordem.id))}
-                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                  className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
                 >
                   Retomar
                 </button>
@@ -773,7 +773,7 @@ export default function ModalOrdem({
                 disabled={ocupado || !podeConfirmarFim}
                 title={podeConfirmarFim ? undefined : 'Informe a quantidade produzida (bags)'}
                 onClick={() => acao(() => api.confirmarFim(ordem.id, bagsProduzidos))}
-                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 Confirmar finalização
               </button>
@@ -994,7 +994,7 @@ function Abastecimentos({
             <button
               disabled={!valido}
               onClick={confirmar}
-              className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-semibold text-white disabled:opacity-40"
+              className="rounded-md bg-green-700 px-2 py-1 text-xs font-semibold text-white disabled:opacity-40"
             >
               ok
             </button>

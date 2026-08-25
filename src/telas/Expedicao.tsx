@@ -429,7 +429,7 @@ export default function Expedicao() {
                           {s.semTsi ? '—' : inteiro(s.producaoPrevista)}
                         </td>
                         <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
-                          s.saldo < 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
+                          s.saldo < 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'
                         }`}>
                           {s.saldo > 0 ? '+' : ''}{inteiro(s.saldo)}
                         </td>
@@ -607,7 +607,7 @@ export default function Expedicao() {
                 <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">{inteiro(b.estoque_pa)}</td>
                 <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">{inteiro(b.ordens_abertas)}</td>
                 <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
-                  b.saldo > 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
+                  b.saldo > 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'
                 }`}>
                   {b.saldo > 0 ? inteiro(b.saldo) : '—'}
                 </td>

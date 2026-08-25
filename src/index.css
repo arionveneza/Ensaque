@@ -5,8 +5,9 @@
   Alvos de toque generosos e tipografia legível a distância de braço.
 */
 @theme {
-  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, Consolas, monospace;
+  --font-sans: 'Space Grotesk', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  --color-canvas: #f2f4ef;
 }
 
 html {
@@ -19,9 +20,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Números de balança e peso alinham melhor com largura fixa. */
+/*
+  Números de balança e peso alinham melhor com largura fixa, e a fonte mono
+  é a assinatura visual do redesign (E1) nos dados — sem isto, a mudança de
+  paleta/lateral passava despercebida porque a maior parte da tela é tabela
+  de número.
+*/
 .num-tabular {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 /* Navegação rolável sem a barra aparente (o conteúdo cortado já indica rolagem). */

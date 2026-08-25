@@ -24,7 +24,7 @@ const CORES_STATUS: Record<StatusEfetivo, string> = {
   Programada: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300',
   'Aguardando lote': 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
   'Pronto para produzir': 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  'Em producao': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  'Em producao': 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
   Parada: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
   Finalizada: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
   'Qualidade apontada': 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
@@ -139,7 +139,7 @@ export default function Execucao() {
     <div className="mx-auto max-w-[1600px] px-6 py-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Execução</h2>
+          <h2 className="text-xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Execução</h2>
           <p className="text-sm text-stone-500 dark:text-stone-400">
             Dia de produção das 07:30 às 03:00 — o turno 2 pertence ao dia que começou.
           </p>
@@ -289,7 +289,7 @@ function FragmentoMaquina({
       <tr
         className={
           numerada
-            ? 'bg-emerald-700 text-white dark:bg-emerald-800'
+            ? 'bg-green-700 text-white dark:bg-green-800'
             : 'bg-stone-600 text-white dark:bg-stone-700'
         }
       >
@@ -332,17 +332,20 @@ function FragmentoMaquina({
             </td>
             <td className="px-2 py-2 lg:px-3">
               <span
-                className={`rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${CORES_STATUS[status]}`}
+                className={`inline-block min-w-36 rounded px-2 py-0.5 text-center text-xs font-medium whitespace-nowrap ${CORES_STATUS[status]}`}
               >
                 {status}
               </span>
             </td>
             <td className="px-2 py-2 text-right whitespace-nowrap lg:px-3">
               <div className="inline-flex gap-2">
+                {/* min-w igual nos dois: sem isso "Iniciar" ficava mais largo
+                    que "Abrir" e o botão pulava de tamanho conforme a linha
+                    (pedido do Arion, 25/08/2026) */}
                 {podeApontar && status === 'Pronto para produzir' && (
                   <button
                     onClick={() => onIniciar(o)}
-                    className="rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 sm:py-2 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                    className="min-w-20 rounded-md bg-green-700 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-green-800 sm:py-2 dark:bg-green-600 dark:hover:bg-green-500"
                   >
                     Iniciar
                   </button>
@@ -350,7 +353,7 @@ function FragmentoMaquina({
                 {(o.ordem_tanques.length > 0 || status !== 'Pronto para produzir') && (
                   <button
                     onClick={() => onAbrir(o.id)}
-                    className="rounded-md border border-stone-300 px-4 py-2.5 text-sm transition-colors hover:bg-stone-100 sm:py-2 dark:border-stone-700 dark:hover:bg-stone-800"
+                    className="min-w-20 rounded-md border border-stone-300 px-4 py-2.5 text-center text-sm transition-colors hover:bg-stone-100 sm:py-2 dark:border-stone-700 dark:hover:bg-stone-800"
                   >
                     Abrir
                   </button>
@@ -410,7 +413,7 @@ function CardMaquina({
           ? 'border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900'
           : emParada
             ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/30'
-            : 'border-emerald-300 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30'
+            : 'border-green-300 bg-green-50/60 dark:border-green-900 dark:bg-green-950/30'
       }`}
     >
       {/* O nome da máquina é o que identifica o cartão a distância, no tablet
@@ -429,7 +432,7 @@ function CardMaquina({
                 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                   emParada
                     ? 'bg-red-600 text-white'
-                    : 'bg-emerald-600 text-white'
+                    : 'bg-green-600 text-white'
                 }`}
               >
                 <span
@@ -490,7 +493,7 @@ function CardMaquina({
               <div className="mx-auto mt-2 h-1.5 max-w-64 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
                 <div
                   className={`h-full rounded-full transition-[width] duration-1000 ${
-                    estourou ? 'bg-red-500' : 'bg-emerald-600'
+                    estourou ? 'bg-red-500' : 'bg-green-600'
                   }`}
                   style={{ width: `${progresso}%` }}
                 />

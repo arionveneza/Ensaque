@@ -65,7 +65,7 @@ export function Pagina({
           tela toda antes de qualquer conteúdo aparecer */}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{titulo}</h2>
+          <h2 className="text-xl font-bold tracking-tight text-stone-900 dark:text-stone-100">{titulo}</h2>
           {descricao && (
             <p className="text-sm text-stone-500 dark:text-stone-400">{descricao}</p>
           )}
@@ -90,11 +90,11 @@ export function Cartao({
 }) {
   return (
     <section
-      className={`rounded-lg border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900 ${className}`}
+      className={`rounded-xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900 ${className}`}
     >
       {(titulo || acoes) && (
         <header className="flex flex-col gap-2 border-b border-stone-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-stone-800">
-          {titulo && <h3 className="text-sm font-semibold">{titulo}</h3>}
+          {titulo && <h3 className="text-sm font-semibold tracking-tight">{titulo}</h3>}
           {acoes && <div className="flex flex-wrap gap-2">{acoes}</div>}
         </header>
       )}
@@ -122,7 +122,7 @@ export function Botao({
 }) {
   const estilo =
     variante === 'primario'
-      ? 'bg-emerald-700 text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500'
+      ? 'bg-green-900 text-white hover:bg-green-950 dark:bg-green-700 dark:hover:bg-green-600'
       : variante === 'perigo'
         ? 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40'
         : 'border border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
@@ -134,7 +134,7 @@ export function Botao({
       onClick={onClick}
       // py-2 no celular (~40px de alvo de toque, 119 usos herdam de uma vez);
       // sm: devolve py-1.5 — desktop e tablet ficam como já estavam
-      className={`rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:pointer-events-none disabled:opacity-40 sm:py-1.5 ${estilo} ${className}`}
+      className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:pointer-events-none disabled:opacity-40 sm:py-1.5 ${estilo} ${className}`}
     >
       {children}
     </button>
@@ -144,13 +144,15 @@ export function Botao({
 export function Tag({
   children,
   cor = 'neutro',
+  className = '',
 }: {
   children: ReactNode
   cor?: 'neutro' | 'ok' | 'alerta' | 'perigo' | 'info' | 'roxo'
+  className?: string
 }) {
   const cores = {
     neutro: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300',
-    ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+    ok: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
     alerta: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
     perigo: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
     info: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
@@ -158,7 +160,7 @@ export function Tag({
   }
   return (
     <span
-      className={`inline-block rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cores[cor]}`}
+      className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap ${cores[cor]} ${className}`}
     >
       {children}
     </span>
@@ -182,7 +184,7 @@ export const corDoStatus = (
 
 export function Vazio({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-md bg-stone-50 px-4 py-8 text-center text-sm text-stone-500 dark:bg-stone-800/50 dark:text-stone-400">
+    <p className="rounded-lg bg-stone-50 px-4 py-8 text-center text-sm text-stone-500 dark:bg-stone-800/50 dark:text-stone-400">
       {children}
     </p>
   )
@@ -192,7 +194,7 @@ export function Erro({ children }: { children: ReactNode }) {
   return (
     // break-words: mensagem com token longo sem espaço (um JSON de erro do SAP,
     // por ex.) não pode empurrar scroll horizontal da página no celular
-    <div className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm break-words text-red-700 dark:bg-red-950/40 dark:text-red-300">
+    <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm break-words text-red-700 dark:bg-red-950/40 dark:text-red-300">
       {children}
     </div>
   )
@@ -210,12 +212,12 @@ export function Aviso({
       'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200',
     bloqueio:
       'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300',
-    ok: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
+    ok: 'border-green-300 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300',
   }
   return (
     // break-words: token longo sem espaço (um UUID em <code>, por ex.) não
     // quebra por padrão e empurra scroll horizontal da página inteira
-    <div className={`rounded-md border px-4 py-2.5 text-sm break-words ${cores[gravidade]}`}>
+    <div className={`rounded-lg border px-4 py-2.5 text-sm break-words ${cores[gravidade]}`}>
       {children}
     </div>
   )
@@ -331,7 +333,7 @@ export function AlternadorOkFora({
             className={`rounded-md border px-3 py-2.5 text-sm sm:py-1.5 ${
               ok === v
                 ? v
-                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  ? 'border-green-600 bg-green-600 text-white'
                   : 'border-amber-500 bg-amber-500 text-white'
                 : 'border-stone-300 dark:border-stone-700'
             }`}

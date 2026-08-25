@@ -625,7 +625,9 @@ export default function Indicadores() {
                     <td className="hidden px-2 py-1.5 lg:table-cell">{p.turno_id ?? '—'}</td>
                     <td className="min-w-28 px-2 py-1.5 lg:min-w-0">{p.motivo}</td>
                     <td className="px-2 py-1.5">
-                      <Tag cor={p.tipo === 'Planejada' ? 'info' : 'perigo'}>{p.tipo}</Tag>
+                      <Tag cor={p.tipo === 'Planejada' ? 'info' : 'perigo'} className="min-w-28 text-center">
+                        {p.tipo}
+                      </Tag>
                     </td>
                     <td className="num-tabular px-2 py-1.5 text-right">
                       {formataHms(p.segundos)}{!p.fim && ' (em aberto)'}
@@ -682,7 +684,7 @@ export default function Indicadores() {
                       {t.fim ? (
                         dataHoraCurta(t.fim)
                       ) : (
-                        <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                        <span className="text-xs text-green-600 dark:text-green-400">
                           em andamento
                         </span>
                       )}
@@ -777,7 +779,7 @@ const corOee = (v: number | null | undefined) =>
   v == null
     ? 'text-stone-400'
     : v >= 0.85
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'text-green-600 dark:text-green-400'
       : v >= 0.6
         ? 'text-amber-600 dark:text-amber-400'
         : 'text-red-600 dark:text-red-400'
@@ -796,7 +798,7 @@ function FatorOee({
       <p className={`num-tabular mt-0.5 text-2xl font-bold ${corOee(valor)}`}>{pct(valor)}</p>
       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
         <div
-          className="h-full rounded-full bg-emerald-600"
+          className="h-full rounded-full bg-green-600"
           style={{ width: `${Math.round((valor ?? 0) * 100)}%` }}
         />
       </div>

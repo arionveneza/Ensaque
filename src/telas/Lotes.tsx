@@ -330,12 +330,14 @@ export default function Lotes() {
                 key={p}
                 variante={periodo === p ? 'primario' : 'normal'}
                 onClick={() => setPeriodo(p)}
+                className="min-w-24 text-center"
               >
                 {p === 'dia' ? 'Hoje' : p === 'semana' ? '7 dias' : '30 dias'}
               </Botao>
             ))}
             <Botao
               disabled={movimentos.length === 0}
+              className="min-w-24 text-center"
               onClick={() =>
                 exportarCsv(`baixas-${periodo}`, [
                   ['Data', 'Lote', 'Bags', 'Peso (t)', 'Tipo', 'Quem'],
@@ -537,7 +539,10 @@ function LinhaLote({
             <p className={val}>{n(lote.peso_bag_kg, 0)} kg</p>
           </div>
           {podeBaixar && (
-            <Botao variante="primario" onClick={onBaixar}>
+            // min-w cobre até 2 dígitos (99): sem isso o botão encolhia ou
+            // crescia a cada lote, conforme o nº de bags (pedido do Arion,
+            // 25/08/2026)
+            <Botao variante="primario" onClick={onBaixar} className="min-w-32 text-center">
               Baixar {item.bagsNecessarios} bags
             </Botao>
           )}
@@ -586,7 +591,9 @@ function LinhaLote({
                 <td className="hidden px-2 py-1.5 lg:table-cell">{diaCurto(o.data_prog)}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                 <td className="px-2 py-1.5">
-                  <Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag>
+                  <Tag cor={corDoStatus(o.status_efetivo)} className="min-w-36 text-center">
+                    {o.status_efetivo}
+                  </Tag>
                 </td>
               </tr>
             ))}
@@ -687,7 +694,9 @@ function LinhaConferencia({
         <div>
           <p className="font-medium">
             {ordem.numero} · {ordem.cultivar}{' '}
-            <Tag cor={corDoStatus(ordem.status_efetivo)}>{ordem.status_efetivo}</Tag>
+            <Tag cor={corDoStatus(ordem.status_efetivo)} className="min-w-36 text-center">
+              {ordem.status_efetivo}
+            </Tag>
           </p>
           <p className="text-xs text-stone-500">
             {ordem.receita_nome} · lote {ordem.lote_id} · esperado <b>{ordem.bags} bg</b>

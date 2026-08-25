@@ -152,7 +152,10 @@ export default function Qualidade() {
                     <div>
                       <p className="font-medium">
                         {o.numero} · {o.cultivar}{' '}
-                        <Tag cor={o.status_efetivo === 'Parada' ? 'alerta' : 'ok'}>
+                        <Tag
+                          cor={o.status_efetivo === 'Parada' ? 'alerta' : 'ok'}
+                          className="min-w-36 text-center"
+                        >
                           {o.status_efetivo}
                         </Tag>
                       </p>
@@ -315,7 +318,10 @@ export default function Qualidade() {
                         {f?.observacao ?? '—'}
                       </td>
                       <td className="px-2 py-1.5">
-                        <Tag cor={o.status_efetivo === 'Apontada' ? 'roxo' : 'info'}>
+                        <Tag
+                          cor={o.status_efetivo === 'Apontada' ? 'roxo' : 'info'}
+                          className="min-w-36 text-center"
+                        >
                           {o.status_efetivo}
                         </Tag>
                       </td>
@@ -365,7 +371,7 @@ export default function Qualidade() {
 function Nota({ valor }: { valor: number }) {
   const cor =
     valor >= 4
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'text-green-600 dark:text-green-400'
       : valor === 3
         ? 'text-amber-600 dark:text-amber-400'
         : 'text-red-600 dark:text-red-400'
@@ -394,7 +400,13 @@ function ListaChecks({
               {new Date(c.ts).toLocaleString('pt-BR')}
             </td>
             <td className="px-2 py-1">
-              {c.origem ? <Tag cor={c.origem === 'BOWL' ? 'info' : 'roxo'}>{c.origem}</Tag> : '—'}
+              {c.origem ? (
+                <Tag cor={c.origem === 'BOWL' ? 'info' : 'roxo'} className="min-w-16 text-center">
+                  {c.origem}
+                </Tag>
+              ) : (
+                '—'
+              )}
             </td>
             <td className="px-2 py-1 text-center"><Nota valor={c.recobrimento} /></td>
             <td className="px-2 py-1"><OkFora ok={c.umidade_ok} /></td>

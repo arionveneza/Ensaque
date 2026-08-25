@@ -163,7 +163,7 @@ export default function Painel({ onSair }: { onSair: () => void }) {
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-stone-950 text-stone-100">
       {/* cabeçalho */}
       <header className="flex items-center gap-3 border-b border-stone-800 px-4 py-3 sm:gap-4 sm:px-6">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-600 text-sm font-bold">
           TSI
         </span>
         {/* min-w-0 + truncate: o título encolhe/corta antes de empurrar o resto */}
@@ -243,7 +243,7 @@ function PainelMaquina({
     ? 'border-stone-800'
     : emParada
       ? 'border-red-600'
-      : 'border-emerald-600'
+      : 'border-green-600'
 
   return (
     <div className={`flex flex-col rounded-2xl border-2 ${borda} bg-stone-900 p-5`}>
@@ -252,7 +252,7 @@ function PainelMaquina({
         {atual ? (
           <span
             className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-bold ${
-              emParada ? 'bg-red-600' : 'bg-emerald-600'
+              emParada ? 'bg-red-600' : 'bg-green-600'
             }`}
           >
             <span className={`h-2 w-2 rounded-full bg-white ${emParada ? 'animate-pulse' : ''}`} />
@@ -299,7 +299,7 @@ function PainelMaquina({
               <div className="mt-3 h-2.5 w-full max-w-md overflow-hidden rounded-full bg-stone-800">
                 <div
                   className={`h-full rounded-full transition-[width] duration-1000 ${
-                    estourou ? 'bg-red-500' : 'bg-emerald-500'
+                    estourou ? 'bg-red-500' : 'bg-green-500'
                   }`}
                   style={{ width: `${progresso}%` }}
                 />
@@ -334,6 +334,6 @@ function Kpi({ rotulo, valor, cor }: { rotulo: string; valor: string; cor?: stri
 }
 
 const corOee = (v: number | null) =>
-  v == null ? 'text-stone-500' : v >= 0.85 ? 'text-emerald-400' : v >= 0.6 ? 'text-amber-400' : 'text-red-400'
+  v == null ? 'text-stone-500' : v >= 0.85 ? 'text-green-400' : v >= 0.6 ? 'text-amber-400' : 'text-red-400'
 
 const diaLegivel = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`

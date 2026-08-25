@@ -178,11 +178,11 @@ function NumeroResumo({
     tom === 'critico'
       ? 'text-red-600 dark:text-red-400'
       : tom === 'ok'
-        ? 'text-emerald-700 dark:text-emerald-400'
+        ? 'text-green-700 dark:text-green-400'
         : tom === 'auto'
           ? valor < 0
             ? 'text-red-600 dark:text-red-400'
-            : 'text-emerald-700 dark:text-emerald-400'
+            : 'text-green-700 dark:text-green-400'
           : ''
   return (
     <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800" title={titulo}>
@@ -651,7 +651,7 @@ export default function SapTeste() {
                       className={`border-t border-stone-100 dark:border-stone-800/60 ${
                         i.saldoFinal < 0
                           ? 'border-l-4 border-l-red-500'
-                          : 'border-l-4 border-l-emerald-500'
+                          : 'border-l-4 border-l-green-500'
                       }`}
                     >
                       <td className="px-2 py-1.5 font-medium whitespace-nowrap">{i.itemCode}</td>
@@ -668,7 +668,7 @@ export default function SapTeste() {
                         className={`num-tabular px-2 py-1.5 text-right font-semibold ${
                           i.saldoFinal < 0
                             ? 'text-red-600 dark:text-red-400'
-                            : 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-green-700 dark:text-green-400'
                         }`}
                       >
                         {i.saldoFinal.toLocaleString('pt-BR')}

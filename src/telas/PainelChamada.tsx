@@ -112,7 +112,7 @@ export default function PainelChamada({ onSair }: { onSair: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-stone-950 text-stone-100">
       <header className="flex items-center gap-3 border-b border-stone-800 px-4 py-3 sm:gap-4 sm:px-6">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-600 text-sm font-bold">
           TSI
         </span>
         <div className="min-w-0">
@@ -134,13 +134,13 @@ export default function PainelChamada({ onSair }: { onSair: () => void }) {
 
       <main className="flex flex-1 flex-col items-center gap-8 overflow-y-auto p-6">
         {atual ? (
-          <div className="mt-4 w-full max-w-3xl rounded-2xl border-2 border-emerald-600 bg-stone-900 p-8 text-center">
+          <div className="mt-4 w-full max-w-3xl rounded-2xl border-2 border-green-600 bg-stone-900 p-8 text-center">
             <p className="text-sm font-medium uppercase tracking-[0.3em] text-stone-500">
               Chamando agora
             </p>
             <p className="mt-3 text-5xl font-bold tracking-tight sm:text-6xl">{atual.motorista}</p>
             <p className="num-tabular mt-2 text-3xl text-stone-300">{atual.placa}</p>
-            <p className="mt-4 text-2xl font-semibold text-emerald-400">{atual.motivo}</p>
+            <p className="mt-4 text-2xl font-semibold text-green-400">{atual.motivo}</p>
             {atual.observacao && <p className="mt-2 text-stone-400">{atual.observacao}</p>}
           </div>
         ) : (
