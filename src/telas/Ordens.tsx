@@ -896,6 +896,9 @@ export default function Ordens() {
         foraDoBalanco={new Set(
           embalagens.filter((e) => (e.peso_fixo_kg ?? 0) > 0).map((e) => e.codigo),
         )}
+        lotes={lotes}
+        receitas={receitas}
+        onProgramado={recarregar}
       />
 
       {/* ---------------- bags por lote ---------------- */}
@@ -1301,11 +1304,19 @@ function SeletorMultiplo({
 function PainelDemanda({
   balanco: balancoTodo,
   foraDoBalanco,
+  lotes,
+  receitas,
+  onProgramado,
 }: {
   balanco: BalancoLinha[]
   /** Embalagens de peso fixo (saco 10/20 kg): pedido/saldo fora dos ERPs — mesma isenção do SEM TSI. */
   foraDoBalanco: Set<string>
+  lotes: LoteSementeLinha[]
+  receitas: ReceitaCompleta[]
+  onProgramado: () => void
 }) {
+  /** Linha "falta produzir" sendo programada agora — abre o modal de divisão por lote. */
+  const [programando, setProgramando] = useState<BalancoLinha | null>(null)
   // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
   // essa demanda é rastreada por lotes_semente, fora deste painel de
   // tratamento. Sem este filtro toda ordem SEM TSI programada aparecia aqui
@@ -1590,12 +1601,22 @@ function PainelDemanda({
                       {sobra > 0 ? inteiro(sobra) : <span className="text-stone-300">—</span>}
                     </td>
                     <td className="whitespace-nowrap px-2 py-1.5">
-                      <Tag cor={COR_SITUACAO[s]}>{ROTULO_SITUACAO[s]}</Tag>
-                      {!b.receita_cadastrada && (
-                        <span className="ml-1">
-                          <Tag cor="alerta">sem receita</Tag>
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <Tag cor={COR_SITUACAO[s]}>{ROTULO_SITUACAO[s]}</Tag>
+                        {!b.receita_cadastrada && <Tag cor="alerta">sem receita</Tag>}
+                        {/* só faz sentido programar quando falta de verdade, e só
+                            dá pra criar ordem com receita cadastrada (mesma trava
+                            de sempre) — pedido do Arion, 25/08/2026 */}
+                        {s === 'descoberto' && b.receita_cadastrada && (
+                          <button
+                            type="button"
+                            onClick={() => setProgramando(b)}
+                            className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                          >
+                            Programar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -1610,7 +1631,203 @@ function PainelDemanda({
           </p>
         </>
       )}
+
+      {programando && (
+        <ModalProgramarDemanda
+          cultivar={programando.cultivar}
+          tratamento={programando.tratamento}
+          embalagem={programando.embalagem}
+          alvo={bagsFaltando(programando)}
+          lotes={lotes}
+          receitas={receitas}
+          onFechar={() => setProgramando(null)}
+          // só atualiza a lista por trás — o modal continua aberto mostrando
+          // o resultado (nºs provisórios, o que não pôde ser criado) até a
+          // pessoa mesma fechar; fechar sozinho escondia a confirmação
+          onCriado={onProgramado}
+        />
+      )}
     </Cartao>
+  )
+}
+
+/**
+ * Divide a demanda "falta produzir N bags" em uma ou mais ordens, uma por
+ * lote escolhido — mesmo fluxo de sempre (uma ordem por lote, sem máquina/
+ * dia, cai no pool), só que sem repetir "Nova ordem" pra cada lote na mão.
+ * Não obriga cobrir o alvo inteiro: sai ordem só pelo que foi selecionado
+ * aqui (pedido do Arion, 25/08/2026).
+ */
+function ModalProgramarDemanda({
+  cultivar, tratamento, embalagem, alvo, lotes, receitas, onFechar, onCriado,
+}: {
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  alvo: number
+  lotes: LoteSementeLinha[]
+  receitas: ReceitaCompleta[]
+  onFechar: () => void
+  onCriado: () => void
+}) {
+  const receita = receitas.find((r) => r.nome === tratamento)
+  const lotesDoCultivar = useMemo(
+    () => lotes.filter((l) => l.cultivar === cultivar && l.status === 'Em estoque'),
+    [lotes, cultivar],
+  )
+  const [linhas, setLinhas] = useState<{ loteId: string; bags: string }[]>([{ loteId: '', bags: '' }])
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<g.ResultadoLote | null>(null)
+
+  const total = linhas.reduce((a, l) => a + (Number(l.bags) || 0), 0)
+  const validas = linhas.filter((l) => l.loteId && Number(l.bags) > 0)
+
+  const atualizarLinha = (i: number, campo: 'loteId' | 'bags', valor: string) =>
+    setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
+  const adicionarLinha = () => setLinhas((ls) => [...ls, { loteId: '', bags: '' }])
+  const removerLinha = (i: number) => setLinhas((ls) => ls.filter((_, idx) => idx !== i))
+
+  async function confirmar() {
+    if (!receita || validas.length === 0) return
+    setEnviando(true)
+    setErro(null)
+    try {
+      const numeros = await g.proximosNumerosProvisorios(validas.length)
+      const lista: g.NovaOrdem[] = validas.map((l, i) => ({
+        numero: numeros[i],
+        cultivar,
+        receita_id: receita.id,
+        embalagem,
+        bags: Number(l.bags),
+        lote_id: l.loteId,
+      }))
+      const r = await g.criarOrdensEmLote(lista)
+      setResultado(r)
+      if (r.jaExistiam.length === 0) onCriado()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">
+          Programar — {cultivar} · {tratamento} · {embalagem}
+        </h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          Faltam <b>{inteiro(alvo)} bags</b>. Escolha o(s) lote(s) — se não der para cobrir tudo,
+          sem problema: sai ordem só pelo que você selecionar aqui.
+        </p>
+
+        {!receita && (
+          <div className="mt-3">
+            <Erro>Essa combinação não tem receita cadastrada — não dá para criar ordem.</Erro>
+          </div>
+        )}
+
+        {resultado ? (
+          <div className="mt-4">
+            <Aviso gravidade={resultado.jaExistiam.length === 0 ? 'ok' : 'alerta'}>
+              {resultado.criadas} ordem(ns) criada(s) no pool, com número provisório (P…) —
+              ajuste o número e programe máquina/dia na tela de Programação.
+              {resultado.jaExistiam.length > 0 &&
+                ` ${resultado.jaExistiam.length} não criada(s), ver abaixo.`}
+            </Aviso>
+            {resultado.jaExistiam.map((j, i) => (
+              <p key={i} className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {j.numero}: {j.motivo}
+              </p>
+            ))}
+            <div className="mt-4 flex justify-end">
+              <Botao onClick={onFechar}>Fechar</Botao>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 space-y-2">
+              {linhas.map((l, i) => {
+                const lote = lotesDoCultivar.find((x) => x.id === l.loteId)
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      value={l.loteId}
+                      onChange={(e) => atualizarLinha(i, 'loteId', e.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
+                    >
+                      <option value="">selecione o lote…</option>
+                      {lotesDoCultivar.map((lt) => (
+                        <option key={lt.id} value={lt.id}>
+                          {lt.id}{lt.bags_disp != null ? ` (${lt.bags_disp} disp.)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      max={lote?.bags_disp ?? undefined}
+                      value={l.bags}
+                      onChange={(e) => atualizarLinha(i, 'bags', e.target.value)}
+                      placeholder="bags"
+                      className="w-24 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
+                    />
+                    {linhas.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removerLinha(i)}
+                        title="Remover"
+                        className="px-1 text-lg leading-none text-stone-400 hover:text-red-600"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {lotesDoCultivar.length === 0 ? (
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                Nenhum lote de {cultivar} em estoque no momento.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={adicionarLinha}
+                className="mt-2 text-sm text-green-800 underline dark:text-green-400"
+              >
+                + adicionar lote
+              </button>
+            )}
+
+            <p className={`mt-3 text-sm ${total >= alvo && alvo > 0 ? 'text-green-700 dark:text-green-400' : 'text-stone-600 dark:text-stone-300'}`}>
+              {inteiro(total)} de {inteiro(alvo)} bags selecionados
+              {total > 0 && total < alvo && ' — o restante fica de fora, sem problema'}
+            </p>
+
+            {erro && (
+              <div className="mt-2">
+                <Erro>{erro}</Erro>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <Botao onClick={onFechar}>Cancelar</Botao>
+              <Botao
+                variante="primario"
+                disabled={enviando || !receita || validas.length === 0}
+                onClick={confirmar}
+              >
+                {enviando ? 'criando…' : `Criar ${validas.length || ''} ordem(ns)`}
+              </Botao>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

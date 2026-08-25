@@ -153,6 +153,25 @@ export interface NovaOrdem {
   fora_balanco?: boolean
 }
 
+/**
+ * Números provisórios (P1, P2...) pra quando o PCP "programa" direto do
+ * painel de Demanda: gera várias ordens de uma vez, uma por lote escolhido,
+ * sem ter um nº de ordem de verdade pra cada uma ainda. Únicos em todo o
+ * sistema (não só na combinação cultivar/receita/embalagem) pra não confundir
+ * "qual P1 é esse" quando aparecem em telas diferentes. O nº real de cada
+ * ordem pode ser corrigido depois (editar, enquanto virgem).
+ */
+export async function proximosNumerosProvisorios(qtd: number): Promise<string[]> {
+  const { data, error } = await supabase.from('ordens').select('numero').like('numero', 'P%')
+  erro('numeros provisorios', error)
+  let max = 0
+  for (const { numero } of data ?? []) {
+    const m = /^P(\d+)$/.exec(numero)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return Array.from({ length: qtd }, (_, i) => `P${max + i + 1}`)
+}
+
 export async function criarOrdem(o: NovaOrdem): Promise<void> {
   const { error } = await supabase.from('ordens').insert({ ...o, origem: 'digitacao' })
   if (error) {
