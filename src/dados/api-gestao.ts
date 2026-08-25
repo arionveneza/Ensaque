@@ -67,7 +67,9 @@ export interface OrdemVisao {
 }
 
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
-  let q = supabase.from('v_ordens').select('*')
+  // ordem excluída é só registro (25/08/2026) — não entra em nenhuma tela
+  // de trabalho do dia a dia, só fica gravada no banco
+  let q = supabase.from('v_ordens').select('*').neq('status', 'Excluida')
   if (de) q = q.gte('data_prog', de)
   if (ate) q = q.lte('data_prog', ate)
   const { data, error } = await q.order('data_prog').order('maquina_id').order('seq')
@@ -97,12 +99,34 @@ export async function listarOrdensDaReceita(receitaId: string): Promise<OrdemRes
   return (data ?? []) as OrdemResumoReceita[]
 }
 
+/** Ordens aguardando a Logística baixar o lote — contador da lateral. */
+export async function contarLogisticaPendente(): Promise<number> {
+  const { count, error } = await supabase
+    .from('v_ordens')
+    .select('id', { count: 'exact', head: true })
+    .in('status_efetivo', ['Aguardando lote', 'Pronto para produzir'])
+    .is('lote_liberado_em', null)
+  erro('contar logistica pendente', error)
+  return count ?? 0
+}
+
+/** Ordens em produção/parada/finalizada — ainda pedem atenção da Qualidade. */
+export async function contarQualidadePendente(): Promise<number> {
+  const { count, error } = await supabase
+    .from('v_ordens')
+    .select('id', { count: 'exact', head: true })
+    .in('status_efetivo', ['Em producao', 'Parada', 'Finalizada'])
+  erro('contar qualidade pendente', error)
+  return count ?? 0
+}
+
 /** Ordens sem máquina (pool) — não têm data_prog, então ficam fora do filtro por período. */
 export async function listarPool(): Promise<OrdemVisao[]> {
   const { data, error } = await supabase
     .from('v_ordens')
     .select('*')
     .is('maquina_id', null)
+    .neq('status', 'Excluida')
     .order('numero')
   erro('pool de ordens', error)
   return (data ?? []) as OrdemVisao[]
@@ -187,8 +211,15 @@ export async function atualizarOrdem(id: string, campos: Partial<NovaOrdem>): Pr
   erro('atualizar ordem', error)
 }
 
+/**
+ * Excluir vira STATUS, não DELETE (25/08/2026): a ordem some das telas de
+ * trabalho, mas a linha fica — registro de que foi programada e depois
+ * excluída, sem gerar saldo/ocupação. Mesma exigência de sempre (ordem
+ * virgem, sem história de produção/qualidade/conferência), aplicada pela
+ * RPC `excluir_ordem` no banco.
+ */
 export async function excluirOrdem(id: string): Promise<void> {
-  const { error } = await supabase.from('ordens').delete().eq('id', id)
+  const { error } = await supabase.rpc('excluir_ordem', { p_ordem: id })
   erro('excluir ordem', error)
 }
 
@@ -873,6 +904,7 @@ export async function listarOrdensEtapas(): Promise<OrdemEtapasLinha[]> {
   const { data, error } = await supabase
     .from('v_ordem_etapas')
     .select('*')
+    .neq('status', 'Excluida')
     .order('data_prog')
     .order('maquina_id')
     .order('seq')

@@ -142,6 +142,7 @@ export async function carregarOrdens(dia: string): Promise<LinhaOrdem[]> {
     .from('ordens')
     .select(SELECT_ORDEM)
     .or(`data_prog.eq.${dia},status.in.("Em producao","Parada")`)
+    .neq('status', 'Excluida')
     .order('maquina_id')
     .order('seq')
   erro('ordens', error)

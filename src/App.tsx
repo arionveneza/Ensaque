@@ -1,6 +1,8 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { AuthProvider, useAuth } from '@/auth/AuthProvider'
 import { USUARIOS_SAP_TESTE } from '@/lib/sapTeste'
+import * as g from '@/dados/api-gestao'
+import { useRealtime } from '@/dados/useRealtime'
 import Login from '@/telas/Login'
 import Execucao from '@/telas/Execucao'
 
@@ -61,6 +63,22 @@ function Shell() {
   useEffect(() => {
     abaAtivaRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
   }, [tela])
+
+  // contador na lateral: quantas ordens esperam a Logística baixar o lote e
+  // quantas ainda pedem atenção da Qualidade — sem entrar em nenhuma tela,
+  // dá pra saber se tem algo pendente
+  const [contadores, setContadores] = useState({ lotes: 0, qualidade: 0 })
+  const recarregarContadores = useCallback(async () => {
+    const [lotes, qualidade] = await Promise.all([
+      permitido('lotes', 'ver') ? g.contarLogisticaPendente() : Promise.resolve(0),
+      permitido('qualidade', 'ver') ? g.contarQualidadePendente() : Promise.resolve(0),
+    ])
+    setContadores({ lotes, qualidade })
+  }, [permitido])
+  useEffect(() => {
+    if (session) void recarregarContadores()
+  }, [session, recarregarContadores])
+  useRealtime(['ordens'], recarregarContadores, { ativo: !!session })
 
   if (carregando) {
     return (
@@ -173,7 +191,23 @@ function Shell() {
               }`}
             >
               <IconeTela id={t.id} />
-              {t.nome}
+              <span className="min-w-0 flex-1 truncate">{t.nome}</span>
+              {t.id === 'lotes' && contadores.lotes > 0 && (
+                <span
+                  title="Ordens aguardando a Logística baixar o lote"
+                  className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                >
+                  {contadores.lotes}
+                </span>
+              )}
+              {t.id === 'qualidade' && contadores.qualidade > 0 && (
+                <span
+                  title="Ordens que ainda pedem atenção da Qualidade"
+                  className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                >
+                  {contadores.qualidade}
+                </span>
+              )}
             </button>
           </li>
         ))}

@@ -72,6 +72,11 @@ export const MATRIZ_STATUS: Record<StatusEfetivo, PermissoesStatus> = {
     editar: false, excluir: false, iniciar: false,
     priorizar: false, qualidade: false, estornarLote: false, renumerar: false, confirmar: false,
   },
+  // registro histórico: nada mais acontece com uma ordem excluída
+  Excluida: {
+    editar: false, excluir: false, iniciar: false,
+    priorizar: false, qualidade: false, estornarLote: false, renumerar: false, confirmar: false,
+  },
 }
 
 /** Status em que a produção já tocou a ordem. */
@@ -103,6 +108,8 @@ export function jaIniciada(status: StatusEfetivo): boolean {
  * baixado para outra — nem herdar sobra de uma ordem cancelada.
  */
 export function statusEfetivo(ordem: Ordem): StatusEfetivo {
+  // registro histórico — nunca recalcular a partir de máquina/lote/confirmação
+  if (ordem.status === 'Excluida') return 'Excluida'
   if (jaIniciada(ordem.status)) return ordem.status
   if (!ordem.maquinaId) return 'Nao programada'
   if (ordem.confirmadaEm == null) return 'Programada'

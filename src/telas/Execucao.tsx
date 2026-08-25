@@ -29,6 +29,9 @@ const CORES_STATUS: Record<StatusEfetivo, string> = {
   Finalizada: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
   'Qualidade apontada': 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
   Apontada: 'bg-stone-800 text-stone-100 dark:bg-stone-200 dark:text-stone-900',
+  // nunca deveria chegar aqui (ordem excluída some da Execução), mas o
+  // Record precisa da entrada
+  Excluida: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300',
 }
 
 export default function Execucao() {

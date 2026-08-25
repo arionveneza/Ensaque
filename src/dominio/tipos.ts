@@ -36,6 +36,13 @@ export type StatusPersistido =
   | 'Finalizada'
   | 'Qualidade apontada'
   | 'Apontada'
+  /**
+   * Ordem excluída (25/08/2026): registro de que foi programada e depois
+   * excluída — nunca vira estoque/ocupação/saldo. Continua exigindo ordem
+   * virgem (sem história de produção/qualidade/conferência); a diferença
+   * é que agora a linha permanece, em vez de um DELETE de verdade.
+   */
+  | 'Excluida'
 
 /** Status derivados: dependem da baixa do lote, não são gravados. */
 export type StatusDerivado = 'Aguardando lote' | 'Pronto para produzir'
