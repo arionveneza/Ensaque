@@ -37,6 +37,7 @@ export default function Execucao() {
   const [cadastros, setCadastros] = useState<Awaited<ReturnType<typeof api.carregarCadastros>> | null>(null)
   const [ordens, setOrdens] = useState<LinhaOrdem[]>([])
   const [conferencias, setConferencias] = useState<ConferenciaLinha[]>([])
+  const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aberta, setAberta] = useState<string | null>(null)
@@ -58,12 +59,15 @@ export default function Execucao() {
   useEffect(() => {
     let vivo = true
     setCarregando(true)
-    Promise.all([api.carregarCadastros(), api.carregarOrdens(dia), g.listarConferencias()])
-      .then(([c, o, cf]) => {
+    Promise.all([
+      api.carregarCadastros(), api.carregarOrdens(dia), g.listarConferencias(), g.listarEmbalagens(),
+    ])
+      .then(([c, o, cf, e]) => {
         if (!vivo) return
         setCadastros(c)
         setOrdens(o)
         setConferencias(cf)
+        setEmbalagens(e)
       })
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
@@ -251,6 +255,7 @@ export default function Execucao() {
             cadastros.maquinas.find((m) => m.id === ordemAberta.maquina_id)?.capacidade_th ?? null
           }
           conferencia={conferencias.find((c) => c.ordem_id === ordemAberta.id) ?? null}
+          embalagens={embalagens}
           onFechar={() => setAberta(null)}
           onMudou={recarregar}
         />

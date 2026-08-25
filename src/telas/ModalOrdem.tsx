@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
 import * as api from '@/dados/api'
-import type { ConferenciaLinha } from '@/dados/api-gestao'
+import type { ConferenciaLinha, EmbalagemLinha } from '@/dados/api-gestao'
 import {
   mapaMotivos,
   mapaProdutos,
@@ -38,6 +38,13 @@ interface Props {
   capacidadeTh?: number | null
   /** Conferência de estoque da logística, quando já existir para esta ordem. */
   conferencia?: ConferenciaLinha | null
+  /**
+   * Cadastro de embalagens — a etiqueta DM pode sair em QUALQUER formato
+   * (bag, meio bag, saco), não só o da ordem: a Difusão de Mercado reparte
+   * a produção em pacotes variados (decisão do Arion, 25/08/2026). O peso
+   * de cada opção vem do cadastro: peso fixo, ou PMS do lote × fator.
+   */
+  embalagens?: EmbalagemLinha[]
   onFechar: () => void
   onMudou: () => Promise<void>
 }
@@ -50,6 +57,7 @@ export default function ModalOrdem({
   agora,
   capacidadeTh,
   conferencia,
+  embalagens = [],
   onFechar,
   onMudou,
 }: Props) {
@@ -58,6 +66,7 @@ export default function ModalOrdem({
   const [escolhendoParada, setEscolhendoParada] = useState(false)
   // obrigatória na finalização; em branco de propósito — nada de pré-preencher
   const [qtdProduzida, setQtdProduzida] = useState('')
+  const [menuEtiqueta, setMenuEtiqueta] = useState(false)
 
   const prods = useMemo(() => mapaProdutos(produtos), [produtos])
   const mots = useMemo(() => mapaMotivos(motivos), [motivos])
@@ -242,27 +251,63 @@ export default function ModalOrdem({
             </p>
           </div>
           <div className="flex gap-1.5">
-            <button
-              onClick={() =>
-                imprimirEtiquetaDm({
-                  cultivar: ordem.cultivar,
-                  loteId: ordem.lote_id,
-                  peneira: ordem.lotes_semente.peneira,
-                  categoria: ordem.lotes_semente.categoria,
-                  pesoKg: num(pesoBagOrdemKg(ordem), 0),
-                  pms: ordem.lotes_semente.pms == null ? null : num(ordem.lotes_semente.pms, 2),
-                  // na etiqueta o SEM TSI sai como na planilha original
-                  tratamento:
-                    ordem.receitas.nome.trim().toUpperCase() === 'SEM TSI'
-                      ? 'SEM TRATAMENTO'
-                      : ordem.receitas.nome,
-                })
-              }
-              title="Etiqueta de Difusão de Mercado com os dados do lote desta ordem — cópias pelo diálogo de impressão"
-              className="rounded-md border border-stone-300 px-3 py-1.5 text-sm dark:border-stone-700"
-            >
-              Etiqueta DM
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setMenuEtiqueta((v) => !v)}
+                title="Etiqueta de Difusão de Mercado — escolha o formato do pacote; só o peso muda, os demais dados são do lote desta ordem. Cópias pelo diálogo de impressão."
+                className="rounded-md border border-stone-300 px-3 py-1.5 text-sm dark:border-stone-700"
+              >
+                Etiqueta DM ▾
+              </button>
+              {menuEtiqueta && (
+                <div className="absolute right-0 z-10 mt-1 w-56 rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+                  {embalagens.map((e) => {
+                    // peso do formato: fixo do cadastro, ou PMS do lote × fator —
+                    // sem PMS não há como calcular formato por sementes
+                    const pms = ordem.lotes_semente.pms
+                    const peso =
+                      e.peso_fixo_kg != null && e.peso_fixo_kg > 0
+                        ? e.peso_fixo_kg
+                        : pms != null && pms > 0 && e.fator_peso != null && e.fator_peso > 0
+                          ? pms * e.fator_peso
+                          : null
+                    const kgTxt = peso == null ? null : num(peso, Number.isInteger(peso) ? 0 : 1)
+                    return (
+                      <button
+                        key={e.codigo}
+                        disabled={peso == null}
+                        title={peso == null ? 'Lote sem PMS: não dá para calcular o peso deste formato' : undefined}
+                        onClick={() => {
+                          setMenuEtiqueta(false)
+                          imprimirEtiquetaDm({
+                            cultivar: ordem.cultivar,
+                            loteId: ordem.lote_id,
+                            peneira: ordem.lotes_semente.peneira,
+                            categoria: ordem.lotes_semente.categoria,
+                            pesoKg: kgTxt!,
+                            pms: ordem.lotes_semente.pms == null ? null : num(ordem.lotes_semente.pms, 2),
+                            // na etiqueta o SEM TSI sai como na planilha original
+                            tratamento:
+                              ordem.receitas.nome.trim().toUpperCase() === 'SEM TSI'
+                                ? 'SEM TRATAMENTO'
+                                : ordem.receitas.nome,
+                          })
+                        }}
+                        className="flex w-full items-baseline justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 disabled:opacity-40 dark:hover:bg-stone-800"
+                      >
+                        <span className="font-medium">{e.codigo}</span>
+                        <span className="num-tabular text-xs text-stone-500">
+                          {kgTxt == null ? 'sem PMS' : `${kgTxt} kg`}
+                        </span>
+                      </button>
+                    )
+                  })}
+                  {embalagens.length === 0 && (
+                    <p className="px-2 py-1.5 text-xs text-stone-400">cadastro de embalagens não carregado</p>
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={imprimir}
               title="Folha da ordem para o apontamento manual no chão de fábrica"

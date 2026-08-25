@@ -977,6 +977,7 @@ export default function Ordens() {
           agora={Date.now()}
           capacidadeTh={maquinas.find((m) => m.id === ordemAberta.maquina_id)?.capacidade_th}
           conferencia={conferencias.find((c) => c.ordem_id === ordemAberta.id) ?? null}
+          embalagens={embalagens}
           onFechar={() => setOrdemAberta(null)}
           onMudou={async () => {
             await recarregar()
