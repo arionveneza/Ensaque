@@ -22,7 +22,7 @@ import {
   converterOrdens, ehPlanilhaDeOrdens, type ResultadoOrdens,
 } from '@/dominio/importacao/ordens'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
-import { temRascunho, useRascunho } from '@/lib/useRascunho'
+import { limparRascunhoDe, temRascunho, useRascunho } from '@/lib/useRascunho'
 import { supabase } from '@/lib/supabase'
 import {
   USUARIOS_SAP_TESTE, caminhoSaldoLotes, saldoLoteDe, type SaldoLoteSap,
@@ -30,7 +30,7 @@ import {
 import { useRealtime } from '@/dados/useRealtime'
 import {
   analisaDemanda, bagsFaltando, bagsSobrando, ehSemTsi, podeCriarOrdem, resumoBalanco,
-  situacaoDemanda, type SituacaoDemanda,
+  situacaoDemanda, type ChaveDemanda, type SituacaoDemanda,
 } from '@/dominio/balanco'
 import { diaDeProducao, pesoBagDaOrdemKg } from '@/dominio/calculos'
 import { pode } from '@/dominio/status'
@@ -1300,6 +1300,13 @@ function SeletorMultiplo({
 const chaveProgramar = (cultivar: string, tratamento: string, embalagem: string) =>
   `programar.${cultivar}.${tratamento}.${embalagem}`
 
+/** Chave do rascunho da fila de programação (lista de combinações marcadas
+ *  pra programar — ver `PainelFilaProgramacao`). */
+const FILA_PROGRAMACAO = 'ordens.fila-programacao'
+
+const mesmaCombinacao = (a: ChaveDemanda, b: ChaveDemanda) =>
+  a.cultivar === b.cultivar && a.tratamento === b.tratamento && a.embalagem === b.embalagem
+
 /**
  * Demanda × Estoque × Planejado.
  *
@@ -1323,6 +1330,27 @@ function PainelDemanda({
 }) {
   /** Linha "falta produzir" sendo programada agora — abre o modal de divisão por lote. */
   const [programando, setProgramando] = useState<BalancoLinha | null>(null)
+
+  // Fila de programação: "Programar" só anota a intenção aqui — não abre o
+  // modal na hora. O modal trava a tela até fechar, e o PCP quer poder
+  // marcar várias combinações e resolver os lotes depois, sem parar o que
+  // estava fazendo (pedido do Arion, 26/08/2026: "eu não quero que o modal
+  // trave o uso do app... eu entro nessa fila, vejo o que programei e não
+  // tem lote ou a programação não foi finalizada e ajusto"). O modal só
+  // abre quando a pessoa entra na fila (`PainelFilaProgramacao`) e escolhe
+  // "Abrir" — mesmo rascunho por lote (`chaveProgramar`) de antes.
+  const filaRasc = useRascunho<{ itens: ChaveDemanda[] }>(FILA_PROGRAMACAO, { itens: [] })
+  const fila = filaRasc.valor.itens
+  const naFila = (chave: ChaveDemanda) => fila.some((f) => mesmaCombinacao(f, chave))
+  const adicionarNaFila = (b: ChaveDemanda) => {
+    const chave: ChaveDemanda = { cultivar: b.cultivar, tratamento: b.tratamento, embalagem: b.embalagem }
+    if (naFila(chave)) return
+    filaRasc.substituir({ itens: [...fila, chave] })
+  }
+  const removerDaFila = (chave: ChaveDemanda) => {
+    filaRasc.substituir({ itens: fila.filter((f) => !mesmaCombinacao(f, chave)) })
+    limparRascunhoDe(chaveProgramar(chave.cultivar, chave.tratamento, chave.embalagem))
+  }
   // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
   // essa demanda é rastreada por lotes_semente, fora deste painel de
   // tratamento. Sem este filtro toda ordem SEM TSI programada aparecia aqui
@@ -1423,41 +1451,38 @@ function PainelDemanda({
   ]
 
   // recolhido: só o título e a linha-resumo — a informação crítica continua à
-  // vista. Fica DEPOIS de todos os hooks: retorno antecipado antes de um hook
-  // quebra a regra do React (foi o que derrubou o lint no CI).
-  if (oculto) {
-    return (
-      <Cartao
-        titulo="Demanda × Estoque × Planejado"
-        acoes={<Botao onClick={alternar}>Mostrar</Botao>}
-        className="mb-5"
-      >
-        {balanco.length === 0 ? (
-          <p className="text-sm text-stone-500">Nenhuma carga de demanda importada ainda.</p>
-        ) : (
-          <p className="text-sm text-stone-600 dark:text-stone-300">
-            Falta produzir <b>{inteiro(resumo.faltando)} bg</b>
-            {resumo.sobrando > 0 && (
-              <> · vai sobrar{' '}
-                <b className="text-amber-600 dark:text-amber-400">
-                  {inteiro(resumo.sobrando)} bg
-                </b>
-              </>
-            )}
-            {resumo.semPedido > 0 && (
-              <> · sem pedido{' '}
-                <b className="text-red-600 dark:text-red-400">
-                  {inteiro(resumo.semPedido)} bg
-                </b>
-              </>
-            )}
-          </p>
-        )}
-      </Cartao>
-    )
-  }
-
-  return (
+  // vista. A fila e o modal ficam FORA deste if/else (única `return` no fim
+  // da função) porque precisam aparecer mesmo com o painel recolhido — "Abrir"
+  // um item da fila tem que funcionar independente do estado de oculto.
+  const cartao = oculto ? (
+    <Cartao
+      titulo="Demanda × Estoque × Planejado"
+      acoes={<Botao onClick={alternar}>Mostrar</Botao>}
+      className="mb-5"
+    >
+      {balanco.length === 0 ? (
+        <p className="text-sm text-stone-500">Nenhuma carga de demanda importada ainda.</p>
+      ) : (
+        <p className="text-sm text-stone-600 dark:text-stone-300">
+          Falta produzir <b>{inteiro(resumo.faltando)} bg</b>
+          {resumo.sobrando > 0 && (
+            <> · vai sobrar{' '}
+              <b className="text-amber-600 dark:text-amber-400">
+                {inteiro(resumo.sobrando)} bg
+              </b>
+            </>
+          )}
+          {resumo.semPedido > 0 && (
+            <> · sem pedido{' '}
+              <b className="text-red-600 dark:text-red-400">
+                {inteiro(resumo.semPedido)} bg
+              </b>
+            </>
+          )}
+        </p>
+      )}
+    </Cartao>
+  ) : (
     <Cartao
       titulo="Demanda × Estoque × Planejado"
       acoes={<Botao onClick={alternar}>Ocultar</Botao>}
@@ -1612,22 +1637,21 @@ function PainelDemanda({
                         {!b.receita_cadastrada && <Tag cor="alerta">sem receita</Tag>}
                         {/* só faz sentido programar quando falta de verdade, e só
                             dá pra criar ordem com receita cadastrada (mesma trava
-                            de sempre) — pedido do Arion, 25/08/2026 */}
+                            de sempre) — pedido do Arion, 25/08/2026. Clicar só
+                            entra na fila (painel abaixo) — não abre modal aqui,
+                            pedido do Arion, 26/08/2026 */}
                         {s === 'descoberto' && b.receita_cadastrada && (
-                          <button
-                            type="button"
-                            onClick={() => setProgramando(b)}
-                            title={
-                              temRascunho(chaveProgramar(b.cultivar, b.tratamento, b.embalagem))
-                                ? 'Já tem lote(s) escolhido(s) aqui — continue de onde parou'
-                                : undefined
-                            }
-                            className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
-                          >
-                            {temRascunho(chaveProgramar(b.cultivar, b.tratamento, b.embalagem))
-                              ? 'Continuar programação'
-                              : 'Programar'}
-                          </button>
+                          naFila(b) ? (
+                            <Tag cor="info">na fila</Tag>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => adicionarNaFila(b)}
+                              className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                            >
+                              Programar
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -1644,6 +1668,19 @@ function PainelDemanda({
           </p>
         </>
       )}
+    </Cartao>
+  )
+
+  return (
+    <>
+      {cartao}
+
+      <PainelFilaProgramacao
+        fila={fila}
+        balanco={balanco}
+        onAbrir={setProgramando}
+        onRemover={removerDaFila}
+      />
 
       {programando && (
         <ModalProgramarDemanda
@@ -1656,10 +1693,88 @@ function PainelDemanda({
           onFechar={() => setProgramando(null)}
           // só atualiza a lista por trás — o modal continua aberto mostrando
           // o resultado (nºs provisórios, o que não pôde ser criado) até a
-          // pessoa mesma fechar; fechar sozinho escondia a confirmação
-          onCriado={onProgramado}
+          // pessoa mesma fechar; fechar sozinho escondia a confirmação.
+          // A saída da fila só acontece na criação com sucesso (onCriado só
+          // dispara nesse caso — ver `confirmar` em ModalProgramarDemanda);
+          // fechar sem terminar mantém o item na fila de propósito.
+          onCriado={() => {
+            onProgramado()
+            removerDaFila(programando)
+          }}
         />
       )}
+    </>
+  )
+}
+
+/**
+ * Combinações marcadas com "Programar", ainda sem lote escolhido ou sem
+ * terminar — o PCP entra aqui quando quiser, não quando clicou. Cada item
+ * mostra se já tem rascunho salvo (`chaveProgramar`) e deixa abrir o mesmo
+ * modal de sempre, ou tirar da fila sem criar ordem nenhuma.
+ */
+function PainelFilaProgramacao({
+  fila, balanco, onAbrir, onRemover,
+}: {
+  fila: ChaveDemanda[]
+  balanco: BalancoLinha[]
+  onAbrir: (b: BalancoLinha) => void
+  onRemover: (chave: ChaveDemanda) => void
+}) {
+  if (fila.length === 0) return null
+  return (
+    <Cartao titulo={`Fila de programação (${fila.length})`} className="mb-5">
+      <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+        Marcado pra programar. Abra quando quiser escolher o(s) lote(s) e criar as ordens.
+      </p>
+      <div className="space-y-1.5">
+        {fila.map((chave, i) => {
+          const linha = balanco.find((b) => mesmaCombinacao(b, chave))
+          // a demanda muda (novo pedido, nova carga de estoque) enquanto o
+          // item espera na fila — sinaliza pra o PCP decidir, em vez de
+          // deixar "faltam 0 bags" passar despercebido como se fosse normal
+          const situacao = linha ? situacaoDemanda(linha) : null
+          const emAndamento = temRascunho(
+            chaveProgramar(chave.cultivar, chave.tratamento, chave.embalagem),
+          )
+          return (
+            <div
+              key={i}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm dark:border-stone-700"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{chave.cultivar}</span>
+                <span className="text-stone-400">·</span>
+                {chave.tratamento}
+                <span className="text-stone-400">·</span>
+                <Emb codigo={chave.embalagem} />
+                {!linha ? (
+                  <Tag cor="alerta">não está mais no balanço atual</Tag>
+                ) : situacao === 'descoberto' ? (
+                  <span className="text-stone-500 dark:text-stone-400">
+                    faltam {inteiro(bagsFaltando(linha))} bags
+                  </span>
+                ) : (
+                  <Tag cor={COR_SITUACAO[situacao!]}>
+                    situação mudou: {ROTULO_SITUACAO[situacao!]}
+                  </Tag>
+                )}
+                {emAndamento && <Tag cor="info">rascunho salvo</Tag>}
+              </div>
+              <div className="flex items-center gap-2">
+                {linha && <Botao onClick={() => onAbrir(linha)}>Abrir</Botao>}
+                <button
+                  type="button"
+                  onClick={() => onRemover(chave)}
+                  className="text-xs text-stone-400 underline hover:text-red-600"
+                >
+                  remover da fila
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </Cartao>
   )
 }
