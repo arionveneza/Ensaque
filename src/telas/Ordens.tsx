@@ -45,6 +45,15 @@ const SA_BASE = 'https://sementesveneza.painel.simpleagro.com.br:3333'
 const SA_PEDIDOS = `${SA_BASE}/sales/relatorios/pedidos-analitico-resumido`
 const SA_SALDOS = `${SA_BASE}/work/saldos`
 
+/**
+ * Campo de filtro (busca, select) na mesma altura/raio do Botao — antes cada
+ * um tinha o próprio padrão (py-1 vs py-1.5 vs py-2, rounded-md vs
+ * rounded-lg) e a barra de filtros ficava com pedaços de tamanhos
+ * desencontrados (pedido do Arion, 25/08/2026).
+ */
+const CAMPO_FILTRO =
+  'rounded-lg border border-stone-300 px-3 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800'
+
 /** Documentação do layout, exibida na tela e usada para gerar o modelo. */
 const LAYOUT_ORDENS: { coluna: string; obrigatoria: boolean; obs: string }[] = [
   { coluna: 'Ordem', obrigatoria: true, obs: 'Nº da ordem. Aceita também Numero, Nº Ordem, Pedido ou OP.' },
@@ -895,42 +904,54 @@ export default function Ordens() {
       {/* ---------------- lista de ordens ---------------- */}
       <Cartao
         titulo={
-          <div className="flex flex-wrap items-center gap-1.5">
+          // título numa linha, contagem por status numa linha própria —
+          // dividindo espaço com a barra de filtros, os dois brigavam e
+          // quebravam de qualquer jeito (pedido do Arion, 25/08/2026)
+          <div className="flex flex-col gap-1.5">
             <span>Ordens ({filtradas.length} de {ordens.length})</span>
-            {contagemStatus.map(([s, qtd]) => (
-              <Tag key={s} cor={corDoStatus(s)}>{s}: {qtd}</Tag>
-            ))}
+            {contagemStatus.length > 0 && (
+              <div className="flex flex-wrap gap-1 text-xs font-normal normal-case">
+                {contagemStatus.map(([s, qtd]) => (
+                  <Tag key={s} cor={corDoStatus(s)}>{s}: {qtd}</Tag>
+                ))}
+              </div>
+            )}
           </div>
         }
         acoes={
-          <>
+          // mesma altura/raio em tudo (campo, seletor, select, botão) — cada
+          // um tinha um padrão de caixa diferente e a barra ficava com
+          // pedaços de tamanhos desencontrados (pedido do Arion, 25/08/2026)
+          <div className="flex flex-wrap items-center gap-2">
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="buscar ordem, cultivar, lote, cliente…"
-              className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+              className={CAMPO_FILTRO}
             />
             <SeletorMultiplo
               rotulo="Status"
               opcoes={statusDisponiveis}
               selecionados={filtroStatus}
               onMudar={setFiltroStatus}
+              compacto={false}
             />
             <select
               value={filtroMaquina}
               onChange={(e) => setFiltroMaquina(e.target.value)}
-              className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+              className={CAMPO_FILTRO}
             >
               <option value="">todas as máquinas</option>
               {maquinas.map((m) => (
                 <option key={m.id} value={m.id}>{m.nome}</option>
               ))}
             </select>
+            <div className="hidden h-6 w-px bg-stone-200 sm:block dark:bg-stone-700" />
             <Botao onClick={() => setDiasAbertos(new Set(porDia.map(([dia]) => dia)))}>
               abrir todos os dias
             </Botao>
             <Botao onClick={() => setDiasAbertos(new Set())}>fechar todos os dias</Botao>
-          </>
+          </div>
         }
       >
         {porDia.length === 0 ? (
@@ -1101,12 +1122,14 @@ function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): numbe
  * também alterna, Backspace com a busca vazia apaga a última selecionada.
  */
 function SeletorMultiplo({
-  rotulo, opcoes, selecionados, onMudar,
+  rotulo, opcoes, selecionados, onMudar, compacto = true,
 }: {
   rotulo: string
   opcoes: string[]
   selecionados: string[]
   onMudar: (s: string[]) => void
+  /** false = mesma altura/raio do CAMPO_FILTRO (barra de filtros de Ordens); true (padrão) mantém o tamanho compacto do painel de Demanda. */
+  compacto?: boolean
 }) {
   const [aberto, setAberto] = useState(false)
   const [busca, setBusca] = useState('')
@@ -1182,7 +1205,7 @@ function SeletorMultiplo({
       <button
         type="button"
         onClick={() => setAberto(true)}
-        className={`rounded-md border px-3 py-1.5 text-xs ${
+        className={`rounded-lg border ${compacto ? 'px-3 py-1.5 text-xs' : 'px-3 py-2 text-sm sm:py-1.5'} ${
           selecionados.length > 0
             ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
             : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
