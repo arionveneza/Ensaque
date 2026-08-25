@@ -1799,8 +1799,15 @@ function ModalProgramarDemanda({
   onCriado: () => void
 }) {
   const receita = receitas.find((r) => r.nome === tratamento)
+  // SEM filtrar por status: `lotes_semente.status` (Em estoque/Baixado) serve
+  // só à Expedição (saldo de semente branca) — não decide se uma ordem pode
+  // produzir (CLAUDE.md §1, Lotes de semente). Um lote já Baixado por causa
+  // de OUTRA ordem pode sobrar saldo (`bags_disp`) pra esta — o formulário
+  // manual de "Nova ordem" já lista todos os lotes do mesmo jeito, sem essa
+  // trava; aqui tinha ficado inconsistente (achado do Arion, 26/08/2026: dois
+  // lotes com saldo no SAP não apareciam pra selecionar).
   const lotesDoCultivar = useMemo(
-    () => lotes.filter((l) => l.cultivar === cultivar && l.status === 'Em estoque'),
+    () => lotes.filter((l) => l.cultivar === cultivar),
     [lotes, cultivar],
   )
   const rascunho = useRascunho<{ linhas: { loteId: string; bags: string }[] }>(
@@ -1926,7 +1933,7 @@ function ModalProgramarDemanda({
 
             {lotesDoCultivar.length === 0 ? (
               <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-                Nenhum lote de {cultivar} em estoque no momento.
+                Nenhum lote de {cultivar} cadastrado no momento.
               </p>
             ) : (
               <button
