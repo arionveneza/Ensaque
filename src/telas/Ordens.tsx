@@ -32,7 +32,7 @@ import {
   analisaDemanda, bagsFaltando, bagsSobrando, ehSemTsi, podeCriarOrdem, resumoBalanco,
   situacaoDemanda, type SituacaoDemanda,
 } from '@/dominio/balanco'
-import { pesoBagDaOrdemKg } from '@/dominio/calculos'
+import { diaDeProducao, pesoBagDaOrdemKg } from '@/dominio/calculos'
 import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -140,8 +140,23 @@ export default function Ordens() {
   }
 
   const [busca, setBusca] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState('')
+  const [filtroStatus, setFiltroStatus] = useState<string[]>([])
   const [filtroMaquina, setFiltroMaquina] = useState('')
+
+  // dias abertos na lista — por padrão só o dia de produção atual (07:30 a
+  // 03:00) vem expandido, os demais ficam fechados até a pessoa abrir
+  // (pedido do Arion, 25/08/2026); "sem-dia" também nasce aberto, porque é
+  // onde a ordem recém-criada, sem programação, aparece
+  const [diasAbertos, setDiasAbertos] = useState<Set<string>>(
+    () => new Set([diaDeProducao(new Date()), 'sem-dia']),
+  )
+  const alternarDia = (dia: string) =>
+    setDiasAbertos((s) => {
+      const novo = new Set(s)
+      if (novo.has(dia)) novo.delete(dia)
+      else novo.add(dia)
+      return novo
+    })
 
   const [previaPedidos, setPreviaPedidos] = useState<ResultadoPedidos | null>(null)
   const [previaSaldos, setPreviaSaldos] = useState<ResultadoSaldos | null>(null)
@@ -269,7 +284,7 @@ export default function Ordens() {
   const filtradas = useMemo(() => {
     const termo = busca.trim().toLowerCase()
     return ordens.filter((o) => {
-      if (filtroStatus && o.status_efetivo !== filtroStatus) return false
+      if (filtroStatus.length > 0 && !filtroStatus.includes(o.status_efetivo)) return false
       if (filtroMaquina && o.maquina_id !== filtroMaquina) return false
       if (!termo) return true
       return [o.numero, o.cultivar, o.receita_nome, o.lote_id, o.cliente ?? '']
@@ -312,6 +327,14 @@ export default function Ordens() {
     () => [...new Set(ordens.map((o) => o.status_efetivo))].sort(),
     [ordens],
   )
+
+  // quantas ordens tem em cada status — visão geral ao lado do título,
+  // sem precisar filtrar pra descobrir (pedido do Arion, 25/08/2026)
+  const contagemStatus = useMemo(() => {
+    const mapa = new Map<string, number>()
+    for (const o of ordens) mapa.set(o.status_efetivo, (mapa.get(o.status_efetivo) ?? 0) + 1)
+    return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [ordens])
 
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando ordens…</p>
 
@@ -370,7 +393,7 @@ export default function Ordens() {
               imprimirTabela(
                 'Ordens de tratamento',
                 `${filtradas.length} ordem(ns)` +
-                  (filtroStatus ? ` · status ${filtroStatus}` : '') +
+                  (filtroStatus.length > 0 ? ` · status ${filtroStatus.join(', ')}` : '') +
                   (filtroMaquina ? ` · ${filtroMaquina}` : '') +
                   (busca.trim() ? ` · busca "${busca.trim()}"` : ''),
                 ['Dia', 'Máq.', 'Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.',
@@ -871,7 +894,14 @@ export default function Ordens() {
 
       {/* ---------------- lista de ordens ---------------- */}
       <Cartao
-        titulo={`Ordens (${filtradas.length} de ${ordens.length})`}
+        titulo={
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>Ordens ({filtradas.length} de {ordens.length})</span>
+            {contagemStatus.map(([s, qtd]) => (
+              <Tag key={s} cor={corDoStatus(s)}>{s}: {qtd}</Tag>
+            ))}
+          </div>
+        }
         acoes={
           <>
             <input
@@ -880,16 +910,12 @@ export default function Ordens() {
               placeholder="buscar ordem, cultivar, lote, cliente…"
               className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
             />
-            <select
-              value={filtroStatus}
-              onChange={(e) => setFiltroStatus(e.target.value)}
-              className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
-            >
-              <option value="">todos os status</option>
-              {statusDisponiveis.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <SeletorMultiplo
+              rotulo="Status"
+              opcoes={statusDisponiveis}
+              selecionados={filtroStatus}
+              onMudar={setFiltroStatus}
+            />
             <select
               value={filtroMaquina}
               onChange={(e) => setFiltroMaquina(e.target.value)}
@@ -900,6 +926,10 @@ export default function Ordens() {
                 <option key={m.id} value={m.id}>{m.nome}</option>
               ))}
             </select>
+            <Botao onClick={() => setDiasAbertos(new Set(porDia.map(([dia]) => dia)))}>
+              abrir todos os dias
+            </Botao>
+            <Botao onClick={() => setDiasAbertos(new Set())}>fechar todos os dias</Botao>
           </>
         }
       >
@@ -926,6 +956,8 @@ export default function Ordens() {
                 key={dia}
                 dia={dia}
                 lista={lista}
+                aberto={diasAbertos.has(dia)}
+                onToggle={() => alternarDia(dia)}
                 maquinas={maquinas}
                 ordenacao={ordenacao}
                 podeEditar={podeEditarOrdem}
@@ -1978,12 +2010,15 @@ function comparadorOrdenacao(
 }
 
 function FragmentoDia({
-  dia, lista, maquinas, ordenacao, podeEditar, podeExcluir, podePriorizar,
+  dia, lista, aberto, onToggle, maquinas, ordenacao, podeEditar, podeExcluir, podePriorizar,
   onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar, onAbrir, abrindoId,
   onForaBalanco,
 }: {
   dia: string
   lista: OrdemVisao[]
+  /** Fechado mostra só a faixa do dia com o total; aberto mostra as ordens. */
+  aberto: boolean
+  onToggle: () => void
   maquinas: api.LinhaMaquina[]
   ordenacao: { campo: 'cultivar' | 'tratamento' | 'status' | 'peso'; dir: 'asc' | 'desc' } | null
   podeEditar: boolean
@@ -2003,6 +2038,9 @@ function FragmentoDia({
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
   /** Qual linha está com o menu "ações ▾" aberto — um por vez. */
   const [menuAberto, setMenuAberto] = useState<string | null>(null)
+  // nas últimas linhas da tabela o menu, abrindo pra baixo, não cabia na
+  // tela — sem espaço embaixo, ele abre pra CIMA (achado do Arion, 25/08/2026)
+  const [menuParaCima, setMenuParaCima] = useState(false)
 
   // sub-agrupamento por máquina (pedido do Arion, 13/08/2026) — a lista já
   // chega ordenada por maquina_id/seq (listarOrdens), então o Map preserva
@@ -2033,7 +2071,17 @@ function FragmentoDia({
           célula-fantasma da Execução */}
       <tr className="bg-stone-100/70 dark:bg-stone-800/40">
         <td colSpan={4} className="px-2 py-1.5 text-xs font-semibold uppercase">
-          {dia === 'sem-dia' ? 'Sem dia programado' : `Dia ${diaCurto(dia)}`}
+          <button
+            onClick={onToggle}
+            className="inline-flex items-center gap-1.5 hover:underline"
+            title={aberto ? 'Fechar o dia' : 'Abrir o dia'}
+          >
+            <span className={`inline-block transition-transform ${aberto ? 'rotate-90' : ''}`}>▸</span>
+            {dia === 'sem-dia' ? 'Sem dia programado' : `Dia ${diaCurto(dia)}`}
+            <span className="font-normal normal-case text-stone-500">
+              · {lista.length} ordem(ns)
+            </span>
+          </button>
         </td>
         <td className="hidden lg:table-cell" colSpan={4} />
         <td className="num-tabular px-2 py-1.5 text-right text-xs font-semibold whitespace-nowrap">
@@ -2042,7 +2090,7 @@ function FragmentoDia({
         <td className="hidden lg:table-cell" />
         <td colSpan={2} />
       </tr>
-      {grupos.map(([maquinaId, ordensMaquina]) => {
+      {aberto && grupos.map(([maquinaId, ordensMaquina]) => {
         const linhas = comparador ? [...ordensMaquina].sort(comparador) : ordensMaquina
         const totalMaquina = ordensMaquina.reduce((a, o) => a + o.peso_t, 0)
         return (
@@ -2126,7 +2174,16 @@ function FragmentoDia({
                         </span>
                       )}
                       <button
-                        onClick={() => setMenuAberto(menuAberto === o.id ? null : o.id)}
+                        onClick={(e) => {
+                          if (menuAberto === o.id) {
+                            setMenuAberto(null)
+                            return
+                          }
+                          // sem espaço embaixo pro menu (~220px) — abre pra cima
+                          const r = e.currentTarget.getBoundingClientRect()
+                          setMenuParaCima(window.innerHeight - r.bottom < 220)
+                          setMenuAberto(o.id)
+                        }}
                         disabled={abrindoId === o.id}
                         className={BOTAO_ACAO}
                       >
@@ -2137,7 +2194,11 @@ function FragmentoDia({
                       <>
                         {/* véu invisível: clicar fora fecha, sem listener global */}
                         <div className="fixed inset-0 z-10" onClick={() => setMenuAberto(null)} />
-                        <div className="absolute right-2 z-20 mt-1 w-48 rounded-md border border-stone-300 bg-white p-1 text-left shadow-lg dark:border-stone-700 dark:bg-stone-900">
+                        <div
+                          className={`absolute right-2 z-20 w-48 rounded-md border border-stone-300 bg-white p-1 text-left shadow-lg dark:border-stone-700 dark:bg-stone-900 ${
+                            menuParaCima ? 'bottom-full mb-1' : 'top-full mt-1'
+                          }`}
+                        >
                           <ItemMenuAcao
                             rotulo="detalhes"
                             titulo="Tempos, tanques, bags produzidos e conferência da logística"

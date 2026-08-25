@@ -83,7 +83,7 @@ export function Cartao({
   children,
   className = '',
 }: {
-  titulo?: string
+  titulo?: ReactNode
   acoes?: ReactNode
   children: ReactNode
   className?: string
