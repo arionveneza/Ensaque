@@ -14,6 +14,7 @@ import {
   ensaquePorBagKg,
   formataHms,
   montaTanques,
+  pesoItemKg,
   pesoQuimicoTotalKg,
   tempoPlanejadoS,
   temposOrdem,
@@ -79,17 +80,27 @@ export default function ModalOrdem({
     [dominio.tanques, prods, kg],
   )
 
+  /**
+   * Da RECEITA, não dos tanques montados: receita (produto + dose) e peso da
+   * ordem bastam pra fechar químico total e ensaque — antes o número só
+   * ficava completo depois de o operador distribuir os tanques, sem
+   * necessidade nenhuma (achado do Arion, 25/08/2026).
+   */
   const quimicoTotal = useMemo(() => {
     try {
       return pesoQuimicoTotalKg(
-        { id: ordem.receita_id, nome: ordem.receitas.nome, itens: dominio.tanques.flatMap((t) => t.itens) },
+        {
+          id: ordem.receita_id,
+          nome: ordem.receitas.nome,
+          itens: ordem.receitas.receita_itens.map((i) => ({ produtoId: i.produto_id, dose: i.dose })),
+        },
         prods,
         kg,
       )
     } catch {
       return null
     }
-  }, [ordem, dominio.tanques, prods, kg])
+  }, [ordem, prods, kg])
 
   async function acao(fn: () => Promise<void>) {
     setErro(null)
@@ -133,6 +144,42 @@ export default function ModalOrdem({
       // densidade faltando: imprime com traço, igual à tela
     }
     const tanquesOrdenados = [...new Set(alocacao.map((a) => a.tanque))].sort((a, b) => a - b)
+
+    /**
+     * A grade sai SEMPRE (achado do Arion, 25/08/2026): antes só aparecia
+     * depois de o operador escolher os tanques no sistema — mas a folha vai
+     * pro chão de fábrica ANTES disso. Sem distribuição ainda, sai uma
+     * linha por produto da receita, com o destino em branco pra anotar à
+     * caneta; o planejado individual já sai da dose + peso da ordem. Nada
+     * muda na operação: tanque e pesos continuam apontados no sistema.
+     */
+    const linhasGrade =
+      alocacao.length > 0
+        ? tanquesOrdenados.map((tq) => ({
+            destino: rotuloTanque(tq),
+            produtos: itens
+              .filter((i) => destinoDe.get(i.produtoId) === tq)
+              .map((i) => {
+                const p = prods.get(i.produtoId)
+                return `${p?.nome ?? i.produtoId} · ${num(i.dose, 2)} ${p?.unidade ?? ''}`
+              }),
+            planejadoKg: planejadoPorTanque.has(tq) ? num(planejadoPorTanque.get(tq)) : '—',
+          }))
+        : itens.map((i) => {
+            const p = prods.get(i.produtoId)
+            let planejadoKg = '—'
+            try {
+              if (p) planejadoKg = num(pesoItemKg({ produtoId: i.produtoId, dose: i.dose }, p, kg))
+            } catch {
+              // densidade faltando neste produto: traço, igual à tela
+            }
+            return {
+              destino: '',
+              produtos: [`${p?.nome ?? i.produtoId} · ${num(i.dose, 2)} ${p?.unidade ?? ''}`],
+              planejadoKg,
+            }
+          })
+
     imprimirOrdemProducao({
       numero: ordem.numero,
       cultivar: ordem.cultivar,
@@ -153,16 +200,7 @@ export default function ModalOrdem({
         quimicoTotal == null
           ? '—'
           : num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags), 1),
-      tanques: tanquesOrdenados.map((tq) => ({
-        destino: rotuloTanque(tq),
-        produtos: itens
-          .filter((i) => destinoDe.get(i.produtoId) === tq)
-          .map((i) => {
-            const p = prods.get(i.produtoId)
-            return `${p?.nome ?? i.produtoId} · ${num(i.dose, 2)} ${p?.unidade ?? ''}`
-          }),
-        planejadoKg: planejadoPorTanque.has(tq) ? num(planejadoPorTanque.get(tq)) : '—',
-      })),
+      tanques: linhasGrade,
     })
   }
 
