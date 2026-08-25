@@ -474,10 +474,14 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 - **Estoque de químicos**: o app aponta consumo real mas não sabe o saldo de insumo — falta alertar
   "o Fortenza não cobre a programação da semana".
 - **Etiquetas**: a planilha antiga tinha ~15 abas de etiquetas; ficaram fora do escopo —
-  EXCETO a **etiqueta DM** (25/08/2026): botão "Etiqueta DM" no detalhe da ordem
-  (`imprimirEtiquetaDm` em `exportar.ts`), com peneira/categoria vindas do saldo do SAP
-  (`lotes_semente.peneira/categoria`, migração `lote-peneira-categoria.sql`), germinação
-  80% e pureza 99% fixos, logo em texto por enquanto.
+  EXCETO a **etiqueta DM** (25/08/2026): menu "Etiqueta DM ▾" no detalhe da ordem
+  (`imprimirEtiquetaDm` em `exportar.ts`), tamanho físico 97 × 63 mm, com
+  peneira/categoria vindas do saldo do SAP (`lotes_semente.peneira/categoria`, migração
+  `lote-peneira-categoria.sql`), germinação 80% e pureza 99% fixos, logo em texto por
+  enquanto. A DM reparte a produção em pacotes variados, então o menu tem um item por
+  embalagem do cadastro e **só o peso muda** entre eles (peso fixo do cadastro, ou PMS do
+  lote × fator — ex.: PMS 210 → BAG 1.050 kg, MEIO BAG 525 kg, SC10 10 kg); os demais
+  campos são sempre os da ordem. Formato por sementes desabilita sem PMS no lote.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,
