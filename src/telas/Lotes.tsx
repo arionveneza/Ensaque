@@ -508,14 +508,21 @@ function LinhaLote({
       */}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-x-4">
         <div className="min-w-0 sm:flex-1">
+          {/* sm:ml-auto na etiqueta: sem isso ela ficava colada no fim do
+              texto do lote/cultivar — cada card com um tamanho de texto
+              diferente jogava a etiqueta numa posição diferente, e a lista
+              inteira ficava com as etiquetas desalinhadas (achado do Arion,
+              26/08/2026, com print de 3 cards "trava ordem urgente" cada um
+              começando num x diferente). Empurrada pro fim da LINHA (não da
+              tela) — o texto do lote continua podendo crescer à vontade. */}
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
             <span>
               {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
             </span>
             {item.critico ? (
-              <Tag cor="perigo">trava ordem urgente</Tag>
+              <Tag cor="perigo" className="sm:ml-auto">trava ordem urgente</Tag>
             ) : (
-              urgentes > 0 && <Tag cor="alerta">{urgentes} urgente(s)</Tag>
+              urgentes > 0 && <Tag cor="alerta" className="sm:ml-auto">{urgentes} urgente(s)</Tag>
             )}
           </p>
           <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
@@ -630,13 +637,21 @@ function LinhaLoteBaixado({
   const { lote, liberadas, aLiberar, iniciadas } = item
   return (
     <div className="px-3 py-3 sm:px-4">
+      {/* mesmo ajuste do card "A baixar": etiqueta(s) empurrada(s) pro fim
+          da linha (sm:ml-auto no grupo), não coladas no texto do lote —
+          senão desalinhavam de card pra card conforme o tamanho do texto
+          (achado do Arion, 26/08/2026) */}
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
         <span>
           {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
         </span>
-        {aLiberar.length > 0 && <Tag cor="alerta">{aLiberar.length} aguardando</Tag>}
-        {iniciadas.length > 0 && (
-          <Tag cor="neutro">{iniciadas.length} já iniciada(s)</Tag>
+        {(aLiberar.length > 0 || iniciadas.length > 0) && (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:ml-auto">
+            {aLiberar.length > 0 && <Tag cor="alerta">{aLiberar.length} aguardando</Tag>}
+            {iniciadas.length > 0 && (
+              <Tag cor="neutro">{iniciadas.length} já iniciada(s)</Tag>
+            )}
+          </span>
         )}
       </p>
       <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
