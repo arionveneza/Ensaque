@@ -1674,13 +1674,15 @@ function PainelDemanda({
                         {s === 'descoberto' && b.receita_cadastrada && (
                           <>
                             {naFilaTotal > 0 && (
-                              <Tag cor="info">na fila: {inteiro(naFilaTotal)} bg</Tag>
+                              <Tag cor="info" className="min-w-32 text-center">
+                                na fila: {inteiro(naFilaTotal)} bg
+                              </Tag>
                             )}
                             {restanteProgramar > 0 && (
                               <button
                                 type="button"
                                 onClick={() => setPopover(b)}
-                                className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                                className="min-w-32 rounded-md border border-stone-300 px-2 py-0.5 text-center text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
                               >
                                 Programar
                               </button>
