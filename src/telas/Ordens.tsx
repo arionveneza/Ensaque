@@ -1658,8 +1658,12 @@ function PainelDemanda({
                     </td>
                     <td className="whitespace-nowrap px-2 py-1.5">
                       <div className="flex items-center gap-1.5">
-                        <Tag cor={COR_SITUACAO[s]}>{ROTULO_SITUACAO[s]}</Tag>
-                        {!b.receita_cadastrada && <Tag cor="alerta">sem receita</Tag>}
+                        <Tag cor={COR_SITUACAO[s]} className="min-w-32 text-center">
+                          {ROTULO_SITUACAO[s]}
+                        </Tag>
+                        {!b.receita_cadastrada && (
+                          <Tag cor="alerta" className="min-w-32 text-center">sem receita</Tag>
+                        )}
                         {/* só faz sentido programar quando falta de verdade, e só
                             dá pra criar ordem com receita cadastrada (mesma trava
                             de sempre) — pedido do Arion, 25/08/2026. Clicar só
