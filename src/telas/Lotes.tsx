@@ -266,13 +266,19 @@ export default function Lotes() {
 
       {/* -------- baixados, para desfazer liberação errada -------- */}
       {baixados.length > 0 && (
-        <Cartao titulo={`Baixados (${baixados.length})`} className="mb-6">
-          <p className="mb-3 text-sm text-stone-500">
+        // era Cartao com padding normal + uma SEGUNDA caixa (rounded-lg
+        // border) por dentro pra lista — card dentro de card, com o raio da
+        // caixa interna nem batendo com o do Cartao (achado do Arion,
+        // 26/08/2026, mesmo problema já corrigido em "A baixar"). semPadding
+        // no próprio Cartao: só a lista fica flush, o parágrafo carrega o
+        // padding dele mesmo.
+        <Cartao titulo={`Baixados (${baixados.length})`} semPadding className="mb-6">
+          <p className="p-4 pb-3 text-sm text-stone-500">
             Ordens já liberadas para a produção. O <b>estorno</b> desfaz a liberação de{' '}
             <b>uma</b> ordem — só enquanto ela não tiver sido iniciada. As outras ordens do
             mesmo lote, liberadas ou não, não são afetadas.
           </p>
-          <div className="divide-y divide-stone-200 overflow-hidden rounded-lg border border-stone-200 dark:divide-stone-800 dark:border-stone-800">
+          <div className="divide-y divide-stone-200 dark:divide-stone-800">
             {baixados.map((a) => (
               <LinhaLoteBaixado
                 key={a.lote.id}
