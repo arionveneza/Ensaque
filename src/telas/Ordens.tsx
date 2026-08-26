@@ -1294,18 +1294,32 @@ function SeletorMultiplo({
   )
 }
 
-/** Chave do rascunho de "Programar" — uma por combinação, sobrevive a fechar
- *  o modal e até a sair da tela (pedido do Arion, 25/08/2026: não quer
- *  escolher os lotes de novo se parar no meio). */
-const chaveProgramar = (cultivar: string, tratamento: string, embalagem: string) =>
-  `programar.${cultivar}.${tratamento}.${embalagem}`
+/** Chave do rascunho de "Programar" — um por ITEM da fila, não por
+ *  combinação: cooperado e não-cooperado da mesma combinação são duas
+ *  entradas separadas, cada uma com seus próprios lotes escolhidos
+ *  (sobrevive a fechar o modal e até a sair da tela — pedido do Arion,
+ *  25/08/2026: não quer escolher os lotes de novo se parar no meio). */
+const chaveProgramar = (id: string) => `programar.${id}`
 
-/** Chave do rascunho da fila de programação (lista de combinações marcadas
- *  pra programar — ver `PainelFilaProgramacao`). */
+/** Chave do rascunho da fila de programação (ver `PainelFilaProgramacao`). */
 const FILA_PROGRAMACAO = 'ordens.fila-programacao'
 
 const mesmaCombinacao = (a: ChaveDemanda, b: ChaveDemanda) =>
   a.cultivar === b.cultivar && a.tratamento === b.tratamento && a.embalagem === b.embalagem
+
+/**
+ * Um item da fila: a combinação + quanto o PCP decidiu programar AGORA (pode
+ * ser só parte do que falta) + se é a parcela de venda cooperado (pedido do
+ * Arion, 26/08/2026: "tenho 200 bags liberados, mas 100 são de cooperado,
+ * então queria programar 100 e 100, mas saber que uma é de cooperado").
+ */
+interface ItemFilaProgramacao extends ChaveDemanda {
+  id: string
+  alvo: number
+  cooperado: boolean
+}
+
+const novoIdFila = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 /**
  * Demanda × Estoque × Planejado.
@@ -1328,28 +1342,36 @@ function PainelDemanda({
   receitas: ReceitaCompleta[]
   onProgramado: () => void
 }) {
-  /** Linha "falta produzir" sendo programada agora — abre o modal de divisão por lote. */
-  const [programando, setProgramando] = useState<BalancoLinha | null>(null)
+  /** Item da fila sendo programado agora — abre o modal de divisão por lote. */
+  const [programando, setProgramando] = useState<ItemFilaProgramacao | null>(null)
+  /** Combinação sendo perguntada "quantos bags" agora — ver `PopoverProgramar`. */
+  const [popover, setPopover] = useState<BalancoLinha | null>(null)
 
-  // Fila de programação: "Programar" só anota a intenção aqui — não abre o
-  // modal na hora. O modal trava a tela até fechar, e o PCP quer poder
-  // marcar várias combinações e resolver os lotes depois, sem parar o que
-  // estava fazendo (pedido do Arion, 26/08/2026: "eu não quero que o modal
-  // trave o uso do app... eu entro nessa fila, vejo o que programei e não
-  // tem lote ou a programação não foi finalizada e ajusto"). O modal só
-  // abre quando a pessoa entra na fila (`PainelFilaProgramacao`) e escolhe
-  // "Abrir" — mesmo rascunho por lote (`chaveProgramar`) de antes.
-  const filaRasc = useRascunho<{ itens: ChaveDemanda[] }>(FILA_PROGRAMACAO, { itens: [] })
+  // Fila de programação: "Programar" só pergunta a quantidade (e se é
+  // cooperado) e anota a intenção aqui — não abre o modal de lote na hora.
+  // O modal trava a tela até fechar, e o PCP quer poder marcar várias
+  // combinações (ou pedaços de uma mesma combinação) e resolver os lotes
+  // depois, sem parar o que estava fazendo (pedido do Arion, 26/08/2026:
+  // "eu não quero que o modal trave o uso do app... eu entro nessa fila,
+  // vejo o que programei e não tem lote ou a programação não foi
+  // finalizada e ajusto"). O modal só abre quando a pessoa entra na fila
+  // (`PainelFilaProgramacao`) e escolhe "Abrir".
+  const filaRasc = useRascunho<{ itens: ItemFilaProgramacao[] }>(FILA_PROGRAMACAO, { itens: [] })
   const fila = filaRasc.valor.itens
-  const naFila = (chave: ChaveDemanda) => fila.some((f) => mesmaCombinacao(f, chave))
-  const adicionarNaFila = (b: ChaveDemanda) => {
-    const chave: ChaveDemanda = { cultivar: b.cultivar, tratamento: b.tratamento, embalagem: b.embalagem }
-    if (naFila(chave)) return
-    filaRasc.substituir({ itens: [...fila, chave] })
+  const adicionarNaFila = (item: ChaveDemanda & { alvo: number; cooperado: boolean }) => {
+    const novo: ItemFilaProgramacao = {
+      cultivar: item.cultivar,
+      tratamento: item.tratamento,
+      embalagem: item.embalagem,
+      alvo: item.alvo,
+      cooperado: item.cooperado,
+      id: novoIdFila(),
+    }
+    filaRasc.substituir({ itens: [...fila, novo] })
   }
-  const removerDaFila = (chave: ChaveDemanda) => {
-    filaRasc.substituir({ itens: fila.filter((f) => !mesmaCombinacao(f, chave)) })
-    limparRascunhoDe(chaveProgramar(chave.cultivar, chave.tratamento, chave.embalagem))
+  const removerItemFila = (id: string) => {
+    filaRasc.substituir({ itens: fila.filter((f) => f.id !== id) })
+    limparRascunhoDe(chaveProgramar(id))
   }
   // SEM TSI (semente branca) nunca tem pedido_venda/estoque_pa por desenho —
   // essa demanda é rastreada por lotes_semente, fora deste painel de
@@ -1592,6 +1614,9 @@ function PainelDemanda({
                 const s = situacaoDemanda(b)
                 const falta = bagsFaltando(b)
                 const sobra = bagsSobrando(b)
+                const itensDaCombinacao = fila.filter((f) => mesmaCombinacao(f, b))
+                const naFilaTotal = itensDaCombinacao.reduce((a, it) => a + it.alvo, 0)
+                const restanteProgramar = Math.max(0, falta - naFilaTotal)
                 return (
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{b.cultivar}</td>
@@ -1638,20 +1663,25 @@ function PainelDemanda({
                         {/* só faz sentido programar quando falta de verdade, e só
                             dá pra criar ordem com receita cadastrada (mesma trava
                             de sempre) — pedido do Arion, 25/08/2026. Clicar só
-                            entra na fila (painel abaixo) — não abre modal aqui,
-                            pedido do Arion, 26/08/2026 */}
+                            pergunta a quantidade (painel abaixo trata os lotes) —
+                            pedido do Arion, 26/08/2026. Pode programar em partes
+                            (ex.: cooperado e não-cooperado separados), por isso o
+                            botão continua ativo enquanto sobrar algo pra fila. */}
                         {s === 'descoberto' && b.receita_cadastrada && (
-                          naFila(b) ? (
-                            <Tag cor="info">na fila</Tag>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => adicionarNaFila(b)}
-                              className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
-                            >
-                              Programar
-                            </button>
-                          )
+                          <>
+                            {naFilaTotal > 0 && (
+                              <Tag cor="info">na fila: {inteiro(naFilaTotal)} bg</Tag>
+                            )}
+                            {restanteProgramar > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setPopover(b)}
+                                className="rounded-md border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                              >
+                                Programar
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -1679,15 +1709,35 @@ function PainelDemanda({
         fila={fila}
         balanco={balanco}
         onAbrir={setProgramando}
-        onRemover={removerDaFila}
+        onRemover={removerItemFila}
       />
+
+      {popover && (
+        <PopoverProgramar
+          linha={popover}
+          itensDaCombinacao={fila.filter((f) => mesmaCombinacao(f, popover))}
+          onFechar={() => setPopover(null)}
+          onConfirmar={(bags, cooperado) => {
+            adicionarNaFila({
+              cultivar: popover.cultivar,
+              tratamento: popover.tratamento,
+              embalagem: popover.embalagem,
+              alvo: bags,
+              cooperado,
+            })
+            setPopover(null)
+          }}
+        />
+      )}
 
       {programando && (
         <ModalProgramarDemanda
+          id={programando.id}
           cultivar={programando.cultivar}
           tratamento={programando.tratamento}
           embalagem={programando.embalagem}
-          alvo={bagsFaltando(programando)}
+          alvo={programando.alvo}
+          cooperado={programando.cooperado}
           lotes={lotes}
           receitas={receitas}
           onFechar={() => setProgramando(null)}
@@ -1699,7 +1749,7 @@ function PainelDemanda({
           // fechar sem terminar mantém o item na fila de propósito.
           onCriado={() => {
             onProgramado()
-            removerDaFila(programando)
+            removerItemFila(programando.id)
           }}
         />
       )}
@@ -1708,18 +1758,131 @@ function PainelDemanda({
 }
 
 /**
- * Combinações marcadas com "Programar", ainda sem lote escolhido ou sem
- * terminar — o PCP entra aqui quando quiser, não quando clicou. Cada item
- * mostra se já tem rascunho salvo (`chaveProgramar`) e deixa abrir o mesmo
- * modal de sempre, ou tirar da fila sem criar ordem nenhuma.
+ * Pergunta quantos bags programar AGORA (pode ser só parte do que falta) e,
+ * quando há venda cooperado nessa combinação, oferece atalhos pra separar a
+ * parcela cooperado da parcela normal — pedido do Arion, 26/08/2026: "tenho
+ * 200 bags liberados, mas 100 são de cooperado, então queria programar 100
+ * e 100, mas saber que uma é de cooperado". Não escolhe lote aqui — isso é
+ * na frente, quando a pessoa abrir o item na fila.
+ */
+function PopoverProgramar({
+  linha, itensDaCombinacao, onFechar, onConfirmar,
+}: {
+  linha: BalancoLinha
+  itensDaCombinacao: ItemFilaProgramacao[]
+  onFechar: () => void
+  onConfirmar: (bags: number, cooperado: boolean) => void
+}) {
+  const falta = bagsFaltando(linha)
+  const jaNaFila = itensDaCombinacao.reduce((a, it) => a + it.alvo, 0)
+  const restante = Math.max(0, falta - jaNaFila)
+
+  // quanto do que falta é cooperado vs. normal, descontando o que já foi
+  // pra fila marcado com cada rótulo — assim o atalho não oferece de novo
+  // uma parcela que a pessoa já separou
+  const jaCooperado = itensDaCombinacao.filter((it) => it.cooperado).reduce((a, it) => a + it.alvo, 0)
+  const jaNaoCooperado = itensDaCombinacao.filter((it) => !it.cooperado).reduce((a, it) => a + it.alvo, 0)
+  const cooperadoTotal = Math.min(falta, linha.pedido_cooperado ?? 0)
+  const cooperadoRestante = Math.max(0, cooperadoTotal - jaCooperado)
+  const naoCooperadoRestante = Math.max(0, falta - cooperadoTotal - jaNaoCooperado)
+
+  const [qtd, setQtd] = useState(String(restante))
+  const [cooperado, setCooperado] = useState(false)
+  const bags = Number(qtd) || 0
+
+  const preencher = (valor: number, coop: boolean) => {
+    setQtd(String(valor))
+    setCooperado(coop)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">
+          Programar — {linha.cultivar} · {linha.tratamento} · {linha.embalagem}
+        </h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          Faltam {inteiro(falta)} bags no total. Quantos você quer programar agora?
+        </p>
+
+        {cooperadoTotal > 0 && (cooperadoRestante > 0 || naoCooperadoRestante > 0) && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {cooperadoRestante > 0 && (
+              <button
+                type="button"
+                onClick={() => preencher(cooperadoRestante, true)}
+                className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
+              >
+                cooperado: {inteiro(cooperadoRestante)} bg
+              </button>
+            )}
+            {naoCooperadoRestante > 0 && (
+              <button
+                type="button"
+                onClick={() => preencher(naoCooperadoRestante, false)}
+                className="rounded-md border border-stone-300 px-2 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+              >
+                não cooperado: {inteiro(naoCooperadoRestante)} bg
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            autoFocus
+            value={qtd}
+            onChange={(e) => setQtd(e.target.value)}
+            className="w-28 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
+          />
+          <span className="text-sm text-stone-500 dark:text-stone-400">bags</span>
+        </div>
+        {bags > restante && (
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            É mais do que falta ({inteiro(restante)} bg) — sem problema, é só um aviso.
+          </p>
+        )}
+
+        {cooperadoTotal > 0 && (
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={cooperado}
+              onChange={(e) => setCooperado(e.target.checked)}
+            />
+            é venda cooperado
+          </label>
+        )}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao variante="primario" disabled={bags <= 0} onClick={() => onConfirmar(bags, cooperado)}>
+            Adicionar à fila
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Itens marcados com "Programar" (cada um já com sua quantidade e a
+ * marcação de cooperado), ainda sem lote escolhido ou sem terminar — o PCP
+ * entra aqui quando quiser, não quando clicou. Mostra se já tem rascunho
+ * salvo (`chaveProgramar`) e deixa abrir o mesmo modal de sempre — o abrir
+ * nunca trava: mesmo que a combinação tenha saído do balanço (já coberta,
+ * cancelada), o alvo já foi decidido na hora de entrar na fila — ou tirar
+ * da fila sem criar ordem nenhuma.
  */
 function PainelFilaProgramacao({
   fila, balanco, onAbrir, onRemover,
 }: {
-  fila: ChaveDemanda[]
+  fila: ItemFilaProgramacao[]
   balanco: BalancoLinha[]
-  onAbrir: (b: BalancoLinha) => void
-  onRemover: (chave: ChaveDemanda) => void
+  onAbrir: (item: ItemFilaProgramacao) => void
+  onRemover: (id: string) => void
 }) {
   if (fila.length === 0) return null
   return (
@@ -1728,33 +1891,29 @@ function PainelFilaProgramacao({
         Marcado pra programar. Abra quando quiser escolher o(s) lote(s) e criar as ordens.
       </p>
       <div className="space-y-1.5">
-        {fila.map((chave, i) => {
-          const linha = balanco.find((b) => mesmaCombinacao(b, chave))
+        {fila.map((item) => {
+          const linha = balanco.find((b) => mesmaCombinacao(b, item))
           // a demanda muda (novo pedido, nova carga de estoque) enquanto o
           // item espera na fila — sinaliza pra o PCP decidir, em vez de
-          // deixar "faltam 0 bags" passar despercebido como se fosse normal
+          // deixar passar despercebido como se fosse normal
           const situacao = linha ? situacaoDemanda(linha) : null
-          const emAndamento = temRascunho(
-            chaveProgramar(chave.cultivar, chave.tratamento, chave.embalagem),
-          )
+          const emAndamento = temRascunho(chaveProgramar(item.id))
           return (
             <div
-              key={i}
+              key={item.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm dark:border-stone-700"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{chave.cultivar}</span>
+                <span className="font-medium">{item.cultivar}</span>
                 <span className="text-stone-400">·</span>
-                {chave.tratamento}
+                {item.tratamento}
                 <span className="text-stone-400">·</span>
-                <Emb codigo={chave.embalagem} />
+                <Emb codigo={item.embalagem} />
+                <span className="text-stone-500 dark:text-stone-400">{inteiro(item.alvo)} bags</span>
+                {item.cooperado && <Tag cor="alerta">cooperado</Tag>}
                 {!linha ? (
                   <Tag cor="alerta">não está mais no balanço atual</Tag>
-                ) : situacao === 'descoberto' ? (
-                  <span className="text-stone-500 dark:text-stone-400">
-                    faltam {inteiro(bagsFaltando(linha))} bags
-                  </span>
-                ) : (
+                ) : situacao !== 'descoberto' && (
                   <Tag cor={COR_SITUACAO[situacao!]}>
                     situação mudou: {ROTULO_SITUACAO[situacao!]}
                   </Tag>
@@ -1762,10 +1921,10 @@ function PainelFilaProgramacao({
                 {emAndamento && <Tag cor="info">rascunho salvo</Tag>}
               </div>
               <div className="flex items-center gap-2">
-                {linha && <Botao onClick={() => onAbrir(linha)}>Abrir</Botao>}
+                <Botao onClick={() => onAbrir(item)}>Abrir</Botao>
                 <button
                   type="button"
-                  onClick={() => onRemover(chave)}
+                  onClick={() => onRemover(item.id)}
                   className="text-xs text-stone-400 underline hover:text-red-600"
                 >
                   remover da fila
@@ -1787,12 +1946,14 @@ function PainelFilaProgramacao({
  * aqui (pedido do Arion, 25/08/2026).
  */
 function ModalProgramarDemanda({
-  cultivar, tratamento, embalagem, alvo, lotes, receitas, onFechar, onCriado,
+  id, cultivar, tratamento, embalagem, alvo, cooperado, lotes, receitas, onFechar, onCriado,
 }: {
+  id: string
   cultivar: string
   tratamento: string
   embalagem: string
   alvo: number
+  cooperado: boolean
   lotes: LoteSementeLinha[]
   receitas: ReceitaCompleta[]
   onFechar: () => void
@@ -1811,7 +1972,7 @@ function ModalProgramarDemanda({
     [lotes, cultivar],
   )
   const rascunho = useRascunho<{ linhas: { loteId: string; bags: string }[] }>(
-    chaveProgramar(cultivar, tratamento, embalagem),
+    chaveProgramar(id),
     { linhas: [{ loteId: '', bags: '' }] },
   )
   const linhas = rascunho.valor.linhas
@@ -1857,8 +2018,9 @@ function ModalProgramarDemanda({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
-        <h3 className="text-base font-semibold">
+        <h3 className="flex flex-wrap items-center gap-2 text-base font-semibold">
           Programar — {cultivar} · {tratamento} · {embalagem}
+          {cooperado && <Tag cor="alerta">cooperado</Tag>}
         </h3>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
           Faltam <b>{inteiro(alvo)} bags</b>. Escolha o(s) lote(s) — se não der para cobrir tudo,
