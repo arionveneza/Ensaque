@@ -970,7 +970,7 @@ export default function Ordens() {
               { texto: 'Endereço', className: 'hidden lg:table-cell' },
               '#Bags',
               { texto: '#Peso', onClick: () => alternarOrdenacao('peso'), ordem: setaOrdem('peso') },
-              { texto: 'Cliente', className: 'hidden lg:table-cell' },
+              { texto: 'Urgente', className: 'hidden lg:table-cell' },
               { texto: 'Status', onClick: () => alternarOrdenacao('status'), ordem: setaOrdem('status') },
               '',
             ]}
@@ -2714,8 +2714,13 @@ function FragmentoDia({
                     inflava a altura da linha inteira.
                   */}
                   <td className="min-w-36 px-2 py-1.5 font-medium lg:min-w-0">
+                    {/* em lg: some daqui — a coluna "Urgente" dedicada assume;
+                        sem ela (tablet/celular) fica aqui, senão a marcação
+                        some de vez no chão de fábrica */}
+                    {o.prioridade === 'Urgente' && (
+                      <span className="mr-1 lg:hidden"><Tag cor="perigo">urgente</Tag></span>
+                    )}
                     {o.numero}
-                    {o.prioridade === 'Urgente' && <span className="ml-1"><Tag cor="perigo">urgente</Tag></span>}
                     {!!o.reprogramacoes && o.reprogramacoes > 0 && (
                       <span
                         className="ml-1 cursor-help text-xs font-normal text-amber-700 dark:text-amber-400"
@@ -2739,8 +2744,15 @@ function FragmentoDia({
                   <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">{enderecoLote(o)}</td>
                   <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                   <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(o.peso_t, 1)} t</td>
+                  {/* era "Cliente" — nenhuma ordem tem esse campo preenchido
+                      hoje (achado do Arion, 26/08/2026), então a coluna virou
+                      "Urgente" e ganhou um lugar fixo pra etiqueta, em vez de
+                      espremida do lado do número (deslocava a coluna do nº
+                      conforme a linha tinha ou não a marcação). Cliente
+                      continua existindo no formulário/exportação — só saiu
+                      desta lista. */}
                   <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
-                    {o.cliente ?? '—'}
+                    {o.prioridade === 'Urgente' ? <Tag cor="perigo">urgente</Tag> : (o.cliente ?? '—')}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
                     {/* min-w = largura do maior rótulo ("Pronto para produzir",
