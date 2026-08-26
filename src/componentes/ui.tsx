@@ -82,15 +82,21 @@ export function Cartao({
   acoes,
   children,
   className = '',
+  semPadding = false,
 }: {
   titulo?: ReactNode
   acoes?: ReactNode
   children: ReactNode
   className?: string
+  /** Sem o padding padrão de 16px — para uma lista de linhas divididas que
+   *  deve tocar as bordas do card ponta a ponta, em vez de flutuar dentro
+   *  de uma margem. Cuida do overflow-hidden pra a lista não vazar quadrada
+   *  por cima dos cantos arredondados do card. */
+  semPadding?: boolean
 }) {
   return (
     <section
-      className={`rounded-xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900 ${className}`}
+      className={`rounded-xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900 ${semPadding ? 'overflow-hidden' : ''} ${className}`}
     >
       {(titulo || acoes) && (
         <header className="flex flex-col gap-2 border-b border-stone-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-stone-800">
@@ -98,7 +104,7 @@ export function Cartao({
           {acoes && <div className="flex flex-wrap gap-2">{acoes}</div>}
         </header>
       )}
-      <div className="p-4">{children}</div>
+      <div className={semPadding ? '' : 'p-4'}>{children}</div>
     </section>
   )
 }

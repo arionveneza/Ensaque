@@ -196,28 +196,32 @@ export default function Lotes() {
       )}
 
       {/* -------- lista de lotes a baixar -------- */}
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
-        A baixar ({aBaixar.length})
-      </h3>
-
-      {aBaixar.length === 0 ? (
-        <Vazio>Nenhum lote pendente de baixa — todas as ordens abertas já têm lote liberado.</Vazio>
-      ) : (
-        /* Lista, não grade de cards: com muitos lotes a tabela de ordens dentro de
-           cada card enchia a tela. Cada linha resume o lote e as ordens ficam
-           atrás do "ver ordens" — aberto só nos críticos. */
-        <div className="mb-6 divide-y divide-stone-200 overflow-hidden rounded-lg border border-stone-200 bg-white dark:divide-stone-800 dark:border-stone-800 dark:bg-stone-900">
-          {aBaixar.map((a) => (
-            <LinhaLote
-              key={a.lote.id}
-              item={a}
-              podeBaixar={podeBaixar}
-              nomeMaquina={nomeMaquina}
-              onBaixar={() => comErro(() => g.baixarLote(a.lote.id))}
-            />
-          ))}
-        </div>
-      )}
+      {/* mesmo Cartao das seções "Baixados"/"Baixados sem ordem" abaixo —
+          antes era uma div à mão (rounded-lg, sem shadow, título fora da
+          caixa) e destoava do resto da tela (achado do Arion, 26/08/2026).
+          semPadding: a lista, não grade de cards, precisa tocar as bordas
+          ponta a ponta — com muitos lotes a tabela de ordens dentro de cada
+          card enchia a tela, então cada linha resume o lote e as ordens
+          ficam atrás do "ver ordens" (aberto só nos críticos). */}
+      <Cartao titulo={`A baixar (${aBaixar.length})`} semPadding className="mb-6">
+        {aBaixar.length === 0 ? (
+          <div className="p-4">
+            <Vazio>Nenhum lote pendente de baixa — todas as ordens abertas já têm lote liberado.</Vazio>
+          </div>
+        ) : (
+          <div className="divide-y divide-stone-200 dark:divide-stone-800">
+            {aBaixar.map((a) => (
+              <LinhaLote
+                key={a.lote.id}
+                item={a}
+                podeBaixar={podeBaixar}
+                nomeMaquina={nomeMaquina}
+                onBaixar={() => comErro(() => g.baixarLote(a.lote.id))}
+              />
+            ))}
+          </div>
+        )}
+      </Cartao>
 
       {/* -------- baixados sem ordem -------- */}
       {orfaos.length > 0 && (
