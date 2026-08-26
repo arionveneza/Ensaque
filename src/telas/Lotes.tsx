@@ -643,7 +643,20 @@ function LinhaLoteBaixado({
         {n(lote.peso_bag_kg, 0)} kg/bag
       </p>
       <div className="mt-2">
-        <Tabela cabecalho={['Ordem', '#Bags', 'Liberado por', '']}>
+        {/* larguraFixa: cada lote é uma <table> separada empilhada na
+            tela — sem largura fixa, a coluna "Ordem" de um lote com ordem
+            urgente (que carrega a etiqueta) ficava mais larga que a dos
+            vizinhos e desalinhava Bags/Liberado por da lista inteira
+            (achado do Arion, 26/08/2026) */}
+        <Tabela
+          larguraFixa
+          cabecalho={[
+            { texto: 'Ordem', className: 'w-40' },
+            { texto: '#Bags', className: 'w-20' },
+            'Liberado por',
+            { texto: '', className: 'w-28' },
+          ]}
+        >
           {liberadas.map((o) => (
             <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
               <td className="px-2 py-1.5">

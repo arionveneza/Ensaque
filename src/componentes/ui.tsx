@@ -244,10 +244,20 @@ export type ColunaTabela =
   | { texto: string; className?: string; onClick?: () => void; ordem?: 'asc' | 'desc' }
 
 export function Tabela({
-  cabecalho, children,
+  cabecalho, children, larguraFixa = false,
 }: {
   cabecalho: ColunaTabela[]
   children: ReactNode
+  /**
+   * table-layout: fixed — pra várias tabelas SEPARADAS na mesma tela
+   * (ex.: uma por lote, empilhadas) manterem as mesmas larguras de coluna.
+   * Sem isso, cada `<table>` calcula a largura sozinha pelo próprio
+   * conteúdo, e uma linha com texto mais longo desalinha aquela tabela das
+   * vizinhas (achado do Arion, 26/08/2026, tela Logística). A largura de
+   * cada coluna vem do `className` do cabeçalho (ex.: `w-24`) — a que não
+   * tiver largura própria fica com o espaço que sobrar.
+   */
+  larguraFixa?: boolean
 }) {
   return (
     /**
@@ -258,7 +268,7 @@ export function Tabela({
      */
     <div className="relative">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className={`w-full text-sm ${larguraFixa ? 'table-fixed' : ''}`}>
           <thead>
             <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
               {cabecalho.map((c, i) => {
