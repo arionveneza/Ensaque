@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as g from '@/dados/api-gestao'
 import type {
-  BalancoLinha, EmbalagemLinha, LoteSementeLinha, ReceitaCompleta,
+  BalancoLinha, EmbalagemLinha, EstoquePaLinha, ReceitaCompleta,
 } from '@/dados/api-gestao'
 import {
-  calcularMrp, conferirCadastro, estoqueSapPorCultivar, PESO_REF_BAG_KG,
-  type NecessidadeProduto,
+  calcularMrp, chaveCombinacao, conferirCadastro, estoqueSapPorCombinacao,
+  PESO_REF_BAG_KG, type NecessidadeProduto,
 } from '@/dominio/mrp'
 import { useRealtime } from '@/dados/useRealtime'
 import { exportarXlsx } from '@/lib/exportar'
@@ -27,18 +27,20 @@ export default function Mrp() {
   const [balanco, setBalanco] = useState<BalancoLinha[]>([])
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<EmbalagemLinha[]>([])
-  const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
+  const [estoquePa, setEstoquePa] = useState<EstoquePaLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aberto, setAberto] = useState<string | null>(null)
 
   const recarregar = () =>
-    Promise.all([g.listarBalanco(), g.listarReceitas(), g.listarEmbalagens(), g.listarLotes()])
-      .then(([b, r, e, l]) => {
+    Promise.all([
+      g.listarBalanco(), g.listarReceitas(), g.listarEmbalagens(), g.listarEstoquePa(),
+    ])
+      .then(([b, r, e, pa]) => {
         setBalanco(b)
         setReceitas(r)
         setEmbalagens(e)
-        setLotes(l)
+        setEstoquePa(pa)
         setErro(null)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
@@ -46,17 +48,14 @@ export default function Mrp() {
   useEffect(() => {
     recarregar().finally(() => setCarregando(false))
   }, [])
-  useRealtime(
-    ['ordens', 'pedidos_venda', 'estoque_pa', 'receitas', 'lotes_semente'],
-    () => void recarregar(),
-  )
+  useRealtime(['ordens', 'pedidos_venda', 'estoque_pa', 'receitas'], () => void recarregar())
 
   const mrp = useMemo(
     () => calcularMrp(balanco, receitas, embalagens),
     [balanco, receitas, embalagens],
   )
   const conferencia = useMemo(() => conferirCadastro(balanco, receitas), [balanco, receitas])
-  const estoqueSap = useMemo(() => estoqueSapPorCultivar(lotes), [lotes])
+  const estoqueSap = useMemo(() => estoqueSapPorCombinacao(estoquePa), [estoquePa])
 
   function exportar() {
     void exportarXlsx(
@@ -251,8 +250,7 @@ export default function Mrp() {
               ]}
             >
               {mrp.combinacoes.map((c, i) => {
-                const disponivel = estoqueSap.get(c.cultivar)
-                const falta = disponivel == null || disponivel < c.bags + c.bagsAguardando
+                const disponivel = estoqueSap.get(chaveCombinacao(c.cultivar, c.tratamento))
                 return (
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{c.cultivar}</td>
@@ -267,27 +265,20 @@ export default function Mrp() {
                     <td className="num-tabular px-2 py-1.5 text-right">
                       {inteiro(c.kgSemente + c.kgSementeAguardando)}
                     </td>
-                    <td
-                      className={`num-tabular px-2 py-1.5 text-right ${
-                        falta ? 'font-semibold text-red-600 dark:text-red-400' : ''
-                      }`}
-                      title={
-                        falta
-                          ? 'Semente branca no SAP não cobre a demanda deste cultivar'
-                          : undefined
-                      }
-                    >
-                      {disponivel != null ? inteiro(disponivel) : '—'}
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {disponivel != null && disponivel > 0
+                        ? inteiro(disponivel)
+                        : <span className="text-stone-300">—</span>}
                     </td>
                   </tr>
                 )
               })}
             </Tabela>
             <p className="mt-2 text-xs text-stone-500">
-              Estoque SAP = semente branca disponível nos lotes (última carga de saldos),
-              somada por CULTIVAR — o mesmo pool atende todas as combinações do cultivar,
-              então o número se repete entre as linhas dele. Vermelho: não cobre a demanda
-              (firme + aguardando) da linha.
+              Estoque SAP = produto JÁ TRATADO no estoque (estoque PA da última carga de
+              saldos) do cultivar + tratamento da linha, somando as embalagens. Esse estoque
+              já está descontado do "falta produzir" — a coluna mostra quanto da combinação
+              está pronto no galpão.
             </p>
           </>
         )}

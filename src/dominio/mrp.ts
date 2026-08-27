@@ -24,27 +24,31 @@
  */
 
 import type {
-  BalancoLinha, EmbalagemLinha, LoteSementeLinha, ReceitaCompleta,
+  BalancoLinha, EmbalagemLinha, EstoquePaLinha, ReceitaCompleta,
 } from '@/dados/api-gestao'
 import { ehSemTsi } from './balanco'
 import { baseDoseKg, doseEmMl } from './calculos'
 
 /**
- * Semente branca disponível no SAP, somada por cultivar — o pool de lotes é
- * UM por cultivar (mesmo raciocínio da Expedição: duas embalagens do mesmo
- * cultivar bebem do mesmo pool). Entra todo lote com saldo, inclusive os já
- * `Baixado`: o status serve à Expedição, não decide se dá pra produzir
- * (CLAUDE.md §1) — um lote baixado pra uma ordem pode sobrar saldo pras
- * próximas, e o `bags_disp` é o saldo do SAP da última carga.
+ * Estoque SAP da COMBINAÇÃO cultivar + tratamento (pedido do Arion,
+ * 27/08/2026): o produto JÁ TRATADO no estoque (estoque_pa, da mesma carga
+ * de saldos do SAP), somando as embalagens da combinação. É informativo — o
+ * balanço já desconta esse estoque do "falta produzir"; a coluna existe pra
+ * enxergar quanto daquela combinação já está pronto no galpão sem ir atrás
+ * da planilha.
  */
-export function estoqueSapPorCultivar(lotes: LoteSementeLinha[]): Map<string, number> {
+export function estoqueSapPorCombinacao(estoquePa: EstoquePaLinha[]): Map<string, number> {
   const mapa = new Map<string, number>()
-  for (const l of lotes) {
-    if (l.bags_disp == null || l.bags_disp <= 0) continue
-    mapa.set(l.cultivar, (mapa.get(l.cultivar) ?? 0) + l.bags_disp)
+  for (const e of estoquePa) {
+    const chave = chaveCombinacao(e.cultivar, e.tratamento)
+    mapa.set(chave, (mapa.get(chave) ?? 0) + e.bags)
   }
   return mapa
 }
+
+// JSON como chave: colisao impossivel, mesmo com espaco e "+" nos nomes
+export const chaveCombinacao = (cultivar: string, tratamento: string): string =>
+  JSON.stringify([cultivar, tratamento])
 
 /** Peso de referência por bag para demanda sem lote (Arion, 27/08/2026). */
 export const PESO_REF_BAG_KG: Record<string, number> = {

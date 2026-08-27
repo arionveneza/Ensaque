@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { calcularMrp, conferirCadastro, estoqueSapPorCultivar, pesoRefBagKg } from './mrp'
-import type {
-  BalancoLinha, EmbalagemLinha, LoteSementeLinha, ReceitaCompleta,
-} from '@/dados/api-gestao'
+import {
+  calcularMrp, chaveCombinacao, conferirCadastro, estoqueSapPorCombinacao, pesoRefBagKg,
+} from './mrp'
+import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
 
 const EMBALAGENS: EmbalagemLinha[] = [
   { codigo: 'BG5M', codigo_ext: 'BB5M', descricao: 'Bag', sementes: 5000000, fator_peso: 5, peso_fixo_kg: null },
@@ -162,24 +162,18 @@ describe('calcularMrp', () => {
     ])
   })
 
-  it('estoqueSapPorCultivar soma os lotes com saldo, inclusive os Baixados', () => {
-    const lote = (parcial: Partial<LoteSementeLinha>): LoteSementeLinha => ({
-      id: 'L', cultivar: 'CULT', tratamento: 'SEM TSI', pms: 138, peso_bag_kg: 690,
-      bags_disp: 0, status: 'Em estoque', devolver: false,
-      baixado_por: null, baixado_em: null,
-      ...parcial,
-    })
-    const mapa = estoqueSapPorCultivar([
-      lote({ id: 'A', cultivar: 'NEO700 I2X', bags_disp: 10 }),
-      // Baixado com saldo conta: status é da Expedição, não decide produção
-      lote({ id: 'B', cultivar: 'NEO700 I2X', bags_disp: 9, status: 'Baixado' }),
-      lote({ id: 'C', cultivar: 'NEO700 I2X', bags_disp: 0 }),
-      lote({ id: 'D', cultivar: 'O820 IPRO', bags_disp: 4 }),
-      lote({ id: 'E', cultivar: 'O790 IPRO', bags_disp: null }),
+  it('estoqueSapPorCombinacao soma o produto tratado por cultivar + tratamento', () => {
+    const mapa = estoqueSapPorCombinacao([
+      { cultivar: '761 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 40 },
+      // outra embalagem da MESMA combinação soma junto
+      { cultivar: '761 I2X', tratamento: 'FTZ60', embalagem: 'MEIOBAG', bags: 3 },
+      { cultivar: '761 I2X', tratamento: 'FTZ60 + VIC', embalagem: 'BG5M', bags: 9 },
+      { cultivar: 'NEO750 IPRO', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 34 },
     ])
-    expect(mapa.get('NEO700 I2X')).toBe(19)
-    expect(mapa.get('O820 IPRO')).toBe(4)
-    expect(mapa.has('O790 IPRO')).toBe(false)
+    expect(mapa.get(chaveCombinacao('761 I2X', 'FTZ60'))).toBe(43)
+    expect(mapa.get(chaveCombinacao('761 I2X', 'FTZ60 + VIC'))).toBe(9)
+    expect(mapa.get(chaveCombinacao('NEO750 IPRO', 'FTZ60'))).toBe(34)
+    expect(mapa.has(chaveCombinacao('NEO750 IPRO', 'FTZ60 + VIC'))).toBe(false)
   })
 
   it('conferirCadastro: receita sem pedido e pedido sem receita, nos dois sentidos', () => {
