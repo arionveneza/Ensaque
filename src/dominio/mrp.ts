@@ -102,7 +102,31 @@ export interface NecessidadeProduto {
   totalL: number | null
   /** Volume adicional do aguardando, em litros. */
   totalLAguardando: number | null
-  combinacoes: (CombinacaoMrp & { kg: number; kgAguardando: number })[]
+  /** litros/litrosAguardando: null pra produto dosado em g (pó). */
+  combinacoes: (CombinacaoMrp & {
+    kg: number
+    kgAguardando: number
+    litros: number | null
+    litrosAguardando: number | null
+  })[]
+}
+
+/**
+ * A necessidade na unidade NATIVA do produto — a mesma do estoque do SAP:
+ * líquido (dose em ml) em LITROS, pó (dose em g) em KG. Pedido do Arion,
+ * 27/08/2026: "se for litro é litro, se for kg é kg" — sem conversão por
+ * densidade no meio do caminho do MRP.
+ */
+export function necessidadeNativa(p: NecessidadeProduto): {
+  unidade: 'L' | 'kg'
+  firme: number
+  aguardando: number
+  total: number
+} {
+  const emMl = p.unidade.startsWith('ml')
+  const firme = emMl ? (p.totalL ?? 0) : p.totalKg
+  const aguardando = emMl ? (p.totalLAguardando ?? 0) : p.totalKgAguardando
+  return { unidade: emMl ? 'L' : 'kg', firme, aguardando, total: firme + aguardando }
 }
 
 /** Um item do estoque de químicos importado (agregado por item do SAP). */
@@ -374,6 +398,9 @@ export function calcularMrp(
 
       const kg = kgPorKgSemente * kgSemente
       const kgAguardando = kgPorKgSemente * kgSementeAguardando
+      const litros = litrosPorKgSemente != null ? litrosPorKgSemente * kgSemente : null
+      const litrosAguardando =
+        litrosPorKgSemente != null ? litrosPorKgSemente * kgSementeAguardando : null
 
       let acc = produtos.get(p.codigo)
       if (!acc) {
@@ -396,7 +423,7 @@ export function calcularMrp(
         acc.totalL! += litrosPorKgSemente * kgSemente
         acc.totalLAguardando! += litrosPorKgSemente * kgSementeAguardando
       }
-      acc.combinacoes.push({ ...combo, kg, kgAguardando })
+      acc.combinacoes.push({ ...combo, kg, kgAguardando, litros, litrosAguardando })
     }
   }
 

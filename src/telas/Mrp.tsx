@@ -6,7 +6,7 @@ import type {
 } from '@/dados/api-gestao'
 import {
   calcularMrp, chaveCombinacao, conferirCadastro, cruzarEstoqueQuimico,
-  estoqueSapPorCombinacao, PESO_REF_BAG_KG,
+  estoqueSapPorCombinacao, necessidadeNativa, PESO_REF_BAG_KG,
   type EstoqueCruzado, type NecessidadeProduto,
 } from '@/dominio/mrp'
 import {
@@ -116,37 +116,36 @@ export default function Mrp() {
   const estoqueSap = useMemo(() => estoqueSapPorCombinacao(estoquePa), [estoquePa])
 
   function exportar() {
+    // tudo na unidade nativa do produto (L pra líquido, kg pra pó) — a mesma
+    // do estoque do SAP, sem conversão (pedido do Arion, 27/08/2026)
     void exportarXlsx(
       'mrp-necessidade-material',
       [
         { titulo: 'Produto', largura: 28 },
         { titulo: 'Código', largura: 12 },
         { titulo: 'Unidade da dose', largura: 14 },
-        { titulo: 'Firme (kg)', largura: 14, tipo: 'numero' },
-        { titulo: 'Aguardando (kg)', largura: 16, tipo: 'numero' },
-        { titulo: 'Total (kg)', largura: 14, tipo: 'numero' },
-        { titulo: 'Firme (L)', largura: 14, tipo: 'numero' },
-        { titulo: 'Aguardando (L)', largura: 16, tipo: 'numero' },
+        { titulo: 'Unidade', largura: 10 },
+        { titulo: 'Firme', largura: 14, tipo: 'numero' },
+        { titulo: 'Aguardando', largura: 14, tipo: 'numero' },
+        { titulo: 'Total', largura: 14, tipo: 'numero' },
         { titulo: 'Em estoque', largura: 14, tipo: 'numero' },
-        { titulo: 'Unid. estoque', largura: 12 },
         { titulo: 'Saldo (firme)', largura: 14, tipo: 'numero' },
         { titulo: 'Saldo (total)', largura: 14, tipo: 'numero' },
         { titulo: 'Falta comprar (firme)', largura: 18, tipo: 'numero' },
         { titulo: 'Falta comprar (total)', largura: 18, tipo: 'numero' },
       ],
       mrp.produtos.map((p) => {
+        const nat = necessidadeNativa(p)
         const cz = estoqueQuimicos ? cruzarEstoqueQuimico(p, estoqueQuimicos.itens) : null
         return [
           p.nome,
           p.codigo,
           p.unidade,
-          arred(p.totalKg),
-          arred(p.totalKgAguardando),
-          arred(p.totalKg + p.totalKgAguardando),
-          p.totalL != null ? arred(p.totalL) : '',
-          p.totalLAguardando != null ? arred(p.totalLAguardando) : '',
+          nat.unidade,
+          arred(nat.firme),
+          arred(nat.aguardando),
+          arred(nat.total),
           cz?.disponivel != null ? arred(cz.disponivel) : '',
-          cz ? cz.unidadeComparacao : '',
           cz?.saldoFirme != null ? arred(cz.saldoFirme) : '',
           cz?.saldoTotal != null ? arred(cz.saldoTotal) : '',
           cz ? arred(cz.faltaFirme) : '',
@@ -282,6 +281,10 @@ export default function Mrp() {
         acoes={<Botao onClick={exportar} disabled={mrp.produtos.length === 0}>Exportar .xlsx</Botao>}
         className="mb-5"
       >
+        {/* tudo na unidade NATIVA do produto — a mesma do estoque do SAP:
+            líquido em LITROS, pó em KG, sem conversão por densidade no
+            caminho (pedido do Arion, 27/08/2026: "se for litro é litro,
+            se for kg é kg") */}
         {mrp.produtos.length === 0 ? (
           <Vazio>
             Nada descoberto no balanço — ou nenhuma carga de pedidos importada ainda
@@ -292,8 +295,7 @@ export default function Mrp() {
             cabecalho={[
               'Produto',
               { texto: 'Unidade da dose', className: 'hidden lg:table-cell' },
-              '#Firme (kg)', '#Aguardando (kg)', '#Total (kg)',
-              { texto: '#Total (L)', className: 'hidden lg:table-cell' },
+              '#Firme', '#Aguardando', '#Total',
               '#Em estoque', '#Saldo', '#Falta comprar',
               '',
             ]}
@@ -311,9 +313,9 @@ export default function Mrp() {
         )}
         <p className="mt-2 text-xs text-stone-500">
           A coluna Aguardando é o ADICIONAL caso os pedidos pendentes de liberação
-          financeira aprovem (sobra de estoque já abatida). "Em estoque" vem da carga de
-          químicos do SAP acima (armazém {ARMAZEM_QUIMICOS}, casado pelo nome do produto):
-          líquido compara em LITROS, pó em KG. "Saldo" é estoque − necessário total, com
+          financeira aprovem (sobra de estoque já abatida). Tudo na unidade NATIVA do
+          produto — líquido em LITROS, pó em KG, a mesma do estoque do SAP (armazém{' '}
+          {ARMAZEM_QUIMICOS}, casado pelo nome). "Saldo" é estoque − necessário total, com
           sinal (positivo sobra, negativo falta); "Falta comprar" é sobre a parcela firme,
           com o "c/ aguardando" embaixo incluindo o pendente.
         </p>
@@ -463,34 +465,22 @@ function ProdutoLinhas({
   aberto: boolean
   onToggle: () => void
 }) {
-  const semDensidade = p.densidade == null && p.unidade.startsWith('ml')
-  const totalL =
-    p.totalL != null || p.totalLAguardando != null
-      ? (p.totalL ?? 0) + (p.totalLAguardando ?? 0)
-      : null
+  // unidade nativa do produto (a mesma do estoque do SAP): líquido em L,
+  // pó em kg — sem conversão por densidade (pedido do Arion, 27/08/2026)
+  const nat = necessidadeNativa(p)
   return (
     <>
       <tr className="border-t border-stone-100 dark:border-stone-800/60">
-        <td className="px-2 py-1.5 font-medium">
-          {p.nome}
-          {semDensidade && (
-            <span className="ml-1.5">
-              <Tag cor="perigo">sem densidade — kg indisponível</Tag>
-            </span>
-          )}
-        </td>
+        <td className="px-2 py-1.5 font-medium">{p.nome}</td>
         <td className="hidden px-2 py-1.5 text-stone-500 lg:table-cell">{p.unidade}</td>
-        <td className="num-tabular px-2 py-1.5 text-right">
-          {semDensidade ? '—' : n(p.totalKg, 1)}
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+          {n(nat.firme, 1)} {nat.unidade}
         </td>
-        <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
-          {semDensidade ? '—' : p.totalKgAguardando > 0 ? n(p.totalKgAguardando, 1) : <span className="text-stone-300">—</span>}
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap text-stone-500">
+          {nat.aguardando > 0 ? `${n(nat.aguardando, 1)} ${nat.unidade}` : <span className="text-stone-300">—</span>}
         </td>
-        <td className="num-tabular px-2 py-1.5 text-right font-semibold">
-          {semDensidade ? '—' : n(p.totalKg + p.totalKgAguardando, 1)}
-        </td>
-        <td className="num-tabular hidden px-2 py-1.5 text-right lg:table-cell">
-          {totalL != null ? n(totalL, 1) : <span className="text-stone-300">—</span>}
+        <td className="num-tabular px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+          {n(nat.total, 1)} {nat.unidade}
         </td>
         <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
           {cruzado == null ? (
@@ -565,26 +555,33 @@ function ProdutoLinhas({
         </td>
       </tr>
       {aberto &&
-        p.combinacoes.map((c, i) => (
-          <tr key={i} className="bg-stone-50/60 text-xs dark:bg-stone-800/20">
-            <td className="px-2 py-1 pl-6 text-stone-600 dark:text-stone-300">
-              {c.cultivar} · {c.tratamento} · {c.embalagem}
-            </td>
-            <td className="hidden px-2 py-1 text-stone-500 lg:table-cell">
-              {inteiro(c.bags + c.bagsAguardando)} bg · {inteiro(c.kgSemente + c.kgSementeAguardando)} kg semente
-            </td>
-            <td className="num-tabular px-2 py-1 text-right">{n(c.kg, 1)}</td>
-            <td className="num-tabular px-2 py-1 text-right text-stone-500">
-              {c.kgAguardando > 0 ? n(c.kgAguardando, 1) : ''}
-            </td>
-            <td className="num-tabular px-2 py-1 text-right">{n(c.kg + c.kgAguardando, 1)}</td>
-            <td className="hidden lg:table-cell" />
-            <td />
-            <td />
-            <td />
-            <td />
-          </tr>
-        ))}
+        p.combinacoes.map((c, i) => {
+          const firme = c.litros ?? c.kg
+          const aguard = c.litrosAguardando ?? c.kgAguardando
+          return (
+            <tr key={i} className="bg-stone-50/60 text-xs dark:bg-stone-800/20">
+              <td className="px-2 py-1 pl-6 text-stone-600 dark:text-stone-300">
+                {c.cultivar} · {c.tratamento} · {c.embalagem}
+              </td>
+              <td className="hidden px-2 py-1 text-stone-500 lg:table-cell">
+                {inteiro(c.bags + c.bagsAguardando)} bg · {inteiro(c.kgSemente + c.kgSementeAguardando)} kg semente
+              </td>
+              <td className="num-tabular px-2 py-1 text-right whitespace-nowrap">
+                {n(firme, 1)} {nat.unidade}
+              </td>
+              <td className="num-tabular px-2 py-1 text-right whitespace-nowrap text-stone-500">
+                {aguard > 0 ? `${n(aguard, 1)} ${nat.unidade}` : ''}
+              </td>
+              <td className="num-tabular px-2 py-1 text-right whitespace-nowrap">
+                {n(firme + aguard, 1)} {nat.unidade}
+              </td>
+              <td />
+              <td />
+              <td />
+              <td />
+            </tr>
+          )
+        })}
     </>
   )
 }

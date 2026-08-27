@@ -66,6 +66,8 @@ describe('calcularMrp', () => {
     expect(disco.totalKg).toBeCloseTo(24.0125, 4)
     // e em litros, sem densidade: 250 × 8500 ÷ 1000 ÷ 100 = 21,25 L
     expect(disco.totalL).toBeCloseTo(21.25, 4)
+    // a combinação carrega os litros pro detalhamento na unidade nativa
+    expect(disco.combinacoes[0].litros).toBeCloseTo(21.25, 4)
 
     // FLUIDUS (pó): 300 g/100kg × 8500 ÷ 1000 ÷ 100 = 25,5 kg, sem litros
     const fluidus = r.produtos.find((p) => p.nome === 'FLUIDUS F047 PO SECANTE')!
