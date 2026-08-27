@@ -258,6 +258,8 @@ describe('cruzarEstoqueQuimico', () => {
     expect(cz.disponivel).toBe(120)
     expect(cz.faltaFirme).toBe(0)          // 120 cobre os 100 firmes
     expect(cz.faltaTotal).toBe(30)         // 150 total - 120
+    expect(cz.saldoFirme).toBe(20)         // com sinal: sobra 20 pro firme
+    expect(cz.saldoTotal).toBe(-30)        // e falta 30 pro total
     expect(cz.incompativel).toBe(false)
   })
 
@@ -303,6 +305,7 @@ describe('cruzarEstoqueQuimico', () => {
     const cz = cruzarEstoqueQuimico(produto({ nome: 'INEXISTENTE', totalL: 10 }), [])
     expect(cz.disponivel).toBeNull()
     expect(cz.faltaFirme).toBe(10)
+    expect(cz.saldoTotal).toBeNull()
     expect(cz.incompativel).toBe(false)
   })
 })

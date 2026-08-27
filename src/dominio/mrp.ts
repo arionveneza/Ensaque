@@ -126,6 +126,13 @@ export interface EstoqueCruzado {
   faltaFirme: number
   /** O que falta comprar pra firme + aguardando. */
   faltaTotal: number
+  /**
+   * Saldo COM SINAL (estoque − necessário): positivo sobra, negativo falta —
+   * a outra face do "falta comprar" (pedido do Arion, 27/08/2026). Null
+   * quando nenhum item do SAP casou.
+   */
+  saldoFirme: number | null
+  saldoTotal: number | null
   /** Achou o item, mas a unidade do SAP não é comparável (ex.: DOSES). */
   incompativel: boolean
 }
@@ -200,6 +207,8 @@ export function cruzarEstoqueQuimico(
     nomesSap: casados.map((e) => e.nome),
     faltaFirme: Math.max(0, necessarioFirme - (disponivel ?? 0)),
     faltaTotal: Math.max(0, necessarioTotal - (disponivel ?? 0)),
+    saldoFirme: disponivel == null ? null : disponivel - necessarioFirme,
+    saldoTotal: disponivel == null ? null : disponivel - necessarioTotal,
     incompativel: casados.length > 0 && compativeis.length === 0,
   }
 }

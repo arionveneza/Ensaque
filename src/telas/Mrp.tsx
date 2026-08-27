@@ -129,6 +129,8 @@ export default function Mrp() {
         { titulo: 'Aguardando (L)', largura: 16, tipo: 'numero' },
         { titulo: 'Em estoque', largura: 14, tipo: 'numero' },
         { titulo: 'Unid. estoque', largura: 12 },
+        { titulo: 'Saldo (firme)', largura: 14, tipo: 'numero' },
+        { titulo: 'Saldo (total)', largura: 14, tipo: 'numero' },
         { titulo: 'Falta comprar (firme)', largura: 18, tipo: 'numero' },
         { titulo: 'Falta comprar (total)', largura: 18, tipo: 'numero' },
       ],
@@ -145,6 +147,8 @@ export default function Mrp() {
           p.totalLAguardando != null ? arred(p.totalLAguardando) : '',
           cz?.disponivel != null ? arred(cz.disponivel) : '',
           cz ? cz.unidadeComparacao : '',
+          cz?.saldoFirme != null ? arred(cz.saldoFirme) : '',
+          cz?.saldoTotal != null ? arred(cz.saldoTotal) : '',
           cz ? arred(cz.faltaFirme) : '',
           cz ? arred(cz.faltaTotal) : '',
         ]
@@ -290,7 +294,7 @@ export default function Mrp() {
               { texto: 'Unidade da dose', className: 'hidden lg:table-cell' },
               '#Firme (kg)', '#Aguardando (kg)', '#Total (kg)',
               { texto: '#Total (L)', className: 'hidden lg:table-cell' },
-              '#Em estoque', '#Falta comprar',
+              '#Em estoque', '#Saldo', '#Falta comprar',
               '',
             ]}
           >
@@ -309,8 +313,9 @@ export default function Mrp() {
           A coluna Aguardando é o ADICIONAL caso os pedidos pendentes de liberação
           financeira aprovem (sobra de estoque já abatida). "Em estoque" vem da carga de
           químicos do SAP acima (armazém {ARMAZEM_QUIMICOS}, casado pelo nome do produto):
-          líquido compara em LITROS, pó em KG. "Falta comprar" é sobre a parcela firme; o
-          "c/ aguardando" embaixo inclui o pendente.
+          líquido compara em LITROS, pó em KG. "Saldo" é estoque − necessário total, com
+          sinal (positivo sobra, negativo falta); "Falta comprar" é sobre a parcela firme,
+          com o "c/ aguardando" embaixo incluindo o pendente.
         </p>
       </Cartao>
 
@@ -501,6 +506,30 @@ function ProdutoLinhas({
           )}
         </td>
         <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+          {cruzado == null || cruzado.saldoTotal == null ? (
+            <span className="text-stone-300">—</span>
+          ) : (
+            <>
+              <span
+                className={
+                  cruzado.saldoTotal < 0
+                    ? 'font-semibold text-red-600 dark:text-red-400'
+                    : 'font-medium text-green-700 dark:text-green-400'
+                }
+              >
+                {cruzado.saldoTotal >= 0 ? '+' : ''}
+                {n(cruzado.saldoTotal, 1)} {cruzado.unidadeComparacao}
+              </span>
+              {cruzado.saldoFirme != null && cruzado.saldoFirme !== cruzado.saldoTotal && (
+                <p className="text-xs font-normal text-stone-500">
+                  só firme: {cruzado.saldoFirme >= 0 ? '+' : ''}
+                  {n(cruzado.saldoFirme, 1)}
+                </p>
+              )}
+            </>
+          )}
+        </td>
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
           {cruzado == null || cruzado.disponivel == null ? (
             <span className="text-stone-300">—</span>
           ) : cruzado.faltaFirme > 0 ? (
@@ -550,6 +579,7 @@ function ProdutoLinhas({
             </td>
             <td className="num-tabular px-2 py-1 text-right">{n(c.kg + c.kgAguardando, 1)}</td>
             <td className="hidden lg:table-cell" />
+            <td />
             <td />
             <td />
             <td />
