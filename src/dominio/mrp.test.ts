@@ -72,6 +72,47 @@ describe('calcularMrp', () => {
     expect(r.totais.kgSemente).toBe(8500)
   })
 
+  it('pedido aguardando aprovação entra como parcela separada', () => {
+    const r = calcularMrp(
+      [balanco({ saldo: 10, pedido_pendente: 4 })],
+      [FTZ60],
+      EMBALAGENS,
+    )
+    const c = r.combinacoes[0]
+    expect(c.bags).toBe(10)
+    expect(c.bagsAguardando).toBe(4)
+    expect(c.kgSementeAguardando).toBe(4 * 850)
+
+    const disco = r.produtos.find((p) => p.nome === 'DISCO BLACK')!
+    expect(disco.totalKg).toBeCloseTo((250 * 8500 * 1.13) / 1000 / 100, 4)
+    expect(disco.totalKgAguardando).toBeCloseTo((250 * 3400 * 1.13) / 1000 / 100, 4)
+    expect(disco.totalLAguardando).toBeCloseTo((250 * 3400) / 1000 / 100, 4)
+
+    expect(r.totais.bagsAguardando).toBe(4)
+    expect(r.totais.kgQuimicoAguardando).toBeGreaterThan(0)
+  })
+
+  it('sobra de estoque abate o aguardando antes de gerar necessidade', () => {
+    // aprovado coberto com 5 de sobra (saldo -5); pendente de 8 só precisa de 3
+    const r = calcularMrp(
+      [balanco({ saldo: -5, pedido_pendente: 8 })],
+      [FTZ60],
+      EMBALAGENS,
+    )
+    const c = r.combinacoes[0]
+    expect(c.bags).toBe(0)
+    expect(c.bagsAguardando).toBe(3)
+  })
+
+  it('só pendente, sem descoberto firme, ainda entra na conta', () => {
+    const r = calcularMrp([balanco({ saldo: 0, pedido_pendente: 6 })], [FTZ60], EMBALAGENS)
+    expect(r.combinacoes).toHaveLength(1)
+    expect(r.combinacoes[0].bags).toBe(0)
+    expect(r.combinacoes[0].bagsAguardando).toBe(6)
+    expect(r.totais.kgQuimico).toBe(0)
+    expect(r.totais.kgQuimicoAguardando).toBeGreaterThan(0)
+  })
+
   it('soma o mesmo produto usado por combinações diferentes', () => {
     const r = calcularMrp(
       [
@@ -87,7 +128,7 @@ describe('calcularMrp', () => {
     expect(disco.combinacoes).toHaveLength(2)
   })
 
-  it('saldo coberto (<= 0) não entra', () => {
+  it('saldo coberto (<= 0) sem pendente não entra', () => {
     const r = calcularMrp([balanco({ saldo: 0 }), balanco({ saldo: -5 })], [FTZ60], EMBALAGENS)
     expect(r.combinacoes).toHaveLength(0)
     expect(r.produtos).toHaveLength(0)
@@ -101,13 +142,13 @@ describe('calcularMrp', () => {
 
   it('tratamento sem receita cadastrada vira aviso, não conta', () => {
     const r = calcularMrp(
-      [balanco({ tratamento: 'STANDAK TOP', saldo: 8, receita_cadastrada: false })],
+      [balanco({ tratamento: 'STANDAK TOP', saldo: 8, pedido_pendente: 2, receita_cadastrada: false })],
       [FTZ60],
       EMBALAGENS,
     )
     expect(r.combinacoes).toHaveLength(0)
     expect(r.semReceita).toEqual([
-      { cultivar: 'CULT', tratamento: 'STANDAK TOP', embalagem: 'BG5M', bags: 8 },
+      { cultivar: 'CULT', tratamento: 'STANDAK TOP', embalagem: 'BG5M', bags: 8, bagsAguardando: 2 },
     ])
   })
 
@@ -115,7 +156,7 @@ describe('calcularMrp', () => {
     const r = calcularMrp([balanco({ embalagem: 'BGNOVA', saldo: 5 })], [FTZ60], EMBALAGENS)
     expect(r.combinacoes).toHaveLength(0)
     expect(r.semPesoRef).toEqual([
-      { cultivar: 'CULT', tratamento: 'FTZ60', embalagem: 'BGNOVA', bags: 5 },
+      { cultivar: 'CULT', tratamento: 'FTZ60', embalagem: 'BGNOVA', bags: 5, bagsAguardando: 0 },
     ])
   })
 

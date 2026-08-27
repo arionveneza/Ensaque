@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as g from '@/dados/api-gestao'
 import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
-import { calcularMrp, PESO_REF_BAG_KG } from '@/dominio/mrp'
+import { calcularMrp, PESO_REF_BAG_KG, type NecessidadeProduto } from '@/dominio/mrp'
 import { useRealtime } from '@/dados/useRealtime'
 import { exportarXlsx } from '@/lib/exportar'
 import {
@@ -13,8 +13,10 @@ import {
  *
  * Lê o MESMO balanço do painel Demanda × Estoque × Planejado (pedidos
  * aprovados − estoque PA − ordens abertas) e cruza a demanda descoberta com
- * as receitas cadastradas. Não pede upload próprio: atualizar a carga de
- * pedidos/saldos na tela Ordens atualiza isto aqui junto.
+ * as receitas cadastradas. Duas parcelas: FIRME (pedido aprovado) e
+ * AGUARDANDO (adicional se o pedido pendente de liberação financeira
+ * aprovar). Não pede upload próprio: atualizar a carga de pedidos/saldos na
+ * tela Ordens atualiza isto aqui junto.
  */
 export default function Mrp() {
   const [balanco, setBalanco] = useState<BalancoLinha[]>([])
@@ -51,25 +53,36 @@ export default function Mrp() {
         { titulo: 'Produto', largura: 28 },
         { titulo: 'Código', largura: 12 },
         { titulo: 'Unidade da dose', largura: 14 },
-        { titulo: 'Necessário (kg)', largura: 16, tipo: 'numero' },
-        { titulo: 'Necessário (L)', largura: 16, tipo: 'numero' },
+        { titulo: 'Firme (kg)', largura: 14, tipo: 'numero' },
+        { titulo: 'Aguardando (kg)', largura: 16, tipo: 'numero' },
+        { titulo: 'Total (kg)', largura: 14, tipo: 'numero' },
+        { titulo: 'Firme (L)', largura: 14, tipo: 'numero' },
+        { titulo: 'Aguardando (L)', largura: 16, tipo: 'numero' },
       ],
       mrp.produtos.map((p) => [
         p.nome,
         p.codigo,
         p.unidade,
-        Math.round(p.totalKg * 100) / 100,
-        p.totalL != null ? Math.round(p.totalL * 100) / 100 : '',
+        arred(p.totalKg),
+        arred(p.totalKgAguardando),
+        arred(p.totalKg + p.totalKgAguardando),
+        p.totalL != null ? arred(p.totalL) : '',
+        p.totalLAguardando != null ? arred(p.totalLAguardando) : '',
       ]),
     )
   }
 
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando MRP…</p>
 
+  const avisoBags = (s: { bags: number; bagsAguardando: number }) =>
+    s.bagsAguardando > 0
+      ? `${inteiro(s.bags)} bg + ${inteiro(s.bagsAguardando)} aguard.`
+      : `${inteiro(s.bags)} bg`
+
   return (
     <Pagina
       titulo="MRP — Necessidade de Material"
-      descricao={`Falta produzir (pedidos aprovados − estoque − ordens abertas) × receita = químico necessário. Bags viram kg de semente pelo peso de referência: BG5M ${PESO_REF_BAG_KG.BG5M} kg · MEIOBAG ${PESO_REF_BAG_KG.MEIOBAG} kg (demanda ainda sem lote não tem PMS); saco de peso fixo usa o peso do cadastro.`}
+      descricao={`Falta produzir (pedidos aprovados − estoque − ordens abertas) × receita = químico necessário; a parcela "aguardando" é o adicional se os pedidos pendentes de liberação financeira aprovarem. Bags viram kg de semente pelo peso de referência: BG5M ${PESO_REF_BAG_KG.BG5M} kg · MEIOBAG ${PESO_REF_BAG_KG.MEIOBAG} kg (demanda ainda sem lote não tem PMS); saco de peso fixo usa o peso do cadastro.`}
     >
       {erro && <Erro>{erro}</Erro>}
 
@@ -78,7 +91,7 @@ export default function Mrp() {
           <Aviso gravidade="alerta">
             <b>{mrp.semReceita.length} combinação(ões) fora da conta por falta de receita:</b>{' '}
             {mrp.semReceita
-              .map((s) => `${s.cultivar} · ${s.tratamento} · ${s.embalagem} (${inteiro(s.bags)} bg)`)
+              .map((s) => `${s.cultivar} · ${s.tratamento} · ${s.embalagem} (${avisoBags(s)})`)
               .join(' — ')}
           </Aviso>
         </div>
@@ -88,7 +101,7 @@ export default function Mrp() {
           <Aviso gravidade="alerta">
             <b>{mrp.semPesoRef.length} combinação(ões) sem peso de referência da embalagem:</b>{' '}
             {mrp.semPesoRef
-              .map((s) => `${s.cultivar} · ${s.tratamento} · ${s.embalagem} (${inteiro(s.bags)} bg)`)
+              .map((s) => `${s.cultivar} · ${s.tratamento} · ${s.embalagem} (${avisoBags(s)})`)
               .join(' — ')}
           </Aviso>
         </div>
@@ -96,9 +109,33 @@ export default function Mrp() {
 
       {/* totais no topo: o tamanho do trabalho que falta, numa olhada */}
       <div className="mb-5 grid gap-2 sm:grid-cols-3">
-        <CartaoTotal rotulo="Falta produzir" valor={`${inteiro(mrp.totais.bags)} bags`} detalhe={`${mrp.combinacoes.length} combinação(ões) com receita`} />
-        <CartaoTotal rotulo="Semente a tratar" valor={`${n(mrp.totais.kgSemente / 1000, 1)} t`} detalhe={`${inteiro(mrp.totais.kgSemente)} kg`} />
-        <CartaoTotal rotulo="Químico necessário" valor={`${n(mrp.totais.kgQuimico, 1)} kg`} detalhe={`${mrp.produtos.length} produto(s)`} />
+        <CartaoTotal
+          rotulo="Falta produzir (firme)"
+          valor={`${inteiro(mrp.totais.bags)} bags`}
+          detalhe={
+            mrp.totais.bagsAguardando > 0
+              ? `+ ${inteiro(mrp.totais.bagsAguardando)} bags aguardando aprovação`
+              : `${mrp.combinacoes.length} combinação(ões) com receita`
+          }
+        />
+        <CartaoTotal
+          rotulo="Semente a tratar"
+          valor={`${n(mrp.totais.kgSemente / 1000, 1)} t`}
+          detalhe={
+            mrp.totais.kgSementeAguardando > 0
+              ? `+ ${n(mrp.totais.kgSementeAguardando / 1000, 1)} t aguardando`
+              : `${inteiro(mrp.totais.kgSemente)} kg`
+          }
+        />
+        <CartaoTotal
+          rotulo="Químico necessário"
+          valor={`${n(mrp.totais.kgQuimico, 1)} kg`}
+          detalhe={
+            mrp.totais.kgQuimicoAguardando > 0
+              ? `+ ${n(mrp.totais.kgQuimicoAguardando, 1)} kg se o aguardando aprovar`
+              : `${mrp.produtos.length} produto(s)`
+          }
+        />
       </div>
 
       {/* -------- necessidade por produto -------- */}
@@ -117,7 +154,9 @@ export default function Mrp() {
             cabecalho={[
               'Produto',
               { texto: 'Unidade da dose', className: 'hidden lg:table-cell' },
-              '#Necessário (kg)', '#Necessário (L)', '',
+              '#Firme (kg)', '#Aguardando (kg)', '#Total (kg)',
+              { texto: '#Total (L)', className: 'hidden lg:table-cell' },
+              '',
             ]}
           >
             {mrp.produtos.map((p) => (
@@ -131,8 +170,9 @@ export default function Mrp() {
           </Tabela>
         )}
         <p className="mt-2 text-xs text-stone-500">
-          Isto é o consumo pra cobrir TODA a demanda descoberta — não desconta o estoque de
-          insumo, que o sistema ainda não acompanha.
+          Isto é o consumo pra cobrir a demanda — não desconta o estoque de insumo, que o
+          sistema ainda não acompanha. A coluna Aguardando é o ADICIONAL caso os pedidos
+          pendentes de liberação financeira aprovem (sobra de estoque já abatida).
         </p>
       </Cartao>
 
@@ -141,14 +181,26 @@ export default function Mrp() {
         {mrp.combinacoes.length === 0 ? (
           <Vazio>Nenhuma combinação descoberta com receita cadastrada.</Vazio>
         ) : (
-          <Tabela cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Bags', '#Semente (kg)']}>
+          <Tabela
+            cabecalho={[
+              'Cultivar', 'Tratamento', 'Emb.',
+              '#Firme (bg)', '#Aguardando (bg)', '#Semente (kg)',
+            ]}
+          >
             {mrp.combinacoes.map((c, i) => (
               <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5">{c.cultivar}</td>
                 <td className="px-2 py-1.5">{c.tratamento}</td>
                 <td className="px-2 py-1.5">{c.embalagem}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.bags)}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.kgSemente)}</td>
+                <td className="num-tabular px-2 py-1.5 text-right">
+                  {c.bags > 0 ? inteiro(c.bags) : <span className="text-stone-300">—</span>}
+                </td>
+                <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+                  {c.bagsAguardando > 0 ? inteiro(c.bagsAguardando) : <span className="text-stone-300">—</span>}
+                </td>
+                <td className="num-tabular px-2 py-1.5 text-right">
+                  {inteiro(c.kgSemente + c.kgSementeAguardando)}
+                </td>
               </tr>
             ))}
           </Tabela>
@@ -157,6 +209,8 @@ export default function Mrp() {
     </Pagina>
   )
 }
+
+const arred = (v: number) => Math.round(v * 100) / 100
 
 function CartaoTotal({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe: string }) {
   return (
@@ -171,11 +225,15 @@ function CartaoTotal({ rotulo, valor, detalhe }: { rotulo: string; valor: string
 function ProdutoLinhas({
   produto: p, aberto, onToggle,
 }: {
-  produto: import('@/dominio/mrp').NecessidadeProduto
+  produto: NecessidadeProduto
   aberto: boolean
   onToggle: () => void
 }) {
   const semDensidade = p.densidade == null && p.unidade.startsWith('ml')
+  const totalL =
+    p.totalL != null || p.totalLAguardando != null
+      ? (p.totalL ?? 0) + (p.totalLAguardando ?? 0)
+      : null
   return (
     <>
       <tr className="border-t border-stone-100 dark:border-stone-800/60">
@@ -188,11 +246,17 @@ function ProdutoLinhas({
           )}
         </td>
         <td className="hidden px-2 py-1.5 text-stone-500 lg:table-cell">{p.unidade}</td>
-        <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+        <td className="num-tabular px-2 py-1.5 text-right">
           {semDensidade ? '—' : n(p.totalKg, 1)}
         </td>
-        <td className="num-tabular px-2 py-1.5 text-right">
-          {p.totalL != null ? n(p.totalL, 1) : <span className="text-stone-300">—</span>}
+        <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+          {semDensidade ? '—' : p.totalKgAguardando > 0 ? n(p.totalKgAguardando, 1) : <span className="text-stone-300">—</span>}
+        </td>
+        <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+          {semDensidade ? '—' : n(p.totalKg + p.totalKgAguardando, 1)}
+        </td>
+        <td className="num-tabular hidden px-2 py-1.5 text-right lg:table-cell">
+          {totalL != null ? n(totalL, 1) : <span className="text-stone-300">—</span>}
         </td>
         <td className="px-2 py-1.5 text-right">
           <button
@@ -211,10 +275,14 @@ function ProdutoLinhas({
               {c.cultivar} · {c.tratamento} · {c.embalagem}
             </td>
             <td className="hidden px-2 py-1 text-stone-500 lg:table-cell">
-              {inteiro(c.bags)} bg · {inteiro(c.kgSemente)} kg semente
+              {inteiro(c.bags + c.bagsAguardando)} bg · {inteiro(c.kgSemente + c.kgSementeAguardando)} kg semente
             </td>
             <td className="num-tabular px-2 py-1 text-right">{n(c.kg, 1)}</td>
-            <td />
+            <td className="num-tabular px-2 py-1 text-right text-stone-500">
+              {c.kgAguardando > 0 ? n(c.kgAguardando, 1) : ''}
+            </td>
+            <td className="num-tabular px-2 py-1 text-right">{n(c.kg + c.kgAguardando, 1)}</td>
+            <td className="hidden lg:table-cell" />
             <td />
           </tr>
         ))}

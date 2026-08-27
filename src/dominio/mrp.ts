@@ -4,6 +4,14 @@
  *   falta produzir (balanço, em bags) × peso do bag → kg de semente
  *   kg de semente × dose da receita → kg (e litros) de cada produto químico
  *
+ * Duas parcelas por combinação (pedido do Arion, 27/08/2026):
+ *
+ *   FIRME      = o descoberto do balanço (pedido APROVADO − estoque − ordens)
+ *   AGUARDANDO = o adicional se o pedido pendente de liberação financeira
+ *                aprovar. Não é o pendente inteiro: sobra de estoque acima do
+ *                aprovado abate o pendente primeiro —
+ *                aguardando = max(0, saldo + pendente) − max(0, saldo).
+ *
  * A demanda descoberta ainda não tem lote, então não há PMS pra calcular o
  * peso do bag por sementes — usa-se peso de REFERÊNCIA fixado pelo PCP
  * (Arion, 27/08/2026): BG5M = 850 kg, MEIOBAG = 425 kg. Embalagem de peso
@@ -16,7 +24,7 @@
  */
 
 import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
-import { bagsFaltando, ehSemTsi } from './balanco'
+import { ehSemTsi } from './balanco'
 import { baseDoseKg, doseEmMl } from './calculos'
 
 /** Peso de referência por bag para demanda sem lote (Arion, 27/08/2026). */
@@ -38,9 +46,13 @@ export interface CombinacaoMrp {
   cultivar: string
   tratamento: string
   embalagem: string
+  /** Descoberto do pedido aprovado — a parcela firme. */
   bags: number
+  /** Adicional se o pedido aguardando liberação financeira aprovar. */
+  bagsAguardando: number
   pesoBagKg: number
   kgSemente: number
+  kgSementeAguardando: number
 }
 
 export interface NecessidadeProduto {
@@ -48,27 +60,46 @@ export interface NecessidadeProduto {
   nome: string
   unidade: string
   densidade: number | null
-  /** Peso de balança total, em kg — soma de todas as combinações. */
+  /** Peso de balança da parcela firme, em kg — soma de todas as combinações. */
   totalKg: number
-  /** Volume total em litros — só para produto dosado em ml. */
+  /** Peso de balança adicional se o aguardando aprovar, em kg. */
+  totalKgAguardando: number
+  /** Volume da parcela firme em litros — só para produto dosado em ml. */
   totalL: number | null
-  combinacoes: (CombinacaoMrp & { kg: number })[]
+  /** Volume adicional do aguardando, em litros. */
+  totalLAguardando: number | null
+  combinacoes: (CombinacaoMrp & { kg: number; kgAguardando: number })[]
 }
 
 export interface ResultadoMrp {
   /** Uma linha por produto químico, do maior consumo para o menor. */
   produtos: NecessidadeProduto[]
-  /** As combinações descobertas que entraram na conta. */
+  /** As combinações que entraram na conta. */
   combinacoes: CombinacaoMrp[]
   totais: {
     bags: number
+    bagsAguardando: number
     kgSemente: number
+    kgSementeAguardando: number
     kgQuimico: number
+    kgQuimicoAguardando: number
   }
-  /** Descobertas SEM receita cadastrada — fora da conta, listadas pra ninguém esquecer. */
-  semReceita: { cultivar: string; tratamento: string; embalagem: string; bags: number }[]
+  /** Sem receita cadastrada — fora da conta, listadas pra ninguém esquecer. */
+  semReceita: {
+    cultivar: string
+    tratamento: string
+    embalagem: string
+    bags: number
+    bagsAguardando: number
+  }[]
   /** Embalagem sem peso de referência nem peso fixo — fora da conta. */
-  semPesoRef: { cultivar: string; tratamento: string; embalagem: string; bags: number }[]
+  semPesoRef: {
+    cultivar: string
+    tratamento: string
+    embalagem: string
+    bags: number
+    bagsAguardando: number
+  }[]
 }
 
 export function calcularMrp(
@@ -83,32 +114,44 @@ export function calcularMrp(
   const semPesoRef: ResultadoMrp['semPesoRef'] = []
 
   for (const b of balanco) {
-    const bags = bagsFaltando(b)
-    if (bags <= 0) continue
+    const bags = Math.max(0, b.saldo)
+    // sobra de estoque acima do aprovado (saldo negativo) abate o pendente
+    // antes de gerar necessidade nova
+    const bagsAguardando = Math.max(0, b.saldo + b.pedido_pendente) - bags
+    if (bags <= 0 && bagsAguardando <= 0) continue
     // SEM TSI é semente branca: não consome químico e o balanço de pedidos
     // nem a rastreia (importação descarta) — não entra no MRP
     if (ehSemTsi(b.tratamento)) continue
 
     const receita = porNome.get(b.tratamento)
     if (!receita || !b.receita_cadastrada) {
-      semReceita.push({ cultivar: b.cultivar, tratamento: b.tratamento, embalagem: b.embalagem, bags })
+      semReceita.push({
+        cultivar: b.cultivar, tratamento: b.tratamento, embalagem: b.embalagem,
+        bags, bagsAguardando,
+      })
       continue
     }
 
     const pesoBag = pesoRefBagKg(b.embalagem, embalagens)
     if (pesoBag == null) {
-      semPesoRef.push({ cultivar: b.cultivar, tratamento: b.tratamento, embalagem: b.embalagem, bags })
+      semPesoRef.push({
+        cultivar: b.cultivar, tratamento: b.tratamento, embalagem: b.embalagem,
+        bags, bagsAguardando,
+      })
       continue
     }
 
     const kgSemente = bags * pesoBag
+    const kgSementeAguardando = bagsAguardando * pesoBag
     const combo: CombinacaoMrp = {
       cultivar: b.cultivar,
       tratamento: b.tratamento,
       embalagem: b.embalagem,
       bags,
+      bagsAguardando,
       pesoBagKg: pesoBag,
       kgSemente,
+      kgSementeAguardando,
     }
     combinacoes.push(combo)
 
@@ -118,12 +161,15 @@ export function calcularMrp(
       // mesma fórmula de pesoItemKg (calculos.ts) — dose em ml exige densidade;
       // produto sem densidade não derruba o painel inteiro: cai como 0 kg e a
       // tela avisa pelo próprio cadastro (o produto aparece com densidade nula)
-      const kg = doseEmMl(p.unidade)
+      const kgPorKgSemente = doseEmMl(p.unidade)
         ? p.densidade != null
-          ? (item.dose * kgSemente * p.densidade) / 1000 / base
+          ? (item.dose * p.densidade) / 1000 / base
           : 0
-        : (item.dose * kgSemente) / 1000 / base
-      const litros = doseEmMl(p.unidade) ? (item.dose * kgSemente) / 1000 / base : null
+        : item.dose / 1000 / base
+      const litrosPorKgSemente = doseEmMl(p.unidade) ? item.dose / 1000 / base : null
+
+      const kg = kgPorKgSemente * kgSemente
+      const kgAguardando = kgPorKgSemente * kgSementeAguardando
 
       let acc = produtos.get(p.codigo)
       if (!acc) {
@@ -133,29 +179,44 @@ export function calcularMrp(
           unidade: p.unidade,
           densidade: p.densidade,
           totalKg: 0,
+          totalKgAguardando: 0,
           totalL: doseEmMl(p.unidade) ? 0 : null,
+          totalLAguardando: doseEmMl(p.unidade) ? 0 : null,
           combinacoes: [],
         }
         produtos.set(p.codigo, acc)
       }
       acc.totalKg += kg
-      if (acc.totalL != null && litros != null) acc.totalL += litros
-      acc.combinacoes.push({ ...combo, kg })
+      acc.totalKgAguardando += kgAguardando
+      if (litrosPorKgSemente != null) {
+        acc.totalL! += litrosPorKgSemente * kgSemente
+        acc.totalLAguardando! += litrosPorKgSemente * kgSementeAguardando
+      }
+      acc.combinacoes.push({ ...combo, kg, kgAguardando })
     }
   }
 
-  const lista = [...produtos.values()].sort((a, b) => b.totalKg - a.totalKg)
-  for (const p of lista) p.combinacoes.sort((a, b) => b.kg - a.kg)
+  const lista = [...produtos.values()].sort(
+    (a, b) => b.totalKg + b.totalKgAguardando - (a.totalKg + a.totalKgAguardando),
+  )
+  for (const p of lista) p.combinacoes.sort((a, b) => b.kg + b.kgAguardando - (a.kg + a.kgAguardando))
 
   return {
     produtos: lista,
-    combinacoes: combinacoes.sort((a, b) => b.kgSemente - a.kgSemente),
+    combinacoes: combinacoes.sort(
+      (a, b) => b.kgSemente + b.kgSementeAguardando - (a.kgSemente + a.kgSementeAguardando),
+    ),
     totais: {
       bags: combinacoes.reduce((s, c) => s + c.bags, 0),
+      bagsAguardando: combinacoes.reduce((s, c) => s + c.bagsAguardando, 0),
       kgSemente: combinacoes.reduce((s, c) => s + c.kgSemente, 0),
+      kgSementeAguardando: combinacoes.reduce((s, c) => s + c.kgSementeAguardando, 0),
       kgQuimico: lista.reduce((s, p) => s + p.totalKg, 0),
+      kgQuimicoAguardando: lista.reduce((s, p) => s + p.totalKgAguardando, 0),
     },
-    semReceita: semReceita.sort((a, b) => b.bags - a.bags),
+    semReceita: semReceita.sort(
+      (a, b) => b.bags + b.bagsAguardando - (a.bags + a.bagsAguardando),
+    ),
     semPesoRef,
   }
 }
