@@ -106,6 +106,23 @@ describe('calcularMrp', () => {
     expect(c.bagsAguardando).toBe(3)
   })
 
+  it('carrega as parcelas da equação pro detalhamento da tela', () => {
+    // o caso real do 761 I2X (27/08/2026): pedido 45, estoque 45 → falta 0,
+    // mas o pedido e o estoque precisam aparecer na linha
+    const r = calcularMrp(
+      [balanco({ pedido_aprovado: 45, pedido_pendente: 54, estoque_pa: 45, saldo: 0 })],
+      [FTZ60],
+      EMBALAGENS,
+    )
+    const c = r.combinacoes[0]
+    expect(c.pedidoAprovado).toBe(45)
+    expect(c.pedidoPendente).toBe(54)
+    expect(c.estoquePa).toBe(45)
+    expect(c.ordensAbertas).toBe(0)
+    expect(c.bags).toBe(0)
+    expect(c.bagsAguardando).toBe(54)
+  })
+
   it('só pendente, sem descoberto firme, ainda entra na conta', () => {
     const r = calcularMrp([balanco({ saldo: 0, pedido_pendente: 6 })], [FTZ60], EMBALAGENS)
     expect(r.combinacoes).toHaveLength(1)

@@ -69,13 +69,24 @@ export interface CombinacaoMrp {
   cultivar: string
   tratamento: string
   embalagem: string
-  /** Descoberto do pedido aprovado — a parcela firme. */
+  /** Descoberto do pedido aprovado — a parcela firme (o que puxa químico). */
   bags: number
   /** Adicional se o pedido aguardando liberação financeira aprovar. */
   bagsAguardando: number
   pesoBagKg: number
   kgSemente: number
   kgSementeAguardando: number
+  /**
+   * As parcelas da conta, direto do balanço — a tela abre a equação
+   * `falta = pedido − estoque − ordens` porque só a falta parecia número
+   * errado pra quem procurava o pedido (achado do Arion, 27/08/2026:
+   * "tenho de pedido firme 45 bags e aí aparece 0" — os 45 já estavam
+   * cobertos por 45 em estoque).
+   */
+  pedidoAprovado: number
+  pedidoPendente: number
+  estoquePa: number
+  ordensAbertas: number
 }
 
 export interface NecessidadeProduto {
@@ -233,6 +244,10 @@ export function calcularMrp(
       pesoBagKg: pesoBag,
       kgSemente,
       kgSementeAguardando,
+      pedidoAprovado: b.pedido_aprovado,
+      pedidoPendente: b.pedido_pendente,
+      estoquePa: b.estoque_pa,
+      ordensAbertas: b.ordens_abertas,
     }
     combinacoes.push(combo)
 

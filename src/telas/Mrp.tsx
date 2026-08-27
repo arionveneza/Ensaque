@@ -243,42 +243,65 @@ export default function Mrp() {
           <Vazio>Nenhuma combinação descoberta com receita cadastrada.</Vazio>
         ) : (
           <>
+            {/* a equação inteira, coluna a coluna — só a "falta" parecia
+                número errado pra quem procurava o pedido (achado do Arion,
+                27/08/2026: "tenho de pedido firme 45 bags e aí aparece 0",
+                quando os 45 já estavam cobertos por 45 em estoque) */}
             <Tabela
               cabecalho={[
                 'Cultivar', 'Tratamento', 'Emb.',
-                '#Firme (bg)', '#Aguardando (bg)', '#Semente (kg)', '#Estoque SAP (bg)',
+                '#Pedido firme (bg)', '#Pedido aguard. (bg)',
+                '#Estoque SAP (bg)',
+                { texto: '#Ordens abertas (bg)', className: 'hidden lg:table-cell' },
+                '#Falta produzir (bg)', '#Falta se aprovar (bg)',
               ]}
             >
               {mrp.combinacoes.map((c, i) => {
-                const disponivel = estoqueSap.get(chaveCombinacao(c.cultivar, c.tratamento))
+                // estoque de OUTRA embalagem da mesma combinação, se houver —
+                // fora da equação desta linha, mas é estoque da combinação
+                const somaCombinacao = estoqueSap.get(chaveCombinacao(c.cultivar, c.tratamento)) ?? 0
+                const outrasEmb = Math.max(0, somaCombinacao - c.estoquePa)
                 return (
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{c.cultivar}</td>
                     <td className="px-2 py-1.5">{c.tratamento}</td>
                     <td className="px-2 py-1.5">{c.embalagem}</td>
                     <td className="num-tabular px-2 py-1.5 text-right">
+                      {c.pedidoAprovado > 0 ? inteiro(c.pedidoAprovado) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+                      {c.pedidoPendente > 0 ? inteiro(c.pedidoPendente) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {c.estoquePa > 0 ? inteiro(c.estoquePa) : <span className="text-stone-300">—</span>}
+                      {outrasEmb > 0 && (
+                        <span
+                          className="ml-1 text-xs text-stone-400"
+                          title="Estoque da mesma combinação em outra embalagem — fora da conta desta linha"
+                        >
+                          +{inteiro(outrasEmb)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="num-tabular hidden px-2 py-1.5 text-right text-stone-500 lg:table-cell">
+                      {c.ordensAbertas > 0 ? inteiro(c.ordensAbertas) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right font-semibold">
                       {c.bags > 0 ? inteiro(c.bags) : <span className="text-stone-300">—</span>}
                     </td>
                     <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
                       {c.bagsAguardando > 0 ? inteiro(c.bagsAguardando) : <span className="text-stone-300">—</span>}
-                    </td>
-                    <td className="num-tabular px-2 py-1.5 text-right">
-                      {inteiro(c.kgSemente + c.kgSementeAguardando)}
-                    </td>
-                    <td className="num-tabular px-2 py-1.5 text-right">
-                      {disponivel != null && disponivel > 0
-                        ? inteiro(disponivel)
-                        : <span className="text-stone-300">—</span>}
                     </td>
                   </tr>
                 )
               })}
             </Tabela>
             <p className="mt-2 text-xs text-stone-500">
-              Estoque SAP = produto JÁ TRATADO no estoque (estoque PA da última carga de
-              saldos) do cultivar + tratamento da linha, somando as embalagens. Esse estoque
-              já está descontado do "falta produzir" — a coluna mostra quanto da combinação
-              está pronto no galpão.
+              Falta produzir = pedido firme − estoque SAP − ordens abertas (é o que puxa
+              químico na tabela acima). "Falta se aprovar" é o adicional caso o pedido
+              aguardando liberação financeira aprove, já abatendo sobra de estoque. Estoque
+              SAP = produto JÁ TRATADO (estoque PA da última carga de saldos); o "+N" é
+              estoque da mesma combinação em outra embalagem, fora da conta desta linha.
             </p>
           </>
         )}
