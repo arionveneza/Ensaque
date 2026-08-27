@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import readXlsxFile from 'read-excel-file/browser'
 import * as g from '@/dados/api-gestao'
 import type {
-  BalancoLinha, EmbalagemLinha, EstoquePaLinha, ReceitaCompleta,
+  BalancoLinha, EmbalagemLinha, EstoquePaLinha, EstoqueQuimicoLinha, ReceitaCompleta,
 } from '@/dados/api-gestao'
 import {
-  calcularMrp, chaveCombinacao, conferirCadastro, estoqueSapPorCombinacao,
-  PESO_REF_BAG_KG, type NecessidadeProduto,
+  calcularMrp, chaveCombinacao, conferirCadastro, cruzarEstoqueQuimico,
+  estoqueSapPorCombinacao, PESO_REF_BAG_KG,
+  type EstoqueCruzado, type NecessidadeProduto,
 } from '@/dominio/mrp'
+import {
+  ARMAZEM_QUIMICOS, converterQuimicos, ehRelatorioQuimicos, type ResultadoQuimicos,
+} from '@/dominio/importacao/quimicos'
+import type { Linha } from '@/dominio/importacao/simpleagro'
+import { useAuth } from '@/auth/AuthProvider'
 import { useRealtime } from '@/dados/useRealtime'
 import { exportarXlsx } from '@/lib/exportar'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n,
+  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, inteiro, n,
 } from '@/componentes/ui'
 
 /**
@@ -24,10 +31,17 @@ import {
  * tela Ordens atualiza isto aqui junto.
  */
 export default function Mrp() {
+  const { usuario, permitido } = useAuth()
+  const podeImportar = permitido('mrp', 'importar')
   const [balanco, setBalanco] = useState<BalancoLinha[]>([])
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<EmbalagemLinha[]>([])
   const [estoquePa, setEstoquePa] = useState<EstoquePaLinha[]>([])
+  const [estoqueQuimicos, setEstoqueQuimicos] = useState<
+    { itens: EstoqueQuimicoLinha[]; criadaEm: string } | null
+  >(null)
+  const [previaQuimicos, setPreviaQuimicos] = useState<ResultadoQuimicos | null>(null)
+  const [importando, setImportando] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aberto, setAberto] = useState<string | null>(null)
@@ -35,12 +49,14 @@ export default function Mrp() {
   const recarregar = () =>
     Promise.all([
       g.listarBalanco(), g.listarReceitas(), g.listarEmbalagens(), g.listarEstoquePa(),
+      g.listarEstoqueQuimicos(),
     ])
-      .then(([b, r, e, pa]) => {
+      .then(([b, r, e, pa, eq]) => {
         setBalanco(b)
         setReceitas(r)
         setEmbalagens(e)
         setEstoquePa(pa)
+        setEstoqueQuimicos(eq)
         setErro(null)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
@@ -48,7 +64,49 @@ export default function Mrp() {
   useEffect(() => {
     recarregar().finally(() => setCarregando(false))
   }, [])
-  useRealtime(['ordens', 'pedidos_venda', 'estoque_pa', 'receitas'], () => void recarregar())
+  useRealtime(
+    ['ordens', 'pedidos_venda', 'estoque_pa', 'receitas', 'estoque_quimicos'],
+    () => void recarregar(),
+  )
+
+  async function lerPlanilhaQuimicos(ev: ChangeEvent<HTMLInputElement>) {
+    const arquivo = ev.target.files?.[0]
+    ev.target.value = ''
+    if (!arquivo) return
+    setErro(null)
+    setPreviaQuimicos(null)
+    try {
+      const bruto = (await readXlsxFile(arquivo)) as unknown
+      const arr = bruto as { data?: Linha[] }[]
+      const linhas =
+        Array.isArray(arr) && arr.length > 0 && !Array.isArray(arr[0]) && Array.isArray(arr[0]?.data)
+          ? (arr[0].data as Linha[])
+          : (bruto as Linha[])
+      if (!ehRelatorioQuimicos(linhas)) {
+        throw new Error(
+          'Não parece o export de químicos do SAP — esperava as colunas "Nº do item", "Descrição do Item", "Cód. Armazém" e "Qtd em Estoque".',
+        )
+      }
+      setPreviaQuimicos(converterQuimicos(linhas))
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function confirmarImportacaoQuimicos() {
+    if (!previaQuimicos || !usuario) return
+    setImportando(true)
+    setErro(null)
+    try {
+      await g.importarEstoqueQuimicos(previaQuimicos.itens, usuario.id)
+      setPreviaQuimicos(null)
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImportando(false)
+    }
+  }
 
   const mrp = useMemo(
     () => calcularMrp(balanco, receitas, embalagens),
@@ -69,17 +127,28 @@ export default function Mrp() {
         { titulo: 'Total (kg)', largura: 14, tipo: 'numero' },
         { titulo: 'Firme (L)', largura: 14, tipo: 'numero' },
         { titulo: 'Aguardando (L)', largura: 16, tipo: 'numero' },
+        { titulo: 'Em estoque', largura: 14, tipo: 'numero' },
+        { titulo: 'Unid. estoque', largura: 12 },
+        { titulo: 'Falta comprar (firme)', largura: 18, tipo: 'numero' },
+        { titulo: 'Falta comprar (total)', largura: 18, tipo: 'numero' },
       ],
-      mrp.produtos.map((p) => [
-        p.nome,
-        p.codigo,
-        p.unidade,
-        arred(p.totalKg),
-        arred(p.totalKgAguardando),
-        arred(p.totalKg + p.totalKgAguardando),
-        p.totalL != null ? arred(p.totalL) : '',
-        p.totalLAguardando != null ? arred(p.totalLAguardando) : '',
-      ]),
+      mrp.produtos.map((p) => {
+        const cz = estoqueQuimicos ? cruzarEstoqueQuimico(p, estoqueQuimicos.itens) : null
+        return [
+          p.nome,
+          p.codigo,
+          p.unidade,
+          arred(p.totalKg),
+          arred(p.totalKgAguardando),
+          arred(p.totalKg + p.totalKgAguardando),
+          p.totalL != null ? arred(p.totalL) : '',
+          p.totalLAguardando != null ? arred(p.totalLAguardando) : '',
+          cz?.disponivel != null ? arred(cz.disponivel) : '',
+          cz ? cz.unidadeComparacao : '',
+          cz ? arred(cz.faltaFirme) : '',
+          cz ? arred(cz.faltaTotal) : '',
+        ]
+      }),
     )
   }
 
@@ -149,6 +218,60 @@ export default function Mrp() {
         />
       </div>
 
+      {/* -------- estoque de químicos (upload do SAP) -------- */}
+      <Cartao
+        titulo="Estoque de químicos (SAP)"
+        acoes={
+          podeImportar ? (
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:hover:bg-stone-800">
+              Carregar planilha (.xlsx)
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerPlanilhaQuimicos} />
+            </label>
+          ) : undefined
+        }
+        className="mb-5"
+      >
+        {previaQuimicos ? (
+          <>
+            <Aviso gravidade="alerta">
+              <b>Prévia — nada foi gravado ainda.</b> {previaQuimicos.itens.length} item(ns) do
+              armazém {ARMAZEM_QUIMICOS} ({inteiro(previaQuimicos.linhasLidas)} linhas lidas,{' '}
+              {inteiro(previaQuimicos.linhasOutrosArmazens)} de outros armazéns ignoradas).
+              Confirmar substitui a carga vigente.
+            </Aviso>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {previaQuimicos.itens.slice(0, 10).map((i) => (
+                <Tag key={`${i.codigo_sap}|${i.unidade}`} cor="neutro">
+                  {i.nome}: {n(i.quantidade, 1)} {i.unidade}
+                </Tag>
+              ))}
+              {previaQuimicos.itens.length > 10 && (
+                <Tag cor="neutro">+{previaQuimicos.itens.length - 10} item(ns)</Tag>
+              )}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Botao variante="primario" disabled={importando} onClick={confirmarImportacaoQuimicos}>
+                {importando ? 'gravando…' : `Confirmar importação (${previaQuimicos.itens.length} itens)`}
+              </Botao>
+              <Botao onClick={() => setPreviaQuimicos(null)}>Cancelar</Botao>
+            </div>
+          </>
+        ) : estoqueQuimicos ? (
+          <p className="text-sm text-stone-600 dark:text-stone-300">
+            Carga vigente de <b>{dataHoraCurta(estoqueQuimicos.criadaEm)}</b> —{' '}
+            {estoqueQuimicos.itens.length} item(ns) do armazém {ARMAZEM_QUIMICOS}. As colunas
+            "Em estoque" e "Falta comprar" abaixo cruzam com esta carga; suba a planilha de
+            novo pra atualizar.
+          </p>
+        ) : (
+          <p className="text-sm text-stone-500 dark:text-stone-400">
+            Nenhuma carga importada ainda. Suba o export de estoque de insumos do SAP
+            (Quimicos.xlsx) — só o armazém {ARMAZEM_QUIMICOS} entra na conta — pra ver
+            "Em estoque" e "Falta comprar" na tabela abaixo.
+          </p>
+        )}
+      </Cartao>
+
       {/* -------- necessidade por produto -------- */}
       <Cartao
         titulo={`Necessidade por produto (${mrp.produtos.length})`}
@@ -167,6 +290,7 @@ export default function Mrp() {
               { texto: 'Unidade da dose', className: 'hidden lg:table-cell' },
               '#Firme (kg)', '#Aguardando (kg)', '#Total (kg)',
               { texto: '#Total (L)', className: 'hidden lg:table-cell' },
+              '#Em estoque', '#Falta comprar',
               '',
             ]}
           >
@@ -174,6 +298,7 @@ export default function Mrp() {
               <ProdutoLinhas
                 key={p.codigo}
                 produto={p}
+                cruzado={estoqueQuimicos ? cruzarEstoqueQuimico(p, estoqueQuimicos.itens) : null}
                 aberto={aberto === p.codigo}
                 onToggle={() => setAberto(aberto === p.codigo ? null : p.codigo)}
               />
@@ -181,9 +306,11 @@ export default function Mrp() {
           </Tabela>
         )}
         <p className="mt-2 text-xs text-stone-500">
-          Isto é o consumo pra cobrir a demanda — não desconta o estoque de insumo, que o
-          sistema ainda não acompanha. A coluna Aguardando é o ADICIONAL caso os pedidos
-          pendentes de liberação financeira aprovem (sobra de estoque já abatida).
+          A coluna Aguardando é o ADICIONAL caso os pedidos pendentes de liberação
+          financeira aprovem (sobra de estoque já abatida). "Em estoque" vem da carga de
+          químicos do SAP acima (armazém {ARMAZEM_QUIMICOS}, casado pelo nome do produto):
+          líquido compara em LITROS, pó em KG. "Falta comprar" é sobre a parcela firme; o
+          "c/ aguardando" embaixo inclui o pendente.
         </p>
       </Cartao>
 
@@ -323,9 +450,11 @@ function CartaoTotal({ rotulo, valor, detalhe }: { rotulo: string; valor: string
 }
 
 function ProdutoLinhas({
-  produto: p, aberto, onToggle,
+  produto: p, cruzado, aberto, onToggle,
 }: {
   produto: NecessidadeProduto
+  /** Cruzamento com o estoque de químicos do SAP — null sem carga importada. */
+  cruzado: EstoqueCruzado | null
   aberto: boolean
   onToggle: () => void
 }) {
@@ -358,6 +487,44 @@ function ProdutoLinhas({
         <td className="num-tabular hidden px-2 py-1.5 text-right lg:table-cell">
           {totalL != null ? n(totalL, 1) : <span className="text-stone-300">—</span>}
         </td>
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+          {cruzado == null ? (
+            <span className="text-stone-300" title="Suba a planilha de químicos do SAP no cartão acima">—</span>
+          ) : cruzado.incompativel ? (
+            <Tag cor="alerta">unid. SAP incompatível</Tag>
+          ) : cruzado.disponivel == null ? (
+            <Tag cor="alerta">não achei no SAP</Tag>
+          ) : (
+            <span title={cruzado.nomesSap.join(' + ')}>
+              {n(cruzado.disponivel, 1)} {cruzado.unidadeComparacao}
+            </span>
+          )}
+        </td>
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+          {cruzado == null || cruzado.disponivel == null ? (
+            <span className="text-stone-300">—</span>
+          ) : cruzado.faltaFirme > 0 ? (
+            <>
+              <span className="font-semibold text-red-600 dark:text-red-400">
+                {n(cruzado.faltaFirme, 1)} {cruzado.unidadeComparacao}
+              </span>
+              {cruzado.faltaTotal > cruzado.faltaFirme && (
+                <p className="text-xs font-normal text-stone-500">
+                  c/ aguard.: {n(cruzado.faltaTotal, 1)} {cruzado.unidadeComparacao}
+                </p>
+              )}
+            </>
+          ) : cruzado.faltaTotal > 0 ? (
+            <>
+              <span className="font-medium text-green-700 dark:text-green-400">cobre o firme</span>
+              <p className="text-xs font-normal text-amber-700 dark:text-amber-400">
+                c/ aguard.: falta {n(cruzado.faltaTotal, 1)} {cruzado.unidadeComparacao}
+              </p>
+            </>
+          ) : (
+            <span className="font-medium text-green-700 dark:text-green-400">cobre tudo</span>
+          )}
+        </td>
         <td className="px-2 py-1.5 text-right">
           <button
             type="button"
@@ -383,6 +550,8 @@ function ProdutoLinhas({
             </td>
             <td className="num-tabular px-2 py-1 text-right">{n(c.kg + c.kgAguardando, 1)}</td>
             <td className="hidden lg:table-cell" />
+            <td />
+            <td />
             <td />
           </tr>
         ))}

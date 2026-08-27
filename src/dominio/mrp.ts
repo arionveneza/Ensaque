@@ -105,6 +105,105 @@ export interface NecessidadeProduto {
   combinacoes: (CombinacaoMrp & { kg: number; kgAguardando: number })[]
 }
 
+/** Um item do estoque de químicos importado (agregado por item do SAP). */
+export interface EstoqueQuimicoItem {
+  codigo_sap: string
+  nome: string
+  /** LT | KG | DOSES | CAIXA | UN — como veio do SAP. */
+  unidade: string
+  quantidade: number
+  lotes: number
+}
+
+export interface EstoqueCruzado {
+  /** Disponível na unidade de comparação — null quando nenhum item do SAP casou. */
+  disponivel: number | null
+  /** 'L' pra produto dosado em ml (estoque LT), 'kg' pra dosado em g (estoque KG). */
+  unidadeComparacao: 'L' | 'kg'
+  /** Nome(s) do SAP que casaram — pra conferência visual. */
+  nomesSap: string[]
+  /** O que falta comprar pra parcela firme. */
+  faltaFirme: number
+  /** O que falta comprar pra firme + aguardando. */
+  faltaTotal: number
+  /** Achou o item, mas a unidade do SAP não é comparável (ex.: DOSES). */
+  incompativel: boolean
+}
+
+const normNome = (v: string): string =>
+  v
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+
+/**
+ * Casa a necessidade de UM produto com o estoque de químicos do SAP e diz o
+ * que falta comprar.
+ *
+ * O casamento é por NOME, nunca por código: o código do item no SAP não
+ * bate com o cadastrado no app em vários produtos (INS00004 é RIZOLIQ LLI
+ * lá e KELMAX aqui — conferido no export real de 27/08/2026). Três níveis,
+ * o primeiro que casar vence e os seguintes nem são olhados:
+ *
+ *   1. nome igual                          (DISCO BLACK = DISCO BLACK)
+ *   2. o do SAP COMEÇA com o do app        (RANCONA T ← RANCONA,
+ *                                           ACRESCENT RAIZ F PLUS ← ACRESCENT RAIZ F)
+ *   3. o do app COMEÇA com o do SAP        (FORTENZA 600 FS ← FORTENZA,
+ *                                           KELMAX RN BR ← KELMAX RN)
+ *
+ * Sempre com fronteira de palavra — "ACRESCENT RAIZ" (outro produto) não
+ * casa com "ACRESCENT RAIZ F" no nível 2 porque o nível 2 já achou o PLUS,
+ * e no 3 exigiria "ACRESCENT RAIZ F..." começar com "ACRESCENT RAIZ " (tem,
+ * mas o nível 3 só roda se 1 e 2 falharem). A comparação de quantidade é na
+ * unidade natural do produto: dosado em ml compara LITROS (estoque LT),
+ * dosado em g compara KG (estoque KG).
+ */
+export function cruzarEstoqueQuimico(
+  p: NecessidadeProduto,
+  estoque: EstoqueQuimicoItem[],
+): EstoqueCruzado {
+  const emMl = p.unidade.startsWith('ml')
+  const unidadeComparacao: 'L' | 'kg' = emMl ? 'L' : 'kg'
+  const unidadeSap = emMl ? 'LT' : 'KG'
+
+  const alvo = normNome(p.nome)
+  const comFronteira = (maior: string, menor: string) =>
+    maior === menor || maior.startsWith(menor + ' ')
+
+  const niveis: ((nomeSap: string) => boolean)[] = [
+    (n) => n === alvo,
+    (n) => comFronteira(n, alvo),
+    (n) => comFronteira(alvo, n),
+  ]
+  let casados: EstoqueQuimicoItem[] = []
+  for (const nivel of niveis) {
+    casados = estoque.filter((e) => nivel(normNome(e.nome)))
+    if (casados.length > 0) break
+  }
+
+  const compativeis = casados.filter((e) => e.unidade.toUpperCase() === unidadeSap)
+  const disponivel =
+    casados.length === 0
+      ? null
+      : compativeis.reduce((s, e) => s + e.quantidade, 0)
+
+  const necessarioFirme = emMl ? (p.totalL ?? 0) : p.totalKg
+  const necessarioTotal = emMl
+    ? (p.totalL ?? 0) + (p.totalLAguardando ?? 0)
+    : p.totalKg + p.totalKgAguardando
+
+  return {
+    disponivel,
+    unidadeComparacao,
+    nomesSap: casados.map((e) => e.nome),
+    faltaFirme: Math.max(0, necessarioFirme - (disponivel ?? 0)),
+    faltaTotal: Math.max(0, necessarioTotal - (disponivel ?? 0)),
+    incompativel: casados.length > 0 && compativeis.length === 0,
+  }
+}
+
 export interface ResultadoMrp {
   /** Uma linha por produto químico, do maior consumo para o menor. */
   produtos: NecessidadeProduto[]

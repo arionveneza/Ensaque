@@ -695,6 +695,65 @@ export async function importarEstoquePa(
   return registros.length
 }
 
+/** Um item do estoque de químicos do SAP (carga vigente, agregado por item). */
+export interface EstoqueQuimicoLinha {
+  codigo_sap: string
+  nome: string
+  unidade: string
+  quantidade: number
+  lotes: number
+}
+
+/** Grava a foto do estoque de químicos (armazém VEN_GER, agregada por item). */
+export async function importarEstoqueQuimicos(
+  itens: EstoqueQuimicoLinha[],
+  usuarioId: string,
+): Promise<number> {
+  const carga = await supabase
+    .from('cargas_demanda')
+    .insert({ tipo: 'quimicos', origem: 'upload', criada_por: usuarioId })
+    .select('id')
+    .single()
+  if (carga.error) {
+    throw new Error(
+      `criar carga de químicos: ${carga.error.message} — a migração estoque-quimicos.sql já rodou?`,
+    )
+  }
+  const cargaId = (carga.data as { id: string }).id
+  const registros = itens.map((i) => ({ carga_id: cargaId, ...i }))
+  for (let i = 0; i < registros.length; i += 500) {
+    const { error } = await supabase.from('estoque_quimicos').insert(registros.slice(i, i + 500))
+    erro('inserir estoque de químicos', error)
+  }
+  return registros.length
+}
+
+/**
+ * Estoque de químicos da carga VIGENTE (a última tipo 'quimicos' — mesma
+ * lição do estoque PA: a tabela guarda o histórico e somar tudo multiplica
+ * o saldo). Devolve null se nenhuma carga foi importada ainda — inclusive
+ * quando a tabela nem existe (migração pendente), pra aba MRP seguir de pé.
+ */
+export async function listarEstoqueQuimicos(): Promise<
+  { itens: EstoqueQuimicoLinha[]; criadaEm: string } | null
+> {
+  const ult = await supabase
+    .from('cargas_demanda')
+    .select('id, criada_em')
+    .eq('tipo', 'quimicos')
+    .order('criada_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (ult.error || !ult.data) return null
+  const carga = ult.data as { id: string; criada_em: string }
+  const { data, error } = await supabase
+    .from('estoque_quimicos')
+    .select('codigo_sap, nome, unidade, quantidade, lotes')
+    .eq('carga_id', carga.id)
+  if (error) return null
+  return { itens: (data ?? []) as EstoqueQuimicoLinha[], criadaEm: carga.criada_em }
+}
+
 /** Lotes vindos do relatório de Saldos. Mantém o status de quem já existe. */
 export async function importarLotes(linhas: LoteConvertido[]): Promise<number> {
   const registros = linhas.map((l) => ({

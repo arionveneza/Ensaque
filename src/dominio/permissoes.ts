@@ -21,7 +21,7 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   agrotis: ['ver', 'lancar'],
   etapas: ['ver'],
   indicadores: ['ver'],
-  mrp: ['ver'],
+  mrp: ['ver', 'importar'],
   cadastros: ['ver', 'editar'],
   expedicao: ['ver', 'importar'],
   veiculos: ['ver', 'chamar', 'checklist'],
@@ -58,8 +58,9 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     agrotis: ['ver', 'lancar'],
     etapas: ['ver'],
     indicadores: ['ver'],
-    // MRP (27/08/2026): necessidade de material — PCP, Gestor e Direção
-    mrp: ['ver'],
+    // MRP (27/08/2026): necessidade de material — PCP, Gestor e Direção;
+    // importar = subir o estoque de químicos do SAP (PCP/Gestor)
+    mrp: ['ver', 'importar'],
     cadastros: ['ver', 'editar'],
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],

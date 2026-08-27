@@ -471,8 +471,14 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 ## 7. Pendências de especificação (decidir com o cliente)
 
 - **Qualidade reprovada**: hoje é só um carimbo. Retrabalho? Bloqueio do lote? Nova ordem?
-- **Estoque de químicos**: o app aponta consumo real mas não sabe o saldo de insumo — falta alertar
-  "o Fortenza não cobre a programação da semana".
+- **Estoque de químicos**: RESOLVIDO na aba MRP (27/08/2026) — upload do export do SAP
+  (Quimicos.xlsx, uma linha por lote; só o armazém `VEN_GER` entra), foto por carga em
+  `estoque_quimicos` (migração `estoque-quimicos.sql`; quem lê usa SÓ a carga vigente,
+  lição do bug do estoque PA multiplicado). O cruzamento com a necessidade é por NOME
+  em 3 níveis (`cruzarEstoqueQuimico`) — o código do item no SAP NÃO bate com o do app
+  (INS00004 lá é RIZOLIQ, aqui era KELMAX). Líquido compara em L, pó em kg; colunas
+  "Em estoque"/"Falta comprar" (firme e com aguardando) na tabela de necessidade.
+  Segue em aberto só o alerta pró-ativo contra a programação da semana.
 - **Etiquetas**: a planilha antiga tinha ~15 abas de etiquetas; ficaram fora do escopo —
   EXCETO a **etiqueta DM** (25/08/2026): menu "Etiqueta DM ▾" no detalhe da ordem
   (`imprimirEtiquetaDm` em `exportar.ts`), tamanho físico 97 × 63 mm, com
