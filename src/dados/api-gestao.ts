@@ -599,9 +599,24 @@ export interface EstoquePaLinha {
 }
 
 export async function listarEstoquePa(): Promise<EstoquePaLinha[]> {
+  // SÓ a carga vigente: estoque_pa guarda o histórico de TODAS as cargas
+  // (substituição total é por carga nova, não delete), e sem este filtro o
+  // estoque saía multiplicado pelo nº de uploads — achado do Arion,
+  // 27/08/2026: NEO700 I2X · V&P mostrava 732 bg quando o SAP tem 122
+  // (6 cargas × 122). Mesma regra da v_balanco_demanda (ult_est).
+  const ult = await supabase
+    .from('cargas_demanda')
+    .select('id')
+    .eq('tipo', 'estoque')
+    .order('criada_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  erro('carga vigente de estoque', ult.error)
+  if (!ult.data) return []
   const { data, error } = await supabase
     .from('estoque_pa')
     .select('cultivar, tratamento, embalagem, bags')
+    .eq('carga_id', (ult.data as { id: string }).id)
   erro('estoque de produto acabado', error)
   return (data ?? []) as EstoquePaLinha[]
 }
