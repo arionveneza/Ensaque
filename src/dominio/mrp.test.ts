@@ -1,0 +1,136 @@
+import { describe, expect, it } from 'vitest'
+import { calcularMrp, pesoRefBagKg } from './mrp'
+import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
+
+const EMBALAGENS: EmbalagemLinha[] = [
+  { codigo: 'BG5M', codigo_ext: 'BB5M', descricao: 'Bag', sementes: 5000000, fator_peso: 5, peso_fixo_kg: null },
+  { codigo: 'MEIOBAG', codigo_ext: 'BMB', descricao: 'Meio', sementes: 2500000, fator_peso: 2.5, peso_fixo_kg: null },
+  { codigo: 'SC10', codigo_ext: null, descricao: 'Saco 10', sementes: null, fator_peso: null, peso_fixo_kg: 10 },
+]
+
+const balanco = (parcial: Partial<BalancoLinha>): BalancoLinha => ({
+  cultivar: 'CULT',
+  tratamento: 'FTZ60',
+  embalagem: 'BG5M',
+  pedido_aprovado: 0,
+  pedido_pendente: 0,
+  estoque_pa: 0,
+  ordens_abertas: 0,
+  saldo: 0,
+  receita_cadastrada: true,
+  ...parcial,
+})
+
+// FTZ60 real: valores conferidos contra o banco em 27/08/2026
+const FTZ60: ReceitaCompleta = {
+  id: 'r1',
+  nome: 'FTZ60',
+  ativa: true,
+  receita_itens: [
+    { produto_id: 'p1', dose: 250, produtos_quimicos: { codigo: 'INS00021', nome: 'DISCO BLACK', unidade: 'ml/100kg', densidade: 1.13 } },
+    { produto_id: 'p2', dose: 300, produtos_quimicos: { codigo: 'INS00039', nome: 'FLUIDUS F047 PO SECANTE', unidade: 'g/100kg', densidade: null } },
+  ],
+}
+
+describe('pesoRefBagKg', () => {
+  it('usa o peso de referência do PCP para embalagem por sementes', () => {
+    expect(pesoRefBagKg('BG5M', EMBALAGENS)).toBe(850)
+    expect(pesoRefBagKg('MEIOBAG', EMBALAGENS)).toBe(425)
+  })
+
+  it('usa o peso fixo do cadastro quando existe', () => {
+    expect(pesoRefBagKg('SC10', EMBALAGENS)).toBe(10)
+  })
+
+  it('embalagem desconhecida não tem referência', () => {
+    expect(pesoRefBagKg('OUTRA', EMBALAGENS)).toBeNull()
+  })
+})
+
+describe('calcularMrp', () => {
+  it('converte bags em kg de semente e aplica a dose da receita', () => {
+    const r = calcularMrp(
+      [balanco({ saldo: 10 })], // 10 bags × 850 kg = 8.500 kg de semente
+      [FTZ60],
+      EMBALAGENS,
+    )
+    expect(r.combinacoes).toHaveLength(1)
+    expect(r.combinacoes[0].kgSemente).toBe(8500)
+
+    // DISCO BLACK: 250 ml/100kg × 8500 kg × 1,13 ÷ 1000 ÷ 100 = 24,0125 kg
+    const disco = r.produtos.find((p) => p.nome === 'DISCO BLACK')!
+    expect(disco.totalKg).toBeCloseTo(24.0125, 4)
+    // e em litros, sem densidade: 250 × 8500 ÷ 1000 ÷ 100 = 21,25 L
+    expect(disco.totalL).toBeCloseTo(21.25, 4)
+
+    // FLUIDUS (pó): 300 g/100kg × 8500 ÷ 1000 ÷ 100 = 25,5 kg, sem litros
+    const fluidus = r.produtos.find((p) => p.nome === 'FLUIDUS F047 PO SECANTE')!
+    expect(fluidus.totalKg).toBeCloseTo(25.5, 4)
+    expect(fluidus.totalL).toBeNull()
+
+    expect(r.totais.bags).toBe(10)
+    expect(r.totais.kgSemente).toBe(8500)
+  })
+
+  it('soma o mesmo produto usado por combinações diferentes', () => {
+    const r = calcularMrp(
+      [
+        balanco({ cultivar: 'A', saldo: 10 }),
+        balanco({ cultivar: 'B', saldo: 10, embalagem: 'MEIOBAG' }),
+      ],
+      [FTZ60],
+      EMBALAGENS,
+    )
+    const disco = r.produtos.find((p) => p.nome === 'DISCO BLACK')!
+    // A: 8500 kg · B: 4250 kg → 12.750 kg de semente no total
+    expect(disco.totalKg).toBeCloseTo((250 * 12750 * 1.13) / 1000 / 100, 4)
+    expect(disco.combinacoes).toHaveLength(2)
+  })
+
+  it('saldo coberto (<= 0) não entra', () => {
+    const r = calcularMrp([balanco({ saldo: 0 }), balanco({ saldo: -5 })], [FTZ60], EMBALAGENS)
+    expect(r.combinacoes).toHaveLength(0)
+    expect(r.produtos).toHaveLength(0)
+  })
+
+  it('SEM TSI não consome químico e fica fora sem virar aviso', () => {
+    const r = calcularMrp([balanco({ tratamento: 'SEM TSI', saldo: 10 })], [FTZ60], EMBALAGENS)
+    expect(r.combinacoes).toHaveLength(0)
+    expect(r.semReceita).toHaveLength(0)
+  })
+
+  it('tratamento sem receita cadastrada vira aviso, não conta', () => {
+    const r = calcularMrp(
+      [balanco({ tratamento: 'STANDAK TOP', saldo: 8, receita_cadastrada: false })],
+      [FTZ60],
+      EMBALAGENS,
+    )
+    expect(r.combinacoes).toHaveLength(0)
+    expect(r.semReceita).toEqual([
+      { cultivar: 'CULT', tratamento: 'STANDAK TOP', embalagem: 'BG5M', bags: 8 },
+    ])
+  })
+
+  it('embalagem sem peso de referência vira aviso próprio', () => {
+    const r = calcularMrp([balanco({ embalagem: 'BGNOVA', saldo: 5 })], [FTZ60], EMBALAGENS)
+    expect(r.combinacoes).toHaveLength(0)
+    expect(r.semPesoRef).toEqual([
+      { cultivar: 'CULT', tratamento: 'FTZ60', embalagem: 'BGNOVA', bags: 5 },
+    ])
+  })
+
+  it('produto em ml sem densidade cai como 0 kg, sem derrubar o cálculo', () => {
+    const semDensidade: ReceitaCompleta = {
+      id: 'r2',
+      nome: 'X',
+      ativa: true,
+      receita_itens: [
+        { produto_id: 'p3', dose: 100, produtos_quimicos: { codigo: 'NOVO', nome: 'NOVO', unidade: 'ml/100kg', densidade: null } },
+      ],
+    }
+    const r = calcularMrp([balanco({ tratamento: 'X', saldo: 10 })], [semDensidade], EMBALAGENS)
+    const novo = r.produtos.find((p) => p.nome === 'NOVO')!
+    expect(novo.totalKg).toBe(0)
+    expect(novo.totalL).toBeCloseTo(8.5, 4) // litros seguem calculáveis sem densidade
+  })
+})

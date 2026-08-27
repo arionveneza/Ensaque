@@ -20,6 +20,7 @@ const Etapas = lazy(() => import('@/telas/Etapas'))
 const Expedicao = lazy(() => import('@/telas/Expedicao'))
 const Veiculos = lazy(() => import('@/telas/Veiculos'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
+const Mrp = lazy(() => import('@/telas/Mrp'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
 const Painel = lazy(() => import('@/telas/Painel'))
@@ -28,7 +29,7 @@ const SapTeste = lazy(() => import('@/telas/SapTeste'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
-  | 'agrotis' | 'etapas' | 'expedicao' | 'veiculos' | 'indicadores' | 'cadastros'
+  | 'agrotis' | 'etapas' | 'expedicao' | 'veiculos' | 'indicadores' | 'mrp' | 'cadastros'
   | 'administracao' | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
@@ -42,6 +43,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'expedicao', nome: 'Expedição' },
   { id: 'veiculos', nome: 'Veículos' },
   { id: 'indicadores', nome: 'Indicadores' },
+  { id: 'mrp', nome: 'MRP' },
   { id: 'cadastros', nome: 'Cadastros' },
   { id: 'administracao', nome: 'Administração' },
   { id: 'sap', nome: 'SAP (teste)' },
@@ -301,6 +303,7 @@ function Shell() {
             {atual === 'expedicao' && <Expedicao />}
             {atual === 'veiculos' && <Veiculos />}
             {atual === 'indicadores' && <Indicadores />}
+            {atual === 'mrp' && <Mrp />}
             {atual === 'cadastros' && <Cadastros />}
             {atual === 'administracao' && <Administracao />}
             {atual === 'sap' && <SapTeste />}
@@ -383,6 +386,13 @@ function IconeTela({ id }: { id: TelaId }) {
       )
     case 'indicadores':
       return <svg {...props}><path d="M2 13V9M6.5 13V5M11 13V7M15 13V3" /></svg>
+    case 'mrp':
+      return (
+        <svg {...props}>
+          <path d="M8 2l5.2 3v6L8 14l-5.2-3V5z" />
+          <path d="M2.8 5L8 8l5.2-3M8 8v6" />
+        </svg>
+      )
     case 'cadastros':
       return (
         <svg {...props}>
