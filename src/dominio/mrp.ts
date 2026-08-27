@@ -23,9 +23,28 @@
  * saldo de estoque de insumo (pendência conhecida do CLAUDE.md §7).
  */
 
-import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
+import type {
+  BalancoLinha, EmbalagemLinha, LoteSementeLinha, ReceitaCompleta,
+} from '@/dados/api-gestao'
 import { ehSemTsi } from './balanco'
 import { baseDoseKg, doseEmMl } from './calculos'
+
+/**
+ * Semente branca disponível no SAP, somada por cultivar — o pool de lotes é
+ * UM por cultivar (mesmo raciocínio da Expedição: duas embalagens do mesmo
+ * cultivar bebem do mesmo pool). Entra todo lote com saldo, inclusive os já
+ * `Baixado`: o status serve à Expedição, não decide se dá pra produzir
+ * (CLAUDE.md §1) — um lote baixado pra uma ordem pode sobrar saldo pras
+ * próximas, e o `bags_disp` é o saldo do SAP da última carga.
+ */
+export function estoqueSapPorCultivar(lotes: LoteSementeLinha[]): Map<string, number> {
+  const mapa = new Map<string, number>()
+  for (const l of lotes) {
+    if (l.bags_disp == null || l.bags_disp <= 0) continue
+    mapa.set(l.cultivar, (mapa.get(l.cultivar) ?? 0) + l.bags_disp)
+  }
+  return mapa
+}
 
 /** Peso de referência por bag para demanda sem lote (Arion, 27/08/2026). */
 export const PESO_REF_BAG_KG: Record<string, number> = {

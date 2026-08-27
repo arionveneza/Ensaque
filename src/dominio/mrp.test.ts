@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { calcularMrp, conferirCadastro, pesoRefBagKg } from './mrp'
-import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
+import { calcularMrp, conferirCadastro, estoqueSapPorCultivar, pesoRefBagKg } from './mrp'
+import type {
+  BalancoLinha, EmbalagemLinha, LoteSementeLinha, ReceitaCompleta,
+} from '@/dados/api-gestao'
 
 const EMBALAGENS: EmbalagemLinha[] = [
   { codigo: 'BG5M', codigo_ext: 'BB5M', descricao: 'Bag', sementes: 5000000, fator_peso: 5, peso_fixo_kg: null },
@@ -158,6 +160,26 @@ describe('calcularMrp', () => {
     expect(r.semPesoRef).toEqual([
       { cultivar: 'CULT', tratamento: 'FTZ60', embalagem: 'BGNOVA', bags: 5, bagsAguardando: 0 },
     ])
+  })
+
+  it('estoqueSapPorCultivar soma os lotes com saldo, inclusive os Baixados', () => {
+    const lote = (parcial: Partial<LoteSementeLinha>): LoteSementeLinha => ({
+      id: 'L', cultivar: 'CULT', tratamento: 'SEM TSI', pms: 138, peso_bag_kg: 690,
+      bags_disp: 0, status: 'Em estoque', devolver: false,
+      baixado_por: null, baixado_em: null,
+      ...parcial,
+    })
+    const mapa = estoqueSapPorCultivar([
+      lote({ id: 'A', cultivar: 'NEO700 I2X', bags_disp: 10 }),
+      // Baixado com saldo conta: status é da Expedição, não decide produção
+      lote({ id: 'B', cultivar: 'NEO700 I2X', bags_disp: 9, status: 'Baixado' }),
+      lote({ id: 'C', cultivar: 'NEO700 I2X', bags_disp: 0 }),
+      lote({ id: 'D', cultivar: 'O820 IPRO', bags_disp: 4 }),
+      lote({ id: 'E', cultivar: 'O790 IPRO', bags_disp: null }),
+    ])
+    expect(mapa.get('NEO700 I2X')).toBe(19)
+    expect(mapa.get('O820 IPRO')).toBe(4)
+    expect(mapa.has('O790 IPRO')).toBe(false)
   })
 
   it('conferirCadastro: receita sem pedido e pedido sem receita, nos dois sentidos', () => {

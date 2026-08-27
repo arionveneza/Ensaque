@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as g from '@/dados/api-gestao'
-import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
+import type {
+  BalancoLinha, EmbalagemLinha, LoteSementeLinha, ReceitaCompleta,
+} from '@/dados/api-gestao'
 import {
-  calcularMrp, conferirCadastro, PESO_REF_BAG_KG, type NecessidadeProduto,
+  calcularMrp, conferirCadastro, estoqueSapPorCultivar, PESO_REF_BAG_KG,
+  type NecessidadeProduto,
 } from '@/dominio/mrp'
 import { useRealtime } from '@/dados/useRealtime'
 import { exportarXlsx } from '@/lib/exportar'
@@ -24,16 +27,18 @@ export default function Mrp() {
   const [balanco, setBalanco] = useState<BalancoLinha[]>([])
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<EmbalagemLinha[]>([])
+  const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aberto, setAberto] = useState<string | null>(null)
 
   const recarregar = () =>
-    Promise.all([g.listarBalanco(), g.listarReceitas(), g.listarEmbalagens()])
-      .then(([b, r, e]) => {
+    Promise.all([g.listarBalanco(), g.listarReceitas(), g.listarEmbalagens(), g.listarLotes()])
+      .then(([b, r, e, l]) => {
         setBalanco(b)
         setReceitas(r)
         setEmbalagens(e)
+        setLotes(l)
         setErro(null)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
@@ -41,13 +46,17 @@ export default function Mrp() {
   useEffect(() => {
     recarregar().finally(() => setCarregando(false))
   }, [])
-  useRealtime(['ordens', 'pedidos_venda', 'estoque_pa', 'receitas'], () => void recarregar())
+  useRealtime(
+    ['ordens', 'pedidos_venda', 'estoque_pa', 'receitas', 'lotes_semente'],
+    () => void recarregar(),
+  )
 
   const mrp = useMemo(
     () => calcularMrp(balanco, receitas, embalagens),
     [balanco, receitas, embalagens],
   )
   const conferencia = useMemo(() => conferirCadastro(balanco, receitas), [balanco, receitas])
+  const estoqueSap = useMemo(() => estoqueSapPorCultivar(lotes), [lotes])
 
   function exportar() {
     void exportarXlsx(
@@ -234,29 +243,53 @@ export default function Mrp() {
         {mrp.combinacoes.length === 0 ? (
           <Vazio>Nenhuma combinação descoberta com receita cadastrada.</Vazio>
         ) : (
-          <Tabela
-            cabecalho={[
-              'Cultivar', 'Tratamento', 'Emb.',
-              '#Firme (bg)', '#Aguardando (bg)', '#Semente (kg)',
-            ]}
-          >
-            {mrp.combinacoes.map((c, i) => (
-              <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5">{c.cultivar}</td>
-                <td className="px-2 py-1.5">{c.tratamento}</td>
-                <td className="px-2 py-1.5">{c.embalagem}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">
-                  {c.bags > 0 ? inteiro(c.bags) : <span className="text-stone-300">—</span>}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
-                  {c.bagsAguardando > 0 ? inteiro(c.bagsAguardando) : <span className="text-stone-300">—</span>}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right">
-                  {inteiro(c.kgSemente + c.kgSementeAguardando)}
-                </td>
-              </tr>
-            ))}
-          </Tabela>
+          <>
+            <Tabela
+              cabecalho={[
+                'Cultivar', 'Tratamento', 'Emb.',
+                '#Firme (bg)', '#Aguardando (bg)', '#Semente (kg)', '#Estoque SAP (bg)',
+              ]}
+            >
+              {mrp.combinacoes.map((c, i) => {
+                const disponivel = estoqueSap.get(c.cultivar)
+                const falta = disponivel == null || disponivel < c.bags + c.bagsAguardando
+                return (
+                  <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+                    <td className="px-2 py-1.5">{c.cultivar}</td>
+                    <td className="px-2 py-1.5">{c.tratamento}</td>
+                    <td className="px-2 py-1.5">{c.embalagem}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {c.bags > 0 ? inteiro(c.bags) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+                      {c.bagsAguardando > 0 ? inteiro(c.bagsAguardando) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {inteiro(c.kgSemente + c.kgSementeAguardando)}
+                    </td>
+                    <td
+                      className={`num-tabular px-2 py-1.5 text-right ${
+                        falta ? 'font-semibold text-red-600 dark:text-red-400' : ''
+                      }`}
+                      title={
+                        falta
+                          ? 'Semente branca no SAP não cobre a demanda deste cultivar'
+                          : undefined
+                      }
+                    >
+                      {disponivel != null ? inteiro(disponivel) : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </Tabela>
+            <p className="mt-2 text-xs text-stone-500">
+              Estoque SAP = semente branca disponível nos lotes (última carga de saldos),
+              somada por CULTIVAR — o mesmo pool atende todas as combinações do cultivar,
+              então o número se repete entre as linhas dele. Vermelho: não cobre a demanda
+              (firme + aguardando) da linha.
+            </p>
+          </>
         )}
       </Cartao>
     </Pagina>
