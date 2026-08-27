@@ -102,6 +102,64 @@ export interface ResultadoMrp {
   }[]
 }
 
+export interface ConferenciaCadastro {
+  /** Receitas cadastradas sem NENHUM pedido (aprovado ou pendente) na carga vigente. */
+  receitasSemPedido: string[]
+  /** Tratamentos com pedido na carga, sem receita cadastrada — agregado por tratamento. */
+  pedidosSemReceita: {
+    tratamento: string
+    bagsAprovado: number
+    bagsPendente: number
+    combinacoes: number
+  }[]
+}
+
+/**
+ * Cruzamento cadastro × pedidos, nos dois sentidos (pedido do Arion,
+ * 27/08/2026): receita parada (cadastrada mas ninguém comprou — candidata a
+ * revisão ou só fora de época) e pedido órfão (o comercial vendeu um código
+ * que a produção não sabe fazer — ESTE é o urgente, o balanço não vira ordem
+ * enquanto a receita não existir). SEM TSI fica fora dos dois lados: semente
+ * branca não passa pelo MRP.
+ */
+export function conferirCadastro(
+  balanco: BalancoLinha[],
+  receitas: ReceitaCompleta[],
+): ConferenciaCadastro {
+  const comPedido = new Set(
+    balanco
+      .filter((b) => b.pedido_aprovado > 0 || b.pedido_pendente > 0)
+      .map((b) => b.tratamento),
+  )
+
+  const receitasSemPedido = receitas
+    .map((r) => r.nome)
+    .filter((nome) => !ehSemTsi(nome) && !comPedido.has(nome))
+    .sort((a, b) => a.localeCompare(b))
+
+  const cadastradas = new Set(receitas.map((r) => r.nome))
+  const orfaos = new Map<string, ConferenciaCadastro['pedidosSemReceita'][number]>()
+  for (const b of balanco) {
+    if (b.pedido_aprovado <= 0 && b.pedido_pendente <= 0) continue
+    if (ehSemTsi(b.tratamento) || cadastradas.has(b.tratamento)) continue
+    let acc = orfaos.get(b.tratamento)
+    if (!acc) {
+      acc = { tratamento: b.tratamento, bagsAprovado: 0, bagsPendente: 0, combinacoes: 0 }
+      orfaos.set(b.tratamento, acc)
+    }
+    acc.bagsAprovado += b.pedido_aprovado
+    acc.bagsPendente += b.pedido_pendente
+    acc.combinacoes += 1
+  }
+
+  return {
+    receitasSemPedido,
+    pedidosSemReceita: [...orfaos.values()].sort(
+      (a, b) => b.bagsAprovado + b.bagsPendente - (a.bagsAprovado + a.bagsPendente),
+    ),
+  }
+}
+
 export function calcularMrp(
   balanco: BalancoLinha[],
   receitas: ReceitaCompleta[],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularMrp, pesoRefBagKg } from './mrp'
+import { calcularMrp, conferirCadastro, pesoRefBagKg } from './mrp'
 import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
 
 const EMBALAGENS: EmbalagemLinha[] = [
@@ -157,6 +157,33 @@ describe('calcularMrp', () => {
     expect(r.combinacoes).toHaveLength(0)
     expect(r.semPesoRef).toEqual([
       { cultivar: 'CULT', tratamento: 'FTZ60', embalagem: 'BGNOVA', bags: 5, bagsAguardando: 0 },
+    ])
+  })
+
+  it('conferirCadastro: receita sem pedido e pedido sem receita, nos dois sentidos', () => {
+    const receitas: ReceitaCompleta[] = [
+      FTZ60,
+      { id: 'r2', nome: 'V&P', ativa: true, receita_itens: [] },
+      { id: 'r3', nome: 'SEM TSI', ativa: true, receita_itens: [] },
+    ]
+    const r = conferirCadastro(
+      [
+        // FTZ60 tem pedido aprovado → não é "sem pedido"
+        balanco({ pedido_aprovado: 10, saldo: 10 }),
+        // STANDAK TOP vendido em 2 combinações, sem receita → pedido órfão agregado
+        balanco({ cultivar: 'A', tratamento: 'STANDAK TOP', pedido_aprovado: 5, receita_cadastrada: false }),
+        balanco({ cultivar: 'B', tratamento: 'STANDAK TOP', pedido_pendente: 3, receita_cadastrada: false }),
+        // linha só de estoque, sem pedido nenhum: não salva a receita da lista
+        balanco({ tratamento: 'V&P', estoque_pa: 7 }),
+        // SEM TSI com pedido não vira órfão (semente branca fica fora)
+        balanco({ tratamento: 'SEM TSI', pedido_aprovado: 9, receita_cadastrada: false }),
+      ],
+      receitas,
+    )
+    // V&P só tem estoque — continua "sem pedido"; SEM TSI fica fora da lista
+    expect(r.receitasSemPedido).toEqual(['V&P'])
+    expect(r.pedidosSemReceita).toEqual([
+      { tratamento: 'STANDAK TOP', bagsAprovado: 5, bagsPendente: 3, combinacoes: 2 },
     ])
   })
 

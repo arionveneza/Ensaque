@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as g from '@/dados/api-gestao'
 import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
-import { calcularMrp, PESO_REF_BAG_KG, type NecessidadeProduto } from '@/dominio/mrp'
+import {
+  calcularMrp, conferirCadastro, PESO_REF_BAG_KG, type NecessidadeProduto,
+} from '@/dominio/mrp'
 import { useRealtime } from '@/dados/useRealtime'
 import { exportarXlsx } from '@/lib/exportar'
 import {
@@ -45,6 +47,7 @@ export default function Mrp() {
     () => calcularMrp(balanco, receitas, embalagens),
     [balanco, receitas, embalagens],
   )
+  const conferencia = useMemo(() => conferirCadastro(balanco, receitas), [balanco, receitas])
 
   function exportar() {
     void exportarXlsx(
@@ -175,6 +178,56 @@ export default function Mrp() {
           pendentes de liberação financeira aprovem (sobra de estoque já abatida).
         </p>
       </Cartao>
+
+      {/* -------- cadastro × pedidos, nos dois sentidos -------- */}
+      <div className="mb-5 grid gap-5 lg:grid-cols-2">
+        <Cartao titulo={`Pedidos sem receita cadastrada (${conferencia.pedidosSemReceita.length})`}>
+          {conferencia.pedidosSemReceita.length === 0 ? (
+            <Vazio>Todo tratamento vendido tem receita cadastrada.</Vazio>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+                O comercial vendeu estes códigos, mas a produção não tem a receita — o
+                pedido não vira ordem enquanto o cadastro não existir.
+              </p>
+              <Tabela cabecalho={['Tratamento', '#Aprovado (bg)', '#Aguardando (bg)']}>
+                {conferencia.pedidosSemReceita.map((t) => (
+                  <tr key={t.tratamento} className="border-t border-stone-100 dark:border-stone-800/60">
+                    <td className="px-2 py-1.5 font-medium">
+                      {t.tratamento}
+                      <span className="ml-1.5"><Tag cor="perigo">sem receita</Tag></span>
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {t.bagsAprovado > 0 ? inteiro(t.bagsAprovado) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+                      {t.bagsPendente > 0 ? inteiro(t.bagsPendente) : <span className="text-stone-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </Tabela>
+            </>
+          )}
+        </Cartao>
+
+        <Cartao titulo={`Receitas cadastradas sem pedido (${conferencia.receitasSemPedido.length})`}>
+          {conferencia.receitasSemPedido.length === 0 ? (
+            <Vazio>Toda receita cadastrada tem pedido na carga vigente.</Vazio>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+                Cadastradas, mas sem nenhum pedido (aprovado ou aguardando) na carga
+                vigente — só informativo: pode ser fora de época ou código que mudou.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {conferencia.receitasSemPedido.map((nome) => (
+                  <Tag key={nome} cor="neutro">{nome}</Tag>
+                ))}
+              </div>
+            </>
+          )}
+        </Cartao>
+      </div>
 
       {/* -------- combinações que entraram na conta -------- */}
       <Cartao titulo={`Demanda coberta pela conta (${mrp.combinacoes.length})`}>
