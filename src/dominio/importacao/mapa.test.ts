@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { converterLotesMapa, ehRelatorioMapa } from './mapa'
+import { converterLotesMapa, ehRelatorioMapa, SEM_TSI } from './mapa'
 import type { Linha } from './simpleagro'
 
 // espelho do export real (SAP.xlsx, 28/08/2026)
@@ -32,24 +32,38 @@ describe('ehRelatorioMapa', () => {
   it('reconhece o export com Destinação e Depósito', () => {
     expect(ehRelatorioMapa([CAB])).toBe(true)
   })
+
   it('não confunde com o saldo antigo, sem Destinação', () => {
     expect(ehRelatorioMapa([['CULTIVAR', 'Nº DO LOTE', 'TRATAMENTO (TSI)', 'QTD EM ESTOQUE']])).toBe(false)
   })
 })
 
 describe('converterLotesMapa', () => {
-  it('branco e tratado entram juntos; SEM TSI e vazio viram tratamento null', () => {
+  it('a unidade é lote + tratamento: o MESMO lote branco e tratado vira duas linhas', () => {
+    // o caso real que definiu o modelo (endereçamento de 28/08/2026):
+    // mesmo lote existe branco e tratado ao mesmo tempo
     const r = converterLotesMapa([
       CAB,
-      linha({ lote: 'A', trat: null }),
-      linha({ lote: 'B', trat: 'SEM TSI' }),
-      linha({ lote: 'C', trat: 'FTZ60 + VIC' }),
+      linha({ lote: 'A', trat: null, qtd: 10 }),
+      linha({ lote: 'A', trat: 'FTZ60', qtd: 5 }),
     ])
-    expect(r.lotes.map((l) => [l.id, l.tratamento])).toEqual([
-      ['A', null], ['B', null], ['C', 'FTZ60 + VIC'],
+    expect(r.lotes.map((l) => [l.lote, l.tratamento, l.bags])).toEqual([
+      ['A', 'FTZ60', 5],
+      ['A', SEM_TSI, 10],
     ])
-    expect(r.brancos).toBe(2)
+    expect(r.brancos).toBe(1)
     expect(r.tratados).toBe(1)
+  })
+
+  it('tratamento vazio e "SEM TSI" viram a mesma combinação branca', () => {
+    const r = converterLotesMapa([
+      CAB,
+      linha({ lote: 'A', trat: null, qtd: 10 }),
+      linha({ lote: 'A', trat: 'SEM TSI', qtd: 7 }),
+    ])
+    expect(r.lotes).toHaveLength(1)
+    expect(r.lotes[0].tratamento).toBe(SEM_TSI)
+    expect(r.lotes[0].bags).toBe(17)
   })
 
   it('aplica o de-para de tratamento do SAP (VeP → V&P)', () => {
@@ -73,7 +87,7 @@ describe('converterLotesMapa', () => {
     expect(r.zerados).toBe(1)
   })
 
-  it('mesmo lote em duas linhas soma bags e mantém o primeiro não-vazio', () => {
+  it('mesma combinação em duas linhas soma bags e mantém o primeiro não-vazio', () => {
     const r = converterLotesMapa([
       CAB,
       linha({ lote: 'A', qtd: 10, dest: null }),

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as m from '@/dados/api-mapa'
-import type { CargaMontadaLinha, EnderecoLote, LoteMapaLinha } from '@/dados/api-mapa'
+import type { CargaMontadaLinha, LoteMapaLinha } from '@/dados/api-mapa'
 import {
-  converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, type ResultadoLotesMapa,
+  converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, SEM_TSI, type ResultadoLotesMapa,
 } from '@/dominio/importacao/mapa'
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
@@ -16,20 +16,31 @@ import {
 /**
  * Mapa e Montagem de Carga (28/08/2026).
  *
- * TODO lote do SAP (semente branca E tratada) do depósito VEN_GER, com:
- * - fila de endereçamento: lote novo aparece "sem localização" e a
- *   Logística dá um ou mais endereços (Armazém + Bloco + Quadra + bags);
- * - mapa esquemático: por armazém, cada bloco é uma fileira de quadras —
- *   quadra de número MAIOR fica na frente (acesso mais fácil); filtros de
- *   cultivar/tratamento/embalagem acendem os lotes que casam;
+ * A unidade é a COMBINAÇÃO lote + tratamento ('SEM TSI' = semente branca):
+ * o mesmo lote existe branco e tratado ao mesmo tempo, em endereços
+ * diferentes. Três partes:
+ * - fila de endereçamento: combinação nova aparece "sem localização" e a
+ *   Logística dá um ou mais endereços (Armazém + Bloco + Quadra);
+ * - mapa esquemático: por armazém, cada bloco é uma coluna de quadras —
+ *   quadra de número MAIOR fica na frente (acesso mais fácil); quadra nem
+ *   sempre é número (CORREDOR, SILO) — as de texto ficam no fim do bloco;
  * - montagem de carga (Balança): nº da ordem de carregamento + cultivar +
  *   tratamento + bags; aviso quando o lote tem Destinação no SAP; peso
  *   total acumulado. A carga fica gravada; o saldo é sempre o do SAP.
  */
 
-const rotuloTratamento = (t: string | null) => t ?? 'SEM TSI (branca)'
-/** Sentinela do select de tratamento: string vazia não serve (é o "todos"). */
-const BRANCA = '§branca§'
+const rotuloTratamento = (t: string) => (t === SEM_TSI ? 'SEM TSI (branca)' : t)
+const chaveDe = (l: { lote: string; tratamento: string }) => `${l.lote}|${l.tratamento}`
+
+/** Quadra numérica ordena da maior pra menor (frente primeiro); texto (CORREDOR, SILO) vai pro fim. */
+const ordenaQuadras = (a: string, b: string): number => {
+  const na = /^\d+$/.test(a) ? Number(a) : null
+  const nb = /^\d+$/.test(b) ? Number(b) : null
+  if (na != null && nb != null) return nb - na
+  if (na != null) return -1
+  if (nb != null) return 1
+  return a.localeCompare(b)
+}
 
 const INPUT =
   'rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800'
@@ -76,17 +87,16 @@ export default function Mapa() {
 
   const casaFiltro = (l: LoteMapaLinha): boolean => {
     if (fCultivar && l.cultivar !== fCultivar) return false
-    if (fTratamento === BRANCA && l.tratamento != null) return false
-    if (fTratamento && fTratamento !== BRANCA && l.tratamento !== fTratamento) return false
+    if (fTratamento && l.tratamento !== fTratamento) return false
     if (fEmbalagem && l.embalagem !== fEmbalagem) return false
-    if (busca.trim() && !l.id.toLowerCase().includes(busca.trim().toLowerCase())) return false
+    if (busca.trim() && !l.lote.toLowerCase().includes(busca.trim().toLowerCase())) return false
     return true
   }
 
   const todos = useMemo(() => lotes ?? [], [lotes])
   const cultivares = useMemo(() => [...new Set(todos.map((l) => l.cultivar))].sort(), [todos])
   const tratamentos = useMemo(
-    () => [...new Set(todos.map((l) => l.tratamento).filter((t): t is string => t != null))].sort(),
+    () => [...new Set(todos.map((l) => l.tratamento).filter((t) => t !== SEM_TSI))].sort(),
     [todos],
   )
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
@@ -138,7 +148,7 @@ export default function Mapa() {
   return (
     <Pagina
       titulo="Mapa e Montagem de Carga"
-      descricao={`Todo lote do SAP no depósito ${DEPOSITO_MAPA} — semente branca e tratada. A Logística endereça (armazém, bloco, quadra: quanto MAIOR a quadra, mais fácil o acesso); a Balança monta a carga informando a ordem de carregamento, e o sistema avisa lote com Destinação e soma o peso.`}
+      descricao={`Todo lote do SAP no depósito ${DEPOSITO_MAPA} — semente branca e tratada, por lote + tratamento. A Logística endereça (armazém, bloco, quadra: quanto MAIOR a quadra, mais fácil o acesso); a Balança monta a carga informando a ordem de carregamento, e o sistema avisa lote com Destinação e soma o peso.`}
     >
       {erro && <Erro>{erro}</Erro>}
       {msg && (
@@ -150,8 +160,8 @@ export default function Mapa() {
       {lotes === null && (
         <div className="mb-5">
           <Aviso gravidade="bloqueio">
-            A tabela do mapa ainda não existe no banco — rode a migração{' '}
-            <code>supabase/mapa-montagem-carga.sql</code> no SQL Editor e recarregue.
+            O banco ainda não está no formato novo do mapa — rode a migração{' '}
+            <code>supabase/mapa-lote-tratamento.sql</code> no SQL Editor e recarregue.
           </Aviso>
         </div>
       )}
@@ -172,16 +182,17 @@ export default function Mapa() {
         {previa ? (
           <>
             <Aviso gravidade="alerta">
-              <b>Prévia — nada foi gravado ainda.</b> {previa.lotes.length} lote(s) do{' '}
-              {DEPOSITO_MAPA} ({previa.brancos} branco(s), {previa.tratados} tratado(s),{' '}
-              {previa.comDestinacao} com destinação · {inteiro(previa.totalBags)} bags). Fora:{' '}
-              {previa.outrosDepositos} de outros depósitos, {previa.zerados} zerados,{' '}
-              {previa.granel} granel. Confirmar SUBSTITUI o mapa inteiro — lote que não veio
-              some (endereços dos que continuam são preservados).
+              <b>Prévia — nada foi gravado ainda.</b> {previa.lotes.length} combinação(ões)
+              lote + tratamento do {DEPOSITO_MAPA} ({previa.brancos} branca(s),{' '}
+              {previa.tratados} tratada(s), {previa.comDestinacao} com destinação ·{' '}
+              {inteiro(previa.totalBags)} bags). Fora: {previa.outrosDepositos} de outros
+              depósitos, {previa.zerados} zeradas, {previa.granel} granel. Confirmar
+              SUBSTITUI o mapa inteiro — o que não veio some (endereços de quem continua
+              são preservados).
             </Aviso>
             <div className="mt-3 flex gap-2">
               <Botao variante="primario" disabled={importando} onClick={confirmarImportacao}>
-                {importando ? 'gravando…' : `Confirmar importação (${previa.lotes.length} lotes)`}
+                {importando ? 'gravando…' : `Confirmar importação (${previa.lotes.length})`}
               </Botao>
               <Botao onClick={() => setPrevia(null)}>Cancelar</Botao>
             </div>
@@ -190,7 +201,7 @@ export default function Mapa() {
           <p className="text-sm text-stone-500 dark:text-stone-400">
             {todos.length === 0
               ? `Nenhum lote no mapa ainda. Suba o export de saldo do SAP (com as colunas Destinação e Depósito) — só o ${DEPOSITO_MAPA} entra.`
-              : `${semEndereco.length} lote(s) aguardando localização · ${todos.filter((l) => l.destinacao).length} com destinação no SAP. Suba a planilha de novo pra atualizar o saldo.`}
+              : `${semEndereco.length} combinação(ões) aguardando localização · ${todos.filter((l) => l.destinacao).length} com destinação no SAP. Suba a planilha de novo pra atualizar o saldo.`}
           </p>
         )}
       </Cartao>
@@ -199,16 +210,16 @@ export default function Mapa() {
       {semEndereco.length > 0 && (
         <Cartao titulo={`Sem localização (${semEndereco.length})`} className="mb-5">
           <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
-            Lotes do SAP ainda sem endereço físico — a Logística informa armazém, bloco e
-            quadra (pode dividir em mais de um endereço).
+            Combinações do SAP ainda sem endereço físico — a Logística informa armazém,
+            bloco e quadra (pode dividir em mais de um endereço).
           </p>
           <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags', 'Destinação', '']}>
             {semEndereco.map((l) => (
-              <tr key={l.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{l.id}</td>
+              <tr key={chaveDe(l)} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="px-2 py-1.5 font-medium">{l.lote}</td>
                 <td className="px-2 py-1.5">{l.cultivar}</td>
                 <td className="px-2 py-1.5">
-                  {l.tratamento ?? <span className="text-stone-400">branca</span>}
+                  {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
                 </td>
                 <td className="px-2 py-1.5">{l.embalagem}</td>
                 <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags)}</td>
@@ -233,7 +244,7 @@ export default function Mapa() {
           </select>
           <select value={fTratamento} onChange={(e) => setFTratamento(e.target.value)} className={INPUT}>
             <option value="">todos os tratamentos</option>
-            <option value={BRANCA}>SEM TSI (branca)</option>
+            <option value={SEM_TSI}>SEM TSI (branca)</option>
             {tratamentos.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
           <select value={fEmbalagem} onChange={(e) => setFEmbalagem(e.target.value)} className={INPUT}>
@@ -309,7 +320,7 @@ export default function Mapa() {
           onFechar={() => setEnderecando(null)}
           onSalvar={async (enderecos) => {
             try {
-              await m.salvarEnderecos(enderecando.id, enderecos, usuario.id)
+              await m.salvarEnderecos(enderecando.lote, enderecando.tratamento, enderecos, usuario.id)
               setEnderecando(null)
               await recarregar()
             } catch (e) {
@@ -325,8 +336,9 @@ export default function Mapa() {
 /**
  * Visão superior esquemática: por armazém, cada BLOCO é uma coluna de
  * QUADRAS ordenadas da MAIOR pra menor — a maior fica na frente (acesso
- * fácil), então aparece no topo com a marca "frente". Sem planta física:
- * o desenho nasce dos endereços existentes.
+ * fácil), então aparece no topo com a marca "frente"; quadra de texto
+ * (CORREDOR, SILO) vai pro fim do bloco. Sem planta física: o desenho
+ * nasce dos endereços existentes.
  */
 function MapaVisao({
   lotes, casaFiltro, filtroAtivo, onLote,
@@ -338,7 +350,7 @@ function MapaVisao({
 }) {
   // armazém → bloco → quadra → lotes naquela quadra
   const estrutura = useMemo(() => {
-    const arm = new Map<string, Map<string, Map<number, { lote: LoteMapaLinha; bagsAqui: number }[]>>>()
+    const arm = new Map<string, Map<string, Map<string, { lote: LoteMapaLinha; bagsAqui: number | null }[]>>>()
     for (const l of lotes) {
       for (const e of l.lote_enderecos) {
         const blocos = arm.get(e.armazem) ?? new Map()
@@ -369,7 +381,7 @@ function MapaVisao({
             <p className="mb-2 text-sm font-semibold">Armazém {armazem}</p>
             <div className="flex flex-wrap items-start gap-3 overflow-x-auto">
               {blocos.map(([bloco, quadras]) => {
-                const qs = [...quadras.entries()].sort(([a], [b]) => b - a)
+                const qs = [...quadras.entries()].sort(([a], [b]) => ordenaQuadras(a, b))
                 return (
                   <div
                     key={bloco}
@@ -378,45 +390,53 @@ function MapaVisao({
                     <p className="border-b border-stone-200 px-2 py-1 text-center text-xs font-semibold uppercase tracking-wide text-stone-500 dark:border-stone-800">
                       Bloco {bloco}
                     </p>
-                    {qs.map(([quadra, itens], qi) => (
-                      <div
-                        key={quadra}
-                        className={`border-b border-dashed border-stone-200 p-1.5 last:border-b-0 dark:border-stone-800 ${
-                          qi === 0 ? 'bg-green-50/60 dark:bg-green-950/20' : ''
-                        }`}
-                      >
-                        <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-stone-400">
-                          Q{quadra}
-                          {qi === 0 && <span className="ml-1 text-green-700 dark:text-green-400">· frente</span>}
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {itens.map(({ lote, bagsAqui }, i) => {
-                            const casa = casaFiltro(lote)
-                            const apagado = filtroAtivo && !casa
-                            return (
-                              <button
-                                key={`${lote.id}-${i}`}
-                                type="button"
-                                onClick={onLote ? () => onLote(lote) : undefined}
-                                title={`${lote.id} · ${lote.cultivar} · ${rotuloTratamento(lote.tratamento)} · ${lote.embalagem} · ${inteiro(bagsAqui)} bg aqui (${inteiro(lote.bags)} no lote)${lote.destinacao ? ` · DESTINAÇÃO: ${lote.destinacao}` : ''}`}
-                                className={`rounded px-1.5 py-0.5 text-left text-[11px] leading-tight transition-opacity ${
-                                  apagado ? 'opacity-20' : ''
-                                } ${
-                                  filtroAtivo && casa
-                                    ? 'bg-green-200 font-semibold text-green-900 ring-1 ring-green-600 dark:bg-green-900 dark:text-green-100'
-                                    : lote.destinacao
-                                      ? 'bg-red-50 text-red-900 ring-1 ring-red-300 dark:bg-red-950/40 dark:text-red-200'
-                                      : 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-200'
-                                }`}
-                              >
-                                {lote.cultivar}
-                                <span className="ml-1 font-normal opacity-70">{inteiro(bagsAqui)}bg</span>
-                              </button>
-                            )
-                          })}
+                    {qs.map(([quadra, itens], qi) => {
+                      const frente = qi === 0 && /^\d+$/.test(quadra)
+                      return (
+                        <div
+                          key={quadra}
+                          className={`border-b border-dashed border-stone-200 p-1.5 last:border-b-0 dark:border-stone-800 ${
+                            frente ? 'bg-green-50/60 dark:bg-green-950/20' : ''
+                          }`}
+                        >
+                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-stone-400">
+                            {/^\d+$/.test(quadra) ? `Q${quadra}` : quadra}
+                            {frente && <span className="ml-1 text-green-700 dark:text-green-400">· frente</span>}
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {itens.map(({ lote, bagsAqui }, i) => {
+                              const casa = casaFiltro(lote)
+                              const apagado = filtroAtivo && !casa
+                              return (
+                                <button
+                                  key={`${chaveDe(lote)}-${i}`}
+                                  type="button"
+                                  onClick={onLote ? () => onLote(lote) : undefined}
+                                  title={`${lote.lote} · ${lote.cultivar} · ${rotuloTratamento(lote.tratamento)} · ${lote.embalagem} · ${inteiro(lote.bags)} bg no SAP${bagsAqui != null ? ` (${inteiro(bagsAqui)} aqui)` : ''}${lote.destinacao ? ` · DESTINAÇÃO: ${lote.destinacao}` : ''}`}
+                                  className={`rounded px-1.5 py-0.5 text-left text-[11px] leading-tight transition-opacity ${
+                                    apagado ? 'opacity-20' : ''
+                                  } ${
+                                    filtroAtivo && casa
+                                      ? 'bg-green-200 font-semibold text-green-900 ring-1 ring-green-600 dark:bg-green-900 dark:text-green-100'
+                                      : lote.destinacao
+                                        ? 'bg-red-50 text-red-900 ring-1 ring-red-300 dark:bg-red-950/40 dark:text-red-200'
+                                        : lote.tratamento !== SEM_TSI
+                                          ? 'bg-sky-50 text-sky-900 ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-200'
+                                          : 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-200'
+                                  }`}
+                                >
+                                  {lote.cultivar}
+                                  {lote.tratamento !== SEM_TSI && (
+                                    <span className="ml-1 font-normal opacity-80">{lote.tratamento}</span>
+                                  )}
+                                  <span className="ml-1 font-normal opacity-70">{inteiro(lote.bags)}bg</span>
+                                </button>
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )
               })}
@@ -425,35 +445,33 @@ function MapaVisao({
         )
       })}
       <p className="text-xs text-stone-500">
-        Quadra de número maior = frente do bloco (acesso mais fácil). Chip vermelho = lote
-        com destinação no SAP; com filtro ativo, os que casam ficam verdes e o resto apaga.
+        Quadra de número maior = frente do bloco (acesso mais fácil); CORREDOR/SILO ficam no
+        fim. Chip azul = lote tratado, vermelho = com destinação no SAP; com filtro ativo, os
+        que casam ficam verdes e o resto apaga.
         {onLote ? ' Clique num lote pra editar os endereços dele.' : ''}
       </p>
     </div>
   )
 }
 
-/** Endereços de um lote: linhas armazém/bloco/quadra/bags, substituição total. */
+/** Endereços de uma combinação lote + tratamento: substituição total. */
 function ModalEnderecos({
   lote, onFechar, onSalvar,
 }: {
   lote: LoteMapaLinha
   onFechar: () => void
-  onSalvar: (enderecos: { armazem: string; bloco: string; quadra: number; bags: number }[]) => Promise<void>
+  onSalvar: (enderecos: { armazem: string; bloco: string; quadra: string; bags: number | null }[]) => Promise<void>
 }) {
   const [linhas, setLinhas] = useState<{ armazem: string; bloco: string; quadra: string; bags: string }[]>(
     lote.lote_enderecos.length > 0
-      ? lote.lote_enderecos.map((e: EnderecoLote) => ({
-          armazem: e.armazem, bloco: e.bloco, quadra: String(e.quadra), bags: String(e.bags),
+      ? lote.lote_enderecos.map((e) => ({
+          armazem: e.armazem, bloco: e.bloco, quadra: e.quadra, bags: e.bags != null ? String(e.bags) : '',
         }))
-      : [{ armazem: '', bloco: '', quadra: '', bags: String(lote.bags) }],
+      : [{ armazem: '', bloco: '', quadra: '', bags: '' }],
   )
   const [salvando, setSalvando] = useState(false)
 
-  const validas = linhas.filter(
-    (l) => l.armazem.trim() && l.bloco.trim() && l.quadra.trim() !== '' && Number(l.bags) > 0,
-  )
-  const somaBags = linhas.reduce((s, l) => s + (Number(l.bags) || 0), 0)
+  const validas = linhas.filter((l) => l.armazem.trim() && l.bloco.trim() && l.quadra.trim() !== '')
 
   const atualizar = (i: number, campo: keyof (typeof linhas)[number], valor: string) =>
     setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
@@ -462,11 +480,12 @@ function ModalEnderecos({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
         <h3 className="text-base font-semibold">
-          Endereçar — {lote.id} · {lote.cultivar} · {rotuloTratamento(lote.tratamento)}
+          Endereçar — {lote.lote} · {lote.cultivar} · {rotuloTratamento(lote.tratamento)}
         </h3>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-          {inteiro(lote.bags)} bags no SAP. Quanto maior a QUADRA, mais fácil o acesso no
-          bloco. Pode dividir em mais de um endereço.
+          {inteiro(lote.bags)} bags no SAP. Quanto maior a QUADRA (número), mais fácil o
+          acesso — CORREDOR/SILO também valem. Bags por endereço é opcional. Pode dividir
+          em mais de um endereço.
         </p>
 
         <div className="mt-4 space-y-2">
@@ -474,8 +493,8 @@ function ModalEnderecos({
             <div key={i} className="flex flex-wrap items-center gap-2">
               <input value={l.armazem} onChange={(e) => atualizar(i, 'armazem', e.target.value)} placeholder="armazém" className={`${INPUT} w-28`} />
               <input value={l.bloco} onChange={(e) => atualizar(i, 'bloco', e.target.value)} placeholder="bloco" className={`${INPUT} w-24`} />
-              <input type="number" min={0} value={l.quadra} onChange={(e) => atualizar(i, 'quadra', e.target.value)} placeholder="quadra" className={`${INPUT} w-24`} />
-              <input type="number" min={1} value={l.bags} onChange={(e) => atualizar(i, 'bags', e.target.value)} placeholder="bags" className={`${INPUT} w-24`} />
+              <input value={l.quadra} onChange={(e) => atualizar(i, 'quadra', e.target.value)} placeholder="quadra" className={`${INPUT} w-28`} />
+              <input type="number" min={1} value={l.bags} onChange={(e) => atualizar(i, 'bags', e.target.value)} placeholder="bags (opc.)" className={`${INPUT} w-28`} />
               {linhas.length > 1 && (
                 <button
                   type="button"
@@ -498,12 +517,6 @@ function ModalEnderecos({
           + adicionar endereço
         </button>
 
-        {somaBags !== lote.bags && validas.length > 0 && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-            Endereçado {inteiro(somaBags)} de {inteiro(lote.bags)} bags — só aviso, não trava.
-          </p>
-        )}
-
         <div className="mt-4 flex justify-end gap-2">
           <Botao onClick={onFechar}>Cancelar</Botao>
           <Botao
@@ -516,8 +529,8 @@ function ModalEnderecos({
                   validas.map((l) => ({
                     armazem: l.armazem.trim().toUpperCase(),
                     bloco: l.bloco.trim().toUpperCase(),
-                    quadra: Number(l.quadra),
-                    bags: Number(l.bags),
+                    quadra: l.quadra.trim().toUpperCase(),
+                    bags: Number(l.bags) > 0 ? Number(l.bags) : null,
                   })),
                 )
               } finally {
@@ -537,7 +550,7 @@ function ModalEnderecos({
  * Montagem de carga da Balança. Rascunho persistente (mesmo padrão do
  * Programar em Ordens): fechar a tela no meio não perde a carga em
  * montagem. Os candidatos saem ordenados do acesso mais fácil pro mais
- * difícil (maior quadra primeiro; sem endereço por último).
+ * difícil (maior quadra numérica primeiro; sem endereço por último).
  */
 function MontagemCarga({
   lotes, usuarioId, onSalva,
@@ -564,29 +577,34 @@ function MontagemCarga({
         lotes
           .filter((l) => !cultivar || l.cultivar === cultivar)
           .map((l) => l.tratamento)
-          .filter((t): t is string => t != null),
+          .filter((t) => t !== SEM_TSI),
       )].sort(),
     [lotes, cultivar],
   )
 
-  const maiorQuadra = (l: LoteMapaLinha) =>
-    l.lote_enderecos.length === 0 ? -1 : Math.max(...l.lote_enderecos.map((e) => e.quadra))
+  const maiorQuadra = (l: LoteMapaLinha) => {
+    const numericas = l.lote_enderecos
+      .map((e) => (/^\d+$/.test(e.quadra) ? Number(e.quadra) : null))
+      .filter((q): q is number => q != null)
+    if (numericas.length > 0) return Math.max(...numericas)
+    // endereçado só em corredor/silo fica entre os numéricos e os sem endereço
+    return l.lote_enderecos.length > 0 ? -1 : -2
+  }
 
   const candidatos = useMemo(() => {
     if (!cultivar || !tratamento) return []
     return lotes
-      .filter(
-        (l) =>
-          l.cultivar === cultivar &&
-          (tratamento === BRANCA ? l.tratamento == null : l.tratamento === tratamento) &&
-          l.bags > 0,
-      )
+      .filter((l) => l.cultivar === cultivar && l.tratamento === tratamento && l.bags > 0)
       .sort((a, b) => maiorQuadra(b) - maiorQuadra(a))
   }, [lotes, cultivar, tratamento])
 
-  const porId = useMemo(() => new Map(lotes.map((l) => [l.id, l])), [lotes])
+  const porLote = useMemo(() => {
+    const mapa = new Map<string, LoteMapaLinha>()
+    for (const l of lotes) if (l.tratamento === tratamento) mapa.set(l.lote, l)
+    return mapa
+  }, [lotes, tratamento])
   const selecionados = itens
-    .map((i) => ({ ...i, lote: porId.get(i.loteId) }))
+    .map((i) => ({ ...i, lote: porLote.get(i.loteId) }))
     .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
 
   const totalBags = selecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
@@ -599,15 +617,22 @@ function MontagemCarga({
 
   const definir = rascunho.definir
   const adicionar = (l: LoteMapaLinha) => {
-    if (itens.some((i) => i.loteId === l.id)) return
+    if (itens.some((i) => i.loteId === l.lote)) return
     const restante = Math.max(0, solicitados - totalBags)
     const sugestao = restante > 0 ? Math.min(restante, l.bags) : l.bags
-    definir({ itens: [...itens, { loteId: l.id, bags: String(sugestao) }] })
+    definir({ itens: [...itens, { loteId: l.lote, bags: String(sugestao) }] })
   }
   const atualizarBags = (loteId: string, v: string) =>
     definir({ itens: itens.map((i) => (i.loteId === loteId ? { ...i, bags: v } : i)) })
   const remover = (loteId: string) =>
     definir({ itens: itens.filter((i) => i.loteId !== loteId) })
+
+  const enderecoDe = (l: LoteMapaLinha) =>
+    l.lote_enderecos
+      .slice()
+      .sort((a, b) => ordenaQuadras(a.quadra, b.quadra))
+      .map((e) => `${e.armazem} ${e.bloco}${/^\d+$/.test(e.quadra) ? `-Q${e.quadra}` : ` ${e.quadra}`}`)
+      .join(' · ')
 
   async function salvar() {
     if (!numero.trim() || !cultivar || !tratamento || selecionados.length === 0) return
@@ -618,7 +643,7 @@ function MontagemCarga({
         {
           numero: numero.trim(),
           cultivar,
-          tratamento: tratamento === BRANCA ? null : tratamento,
+          tratamento,
           bags_solicitados: solicitados || totalBags,
           peso_total_kg: Math.round(totalPesoKg * 100) / 100,
         },
@@ -663,7 +688,7 @@ function MontagemCarga({
           className={INPUT}
         >
           <option value="">tratamento…</option>
-          <option value={BRANCA}>SEM TSI (branca)</option>
+          <option value={SEM_TSI}>SEM TSI (branca)</option>
           {tratamentosDoCultivar.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <input
@@ -683,19 +708,14 @@ function MontagemCarga({
             Lotes disponíveis ({candidatos.length}) — acesso mais fácil primeiro
           </p>
           {candidatos.length === 0 ? (
-            <Vazio>Nenhum lote de {cultivar} · {rotuloTratamento(tratamento === BRANCA ? null : tratamento)} no mapa.</Vazio>
+            <Vazio>Nenhum lote de {cultivar} · {rotuloTratamento(tratamento)} no mapa.</Vazio>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {candidatos.map((l) => {
-                const jaSelecionado = itens.some((i) => i.loteId === l.id)
-                const end = l.lote_enderecos
-                  .slice()
-                  .sort((a, b) => b.quadra - a.quadra)
-                  .map((e) => `${e.armazem} ${e.bloco}-Q${e.quadra}`)
-                  .join(' · ')
+                const jaSelecionado = itens.some((i) => i.loteId === l.lote)
                 return (
                   <button
-                    key={l.id}
+                    key={chaveDe(l)}
                     type="button"
                     disabled={jaSelecionado}
                     onClick={() => adicionar(l)}
@@ -708,10 +728,10 @@ function MontagemCarga({
                           : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
                     }`}
                   >
-                    <span className="font-medium">{l.id}</span> · {inteiro(l.bags)} bg
+                    <span className="font-medium">{l.lote}</span> · {inteiro(l.bags)} bg
                     {l.destinacao && <span className="ml-1 font-semibold">· {l.destinacao}</span>}
                     <span className="block text-[10px] opacity-70">
-                      {end || 'sem endereço'}
+                      {enderecoDe(l) || 'sem endereço'}
                     </span>
                   </button>
                 )
@@ -735,11 +755,7 @@ function MontagemCarga({
                   <tr key={i.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5 font-medium">{i.loteId}</td>
                     <td className="px-2 py-1.5 text-xs text-stone-500">
-                      {i.lote.lote_enderecos
-                        .slice()
-                        .sort((a, b) => b.quadra - a.quadra)
-                        .map((e) => `${e.armazem} ${e.bloco}-Q${e.quadra}`)
-                        .join(' · ') || '—'}
+                      {enderecoDe(i.lote) || '—'}
                     </td>
                     <td className="px-2 py-1.5 text-right">
                       <input

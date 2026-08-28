@@ -1,11 +1,15 @@
 /**
  * Dados da aba Mapa e Montagem de Carga (28/08/2026).
  *
+ * A unidade é a COMBINAÇÃO lote + tratamento ('SEM TSI' = semente branca):
+ * o mesmo lote existe branco e tratado ao mesmo tempo, em endereços
+ * diferentes — o endereçamento físico do Arion provou (28/08/2026).
+ *
  * `lotes_mapa` é outra vista do estoque, separada de `lotes_semente` de
- * propósito: TODO lote do SAP (branco e tratado) do depósito VEN_GER, com
- * substituição total a cada upload — o que não vem na carga é apagado
- * (lote zerado some do mapa), e os endereços (lote_enderecos) sobrevivem
- * enquanto o lote existir, porque a gravação é upsert por id.
+ * propósito: TODO lote do SAP do depósito VEN_GER, com substituição total a
+ * cada upload — o que não vem na carga é apagado (lote zerado some do
+ * mapa), e os endereços (lote_enderecos) sobrevivem enquanto a combinação
+ * existir, porque a gravação é upsert pela chave composta.
  */
 
 import { supabase } from '@/lib/supabase'
@@ -19,15 +23,17 @@ export interface EnderecoLote {
   id: string
   armazem: string
   bloco: string
-  /** Quanto MAIOR, mais fácil o acesso dentro do bloco. */
-  quadra: number
-  bags: number
+  /** Nem sempre é número (CORREDOR, SILO). Número maior = frente do bloco. */
+  quadra: string
+  /** Opcional — o endereçamento físico não controla bags por endereço. */
+  bags: number | null
 }
 
 export interface LoteMapaLinha {
-  id: string
+  lote: string
+  /** 'SEM TSI' = semente branca. */
+  tratamento: string
   cultivar: string
-  tratamento: string | null
   embalagem: string
   pms: number | null
   peso_bag_kg: number
@@ -40,15 +46,15 @@ export interface LoteMapaLinha {
 }
 
 /**
- * Todos os lotes do mapa, com endereços. Devolve null quando a tabela ainda
- * não existe (migração mapa-montagem-carga.sql pendente) — a tela avisa em
- * vez de quebrar.
+ * Todas as combinações do mapa, com endereços. Devolve null quando a tabela
+ * ainda não existe no formato novo (migração mapa-lote-tratamento.sql
+ * pendente) — a tela avisa em vez de quebrar.
  */
 export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
   const { data, error } = await supabase
     .from('lotes_mapa')
     .select(
-      'id, cultivar, tratamento, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, lote_enderecos ( id, armazem, bloco, quadra, bags )',
+      'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, lote_enderecos ( id, armazem, bloco, quadra, bags )',
     )
     .order('cultivar')
   if (error) return null
@@ -56,10 +62,10 @@ export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
 }
 
 /**
- * Substituição total: upsert de tudo que veio, e o que não veio é apagado
- * (lote que zerou no SAP some do mapa). O upsert preserva os endereços dos
- * lotes que continuam existindo; o delete em cascata leva os endereços dos
- * que sumiram.
+ * Substituição total: upsert de tudo que veio (chave lote + tratamento), e
+ * o que não veio é apagado (combinação que zerou no SAP some). O upsert
+ * preserva os endereços das combinações que continuam; o delete em cascata
+ * leva os endereços das que sumiram.
  */
 export async function importarLotesMapa(lotes: LoteMapaConvertido[]): Promise<number> {
   const agora = new Date().toISOString()
@@ -68,7 +74,7 @@ export async function importarLotesMapa(lotes: LoteMapaConvertido[]): Promise<nu
     const { error } = await supabase.from('lotes_mapa').upsert(registros.slice(i, i + 500))
     if (error) {
       throw new Error(
-        `gravar lotes do mapa: ${error.message} — a migração mapa-montagem-carga.sql já rodou?`,
+        `gravar lotes do mapa: ${error.message} — a migração mapa-lote-tratamento.sql já rodou?`,
       )
     }
   }
@@ -78,17 +84,22 @@ export async function importarLotesMapa(lotes: LoteMapaConvertido[]): Promise<nu
   return registros.length
 }
 
-/** Substitui os endereços de UM lote (mesmo padrão de receita_itens). */
+/** Substitui os endereços de UMA combinação lote + tratamento. */
 export async function salvarEnderecos(
-  loteId: string,
-  enderecos: { armazem: string; bloco: string; quadra: number; bags: number }[],
+  lote: string,
+  tratamento: string,
+  enderecos: { armazem: string; bloco: string; quadra: string; bags: number | null }[],
   usuarioId: string,
 ): Promise<void> {
-  const del = await supabase.from('lote_enderecos').delete().eq('lote_id', loteId)
+  const del = await supabase
+    .from('lote_enderecos')
+    .delete()
+    .eq('lote', lote)
+    .eq('tratamento', tratamento)
   erro('limpar endereços do lote', del.error)
   if (enderecos.length > 0) {
     const ins = await supabase.from('lote_enderecos').insert(
-      enderecos.map((e) => ({ ...e, lote_id: loteId, criado_por: usuarioId })),
+      enderecos.map((e) => ({ ...e, lote, tratamento, criado_por: usuarioId })),
     )
     erro('gravar endereços do lote', ins.error)
   }
@@ -97,7 +108,8 @@ export async function salvarEnderecos(
 export interface NovaCargaMontada {
   numero: string
   cultivar: string
-  tratamento: string | null
+  /** 'SEM TSI' = semente branca. */
+  tratamento: string
   bags_solicitados: number
   peso_total_kg: number
 }
