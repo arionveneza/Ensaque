@@ -195,6 +195,10 @@ export interface NovaCargaMontada {
   tratamento: string
   bags_solicitados: number
   peso_total_kg: number
+  /** Placa/cliente/tara: saem na ordem de carregamento impressa (28/08/2026). */
+  placa: string | null
+  cliente: string | null
+  tara_kg: number | null
 }
 
 export interface ItemCargaMontada {
@@ -205,16 +209,33 @@ export interface ItemCargaMontada {
   destinacao: string | null
 }
 
+/**
+ * placa/cliente/tara nasceram depois (carga-placa-cliente.sql): na janela
+ * entre publicar o front e rodar o SQL, grava sem eles em vez de travar —
+ * mesmo padrão do cooperado em importarPedidos.
+ */
+const semCamposNovos = (c: NovaCargaMontada) => {
+  const { placa: _p, cliente: _c, tara_kg: _t, ...resto } = c
+  return resto
+}
+
 export async function criarCargaMontada(
   carga: NovaCargaMontada,
   itens: ItemCargaMontada[],
   usuarioId: string,
 ): Promise<string> {
-  const ins = await supabase
+  let ins = await supabase
     .from('cargas_montadas')
     .insert({ ...carga, criada_por: usuarioId })
     .select('id')
     .single()
+  if (ins.error?.code === 'PGRST204') {
+    ins = await supabase
+      .from('cargas_montadas')
+      .insert({ ...semCamposNovos(carga), criada_por: usuarioId })
+      .select('id')
+      .single()
+  }
   erro('criar carga montada', ins.error)
   const cargaId = (ins.data as { id: string }).id
   const itensIns = await supabase
@@ -224,6 +245,30 @@ export async function criarCargaMontada(
   return cargaId
 }
 
+/** Edita uma carga salva: atualiza o cabeçalho e SUBSTITUI os itens. */
+export async function atualizarCargaMontada(
+  id: string,
+  carga: NovaCargaMontada,
+  itens: ItemCargaMontada[],
+): Promise<void> {
+  let up = await supabase.from('cargas_montadas').update(carga).eq('id', id)
+  if (up.error?.code === 'PGRST204') {
+    up = await supabase.from('cargas_montadas').update(semCamposNovos(carga)).eq('id', id)
+  }
+  erro('atualizar carga montada', up.error)
+  const del = await supabase.from('carga_montada_itens').delete().eq('carga_id', id)
+  erro('limpar itens da carga', del.error)
+  const ins = await supabase
+    .from('carga_montada_itens')
+    .insert(itens.map((i) => ({ ...i, carga_id: id })))
+  erro('regravar itens da carga', ins.error)
+}
+
+export async function excluirCargaMontada(id: string): Promise<void> {
+  const { error } = await supabase.from('cargas_montadas').delete().eq('id', id)
+  erro('excluir carga montada', error)
+}
+
 export interface CargaMontadaLinha extends NovaCargaMontada {
   id: string
   criada_em: string
@@ -231,11 +276,24 @@ export interface CargaMontadaLinha extends NovaCargaMontada {
 }
 
 export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
-  const { data, error } = await supabase
+  let r = await supabase
     .from('cargas_montadas')
-    .select('id, numero, cultivar, tratamento, bags_solicitados, peso_total_kg, criada_em, carga_montada_itens ( lote_id, bags, peso_kg, destinacao )')
+    .select('id, numero, cultivar, tratamento, bags_solicitados, peso_total_kg, placa, cliente, tara_kg, criada_em, carga_montada_itens ( lote_id, bags, peso_kg, destinacao )')
     .order('criada_em', { ascending: false })
     .limit(limite)
-  if (error) return []
-  return (data ?? []) as unknown as CargaMontadaLinha[]
+  if (r.error) {
+    // antes da migração carga-placa-cliente.sql as colunas novas não existem
+    r = (await supabase
+      .from('cargas_montadas')
+      .select('id, numero, cultivar, tratamento, bags_solicitados, peso_total_kg, criada_em, carga_montada_itens ( lote_id, bags, peso_kg, destinacao )')
+      .order('criada_em', { ascending: false })
+      .limit(limite)) as unknown as typeof r
+  }
+  if (r.error) return []
+  return (r.data ?? []).map((c) => ({
+    placa: null,
+    cliente: null,
+    tara_kg: null,
+    ...(c as object),
+  })) as unknown as CargaMontadaLinha[]
 }

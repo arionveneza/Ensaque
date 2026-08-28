@@ -8,7 +8,8 @@ import {
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
 import { useRealtime } from '@/dados/useRealtime'
-import { useRascunho } from '@/lib/useRascunho'
+import { useRascunho, type Rascunho } from '@/lib/useRascunho'
+import { imprimirOrdemCarregamento } from '@/lib/exportar'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, inteiro, n,
 } from '@/componentes/ui'
@@ -89,11 +90,45 @@ interface ItemCargaForm {
   bags: string
 }
 
+/** Rascunho da carga em montagem — editandoId preenchido = editando carga salva. */
+interface CargaForm {
+  numero: string
+  cultivar: string
+  tratamento: string
+  bags: string
+  placa: string
+  cliente: string
+  tara: string
+  itens: ItemCargaForm[]
+  editandoId: string
+}
+
+const CARGA_VAZIA: CargaForm = {
+  numero: '', cultivar: '', tratamento: '', bags: '',
+  placa: '', cliente: '', tara: '', itens: [], editandoId: '',
+}
+
 interface Posicao {
   armazem: string
   bloco: string
   quadra: string
 }
+
+/** Letra da classificação de qualidade ("Classe C" → "C"). */
+const letraClasse = (classificacao: string | null): string | null => {
+  const m = (classificacao ?? '').trim().match(/([A-Z])$/i)
+  return m ? m[1].toUpperCase() : null
+}
+
+/** Valor especial do filtro de destinação pros lotes livres. */
+const LIVRE = '(livre)'
+
+const enderecoDe = (l: LoteMapaLinha) =>
+  l.lote_enderecos
+    .slice()
+    .sort((a, b) => ordenaQuadras(a.quadra, b.quadra))
+    .map((e) => `${e.armazem} ${e.bloco}${ehNumero(e.quadra) ? `-Q${e.quadra}` : ` ${e.quadra}`}`)
+    .join(' · ')
 
 export default function Mapa() {
   const { usuario, permitido } = useAuth()
@@ -125,17 +160,35 @@ export default function Mapa() {
   }, [])
   useRealtime(['lotes_mapa', 'lote_enderecos', 'cargas_montadas'], () => void recarregar())
 
+  // rascunho da carga em montagem mora AQUI (não no cartão) de propósito:
+  // o "+ Carga" do detalhe da posição e o "editar" das cargas salvas
+  // escrevem nele de fora (pedido do Arion, 28/08/2026)
+  const rascunhoCarga = useRascunho<CargaForm>('mapa.carga', CARGA_VAZIA)
+
   // -------- filtros do mapa --------
   const [fCultivar, setFCultivar] = useState('')
   const [fTratamento, setFTratamento] = useState('')
   const [fEmbalagem, setFEmbalagem] = useState('')
+  const [fDestinacao, setFDestinacao] = useState<string[]>([])
+  const [fClasse, setFClasse] = useState<string[]>([])
   const [busca, setBusca] = useState('')
-  const filtroAtivo = !!(fCultivar || fTratamento || fEmbalagem || busca.trim())
+  const filtroAtivo = !!(
+    fCultivar || fTratamento || fEmbalagem || busca.trim() ||
+    fDestinacao.length > 0 || fClasse.length > 0
+  )
 
   const casaFiltro = (l: LoteMapaLinha): boolean => {
     if (fCultivar && l.cultivar !== fCultivar) return false
     if (fTratamento && l.tratamento !== fTratamento) return false
     if (fEmbalagem && l.embalagem !== fEmbalagem) return false
+    if (fDestinacao.length > 0) {
+      const alvo = l.destinacao ?? LIVRE
+      if (!fDestinacao.includes(alvo)) return false
+    }
+    if (fClasse.length > 0) {
+      const letra = letraClasse(l.classificacao)
+      if (!letra || !fClasse.includes(letra)) return false
+    }
     if (busca.trim() && !l.lote.toLowerCase().includes(busca.trim().toLowerCase())) return false
     return true
   }
@@ -146,8 +199,92 @@ export default function Mapa() {
     () => [...new Set(todos.map((l) => l.tratamento).filter((t) => t !== SEM_TSI))].sort(),
     [todos],
   )
+  const destinacoes = useMemo(
+    () => [LIVRE, ...[...new Set(todos.map((l) => l.destinacao).filter((d): d is string => !!d))].sort()],
+    [todos],
+  )
+  const classes = useMemo(() => {
+    // A–D sempre aparecem (pedido do Arion, 28/08/2026); letras extras do dado entram junto
+    const doDado = todos.map((l) => letraClasse(l.classificacao)).filter((c): c is string => !!c)
+    return [...new Set(['A', 'B', 'C', 'D', ...doDado])].sort()
+  }, [todos])
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
   const aloc = useMemo(() => alocar(todos), [todos])
+
+  /** "+ Carga" do detalhe da posição: joga o lote na carga em montagem. */
+  function adicionarNaCarga(l: LoteMapaLinha) {
+    const c = rascunhoCarga.valor
+    if (c.cultivar && (c.cultivar !== l.cultivar || c.tratamento !== l.tratamento)) {
+      setErro(
+        `A carga em montagem é de ${c.cultivar} · ${rotuloTratamento(c.tratamento)} — finalize ou limpe antes de adicionar ${l.cultivar} · ${rotuloTratamento(l.tratamento)}.`,
+      )
+      return
+    }
+    if (c.itens.some((i) => i.loteId === l.lote)) {
+      setMsg(`${l.lote} já está na carga em montagem.`)
+      return
+    }
+    rascunhoCarga.definir({
+      cultivar: l.cultivar,
+      tratamento: l.tratamento,
+      itens: [...c.itens, { loteId: l.lote, bags: String(l.bags) }],
+    })
+    setErro(null)
+    setMsg(`${l.lote} adicionado à carga em montagem (${c.itens.length + 1} lote(s)).`)
+  }
+
+  /** Reabre uma carga salva pra edição — o rascunho vira a carga. */
+  function editarCarga(c: CargaMontadaLinha) {
+    rascunhoCarga.substituir({
+      numero: c.numero,
+      cultivar: c.cultivar,
+      tratamento: c.tratamento,
+      bags: String(c.bags_solicitados || ''),
+      placa: c.placa ?? '',
+      cliente: c.cliente ?? '',
+      tara: c.tara_kg != null ? String(c.tara_kg) : '',
+      itens: c.carga_montada_itens.map((i) => ({ loteId: i.lote_id, bags: String(i.bags) })),
+      editandoId: c.id,
+    })
+    setMsg(`Editando a carga ${c.numero} — salve na Montagem de carga abaixo.`)
+  }
+
+  async function excluirCarga(c: CargaMontadaLinha) {
+    if (!confirm(`Excluir a ordem de carregamento ${c.numero}?`)) return
+    try {
+      await m.excluirCargaMontada(c.id)
+      setMsg(`Carga ${c.numero} excluída.`)
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** Imprime a folha da ordem de carregamento, com o endereço ATUAL de cada lote. */
+  function imprimirCarga(c: CargaMontadaLinha) {
+    imprimirOrdemCarregamento({
+      numero: c.numero,
+      cliente: c.cliente,
+      placa: c.placa,
+      cultivar: c.cultivar,
+      tratamento: rotuloTratamento(c.tratamento),
+      data: dataHoraCurta(c.criada_em),
+      itens: c.carga_montada_itens.map((i) => {
+        const lote = todos.find((l) => l.lote === i.lote_id && l.tratamento === c.tratamento)
+        return {
+          lote: i.lote_id,
+          endereco: lote ? enderecoDe(lote) : '',
+          bags: i.bags,
+          pesoBagKg: lote?.peso_bag_kg ?? (i.bags > 0 ? Math.round(i.peso_kg / i.bags) : null),
+          pesoKg: i.peso_kg,
+          destinacao: i.destinacao,
+        }
+      }),
+      totalBags: c.carga_montada_itens.reduce((s, i) => s + i.bags, 0),
+      pesoTotalKg: c.peso_total_kg,
+      taraKg: c.tara_kg,
+    })
+  }
 
   // -------- upload --------
   async function lerPlanilha(ev: ChangeEvent<HTMLInputElement>) {
@@ -311,6 +448,18 @@ export default function Mapa() {
             <option value="BG5M">BG5M</option>
             <option value="MEIOBAG">MEIOBAG</option>
           </select>
+          <FiltroMulti
+            rotulo="destinação"
+            opcoes={destinacoes}
+            selecionadas={fDestinacao}
+            onMudar={setFDestinacao}
+          />
+          <FiltroMulti
+            rotulo="classe"
+            opcoes={classes}
+            selecionadas={fClasse}
+            onMudar={setFClasse}
+          />
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
@@ -320,7 +469,10 @@ export default function Mapa() {
           {filtroAtivo && (
             <button
               type="button"
-              onClick={() => { setFCultivar(''); setFTratamento(''); setFEmbalagem(''); setBusca('') }}
+              onClick={() => {
+                setFCultivar(''); setFTratamento(''); setFEmbalagem('')
+                setFDestinacao([]); setFClasse([]); setBusca('')
+              }}
               className="rounded-md border border-stone-300 px-3 py-1.5 text-xs text-stone-600 underline hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
             >
               Limpar filtros
@@ -341,8 +493,9 @@ export default function Mapa() {
         <MontagemCarga
           lotes={todos}
           usuarioId={usuario?.id ?? ''}
-          onSalva={() => {
-            setMsg('Carga gravada.')
+          rascunho={rascunhoCarga}
+          onSalva={(texto) => {
+            setMsg(texto)
             void recarregar()
           }}
         />
@@ -353,7 +506,7 @@ export default function Mapa() {
         {cargas.length === 0 ? (
           <Vazio>Nenhuma carga montada ainda.</Vazio>
         ) : (
-          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', '#Bags', '#Peso (kg)', 'Lotes', 'Quando']}>
+          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', '#Bags', '#Peso (kg)', 'Placa · Cliente', 'Lotes', 'Quando', '']}>
             {cargas.map((c) => (
               <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5 font-medium">{c.numero}</td>
@@ -364,9 +517,27 @@ export default function Mapa() {
                 </td>
                 <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.peso_total_kg)}</td>
                 <td className="px-2 py-1.5 text-xs text-stone-500">
+                  {[c.placa, c.cliente].filter(Boolean).join(' · ') || '—'}
+                </td>
+                <td className="px-2 py-1.5 text-xs text-stone-500">
                   {c.carga_montada_itens.map((i) => `${i.lote_id} (${inteiro(i.bags)})`).join(' · ')}
                 </td>
                 <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(c.criada_em)}</td>
+                <td className="px-2 py-1.5">
+                  <div className="flex justify-end gap-1.5 whitespace-nowrap">
+                    <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
+                    {podeMontar && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
+                    {podeMontar && (
+                      <button
+                        type="button"
+                        onClick={() => void excluirCarga(c)}
+                        className="px-1 text-xs text-stone-400 underline hover:text-red-600"
+                      >
+                        excluir
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </Tabela>
@@ -379,6 +550,7 @@ export default function Mapa() {
           posicao={posicao}
           alocacoes={naPosicao}
           podeEnderecar={podeEnderecar}
+          podeMontar={podeMontar}
           onFechar={() => setPosicao(null)}
           onMover={(a) => {
             setMovendo(a)
@@ -386,6 +558,10 @@ export default function Mapa() {
           }}
           onEnderecar={(l) => {
             setEnderecando(l)
+            setPosicao(null)
+          }}
+          onAdicionarCarga={(l) => {
+            adicionarNaCarga(l)
             setPosicao(null)
           }}
         />
@@ -434,6 +610,56 @@ export default function Mapa() {
         />
       )}
     </Pagina>
+  )
+}
+
+/** Dropdown de multiseleção com checkboxes — destinação e classe (28/08/2026). */
+function FiltroMulti({
+  rotulo, opcoes, selecionadas, onMudar,
+}: {
+  rotulo: string
+  opcoes: string[]
+  selecionadas: string[]
+  onMudar: (v: string[]) => void
+}) {
+  const [aberto, setAberto] = useState(false)
+  const alternar = (o: string) =>
+    onMudar(selecionadas.includes(o) ? selecionadas.filter((s) => s !== o) : [...selecionadas, o])
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        className={`${INPUT} ${selecionadas.length > 0 ? 'font-medium' : 'text-stone-500 dark:text-stone-400'}`}
+      >
+        {selecionadas.length > 0 ? `${rotulo} (${selecionadas.length})` : `toda ${rotulo}`} ▾
+      </button>
+      {aberto && (
+        <>
+          <button
+            type="button"
+            aria-label="fechar"
+            onClick={() => setAberto(false)}
+            className="fixed inset-0 z-10 cursor-default"
+          />
+          <div className="absolute z-20 mt-1 max-h-64 min-w-48 overflow-y-auto rounded-lg border border-stone-300 bg-white p-1.5 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+            {opcoes.map((o) => (
+              <label
+                key={o}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selecionadas.includes(o)}
+                  onChange={() => alternar(o)}
+                />
+                {o}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -574,16 +800,18 @@ function MapaGrade({
   )
 }
 
-/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover. */
+/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 function ModalPosicao({
-  posicao, alocacoes, podeEnderecar, onFechar, onMover, onEnderecar,
+  posicao, alocacoes, podeEnderecar, podeMontar, onFechar, onMover, onEnderecar, onAdicionarCarga,
 }: {
   posicao: Posicao
   alocacoes: Alocacao[]
   podeEnderecar: boolean
+  podeMontar: boolean
   onFechar: () => void
   onMover: (a: Alocacao) => void
   onEnderecar: (l: LoteMapaLinha) => void
+  onAdicionarCarga: (l: LoteMapaLinha) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -619,10 +847,17 @@ function ModalPosicao({
                   {a.estimado && ' · estimado — sem contagem por endereço'}
                 </p>
               </div>
-              {podeEnderecar && (
+              {(podeEnderecar || podeMontar) && (
                 <div className="flex shrink-0 gap-2">
-                  <Botao onClick={() => onMover(a)}>Mover</Botao>
-                  <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
+                  {podeMontar && (
+                    <Botao onClick={() => onAdicionarCarga(a.lote)}>+ Carga</Botao>
+                  )}
+                  {podeEnderecar && (
+                    <>
+                      <Botao onClick={() => onMover(a)}>Mover</Botao>
+                      <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -814,20 +1049,15 @@ function ModalEnderecos({
  * difícil (maior quadra numérica primeiro; sem endereço por último).
  */
 function MontagemCarga({
-  lotes, usuarioId, onSalva,
+  lotes, usuarioId, rascunho, onSalva,
 }: {
   lotes: LoteMapaLinha[]
   usuarioId: string
-  onSalva: () => void
+  rascunho: Rascunho<CargaForm>
+  onSalva: (msg: string) => void
 }) {
-  const rascunho = useRascunho<{
-    numero: string
-    cultivar: string
-    tratamento: string
-    bags: string
-    itens: ItemCargaForm[]
-  }>('mapa.carga', { numero: '', cultivar: '', tratamento: '', bags: '', itens: [] })
-  const { numero, cultivar, tratamento, bags, itens } = rascunho.valor
+  const { numero, cultivar, tratamento, bags, placa, cliente, tara, itens, editandoId } =
+    rascunho.valor
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -866,6 +1096,8 @@ function MontagemCarga({
   const selecionados = itens
     .map((i) => ({ ...i, lote: porLote.get(i.loteId) }))
     .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
+  // carga editada pode citar lote que zerou no SAP desde então — avisar, não sumir calado
+  const foraDoMapa = itens.filter((i) => !porLote.has(i.loteId))
 
   const totalBags = selecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
   const totalPesoKg = selecionados.reduce(
@@ -887,36 +1119,32 @@ function MontagemCarga({
   const remover = (loteId: string) =>
     definir({ itens: itens.filter((i) => i.loteId !== loteId) })
 
-  const enderecoDe = (l: LoteMapaLinha) =>
-    l.lote_enderecos
-      .slice()
-      .sort((a, b) => ordenaQuadras(a.quadra, b.quadra))
-      .map((e) => `${e.armazem} ${e.bloco}${ehNumero(e.quadra) ? `-Q${e.quadra}` : ` ${e.quadra}`}`)
-      .join(' · ')
-
   async function salvar() {
     if (!numero.trim() || !cultivar || !tratamento || selecionados.length === 0) return
     setSalvando(true)
     setErro(null)
+    const carga = {
+      numero: numero.trim(),
+      cultivar,
+      tratamento,
+      bags_solicitados: solicitados || totalBags,
+      peso_total_kg: Math.round(totalPesoKg * 100) / 100,
+      placa: placa.trim() ? placa.trim().toUpperCase() : null,
+      cliente: cliente.trim() || null,
+      tara_kg: Number(tara) > 0 ? Number(tara) : null,
+    }
+    const itensGravar = selecionados.map((i) => ({
+      lote_id: i.loteId,
+      bags: Number(i.bags) || 0,
+      peso_kg: Math.round((Number(i.bags) || 0) * i.lote.peso_bag_kg * 100) / 100,
+      destinacao: i.lote.destinacao,
+    }))
     try {
-      await m.criarCargaMontada(
-        {
-          numero: numero.trim(),
-          cultivar,
-          tratamento,
-          bags_solicitados: solicitados || totalBags,
-          peso_total_kg: Math.round(totalPesoKg * 100) / 100,
-        },
-        selecionados.map((i) => ({
-          lote_id: i.loteId,
-          bags: Number(i.bags) || 0,
-          peso_kg: Math.round((Number(i.bags) || 0) * i.lote.peso_bag_kg * 100) / 100,
-          destinacao: i.lote.destinacao,
-        })),
-        usuarioId,
-      )
+      if (editandoId) await m.atualizarCargaMontada(editandoId, carga, itensGravar)
+      else await m.criarCargaMontada(carga, itensGravar, usuarioId)
+      const texto = editandoId ? `Carga ${carga.numero} atualizada.` : 'Carga gravada.'
       rascunho.limpar()
-      onSalva()
+      onSalva(texto)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     } finally {
@@ -927,6 +1155,16 @@ function MontagemCarga({
   return (
     <Cartao titulo="Montagem de carga" className="mb-5">
       {erro && <Erro>{erro}</Erro>}
+      {editandoId && (
+        <div className="mb-3">
+          <Aviso gravidade="alerta">
+            Editando a carga <b>{numero}</b> — salvar SUBSTITUI a carga salva.{' '}
+            <button type="button" onClick={() => rascunho.limpar()} className="underline">
+              cancelar edição
+            </button>
+          </Aviso>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={numero}
@@ -958,6 +1196,29 @@ function MontagemCarga({
           onChange={(e) => definir({ bags: e.target.value })}
           placeholder="bags"
           className={`${INPUT} w-24`}
+        />
+      </div>
+      {/* placa/cliente/tara: opcionais, saem na ordem de carregamento impressa */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          value={placa}
+          onChange={(e) => definir({ placa: e.target.value })}
+          placeholder="placa do veículo (opc.)"
+          className={`${INPUT} w-44`}
+        />
+        <input
+          value={cliente}
+          onChange={(e) => definir({ cliente: e.target.value })}
+          placeholder="cliente (opc.)"
+          className={`${INPUT} w-56`}
+        />
+        <input
+          type="number"
+          min={0}
+          value={tara}
+          onChange={(e) => definir({ tara: e.target.value })}
+          placeholder="tara do veículo (kg, opc.)"
+          className={`${INPUT} w-48`}
         />
       </div>
 
@@ -1004,6 +1265,15 @@ function MontagemCarga({
               <Aviso gravidade="bloqueio">
                 <b>Atenção:</b> lote(s) com DESTINAÇÃO no SAP selecionado(s):{' '}
                 {comDestinacao.map((i) => `${i.loteId} → ${i.lote.destinacao}`).join(' · ')}
+              </Aviso>
+            </div>
+          )}
+
+          {foraDoMapa.length > 0 && (
+            <div className="mt-3">
+              <Aviso gravidade="alerta">
+                Fora do mapa (saíram do saldo do SAP) e por isso FORA da carga:{' '}
+                {foraDoMapa.map((i) => i.loteId).join(' · ')}
               </Aviso>
             </div>
           )}
@@ -1059,7 +1329,7 @@ function MontagemCarga({
                   disabled={salvando || !numero.trim() || selecionados.length === 0}
                   onClick={salvar}
                 >
-                  {salvando ? 'gravando…' : 'Salvar carga'}
+                  {salvando ? 'gravando…' : editandoId ? 'Salvar alterações' : 'Salvar carga'}
                 </Botao>
                 <Botao onClick={() => rascunho.limpar()}>Limpar</Botao>
               </div>

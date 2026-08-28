@@ -342,3 +342,118 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
 
   abrirParaImpressao(html)
 }
+
+export interface OrdemCarregamentoImpressao {
+  numero: string
+  cliente: string | null
+  placa: string | null
+  cultivar: string
+  tratamento: string
+  data: string
+  itens: {
+    lote: string
+    endereco: string
+    bags: number
+    pesoBagKg: number | null
+    pesoKg: number
+    destinacao: string | null
+  }[]
+  totalBags: number
+  pesoTotalKg: number
+  /** Informada, a impressao ja soma tara + carga; em branco, sai campo pra anotar. */
+  taraKg: number | null
+}
+
+/**
+ * A ordem de carregamento em papel (pedido do Arion, 28/08/2026): a folha
+ * que acompanha o caminhao — cliente, placa, os lotes com endereco fisico
+ * (onde buscar), quantidades e pesos, e o quadro de pesagem com o peso da
+ * carga, o campo de TARA e o peso bruto (tara + carga). Tara em branco na
+ * impressao quando nao informada, pra anotar na balanca.
+ */
+export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+  const linhas = c.itens
+    .map(
+      (i) => `<tr>
+        <td><b>${esc(i.lote)}</b>${i.destinacao ? `<br><span class="dest">DESTINAÇÃO: ${esc(i.destinacao)}</span>` : ''}</td>
+        <td>${esc(i.endereco) || '—'}</td>
+        <td class="num">${fmt(i.bags)}</td>
+        <td class="num">${i.pesoBagKg != null ? fmt(i.pesoBagKg) : '—'}</td>
+        <td class="num">${fmt(i.pesoKg)}</td>
+      </tr>`,
+    )
+    .join('')
+
+  const brutoKg = c.taraKg != null ? c.taraKg + c.pesoTotalKg : null
+
+  const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Ordem de carregamento ${esc(c.numero)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; color: #111; margin: 24px; font-size: 13px; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .empresa { font-size: 11px; color: #444; margin-bottom: 14px; }
+  .grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 16px; margin-bottom: 14px; }
+  .campo span { display: block; font-size: 10px; text-transform: uppercase; color: #666; }
+  .campo b { font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  th, td { border: 1px solid #999; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #eee; font-size: 11px; text-transform: uppercase; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .dest { color: #b00020; font-weight: bold; font-size: 11px; }
+  .totais td { font-weight: bold; background: #f5f5f5; }
+  .pesagem { border: 2px solid #111; padding: 10px 14px; margin-top: 8px; }
+  .pesagem h2 { font-size: 13px; text-transform: uppercase; margin: 0 0 8px; }
+  .pesagem .linha { display: flex; justify-content: space-between; align-items: baseline;
+                    border-bottom: 1px dotted #999; padding: 7px 0; font-size: 14px; }
+  .pesagem .linha:last-child { border-bottom: none; }
+  .pesagem .valor { font-weight: bold; font-size: 16px; }
+  .escrever { display: inline-block; min-width: 180px; border-bottom: 1.5px solid #111; }
+  .assin { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 44px; }
+  .assin div { border-top: 1px solid #111; padding-top: 4px; text-align: center; font-size: 11px; }
+  @media print { body { margin: 10mm; } }
+</style></head><body>
+<h1>ORDEM DE CARREGAMENTO Nº ${esc(c.numero)}</h1>
+<p class="empresa">${esc(EMPRESA.nome)} · ${esc(EMPRESA.cnpj)} · Emitida em ${esc(c.data)}</p>
+
+<div class="grade">
+  <div class="campo"><span>Cliente</span><b>${esc(c.cliente) || '—'}</b></div>
+  <div class="campo"><span>Placa do veículo</span><b>${esc(c.placa) || '—'}</b></div>
+  <div class="campo"><span>Data</span><b>${esc(c.data)}</b></div>
+  <div class="campo"><span>Cultivar</span><b>${esc(c.cultivar)}</b></div>
+  <div class="campo"><span>Tratamento</span><b>${esc(c.tratamento)}</b></div>
+  <div class="campo"><span>Total</span><b>${fmt(c.totalBags)} bags</b></div>
+</div>
+
+<table>
+  <thead><tr><th>Lote</th><th>Endereço (onde buscar)</th><th class="num">Bags</th><th class="num">Peso/bag (kg)</th><th class="num">Peso (kg)</th></tr></thead>
+  <tbody>
+    ${linhas}
+    <tr class="totais"><td colspan="2">TOTAL</td><td class="num">${fmt(c.totalBags)}</td><td></td><td class="num">${fmt(c.pesoTotalKg)}</td></tr>
+  </tbody>
+</table>
+
+<div class="pesagem">
+  <h2>Pesagem</h2>
+  <div class="linha"><span>Peso da carga (ordem de carregamento)</span><span class="valor">${fmt(c.pesoTotalKg)} kg</span></div>
+  <div class="linha"><span>Tara do veículo</span>${
+    c.taraKg != null
+      ? `<span class="valor">${fmt(c.taraKg)} kg</span>`
+      : `<span class="escrever">&nbsp;</span>`
+  }</div>
+  <div class="linha"><span>Peso bruto (tara + carga)</span>${
+    brutoKg != null
+      ? `<span class="valor">${fmt(brutoKg)} kg</span>`
+      : `<span class="escrever">&nbsp;</span>`
+  }</div>
+</div>
+
+<div class="assin">
+  <div>Operador(a) da balança</div>
+  <div>Motorista</div>
+</div>
+</body></html>`
+
+  abrirParaImpressao(html)
+}
