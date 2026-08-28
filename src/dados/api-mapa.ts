@@ -105,6 +105,89 @@ export async function salvarEnderecos(
   }
 }
 
+export interface DestinoEndereco {
+  armazem: string
+  bloco: string
+  quadra: string
+}
+
+/**
+ * Movimenta um endereço — o lote INTEIRO daquele endereço (bagsAMover null)
+ * ou uma parte (bagsAMover > 0). Regras (28/08/2026):
+ *
+ * - mover tudo: se o destino já tem um endereço da MESMA combinação, funde
+ *   (bags somam quando ambos são conhecidos; qualquer desconhecido vira
+ *   desconhecido) e apaga a origem; senão, só troca o endereço da linha.
+ * - mover parcial: a origem perde X bags (se a contagem dela é conhecida;
+ *   zerou, apaga a linha — se é desconhecida, continua desconhecida) e o
+ *   destino ganha X (fundindo com endereço existente da combinação, mesma
+ *   regra de soma).
+ */
+export async function moverEndereco(params: {
+  origem: EnderecoLote
+  lote: string
+  tratamento: string
+  bagsAMover: number | null
+  destino: DestinoEndereco
+  enderecosDaCombinacao: EnderecoLote[]
+  usuarioId: string
+}): Promise<void> {
+  const { origem, lote, tratamento, bagsAMover, destino, enderecosDaCombinacao, usuarioId } = params
+  const destinoExistente = enderecosDaCombinacao.find(
+    (e) =>
+      e.id !== origem.id &&
+      e.armazem === destino.armazem &&
+      e.bloco === destino.bloco &&
+      e.quadra === destino.quadra,
+  )
+
+  const atualizar = async (id: string, campos: Record<string, unknown>) => {
+    const { error } = await supabase.from('lote_enderecos').update(campos).eq('id', id)
+    erro('mover endereço', error)
+  }
+  const apagar = async (id: string) => {
+    const { error } = await supabase.from('lote_enderecos').delete().eq('id', id)
+    erro('mover endereço (limpar origem)', error)
+  }
+  const inserir = async (campos: Record<string, unknown>) => {
+    const { error } = await supabase
+      .from('lote_enderecos')
+      .insert({ lote, tratamento, criado_por: usuarioId, ...campos })
+    erro('mover endereço (criar destino)', error)
+  }
+
+  const movendoTudo =
+    bagsAMover == null || (origem.bags != null && bagsAMover >= origem.bags)
+
+  if (movendoTudo) {
+    if (destinoExistente) {
+      const bags =
+        destinoExistente.bags != null && origem.bags != null
+          ? destinoExistente.bags + origem.bags
+          : null
+      await atualizar(destinoExistente.id, { bags })
+      await apagar(origem.id)
+    } else {
+      await atualizar(origem.id, { ...destino })
+    }
+    return
+  }
+
+  // parcial
+  if (origem.bags != null) {
+    const resto = origem.bags - bagsAMover
+    if (resto > 0) await atualizar(origem.id, { bags: resto })
+    else await apagar(origem.id)
+  }
+  // origem com contagem desconhecida continua desconhecida — não inventamos número
+  if (destinoExistente) {
+    const bags = destinoExistente.bags != null ? destinoExistente.bags + bagsAMover : null
+    await atualizar(destinoExistente.id, { bags })
+  } else {
+    await inserir({ ...destino, bags: bagsAMover })
+  }
+}
+
 export interface NovaCargaMontada {
   numero: string
   cultivar: string
