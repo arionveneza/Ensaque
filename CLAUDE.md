@@ -463,6 +463,26 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    lista os **pedidos de venda** (agregados por combinação — cliente não é guardado no upload)
    com filtro de liberação financeira. Recurso `expedicao` (ver/importar): PCP e Logística
    importam, Direção vê.
+6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
+   tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`, migração
+   `mapa-montagem-carga.sql`) SEPARADA de `lotes_semente` de propósito: a base de produção
+   assume semente branca. Upload do export de saldo do SAP (SAP.xlsx, com colunas
+   Destinação e Depósito; mesmo arquivo serve ao saldo da tela Ordens) — substituição
+   total: lote zerado some, endereços sobrevivem por upsert. A **Logística endereça**
+   (`lote_enderecos`: Armazém + Bloco + Quadra + bags; um lote pode ter VÁRIOS endereços);
+   fila "Sem localização" mostra os que chegaram sem endereço. **Mapa esquemático** sem
+   planta física: por armazém, cada bloco é uma coluna de quadras — quadra de número
+   MAIOR = frente = acesso fácil; filtros cultivar/tratamento/embalagem acendem os lotes
+   (verde) e apagam o resto; chip vermelho = lote com **Destinação** no SAP. **Montagem de
+   carga (Balança)**: nº da ordem de carregamento + cultivar + tratamento + bags;
+   candidatos ordenados do acesso mais fácil pro difícil; aviso forte ao selecionar lote
+   com Destinação; peso total = Σ bags × peso do bag do lote; a carga fica gravada
+   (`cargas_montadas`/`carga_montada_itens`, sem FK pro lote — registro sobrevive ao lote
+   zerar). Recurso `mapa`: ver (todos) · importar (PCP/Logística/Gestor) · enderecar
+   (Logística/Gestor) · montar_carga (Balança/Logística/Gestor). Pendente: consulta em
+   tempo real ao SAP (a TSI_SALDOS de hoje não devolve a Destinação — precisa de consulta
+   nova no SAP); por ora o upload cobre.
+
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 

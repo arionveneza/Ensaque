@@ -49,7 +49,8 @@ export const CORTE_SALDO_SAP = new Date('2026-01-01T00:00:00')
 const TRATAMENTO_DEPARA_SAP: Record<string, string> = {
   VEP: 'V&P',
 }
-const corrigeTratamentoSap = (bruto: string): string =>
+/** Exportado pro importador do Mapa (mapa.ts) aplicar a MESMA correção. */
+export const corrigeTratamentoSap = (bruto: string): string =>
   TRATAMENTO_DEPARA_SAP[normaliza(bruto)] ?? bruto
 
 export interface ResumoSaldoSap {

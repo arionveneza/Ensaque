@@ -67,9 +67,11 @@ describe('matriz padrao', () => {
         expect(permitidoPadrao('Gestor', recurso, acao)).toBe(true)
   })
 
-  it('Balanca so enxerga veiculos, nada mais', () => {
+  it('Balanca so enxerga veiculos e o mapa (montagem de carga), nada mais', () => {
+    // veiculos desde 15/08/2026; mapa desde 28/08/2026 (a operadora da
+    // balanca monta a carga la) — e no mapa ela NAO importa nem endereca
     for (const [recurso, acoes] of Object.entries(ACOES_POR_RECURSO)) {
-      if (recurso === 'veiculos') continue
+      if (recurso === 'veiculos' || recurso === 'mapa') continue
       for (const acao of acoes)
         expect(
           permitidoPadrao('Balanca', recurso, acao),
@@ -78,6 +80,13 @@ describe('matriz padrao', () => {
     }
     for (const acao of ['ver', 'chamar', 'checklist'])
       expect(permitidoPadrao('Balanca', 'veiculos', acao)).toBe(true)
+    for (const acao of ['ver', 'montar_carga'])
+      expect(permitidoPadrao('Balanca', 'mapa', acao)).toBe(true)
+    for (const acao of ['importar', 'enderecar'])
+      expect(
+        permitidoPadrao('Balanca', 'mapa', acao),
+        `Balanca nao pode ${acao} no mapa`,
+      ).toBe(false)
   })
 
   it('nenhum perfil concede acao que o recurso nao tem', () => {

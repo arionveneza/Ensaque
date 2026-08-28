@@ -21,6 +21,7 @@ const Expedicao = lazy(() => import('@/telas/Expedicao'))
 const Veiculos = lazy(() => import('@/telas/Veiculos'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Mrp = lazy(() => import('@/telas/Mrp'))
+const Mapa = lazy(() => import('@/telas/Mapa'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
 const Painel = lazy(() => import('@/telas/Painel'))
@@ -29,8 +30,8 @@ const SapTeste = lazy(() => import('@/telas/SapTeste'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
-  | 'agrotis' | 'etapas' | 'expedicao' | 'veiculos' | 'indicadores' | 'mrp' | 'cadastros'
-  | 'administracao' | 'sap'
+  | 'agrotis' | 'etapas' | 'expedicao' | 'mapa' | 'veiculos' | 'indicadores' | 'mrp'
+  | 'cadastros' | 'administracao' | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -41,6 +42,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'agrotis', nome: 'AGROTIS' },
   { id: 'etapas', nome: 'Etapas' },
   { id: 'expedicao', nome: 'Expedição' },
+  { id: 'mapa', nome: 'Mapa' },
   { id: 'veiculos', nome: 'Veículos' },
   { id: 'indicadores', nome: 'Indicadores' },
   { id: 'mrp', nome: 'MRP' },
@@ -301,6 +303,7 @@ function Shell() {
             {atual === 'agrotis' && <Agrotis />}
             {atual === 'etapas' && <Etapas />}
             {atual === 'expedicao' && <Expedicao />}
+            {atual === 'mapa' && <Mapa />}
             {atual === 'veiculos' && <Veiculos />}
             {atual === 'indicadores' && <Indicadores />}
             {atual === 'mrp' && <Mrp />}
@@ -382,6 +385,13 @@ function IconeTela({ id }: { id: TelaId }) {
         <svg {...props}>
           <rect x="2" y="6" width="9" height="6" rx="1" />
           <path d="M11 8h2.5l.5 1.5V12h-3zM4 12.5a1 1 0 100 .01M12 12.5a1 1 0 100 .01" />
+        </svg>
+      )
+    case 'mapa':
+      return (
+        <svg {...props}>
+          <path d="M2 4l4-1.5 4 1.5 4-1.5v9.5l-4 1.5-4-1.5-4 1.5z" />
+          <path d="M6 2.5v9.5M10 4v9.5" />
         </svg>
       )
     case 'indicadores':
