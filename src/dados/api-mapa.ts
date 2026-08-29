@@ -313,6 +313,35 @@ export async function listarLotesComprometidos(): Promise<LoteComprometido[]> {
   )
 }
 
+/** Peso de semente já comprometido por ordens de PRODUÇÃO, por lote. */
+export interface ConsumoOrdens {
+  /** lotes_semente.id = o próprio nº do lote (bate com lotes_mapa.lote). */
+  lote_id: string
+  peso_kg: number
+}
+
+/**
+ * Ordens de produção abertas consomem semente branca que o saldo do SAP
+ * ainda mostra (mesma régua do balanço: tudo que não é Apontada — a
+ * apontada já foi lançada e o próximo upload desconta). O loteamento da
+ * carga precisa descontar isso do disponível (pedido do Arion, 29/08/2026).
+ * peso_kg vem da v_ordens (bags × peso do bag DA ORDEM); a conversão pra
+ * bags DO LOTE é no front, dividindo pelo peso_bag_kg do lote no mapa.
+ */
+export async function listarConsumoOrdens(): Promise<ConsumoOrdens[]> {
+  const { data, error } = await supabase
+    .from('v_ordens')
+    .select('lote_id, peso_kg, status')
+    .not('status', 'in', '("Apontada","Excluida")')
+  if (error) return []
+  const porLote = new Map<string, number>()
+  for (const o of (data ?? []) as { lote_id: string | null; peso_kg: number | null }[]) {
+    if (!o.lote_id) continue
+    porLote.set(o.lote_id, (porLote.get(o.lote_id) ?? 0) + (o.peso_kg ?? 0))
+  }
+  return [...porLote.entries()].map(([lote_id, peso_kg]) => ({ lote_id, peso_kg }))
+}
+
 export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
   // itens penduram no PRODUTO (produto_id) — o embed aninhado usa essa FK
   const r = await supabase

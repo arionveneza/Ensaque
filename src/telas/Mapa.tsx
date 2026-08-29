@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from '
 import readXlsxFile from 'read-excel-file/browser'
 import * as m from '@/dados/api-mapa'
 import type {
-  CargaMontadaLinha, EnderecoLote, LoteComprometido, LoteMapaLinha, ProdutoCargaLinha,
+  CargaMontadaLinha, ConsumoOrdens, EnderecoLote, LoteComprometido, LoteMapaLinha,
+  ProdutoCargaLinha,
 } from '@/dados/api-mapa'
 import {
   converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, SEM_TSI, type ResultadoLotesMapa,
@@ -239,6 +240,7 @@ export default function Mapa() {
   const [lotes, setLotes] = useState<LoteMapaLinha[] | null>([])
   const [cargas, setCargas] = useState<CargaMontadaLinha[]>([])
   const [comprometidos, setComprometidos] = useState<LoteComprometido[]>([])
+  const [consumoOrdens, setConsumoOrdens] = useState<ConsumoOrdens[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -249,11 +251,17 @@ export default function Mapa() {
   const [movendo, setMovendo] = useState<Alocacao | null>(null)
 
   const recarregar = () =>
-    Promise.all([m.listarLotesMapa(), m.listarCargasMontadas(), m.listarLotesComprometidos()])
-      .then(([l, c, cp]) => {
+    Promise.all([
+      m.listarLotesMapa(),
+      m.listarCargasMontadas(),
+      m.listarLotesComprometidos(),
+      m.listarConsumoOrdens(),
+    ])
+      .then(([l, c, cp, co]) => {
         setLotes(l)
         setCargas(c)
         setComprometidos(cp)
+        setConsumoOrdens(co)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
 
@@ -462,6 +470,29 @@ export default function Mapa() {
       </>
     )
 
+    // o painel de lotear abre AQUI, logo abaixo da carga referenciada
+    // (pedido do Arion, 29/08/2026 — antes abria acima da lista inteira)
+    const linhaLotear =
+      podeMontar && loteando?.id === c.id ? (
+        <tr key={`${c.id}-lotear`}>
+          <td colSpan={8} className="bg-stone-50 p-3 dark:bg-stone-900/40">
+            <LotearCarga
+              carga={loteando}
+              lotes={todos}
+              alocacoes={aloc}
+              comprometidos={comprometidos}
+              consumoOrdens={consumoOrdens}
+              rascunho={rascunhoLotear}
+              onFechar={() => rascunhoLotear.limpar()}
+              onSalva={(texto) => {
+                setMsg(texto)
+                void recarregar()
+              }}
+            />
+          </td>
+        </tr>
+      ) : null
+
     if (produtos.length === 0) {
       return [
         <tr key={c.id} className="border-t-2 border-stone-200 dark:border-stone-700">
@@ -471,6 +502,7 @@ export default function Mapa() {
           </td>
           {celulasFinais}
         </tr>,
+        linhaLotear,
       ]
     }
 
@@ -522,6 +554,7 @@ export default function Mapa() {
         primeira = false
       })
     }
+    linhas.push(linhaLotear)
     return linhas
   }
 
@@ -733,22 +766,6 @@ export default function Mapa() {
           lotes={todos}
           usuarioId={usuario?.id ?? ''}
           rascunho={rascunhoCarga}
-          onSalva={(texto) => {
-            setMsg(texto)
-            void recarregar()
-          }}
-        />
-      )}
-
-      {/* -------- 2ª etapa: lotear uma carga salva -------- */}
-      {podeMontar && loteando && (
-        <LotearCarga
-          carga={loteando}
-          lotes={todos}
-          alocacoes={aloc}
-          comprometidos={comprometidos}
-          rascunho={rascunhoLotear}
-          onFechar={() => rascunhoLotear.limpar()}
           onSalva={(texto) => {
             setMsg(texto)
             void recarregar()
@@ -1492,12 +1509,13 @@ function MontagemCarga({
  * carga continua "aguardando lotear" e o botão Lotear permanece na lista.
  */
 function LotearCarga({
-  carga, lotes, alocacoes, comprometidos, rascunho, onFechar, onSalva,
+  carga, lotes, alocacoes, comprometidos, consumoOrdens, rascunho, onFechar, onSalva,
 }: {
   carga: CargaMontadaLinha
   lotes: LoteMapaLinha[]
   alocacoes: Alocacao[]
   comprometidos: LoteComprometido[]
+  consumoOrdens: ConsumoOrdens[]
   rascunho: Rascunho<LotearForm>
   onFechar: () => void
   onSalva: (msg: string) => void
@@ -1530,11 +1548,27 @@ function LotearCarga({
         (x) => x.carga_id !== carga.id && x.tratamento === tratamento && x.lote_id === loteId,
       )
       .reduce((s, x) => s + x.bags, 0)
-  const disponivelDe = (p: ProdutoCargaForm, l: LoteMapaLinha) =>
-    Math.max(0, l.bags - usadoFora(p.tratamento, l.lote))
+
+  /**
+   * Saldo real do lote: o do SAP menos outras cargas E menos as ordens de
+   * produção abertas (só semente branca — ordem consome lote SEM TSI; o
+   * peso da ordem vira bags DO LOTE dividindo pelo peso do bag dele).
+   */
+  const saldoDe = (p: ProdutoCargaForm, l: LoteMapaLinha) => {
+    const emCargas = usadoFora(p.tratamento, l.lote)
+    const emOrdens =
+      p.tratamento === SEM_TSI && l.peso_bag_kg > 0
+        ? (consumoOrdens.find((x) => x.lote_id === l.lote)?.peso_kg ?? 0) / l.peso_bag_kg
+        : 0
+    return {
+      emCargas,
+      emOrdens,
+      disponivel: Math.max(0, l.bags - emCargas - emOrdens),
+    }
+  }
 
   const todosSelecionados = produtos.flatMap((p) =>
-    selecionadosDe(p).map((i) => ({ ...i, disponivel: disponivelDe(p, i.lote) })),
+    selecionadosDe(p).map((i) => ({ ...i, disponivel: saldoDe(p, i.lote).disponivel })),
   )
   // bags vazio/0 derrubaria o check (bags > 0) do banco — travar antes
   const itensInvalidos = todosSelecionados.filter((i) => !(Number(i.bags) > 0))
@@ -1596,12 +1630,12 @@ function LotearCarga({
   }
 
   return (
-    <Cartao
-      titulo={`Lotear carga ${carga.numero}`}
-      acoes={<Botao onClick={onFechar}>Fechar sem salvar</Botao>}
-      className="mb-5"
-    >
-      <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+    <div className="rounded-lg border-2 border-green-700/40 bg-white p-4 dark:border-green-500/30 dark:bg-stone-900">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-base font-semibold">Lotear carga {carga.numero}</h3>
+        <Botao onClick={onFechar}>Fechar sem salvar</Botao>
+      </div>
+      <p className="mt-1 mb-3 text-sm text-stone-500 dark:text-stone-400">
         {[carga.placa, carga.cliente].filter(Boolean).join(' · ') || 'sem placa/cliente'} ·
         escolha os lotes de cada produto e salve — produto pode ficar pra depois (a carga
         continua aguardando lotear).
@@ -1617,7 +1651,7 @@ function LotearCarga({
             lotes={lotes}
             alocacoes={alocacoes}
             selecionados={selecionadosDe(p)}
-            disponivelDe={(l) => disponivelDe(p, l)}
+            saldoDe={(l) => saldoDe(p, l)}
             aberto={aberto === p.chave}
             onAlternar={() => setAberto((a) => (a === p.chave ? null : p.chave))}
             onMudar={(patch) => mudarProduto(p.chave, patch)}
@@ -1683,7 +1717,7 @@ function LotearCarga({
           </Botao>
         </div>
       </div>
-    </Cartao>
+    </div>
   )
 }
 
@@ -1772,13 +1806,13 @@ function ProdutoLinha({
  * descontando o que outras cargas tomaram (29/08/2026).
  */
 function ProdutoLotes({
-  produto: p, lotes, alocacoes, selecionados, disponivelDe, aberto, onAlternar, onMudar,
+  produto: p, lotes, alocacoes, selecionados, saldoDe, aberto, onAlternar, onMudar,
 }: {
   produto: ProdutoCargaForm
   lotes: LoteMapaLinha[]
   alocacoes: Alocacao[]
   selecionados: (ItemCargaForm & { lote: LoteMapaLinha })[]
-  disponivelDe: (l: LoteMapaLinha) => number
+  saldoDe: (l: LoteMapaLinha) => { disponivel: number; emCargas: number; emOrdens: number }
   aberto: boolean
   onAlternar: () => void
   onMudar: (patch: Partial<ProdutoCargaForm>) => void
@@ -1792,10 +1826,10 @@ function ProdutoLotes({
       .map((l) => ({
         lote: l,
         frente: bagsNaFrenteDe(l, alocacoes),
-        disponivel: disponivelDe(l),
+        ...saldoDe(l),
       }))
       .sort((a, b) => {
-        // esgotado em outras cargas vai pro fim; depois, menos material na
+        // esgotado (cargas + ordens) vai pro fim; depois, menos material na
         // frente primeiro; sem endereço numérico não ranqueia (fim)
         if (a.disponivel > 0 !== b.disponivel > 0) return a.disponivel > 0 ? -1 : 1
         if ((a.frente == null) !== (b.frente == null)) return a.frente == null ? 1 : -1
@@ -1906,7 +1940,10 @@ function ProdutoLotes({
                 const l = c.lote
                 const jaSelecionado = p.itens.some((i) => i.loteId === l.lote)
                 const esgotado = c.disponivel <= 0
-                const emOutras = l.bags - c.disponivel
+                const detalhes = [
+                  c.emCargas > 0 ? `${inteiro(c.emCargas)} em outras cargas` : null,
+                  c.emOrdens > 0 ? `${inteiro(c.emOrdens)} em ordens de produção` : null,
+                ].filter(Boolean)
                 return (
                   <button
                     key={chaveDe(l)}
@@ -1924,8 +1961,8 @@ function ProdutoLotes({
                     <span className="min-w-0">
                       <span className="font-medium">{l.lote}</span> ·{' '}
                       <b>{inteiro(c.disponivel)} bg disp.</b>
-                      {emOutras > 0 && (
-                        <span className="text-stone-500"> ({inteiro(emOutras)} em outras cargas)</span>
+                      {detalhes.length > 0 && (
+                        <span className="text-stone-500"> ({detalhes.join(' · ')})</span>
                       )}
                       {l.classificacao && (
                         <span className="ml-1.5">
@@ -1943,7 +1980,7 @@ function ProdutoLotes({
                         ? <Tag cor="perigo">{l.destinacao}</Tag>
                         : <Tag cor="ok">livre</Tag>}
                       <span className={jaSelecionado || esgotado ? 'text-stone-400' : 'font-medium text-green-800 dark:text-green-400'}>
-                        {jaSelecionado ? 'na carga' : esgotado ? 'esgotado em cargas' : '+ adicionar'}
+                        {jaSelecionado ? 'na carga' : esgotado ? 'esgotado' : '+ adicionar'}
                       </span>
                     </span>
                   </button>
@@ -1956,7 +1993,7 @@ function ProdutoLotes({
             <div className="mt-3">
               <Tabela cabecalho={['Lote', 'Classe', 'Endereço', '#Bags', '#Peso (kg)', 'Destinação', '']}>
                 {selecionados.map((i) => {
-                  const disponivel = disponivelDe(i.lote)
+                  const { disponivel } = saldoDe(i.lote)
                   const excede = Number(i.bags) > disponivel
                   return (
                     <tr key={i.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
