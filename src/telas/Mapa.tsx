@@ -102,7 +102,7 @@ interface ProdutoCargaForm {
   itens: ItemCargaForm[]
 }
 
-/** Rascunho da carga em montagem — editandoId preenchido = editando carga salva. */
+/** Rascunho da MONTAGEM (1ª etapa) — editandoId preenchido = editando carga salva. */
 interface CargaForm {
   numero: string
   placa: string
@@ -110,13 +110,23 @@ interface CargaForm {
   tara: string
   produtos: ProdutoCargaForm[]
   editandoId: string
-  /** 1ª etapa monta a carga inteira (produtos); a 2ª escolhe os lotes (29/08/2026). */
-  etapa: 'produtos' | 'lotes'
 }
 
 const CARGA_VAZIA: CargaForm = {
-  numero: '', placa: '', cliente: '', tara: '', produtos: [], editandoId: '', etapa: 'produtos',
+  numero: '', placa: '', cliente: '', tara: '', produtos: [], editandoId: '',
 }
+
+/**
+ * Rascunho do LOTEAMENTO (2ª etapa, 29/08/2026) — etapa separada, com o
+ * próprio Salvar: a montagem grava a carga "aguardando lotear" e o Lotear
+ * abre a carga salva pra escolher os lotes. cargaId vazio = nada aberto.
+ */
+interface LotearForm {
+  cargaId: string
+  produtos: ProdutoCargaForm[]
+}
+
+const LOTEAR_VAZIO: LotearForm = { cargaId: '', produtos: [] }
 
 const novaChave = (): string =>
   globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
@@ -147,7 +157,6 @@ function migraRascunhoCargaAntigo() {
       cliente: typeof v.cliente === 'string' ? v.cliente : '',
       tara: typeof v.tara === 'string' ? v.tara : '',
       editandoId: typeof v.editandoId === 'string' ? v.editandoId : '',
-      etapa: 'produtos',
       produtos: temConteudo
         ? [{
             chave: novaChave(),
@@ -232,10 +241,10 @@ export default function Mapa() {
     () => void recarregar(),
   )
 
-  // rascunho da carga em montagem mora AQUI (não no cartão) de propósito:
-  // o "+ Carga" do detalhe da posição e o "editar" das cargas salvas
-  // escrevem nele de fora (pedido do Arion, 28/08/2026)
+  // rascunhos moram AQUI (não nos cartões) de propósito: o "editar" e o
+  // "lotear" das cargas salvas escrevem neles de fora (28–29/08/2026)
   const rascunhoCarga = useRascunho<CargaForm>('mapa.carga', CARGA_VAZIA)
+  const rascunhoLotear = useRascunho<LotearForm>('mapa.lotear', LOTEAR_VAZIO)
 
   // -------- filtros do mapa --------
   const [fCultivar, setFCultivar] = useState('')
@@ -283,38 +292,7 @@ export default function Mapa() {
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
   const aloc = useMemo(() => alocar(todos), [todos])
 
-  /**
-   * "+ Carga" do detalhe da posição: joga o lote na carga em montagem, no
-   * produto da combinação dele — criando o produto se ainda não existe
-   * (a carga leva vários produtos, 28/08/2026).
-   */
-  function adicionarNaCarga(l: LoteMapaLinha) {
-    const c = rascunhoCarga.valor
-    const existente = c.produtos.find(
-      (p) => p.cultivar === l.cultivar && p.tratamento === l.tratamento,
-    )
-    if (existente?.itens.some((i) => i.loteId === l.lote)) {
-      setMsg(`${l.lote} já está na carga em montagem.`)
-      return
-    }
-    const item = { loteId: l.lote, bags: String(l.bags) }
-    rascunhoCarga.definir({
-      etapa: 'lotes',
-      produtos: existente
-        ? c.produtos.map((p) =>
-            p.chave === existente.chave ? { ...p, itens: [...p.itens, item] } : p,
-          )
-        : [
-            ...c.produtos,
-            { chave: novaChave(), cultivar: l.cultivar, tratamento: l.tratamento, bags: '', itens: [item] },
-          ],
-    })
-    setMsg(
-      `${l.lote} adicionado à carga em montagem (produto ${l.cultivar} · ${rotuloTratamento(l.tratamento)}).`,
-    )
-  }
-
-  /** Reabre uma carga salva pra edição — o rascunho vira a carga. */
+  /** Reabre uma carga salva pra edição do CABEÇALHO e dos produtos (1ª etapa). */
   function editarCarga(c: CargaMontadaLinha) {
     rascunhoCarga.substituir({
       numero: c.numero,
@@ -329,16 +307,33 @@ export default function Mapa() {
         itens: p.carga_montada_itens.map((i) => ({ loteId: i.lote_id, bags: String(i.bags) })),
       })),
       editandoId: c.id,
-      // quem edita normalmente vem completar os lotes — abre direto na 2ª etapa
-      etapa: 'lotes',
     })
     setMsg(`Editando a carga ${c.numero} — salve na Montagem de carga abaixo.`)
   }
+
+  /** Abre a 2ª etapa: escolher os lotes de uma carga JÁ SALVA. */
+  function lotearCarga(c: CargaMontadaLinha) {
+    rascunhoLotear.substituir({
+      cargaId: c.id,
+      produtos: c.carga_montada_produtos.map((p) => ({
+        chave: p.id,
+        cultivar: p.cultivar,
+        tratamento: p.tratamento,
+        bags: String(p.bags_solicitados || ''),
+        itens: p.carga_montada_itens.map((i) => ({ loteId: i.lote_id, bags: String(i.bags) })),
+      })),
+    })
+    setMsg(`Loteando a carga ${c.numero} — escolha os lotes e salve.`)
+  }
+
+  // derivado do rascunho: sobrevive a F5, e some sozinho se a carga sumir
+  const loteando = cargas.find((c) => c.id === rascunhoLotear.valor.cargaId) ?? null
 
   async function excluirCarga(c: CargaMontadaLinha) {
     if (!confirm(`Excluir a ordem de carregamento ${c.numero}?`)) return
     try {
       await m.excluirCargaMontada(c.id)
+      if (rascunhoLotear.valor.cargaId === c.id) rascunhoLotear.limpar()
       setMsg(`Carga ${c.numero} excluída.`)
       await recarregar()
     } catch (e) {
@@ -395,11 +390,19 @@ export default function Mapa() {
       (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
       0,
     )
+    // aguardando lotear = algum produto ainda sem lote (status derivado)
+    const pendente =
+      produtos.length === 0 || produtos.some((p) => p.carga_montada_itens.length === 0)
     const celulaCarga = (
       <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
         <span className="font-medium">{c.numero}</span>
         <span className="block text-xs text-stone-500">
           {inteiro(totalBags)} bg · {inteiro(c.peso_total_kg)} kg
+        </span>
+        <span className="mt-1 block">
+          {pendente
+            ? <Tag cor="alerta">aguardando lotear</Tag>
+            : <Tag cor="ok">loteada</Tag>}
         </span>
       </td>
     )
@@ -413,6 +416,9 @@ export default function Mapa() {
         </td>
         <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
           <div className="flex justify-end gap-1.5 whitespace-nowrap">
+            {podeMontar && pendente && (
+              <Botao variante="primario" onClick={() => lotearCarga(c)}>Lotear</Botao>
+            )}
             <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
             {podeMontar && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
             {podeMontar && (
@@ -694,12 +700,26 @@ export default function Mapa() {
         />
       </Cartao>
 
-      {/* -------- montagem de carga -------- */}
+      {/* -------- 1ª etapa: montagem de carga -------- */}
       {podeMontar && (
         <MontagemCarga
           lotes={todos}
           usuarioId={usuario?.id ?? ''}
           rascunho={rascunhoCarga}
+          onSalva={(texto) => {
+            setMsg(texto)
+            void recarregar()
+          }}
+        />
+      )}
+
+      {/* -------- 2ª etapa: lotear uma carga salva -------- */}
+      {podeMontar && loteando && (
+        <LotearCarga
+          carga={loteando}
+          lotes={todos}
+          rascunho={rascunhoLotear}
+          onFechar={() => rascunhoLotear.limpar()}
           onSalva={(texto) => {
             setMsg(texto)
             void recarregar()
@@ -724,7 +744,6 @@ export default function Mapa() {
           posicao={posicao}
           alocacoes={naPosicao}
           podeEnderecar={podeEnderecar}
-          podeMontar={podeMontar}
           onFechar={() => setPosicao(null)}
           onMover={(a) => {
             setMovendo(a)
@@ -732,10 +751,6 @@ export default function Mapa() {
           }}
           onEnderecar={(l) => {
             setEnderecando(l)
-            setPosicao(null)
-          }}
-          onAdicionarCarga={(l) => {
-            adicionarNaCarga(l)
             setPosicao(null)
           }}
         />
@@ -974,18 +989,16 @@ function MapaGrade({
   )
 }
 
-/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
+/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover. */
 function ModalPosicao({
-  posicao, alocacoes, podeEnderecar, podeMontar, onFechar, onMover, onEnderecar, onAdicionarCarga,
+  posicao, alocacoes, podeEnderecar, onFechar, onMover, onEnderecar,
 }: {
   posicao: Posicao
   alocacoes: Alocacao[]
   podeEnderecar: boolean
-  podeMontar: boolean
   onFechar: () => void
   onMover: (a: Alocacao) => void
   onEnderecar: (l: LoteMapaLinha) => void
-  onAdicionarCarga: (l: LoteMapaLinha) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1021,17 +1034,10 @@ function ModalPosicao({
                   {a.estimado && ' · estimado — sem contagem por endereço'}
                 </p>
               </div>
-              {(podeEnderecar || podeMontar) && (
+              {podeEnderecar && (
                 <div className="flex shrink-0 gap-2">
-                  {podeMontar && (
-                    <Botao onClick={() => onAdicionarCarga(a.lote)}>+ Carga</Botao>
-                  )}
-                  {podeEnderecar && (
-                    <>
-                      <Botao onClick={() => onMover(a)}>Mover</Botao>
-                      <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
-                    </>
-                  )}
+                  <Botao onClick={() => onMover(a)}>Mover</Botao>
+                  <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
                 </div>
               )}
             </div>
@@ -1217,12 +1223,11 @@ function ModalEnderecos({
 }
 
 /**
- * Montagem de carga da Balança, em DUAS etapas (pedido do Arion,
- * 28/08/2026): primeiro a ordem de carregamento — cabeçalho e cada PRODUTO
- * que vai na carga (cultivar + tratamento + bags) — e depois os lotes,
- * produto a produto. Produto sem lote pode ser salvo: a ordem nasce antes,
- * os lotes entram editando a carga. Rascunho persistente vem do pai — o
- * "+ Carga" do mapa e o editar das cargas salvas escrevem nele.
+ * 1ª etapa — MONTAGEM da carga, com o próprio Salvar (pedido do Arion,
+ * 29/08/2026): cabeçalho + cada produto (cultivar, tratamento e quantidade
+ * obrigatórios), SEM lote nenhum. Salvar grava a carga "aguardando lotear";
+ * os lotes são a 2ª etapa (LotearCarga), aberta pelo botão Lotear da lista.
+ * Ao editar, os lotes já loteados são carregados invisíveis e preservados.
  */
 function MontagemCarga({
   lotes, usuarioId, rascunho, onSalva,
@@ -1232,7 +1237,7 @@ function MontagemCarga({
   rascunho: Rascunho<CargaForm>
   onSalva: (msg: string) => void
 }) {
-  const { numero, placa, cliente, tara, produtos, editandoId, etapa } = rascunho.valor
+  const { numero, placa, cliente, tara, produtos, editandoId } = rascunho.valor
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const definir = rascunho.definir
@@ -1265,32 +1270,17 @@ function MontagemCarga({
       (o, oidx) => oidx < idx && o.cultivar === p.cultivar && o.tratamento === p.tratamento,
     ),
   )
+  // os itens vêm carregados invisíveis no Editar — o peso salvo sai deles
   const todosSelecionados = completos.flatMap((p) => selecionadosDe(p))
-  // bags vazio/0 derrubaria o check (bags > 0) do banco — travar antes
-  const itensInvalidos = todosSelecionados.filter((i) => !(Number(i.bags) > 0))
-  const totalBags = todosSelecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
   const totalPesoKg = todosSelecionados.reduce(
     (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
     0,
   )
-  const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
+  const totalPedido = completos.reduce((s, p) => s + (Number(p.bags) || 0), 0)
   // carga editada pode citar lote que zerou no SAP desde então — avisar, não sumir calado
   const foraDoMapa = completos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
   const bloqueado =
-    duplicados.length > 0 ||
-    incompletos.length > 0 ||
-    semQuantidade.length > 0 ||
-    itensInvalidos.length > 0
-
-  // pode avançar pra 2ª etapa: carga inteira montada, sem pendência de produto
-  const prontoParaLotes =
-    !!numero.trim() &&
-    completos.length > 0 &&
-    incompletos.length === 0 &&
-    semQuantidade.length === 0 &&
-    duplicados.length === 0
-  // rascunho estranho (ex.: produtos todos removidos na 2ª etapa) volta pra 1ª
-  const etapaEfetiva = etapa === 'lotes' && completos.length === 0 ? 'produtos' : etapa
+    duplicados.length > 0 || incompletos.length > 0 || semQuantidade.length > 0
 
   async function salvar() {
     if (!numero.trim() || completos.length === 0 || bloqueado) return
@@ -1320,7 +1310,12 @@ function MontagemCarga({
     try {
       if (editandoId) await m.atualizarCargaMontada(editandoId, carga, produtosGravar)
       else await m.criarCargaMontada(carga, produtosGravar, usuarioId)
-      const texto = editandoId ? `Carga ${carga.numero} atualizada.` : 'Carga gravada.'
+      const pendentes = produtosGravar.filter((x) => x.itens.length === 0).length
+      const texto = editandoId
+        ? `Carga ${carga.numero} atualizada.`
+        : pendentes > 0
+          ? `Carga ${carga.numero} gravada — aguardando lotear.`
+          : `Carga ${carga.numero} gravada.`
       rascunho.limpar()
       onSalva(texto)
     } catch (e) {
@@ -1373,169 +1368,255 @@ function MontagemCarga({
         />
       </div>
 
-      {etapaEfetiva === 'produtos' ? (
-        <>
-          {/* 1ª etapa: a carga INTEIRA — todos os produtos, nenhum lote ainda */}
-          <p className="mt-4 mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            1ª etapa · Produtos da carga ({completos.length})
-          </p>
-          {produtos.length === 0 && (
-            <p className="mb-1 text-sm text-stone-500 dark:text-stone-400">
-              Monte a carga inteira primeiro — cultivar, tratamento e quantidade de cada
-              produto. Os lotes são escolhidos todos juntos, na etapa seguinte.
-            </p>
-          )}
-          <div className="space-y-2">
-            {produtos.map((p) => (
-              <ProdutoLinha
-                key={p.chave}
-                produto={p}
-                lotes={lotes}
-                cultivares={cultivares}
-                duplicado={duplicados.includes(p)}
-                onMudar={(patch) => mudarProduto(p.chave, patch)}
-                onRemover={() => removerProduto(p.chave)}
-              />
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => definir({ produtos: [...produtos, produtoVazio()] })}
-            className="mt-2 text-sm text-green-800 underline dark:text-green-400"
-          >
-            + adicionar produto
-          </button>
-
-          {duplicados.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="bloqueio">
-                Produto repetido na carga:{' '}
-                {duplicados.map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`).join(' · ')}
-                {' '}— junte as quantidades numa linha só.
-              </Aviso>
-            </div>
-          )}
-          {produtos.length > 0 && incompletos.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                {incompletos.length} produto(s) sem cultivar ou tratamento — complete ou
-                remova (×) antes de avançar.
-              </Aviso>
-            </div>
-          )}
-          {semQuantidade.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                A quantidade de bags é obrigatória — falta em:{' '}
-                {semQuantidade
-                  .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`)
-                  .join(' · ')}
-              </Aviso>
-            </div>
-          )}
-
-          {produtos.length > 0 && (
-            <div className="mt-4 flex gap-2">
-              <Botao
-                variante="primario"
-                disabled={!prontoParaLotes}
-                onClick={() => definir({ etapa: 'lotes' })}
-              >
-                Escolher lotes →
-              </Botao>
-              <Botao onClick={() => rascunho.limpar()}>Limpar</Botao>
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          {/* 2ª etapa: os lotes disponíveis, produto a produto */}
-          <div className="mt-4 mb-1 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-              2ª etapa · Lotes por produto
-            </p>
-            <button
-              type="button"
-              onClick={() => definir({ etapa: 'produtos' })}
-              className="text-sm text-green-800 underline dark:text-green-400"
-            >
-              ← voltar aos produtos
-            </button>
-          </div>
-          <div className="space-y-3">
-            {completos.map((p) => (
-              <ProdutoLotes
-                key={p.chave}
-                produto={p}
-                lotes={lotes}
-                selecionados={selecionadosDe(p)}
-                onMudar={(patch) => mudarProduto(p.chave, patch)}
-              />
-            ))}
-          </div>
-
-          {incompletos.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                {incompletos.length} produto(s) incompleto(s) da 1ª etapa — volte e
-                complete ou remova antes de salvar.
-              </Aviso>
-            </div>
-          )}
-          {semQuantidade.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                A quantidade de bags é obrigatória — falta em:{' '}
-                {semQuantidade
-                  .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`)
-                  .join(' · ')}
-              </Aviso>
-            </div>
-          )}
-          {comDestinacao.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="bloqueio">
-                <b>Atenção:</b> lote(s) com DESTINAÇÃO no SAP selecionado(s):{' '}
-                {comDestinacao.map((i) => `${i.loteId} → ${i.lote.destinacao}`).join(' · ')}
-              </Aviso>
-            </div>
-          )}
-          {foraDoMapa.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                Fora do mapa (saíram do saldo do SAP) e por isso FORA da carga:{' '}
-                {foraDoMapa.map((i) => i.loteId).join(' · ')}
-              </Aviso>
-            </div>
-          )}
-          {itensInvalidos.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                Lote(s) com bags em branco ou zero:{' '}
-                {itensInvalidos.map((i) => i.loteId).join(' · ')} — informe a quantidade ou
-                remova o lote.
-              </Aviso>
-            </div>
-          )}
-
-          <div className="mt-4">
-            <p className="text-sm font-medium text-stone-600 dark:text-stone-300">
-              Total da carga: <b>{inteiro(totalBags)} bags</b> ·{' '}
-              <b>{inteiro(totalPesoKg)} kg</b> ({n(totalPesoKg / 1000, 1)} t)
-            </p>
-            <div className="mt-3 flex gap-2">
-              <Botao
-                variante="primario"
-                disabled={salvando || !numero.trim() || bloqueado}
-                onClick={salvar}
-              >
-                {salvando ? 'gravando…' : editandoId ? 'Salvar alterações' : 'Salvar carga'}
-              </Botao>
-              <Botao onClick={() => rascunho.limpar()}>Limpar</Botao>
-            </div>
-          </div>
-        </>
+      {/* a carga inteira — todos os produtos, nenhum lote nesta etapa */}
+      <p className="mt-4 mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
+        Produtos da carga ({completos.length})
+      </p>
+      {produtos.length === 0 && (
+        <p className="mb-1 text-sm text-stone-500 dark:text-stone-400">
+          Monte a carga — cultivar, tratamento e quantidade de cada produto — e salve.
+          A carga fica <b>aguardando lotear</b>; os lotes são escolhidos depois, pelo
+          botão Lotear da lista de cargas.
+        </p>
       )}
+      <div className="space-y-2">
+        {produtos.map((p) => (
+          <ProdutoLinha
+            key={p.chave}
+            produto={p}
+            lotes={lotes}
+            cultivares={cultivares}
+            duplicado={duplicados.includes(p)}
+            onMudar={(patch) => mudarProduto(p.chave, patch)}
+            onRemover={() => removerProduto(p.chave)}
+          />
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => definir({ produtos: [...produtos, produtoVazio()] })}
+        className="mt-2 text-sm text-green-800 underline dark:text-green-400"
+      >
+        + adicionar produto
+      </button>
+
+      {duplicados.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            Produto repetido na carga:{' '}
+            {duplicados.map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`).join(' · ')}
+            {' '}— junte as quantidades numa linha só.
+          </Aviso>
+        </div>
+      )}
+      {produtos.length > 0 && incompletos.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            {incompletos.length} produto(s) sem cultivar ou tratamento — complete ou
+            remova (×) antes de salvar.
+          </Aviso>
+        </div>
+      )}
+      {semQuantidade.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            A quantidade de bags é obrigatória — falta em:{' '}
+            {semQuantidade
+              .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`)
+              .join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {foraDoMapa.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            Lote(s) desta carga que saíram do saldo do SAP e por isso saem da carga ao
+            salvar: {foraDoMapa.map((i) => i.loteId).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+
+      {produtos.length > 0 && (
+        <div className="mt-4">
+          <p className="text-sm font-medium text-stone-600 dark:text-stone-300">
+            Total pedido: <b>{inteiro(totalPedido)} bags</b>
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Botao
+              variante="primario"
+              disabled={salvando || !numero.trim() || completos.length === 0 || bloqueado}
+              onClick={salvar}
+            >
+              {salvando ? 'gravando…' : editandoId ? 'Salvar alterações' : 'Salvar carga'}
+            </Botao>
+            <Botao onClick={() => rascunho.limpar()}>Limpar</Botao>
+          </div>
+        </div>
+      )}
+    </Cartao>
+  )
+}
+
+/**
+ * 2ª etapa — LOTEAR uma carga já salva, com o próprio Salvar (29/08/2026):
+ * escolhe os lotes produto a produto e grava. Sobrou produto sem lote, a
+ * carga continua "aguardando lotear" e o botão Lotear permanece na lista.
+ */
+function LotearCarga({
+  carga, lotes, rascunho, onFechar, onSalva,
+}: {
+  carga: CargaMontadaLinha
+  lotes: LoteMapaLinha[]
+  rascunho: Rascunho<LotearForm>
+  onFechar: () => void
+  onSalva: (msg: string) => void
+}) {
+  const { produtos } = rascunho.valor
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
+  const mudarProduto = (chave: string, patch: Partial<ProdutoCargaForm>) =>
+    rascunho.definir({
+      produtos: produtos.map((p) => (p.chave === chave ? { ...p, ...patch } : p)),
+    })
+
+  const loteDe = (p: ProdutoCargaForm, loteId: string) =>
+    lotes.find((l) => l.lote === loteId && l.tratamento === p.tratamento)
+  const selecionadosDe = (p: ProdutoCargaForm) =>
+    p.itens
+      .map((i) => ({ ...i, lote: loteDe(p, i.loteId) }))
+      .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
+
+  const todosSelecionados = produtos.flatMap((p) => selecionadosDe(p))
+  // bags vazio/0 derrubaria o check (bags > 0) do banco — travar antes
+  const itensInvalidos = todosSelecionados.filter((i) => !(Number(i.bags) > 0))
+  const semQuantidade = produtos.filter((p) => !(Number(p.bags) > 0))
+  const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
+  const foraDoMapa = produtos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
+  const totalBags = todosSelecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
+  const totalPesoKg = todosSelecionados.reduce(
+    (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
+    0,
+  )
+  const bloqueado = itensInvalidos.length > 0 || semQuantidade.length > 0
+
+  async function salvar() {
+    if (bloqueado) return
+    setSalvando(true)
+    setErro(null)
+    const produtosGravar = produtos.map((p) => {
+      const sel = selecionadosDe(p)
+      return {
+        cultivar: p.cultivar,
+        tratamento: p.tratamento,
+        bags_solicitados: Number(p.bags) || 0,
+        itens: sel.map((i) => ({
+          lote_id: i.loteId,
+          bags: Number(i.bags) || 0,
+          peso_kg: Math.round((Number(i.bags) || 0) * i.lote.peso_bag_kg * 100) / 100,
+          destinacao: i.lote.destinacao,
+        })),
+      }
+    })
+    try {
+      await m.atualizarCargaMontada(
+        carga.id,
+        {
+          numero: carga.numero,
+          peso_total_kg: Math.round(totalPesoKg * 100) / 100,
+          placa: carga.placa,
+          cliente: carga.cliente,
+          tara_kg: carga.tara_kg,
+        },
+        produtosGravar,
+      )
+      const pendentes = produtosGravar.filter((x) => x.itens.length === 0).length
+      rascunho.limpar()
+      onSalva(
+        pendentes > 0
+          ? `Carga ${carga.numero} salva — ${pendentes} produto(s) ainda sem lote.`
+          : `Carga ${carga.numero} loteada.`,
+      )
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Cartao
+      titulo={`Lotear carga ${carga.numero}`}
+      acoes={<Botao onClick={onFechar}>Fechar sem salvar</Botao>}
+      className="mb-5"
+    >
+      <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+        {[carga.placa, carga.cliente].filter(Boolean).join(' · ') || 'sem placa/cliente'} ·
+        escolha os lotes de cada produto e salve — produto pode ficar pra depois (a carga
+        continua aguardando lotear).
+      </p>
+
+      {erro && <Erro>{erro}</Erro>}
+
+      <div className="space-y-3">
+        {produtos.map((p) => (
+          <ProdutoLotes
+            key={p.chave}
+            produto={p}
+            lotes={lotes}
+            selecionados={selecionadosDe(p)}
+            onMudar={(patch) => mudarProduto(p.chave, patch)}
+          />
+        ))}
+      </div>
+
+      {semQuantidade.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            A quantidade pedida é obrigatória — falta em:{' '}
+            {semQuantidade
+              .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`)
+              .join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {comDestinacao.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            <b>Atenção:</b> lote(s) com DESTINAÇÃO no SAP selecionado(s):{' '}
+            {comDestinacao.map((i) => `${i.loteId} → ${i.lote.destinacao}`).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {foraDoMapa.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            Fora do mapa (saíram do saldo do SAP) e por isso FORA da carga:{' '}
+            {foraDoMapa.map((i) => i.loteId).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {itensInvalidos.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            Lote(s) com bags em branco ou zero:{' '}
+            {itensInvalidos.map((i) => i.loteId).join(' · ')} — informe a quantidade ou
+            remova o lote.
+          </Aviso>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <p className="text-sm font-medium text-stone-600 dark:text-stone-300">
+          Total da carga: <b>{inteiro(totalBags)} bags</b> ·{' '}
+          <b>{inteiro(totalPesoKg)} kg</b> ({n(totalPesoKg / 1000, 1)} t)
+        </p>
+        <div className="mt-3 flex gap-2">
+          <Botao variante="primario" disabled={salvando || bloqueado} onClick={salvar}>
+            {salvando ? 'gravando…' : 'Salvar lotes'}
+          </Botao>
+        </div>
+      </div>
     </Cartao>
   )
 }
