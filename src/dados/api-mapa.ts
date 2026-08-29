@@ -188,12 +188,14 @@ export async function moverEndereco(params: {
   }
 }
 
+/**
+ * A carga leva VÁRIOS produtos (decisão do Arion, 28/08/2026): primeiro se
+ * monta a ordem de carregamento com cada produto (cultivar + tratamento +
+ * bags pedidos) e depois se escolhem os lotes, produto a produto. O
+ * cabeçalho não tem mais combinação única — migração carga-por-produto.sql.
+ */
 export interface NovaCargaMontada {
   numero: string
-  cultivar: string
-  /** 'SEM TSI' = semente branca. */
-  tratamento: string
-  bags_solicitados: number
   peso_total_kg: number
   /** Placa/cliente/tara: saem na ordem de carregamento impressa (28/08/2026). */
   placa: string | null
@@ -209,59 +211,52 @@ export interface ItemCargaMontada {
   destinacao: string | null
 }
 
+export interface ProdutoCargaMontada {
+  cultivar: string
+  /** 'SEM TSI' = semente branca. */
+  tratamento: string
+  /** Quanto foi PEDIDO — os lotes escolhidos podem ainda não cobrir tudo. */
+  bags_solicitados: number
+  itens: ItemCargaMontada[]
+}
+
 /**
- * placa/cliente/tara nasceram depois (carga-placa-cliente.sql): na janela
- * entre publicar o front e rodar o SQL, grava sem eles em vez de travar —
- * mesmo padrão do cooperado em importarPedidos.
+ * Toda gravação passa pela RPC salvar_carga_montada (transacional, migração
+ * carga-por-produto.sql): criar/editar em requisições separadas deixava
+ * carga órfã ou apagava os lotes salvos quando uma falhava no meio (achado
+ * da revisão de 28/08/2026). SECURITY INVOKER — a RLS vale pra quem chama.
  */
-const semCamposNovos = (c: NovaCargaMontada) => {
-  const { placa: _p, cliente: _c, tara_kg: _t, ...resto } = c
-  return resto
+async function salvarViaRpc(
+  id: string | null,
+  carga: NovaCargaMontada,
+  produtos: ProdutoCargaMontada[],
+  usuarioId: string | null,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('salvar_carga_montada', {
+    p_id: id,
+    p_carga: carga,
+    p_produtos: produtos,
+    p_usuario: usuarioId,
+  })
+  erro('salvar carga montada — a migração carga-por-produto.sql já rodou?', error)
+  return data as string
 }
 
 export async function criarCargaMontada(
   carga: NovaCargaMontada,
-  itens: ItemCargaMontada[],
+  produtos: ProdutoCargaMontada[],
   usuarioId: string,
 ): Promise<string> {
-  let ins = await supabase
-    .from('cargas_montadas')
-    .insert({ ...carga, criada_por: usuarioId })
-    .select('id')
-    .single()
-  if (ins.error?.code === 'PGRST204') {
-    ins = await supabase
-      .from('cargas_montadas')
-      .insert({ ...semCamposNovos(carga), criada_por: usuarioId })
-      .select('id')
-      .single()
-  }
-  erro('criar carga montada', ins.error)
-  const cargaId = (ins.data as { id: string }).id
-  const itensIns = await supabase
-    .from('carga_montada_itens')
-    .insert(itens.map((i) => ({ ...i, carga_id: cargaId })))
-  erro('gravar itens da carga', itensIns.error)
-  return cargaId
+  return salvarViaRpc(null, carga, produtos, usuarioId)
 }
 
-/** Edita uma carga salva: atualiza o cabeçalho e SUBSTITUI os itens. */
+/** Edita uma carga salva: atualiza o cabeçalho e SUBSTITUI produtos e lotes. */
 export async function atualizarCargaMontada(
   id: string,
   carga: NovaCargaMontada,
-  itens: ItemCargaMontada[],
+  produtos: ProdutoCargaMontada[],
 ): Promise<void> {
-  let up = await supabase.from('cargas_montadas').update(carga).eq('id', id)
-  if (up.error?.code === 'PGRST204') {
-    up = await supabase.from('cargas_montadas').update(semCamposNovos(carga)).eq('id', id)
-  }
-  erro('atualizar carga montada', up.error)
-  const del = await supabase.from('carga_montada_itens').delete().eq('carga_id', id)
-  erro('limpar itens da carga', del.error)
-  const ins = await supabase
-    .from('carga_montada_itens')
-    .insert(itens.map((i) => ({ ...i, carga_id: id })))
-  erro('regravar itens da carga', ins.error)
+  await salvarViaRpc(id, carga, produtos, null)
 }
 
 export async function excluirCargaMontada(id: string): Promise<void> {
@@ -269,31 +264,36 @@ export async function excluirCargaMontada(id: string): Promise<void> {
   erro('excluir carga montada', error)
 }
 
-export interface CargaMontadaLinha extends NovaCargaMontada {
+export interface ProdutoCargaLinha {
   id: string
-  criada_em: string
+  cultivar: string
+  tratamento: string
+  bags_solicitados: number
   carga_montada_itens: { lote_id: string; bags: number; peso_kg: number; destinacao: string | null }[]
 }
 
+export interface CargaMontadaLinha extends NovaCargaMontada {
+  id: string
+  criada_em: string
+  carga_montada_produtos: ProdutoCargaLinha[]
+}
+
 export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
-  let r = await supabase
+  // itens penduram no PRODUTO (produto_id) — o embed aninhado usa essa FK
+  const r = await supabase
     .from('cargas_montadas')
-    .select('id, numero, cultivar, tratamento, bags_solicitados, peso_total_kg, placa, cliente, tara_kg, criada_em, carga_montada_itens ( lote_id, bags, peso_kg, destinacao )')
+    .select(
+      'id, numero, placa, cliente, tara_kg, peso_total_kg, criada_em, carga_montada_produtos ( id, cultivar, tratamento, bags_solicitados, carga_montada_itens ( lote_id, bags, peso_kg, destinacao ) )',
+    )
     .order('criada_em', { ascending: false })
     .limit(limite)
   if (r.error) {
-    // antes da migração carga-placa-cliente.sql as colunas novas não existem
-    r = (await supabase
-      .from('cargas_montadas')
-      .select('id, numero, cultivar, tratamento, bags_solicitados, peso_total_kg, criada_em, carga_montada_itens ( lote_id, bags, peso_kg, destinacao )')
-      .order('criada_em', { ascending: false })
-      .limit(limite)) as unknown as typeof r
+    // só a janela pré-migração vira lista vazia (tabela/relacionamento ainda
+    // não existem); o resto é erro de verdade e a tela mostra — devolver []
+    // pra queda de rede fazia a Balança ver "nenhuma carga" e remontar uma
+    // carga que já existia (achado da revisão de 28/08/2026)
+    if (['42P01', 'PGRST200', 'PGRST205'].includes(r.error.code ?? '')) return []
+    erro('listar cargas montadas', r.error)
   }
-  if (r.error) return []
-  return (r.data ?? []).map((c) => ({
-    placa: null,
-    cliente: null,
-    tara_kg: null,
-    ...(c as object),
-  })) as unknown as CargaMontadaLinha[]
+  return (r.data ?? []) as unknown as CargaMontadaLinha[]
 }

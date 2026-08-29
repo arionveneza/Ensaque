@@ -478,15 +478,25 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    uma combinação pode ter VÁRIOS endereços); fila "Sem localização" mostra quem chegou
    sem endereço. **Mapa esquemático** sem planta: por armazém, cada bloco é uma coluna de
    quadras — número MAIOR = frente = acesso fácil, quadra de texto vai pro fim; filtros
-   cultivar/tratamento/embalagem acendem os lotes (verde) e apagam o resto; chip azul =
-   tratado, vermelho = com **Destinação** no SAP. **Montagem de carga (Balança)**: nº da
-   ordem de carregamento + cultivar + tratamento + bags; candidatos do acesso mais fácil
-   pro difícil; aviso forte ao selecionar lote com Destinação; peso total = Σ bags × peso
-   do bag; a carga fica gravada (`cargas_montadas`/`carga_montada_itens`, sem FK pro
-   lote — o registro sobrevive ao lote zerar). Recurso `mapa`: ver (todos) · importar
-   (PCP/Logística/Gestor) · enderecar (Logística/Gestor) · montar_carga
-   (Balança/Logística/Gestor). Pendente: consulta em tempo real ao SAP (a TSI_SALDOS de
-   hoje não devolve a Destinação — precisa de consulta nova lá); por ora o upload cobre.
+   cultivar/tratamento/embalagem + **Destinação e Classe (A–D) com multiseleção** acendem
+   os lotes (verde) e apagam o resto; chip azul = tratado, vermelho = com **Destinação**
+   no SAP. **Montagem de carga (Balança) é POR PRODUTO, em duas etapas** (decisão de
+   28/08/2026): primeiro a ordem de carregamento — nº + placa/cliente/tara opcionais e
+   CADA produto que vai na carga (cultivar + tratamento + bags; um caminhão leva vários) —
+   e só depois os lotes, produto a produto (candidatos do acesso mais fácil pro difícil;
+   aviso forte ao selecionar lote com Destinação). Produto SEM lote pode ser salvo — a
+   ordem nasce antes da separação; os lotes entram depois, editando a carga. Gravação em
+   `cargas_montadas` → `carga_montada_produtos` → `carga_montada_itens` (migração
+   `carga-por-produto.sql`; itens sem FK pro lote — o registro sobrevive ao lote zerar).
+   A carga salva tem **Imprimir / Editar / Excluir**; o detalhe de uma posição do mapa
+   tem **"+ Carga"** (joga o lote no produto da combinação dele, criando o produto se
+   preciso). A **ordem de carregamento impressa** agrupa por produto: lotes com endereço
+   ATUAL (onde buscar), DESTINAÇÃO em vermelho, pesos por lote e total, e o quadro de
+   pesagem — peso da carga, TARA (valor ou campo em branco pra anotar) e peso bruto
+   (tara + carga). Recurso `mapa`: ver (todos) · importar (PCP/Logística/Gestor) ·
+   enderecar (Logística/Gestor) · montar_carga (Balança/Logística/Gestor). Pendente:
+   consulta em tempo real ao SAP (a TSI_SALDOS de hoje não devolve a Destinação —
+   precisa de consulta nova lá); por ora o upload cobre.
 
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.

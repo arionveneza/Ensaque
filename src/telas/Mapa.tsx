@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as m from '@/dados/api-mapa'
-import type { CargaMontadaLinha, EnderecoLote, LoteMapaLinha } from '@/dados/api-mapa'
+import type {
+  CargaMontadaLinha, EnderecoLote, LoteMapaLinha, ProdutoCargaLinha,
+} from '@/dados/api-mapa'
 import {
   converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, SEM_TSI, type ResultadoLotesMapa,
 } from '@/dominio/importacao/mapa'
@@ -90,23 +92,75 @@ interface ItemCargaForm {
   bags: string
 }
 
-/** Rascunho da carga em montagem — editandoId preenchido = editando carga salva. */
-interface CargaForm {
-  numero: string
+/** Um produto da carga em montagem: a combinação pedida e os lotes escolhidos. */
+interface ProdutoCargaForm {
+  /** Chave estável de React — o produto não tem id antes de salvar. */
+  chave: string
   cultivar: string
   tratamento: string
   bags: string
+  itens: ItemCargaForm[]
+}
+
+/** Rascunho da carga em montagem — editandoId preenchido = editando carga salva. */
+interface CargaForm {
+  numero: string
   placa: string
   cliente: string
   tara: string
-  itens: ItemCargaForm[]
+  produtos: ProdutoCargaForm[]
   editandoId: string
 }
 
 const CARGA_VAZIA: CargaForm = {
-  numero: '', cultivar: '', tratamento: '', bags: '',
-  placa: '', cliente: '', tara: '', itens: [], editandoId: '',
+  numero: '', placa: '', cliente: '', tara: '', produtos: [], editandoId: '',
 }
+
+const novaChave = (): string =>
+  globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+
+const produtoVazio = (): ProdutoCargaForm => ({
+  chave: novaChave(), cultivar: '', tratamento: '', bags: '', itens: [],
+})
+
+/**
+ * Migra o rascunho da carga do formato antigo (uma combinação no topo, no ar
+ * em 28/08/2026) pro novo (produtos[]): sem isso o merge do useRascunho
+ * devolvia produtos vazio e os lotes já escolhidos sumiam da tela em
+ * silêncio. Roda uma vez, no import da tela.
+ */
+function migraRascunhoCargaAntigo() {
+  try {
+    const bruto = localStorage.getItem('tsi.rascunho.mapa.carga')
+    if (!bruto) return
+    const v = JSON.parse(bruto) as Record<string, unknown>
+    if (!v || typeof v !== 'object' || 'produtos' in v) return
+    if (!('itens' in v) && !('cultivar' in v)) return
+    const temConteudo =
+      (typeof v.cultivar === 'string' && v.cultivar) ||
+      (Array.isArray(v.itens) && v.itens.length > 0)
+    const novo: CargaForm = {
+      numero: typeof v.numero === 'string' ? v.numero : '',
+      placa: typeof v.placa === 'string' ? v.placa : '',
+      cliente: typeof v.cliente === 'string' ? v.cliente : '',
+      tara: typeof v.tara === 'string' ? v.tara : '',
+      editandoId: typeof v.editandoId === 'string' ? v.editandoId : '',
+      produtos: temConteudo
+        ? [{
+            chave: novaChave(),
+            cultivar: typeof v.cultivar === 'string' ? v.cultivar : '',
+            tratamento: typeof v.tratamento === 'string' ? v.tratamento : '',
+            bags: typeof v.bags === 'string' ? v.bags : '',
+            itens: Array.isArray(v.itens) ? (v.itens as ItemCargaForm[]) : [],
+          }]
+        : [],
+    }
+    localStorage.setItem('tsi.rascunho.mapa.carga', JSON.stringify(novo))
+  } catch {
+    /* sem storage não há rascunho a migrar */
+  }
+}
+migraRascunhoCargaAntigo()
 
 interface Posicao {
   armazem: string
@@ -129,6 +183,15 @@ const enderecoDe = (l: LoteMapaLinha) =>
     .sort((a, b) => ordenaQuadras(a.quadra, b.quadra))
     .map((e) => `${e.armazem} ${e.bloco}${ehNumero(e.quadra) ? `-Q${e.quadra}` : ` ${e.quadra}`}`)
     .join(' · ')
+
+/** Nota de acesso do lote: quadra numérica maior = frente; sem endereço por último. */
+const maiorQuadra = (l: LoteMapaLinha): number => {
+  const numericas = l.lote_enderecos
+    .map((e) => (ehNumero(e.quadra) ? Number(e.quadra) : null))
+    .filter((q): q is number => q != null)
+  if (numericas.length > 0) return Math.max(...numericas)
+  return l.lote_enderecos.length > 0 ? -1 : -2
+}
 
 export default function Mapa() {
   const { usuario, permitido } = useAuth()
@@ -158,7 +221,13 @@ export default function Mapa() {
   useEffect(() => {
     recarregar().finally(() => setCarregando(false))
   }, [])
-  useRealtime(['lotes_mapa', 'lote_enderecos', 'cargas_montadas'], () => void recarregar())
+  // as tabelas filhas também: o cabeçalho da carga quase não carrega dado
+  // exibido — sem os eventos de produtos/itens, outro tablet recarregava no
+  // meio da gravação e ficava com a carga vazia até um F5 (revisão 28/08/2026)
+  useRealtime(
+    ['lotes_mapa', 'lote_enderecos', 'cargas_montadas', 'carga_montada_produtos', 'carga_montada_itens'],
+    () => void recarregar(),
+  )
 
   // rascunho da carga em montagem mora AQUI (não no cartão) de propósito:
   // o "+ Carga" do detalhe da posição e o "editar" das cargas salvas
@@ -211,39 +280,50 @@ export default function Mapa() {
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
   const aloc = useMemo(() => alocar(todos), [todos])
 
-  /** "+ Carga" do detalhe da posição: joga o lote na carga em montagem. */
+  /**
+   * "+ Carga" do detalhe da posição: joga o lote na carga em montagem, no
+   * produto da combinação dele — criando o produto se ainda não existe
+   * (a carga leva vários produtos, 28/08/2026).
+   */
   function adicionarNaCarga(l: LoteMapaLinha) {
     const c = rascunhoCarga.valor
-    if (c.cultivar && (c.cultivar !== l.cultivar || c.tratamento !== l.tratamento)) {
-      setErro(
-        `A carga em montagem é de ${c.cultivar} · ${rotuloTratamento(c.tratamento)} — finalize ou limpe antes de adicionar ${l.cultivar} · ${rotuloTratamento(l.tratamento)}.`,
-      )
-      return
-    }
-    if (c.itens.some((i) => i.loteId === l.lote)) {
+    const existente = c.produtos.find(
+      (p) => p.cultivar === l.cultivar && p.tratamento === l.tratamento,
+    )
+    if (existente?.itens.some((i) => i.loteId === l.lote)) {
       setMsg(`${l.lote} já está na carga em montagem.`)
       return
     }
+    const item = { loteId: l.lote, bags: String(l.bags) }
     rascunhoCarga.definir({
-      cultivar: l.cultivar,
-      tratamento: l.tratamento,
-      itens: [...c.itens, { loteId: l.lote, bags: String(l.bags) }],
+      produtos: existente
+        ? c.produtos.map((p) =>
+            p.chave === existente.chave ? { ...p, itens: [...p.itens, item] } : p,
+          )
+        : [
+            ...c.produtos,
+            { chave: novaChave(), cultivar: l.cultivar, tratamento: l.tratamento, bags: '', itens: [item] },
+          ],
     })
-    setErro(null)
-    setMsg(`${l.lote} adicionado à carga em montagem (${c.itens.length + 1} lote(s)).`)
+    setMsg(
+      `${l.lote} adicionado à carga em montagem (produto ${l.cultivar} · ${rotuloTratamento(l.tratamento)}).`,
+    )
   }
 
   /** Reabre uma carga salva pra edição — o rascunho vira a carga. */
   function editarCarga(c: CargaMontadaLinha) {
     rascunhoCarga.substituir({
       numero: c.numero,
-      cultivar: c.cultivar,
-      tratamento: c.tratamento,
-      bags: String(c.bags_solicitados || ''),
       placa: c.placa ?? '',
       cliente: c.cliente ?? '',
       tara: c.tara_kg != null ? String(c.tara_kg) : '',
-      itens: c.carga_montada_itens.map((i) => ({ loteId: i.lote_id, bags: String(i.bags) })),
+      produtos: c.carga_montada_produtos.map((p) => ({
+        chave: novaChave(),
+        cultivar: p.cultivar,
+        tratamento: p.tratamento,
+        bags: String(p.bags_solicitados || ''),
+        itens: p.carga_montada_itens.map((i) => ({ loteId: i.lote_id, bags: String(i.bags) })),
+      })),
       editandoId: c.id,
     })
     setMsg(`Editando a carga ${c.numero} — salve na Montagem de carga abaixo.`)
@@ -262,15 +342,9 @@ export default function Mapa() {
 
   /** Imprime a folha da ordem de carregamento, com o endereço ATUAL de cada lote. */
   function imprimirCarga(c: CargaMontadaLinha) {
-    imprimirOrdemCarregamento({
-      numero: c.numero,
-      cliente: c.cliente,
-      placa: c.placa,
-      cultivar: c.cultivar,
-      tratamento: rotuloTratamento(c.tratamento),
-      data: dataHoraCurta(c.criada_em),
-      itens: c.carga_montada_itens.map((i) => {
-        const lote = todos.find((l) => l.lote === i.lote_id && l.tratamento === c.tratamento)
+    const itensDe = (p: ProdutoCargaLinha) =>
+      p.carga_montada_itens.map((i) => {
+        const lote = todos.find((l) => l.lote === i.lote_id && l.tratamento === p.tratamento)
         return {
           lote: i.lote_id,
           endereco: lote ? enderecoDe(lote) : '',
@@ -279,8 +353,22 @@ export default function Mapa() {
           pesoKg: i.peso_kg,
           destinacao: i.destinacao,
         }
-      }),
-      totalBags: c.carga_montada_itens.reduce((s, i) => s + i.bags, 0),
+      })
+    imprimirOrdemCarregamento({
+      numero: c.numero,
+      cliente: c.cliente,
+      placa: c.placa,
+      data: dataHoraCurta(c.criada_em),
+      produtos: c.carga_montada_produtos.map((p) => ({
+        cultivar: p.cultivar,
+        tratamento: rotuloTratamento(p.tratamento),
+        bagsSolicitados: p.bags_solicitados,
+        itens: itensDe(p),
+      })),
+      totalBags: c.carga_montada_produtos.reduce(
+        (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+        0,
+      ),
       pesoTotalKg: c.peso_total_kg,
       taraKg: c.tara_kg,
     })
@@ -506,21 +594,30 @@ export default function Mapa() {
         {cargas.length === 0 ? (
           <Vazio>Nenhuma carga montada ainda.</Vazio>
         ) : (
-          <Tabela cabecalho={['Ordem', 'Cultivar', 'Tratamento', '#Bags', '#Peso (kg)', 'Placa · Cliente', 'Lotes', 'Quando', '']}>
+          <Tabela cabecalho={['Ordem', 'Produtos', '#Bags', '#Peso (kg)', 'Placa · Cliente', 'Lotes', 'Quando', '']}>
             {cargas.map((c) => (
               <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5 font-medium">{c.numero}</td>
-                <td className="px-2 py-1.5">{c.cultivar}</td>
-                <td className="px-2 py-1.5">{rotuloTratamento(c.tratamento)}</td>
+                <td className="px-2 py-1.5 text-xs">
+                  {c.carga_montada_produtos
+                    .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)} × ${inteiro(p.bags_solicitados)}`)
+                    .join(' + ') || '—'}
+                </td>
                 <td className="num-tabular px-2 py-1.5 text-right">
-                  {inteiro(c.carga_montada_itens.reduce((s, i) => s + i.bags, 0))}
+                  {inteiro(c.carga_montada_produtos.reduce(
+                    (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+                    0,
+                  ))}
                 </td>
                 <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.peso_total_kg)}</td>
                 <td className="px-2 py-1.5 text-xs text-stone-500">
                   {[c.placa, c.cliente].filter(Boolean).join(' · ') || '—'}
                 </td>
                 <td className="px-2 py-1.5 text-xs text-stone-500">
-                  {c.carga_montada_itens.map((i) => `${i.lote_id} (${inteiro(i.bags)})`).join(' · ')}
+                  {c.carga_montada_produtos
+                    .flatMap((p) => p.carga_montada_itens)
+                    .map((i) => `${i.lote_id} (${inteiro(i.bags)})`)
+                    .join(' · ') || 'a definir'}
                 </td>
                 <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(c.criada_em)}</td>
                 <td className="px-2 py-1.5">
@@ -1043,10 +1140,12 @@ function ModalEnderecos({
 }
 
 /**
- * Montagem de carga da Balança. Rascunho persistente (mesmo padrão do
- * Programar em Ordens): fechar a tela no meio não perde a carga em
- * montagem. Os candidatos saem ordenados do acesso mais fácil pro mais
- * difícil (maior quadra numérica primeiro; sem endereço por último).
+ * Montagem de carga da Balança, em DUAS etapas (pedido do Arion,
+ * 28/08/2026): primeiro a ordem de carregamento — cabeçalho e cada PRODUTO
+ * que vai na carga (cultivar + tratamento + bags) — e depois os lotes,
+ * produto a produto. Produto sem lote pode ser salvo: a ordem nasce antes,
+ * os lotes entram editando a carga. Rascunho persistente vem do pai — o
+ * "+ Carga" do mapa e o editar das cargas salvas escrevem nele.
  */
 function MontagemCarga({
   lotes, usuarioId, rascunho, onSalva,
@@ -1056,92 +1155,79 @@ function MontagemCarga({
   rascunho: Rascunho<CargaForm>
   onSalva: (msg: string) => void
 }) {
-  const { numero, cultivar, tratamento, bags, placa, cliente, tara, itens, editandoId } =
-    rascunho.valor
+  const { numero, placa, cliente, tara, produtos, editandoId } = rascunho.valor
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const definir = rascunho.definir
 
   const cultivares = useMemo(() => [...new Set(lotes.map((l) => l.cultivar))].sort(), [lotes])
-  const tratamentosDoCultivar = useMemo(
-    () =>
-      [...new Set(
-        lotes
-          .filter((l) => !cultivar || l.cultivar === cultivar)
-          .map((l) => l.tratamento)
-          .filter((t) => t !== SEM_TSI),
-      )].sort(),
-    [lotes, cultivar],
+
+  const mudarProduto = (chave: string, patch: Partial<ProdutoCargaForm>) =>
+    definir({ produtos: produtos.map((p) => (p.chave === chave ? { ...p, ...patch } : p)) })
+  const removerProduto = (chave: string) =>
+    definir({ produtos: produtos.filter((p) => p.chave !== chave) })
+
+  // por lote + tratamento (a PK de lotes_mapa) — casar também pelo cultivar
+  // derrubava o lote da carga quando o TEXTO do cultivar mudava num upload
+  // do SAP, com aviso de motivo errado (revisão 28/08/2026)
+  const loteDe = (p: ProdutoCargaForm, loteId: string) =>
+    lotes.find((l) => l.lote === loteId && l.tratamento === p.tratamento)
+  const selecionadosDe = (p: ProdutoCargaForm) =>
+    p.itens
+      .map((i) => ({ ...i, lote: loteDe(p, i.loteId) }))
+      .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
+
+  // produtos com cultivar + tratamento definidos — os que contam pra salvar
+  const completos = produtos.filter((p) => p.cultivar && p.tratamento)
+  // meio-preenchido não pode ser descartado em silêncio: bloqueia o salvar
+  const incompletos = produtos.filter((p) => !p.cultivar || !p.tratamento)
+  const duplicados = completos.filter((p, idx) =>
+    completos.some(
+      (o, oidx) => oidx < idx && o.cultivar === p.cultivar && o.tratamento === p.tratamento,
+    ),
   )
-
-  const maiorQuadra = (l: LoteMapaLinha) => {
-    const numericas = l.lote_enderecos
-      .map((e) => (ehNumero(e.quadra) ? Number(e.quadra) : null))
-      .filter((q): q is number => q != null)
-    if (numericas.length > 0) return Math.max(...numericas)
-    return l.lote_enderecos.length > 0 ? -1 : -2
-  }
-
-  const candidatos = useMemo(() => {
-    if (!cultivar || !tratamento) return []
-    return lotes
-      .filter((l) => l.cultivar === cultivar && l.tratamento === tratamento && l.bags > 0)
-      .sort((a, b) => maiorQuadra(b) - maiorQuadra(a))
-  }, [lotes, cultivar, tratamento])
-
-  const porLote = useMemo(() => {
-    const mapa = new Map<string, LoteMapaLinha>()
-    for (const l of lotes) if (l.tratamento === tratamento) mapa.set(l.lote, l)
-    return mapa
-  }, [lotes, tratamento])
-  const selecionados = itens
-    .map((i) => ({ ...i, lote: porLote.get(i.loteId) }))
-    .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
-  // carga editada pode citar lote que zerou no SAP desde então — avisar, não sumir calado
-  const foraDoMapa = itens.filter((i) => !porLote.has(i.loteId))
-
-  const totalBags = selecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
-  const totalPesoKg = selecionados.reduce(
+  const todosSelecionados = completos.flatMap((p) => selecionadosDe(p))
+  // bags vazio/0 derrubaria o check (bags > 0) do banco — travar antes
+  const itensInvalidos = todosSelecionados.filter((i) => !(Number(i.bags) > 0))
+  const totalBags = todosSelecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
+  const totalPesoKg = todosSelecionados.reduce(
     (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
     0,
   )
-  const solicitados = Number(bags) || 0
-  const comDestinacao = selecionados.filter((i) => i.lote.destinacao)
-
-  const definir = rascunho.definir
-  const adicionar = (l: LoteMapaLinha) => {
-    if (itens.some((i) => i.loteId === l.lote)) return
-    const restante = Math.max(0, solicitados - totalBags)
-    const sugestao = restante > 0 ? Math.min(restante, l.bags) : l.bags
-    definir({ itens: [...itens, { loteId: l.lote, bags: String(sugestao) }] })
-  }
-  const atualizarBags = (loteId: string, v: string) =>
-    definir({ itens: itens.map((i) => (i.loteId === loteId ? { ...i, bags: v } : i)) })
-  const remover = (loteId: string) =>
-    definir({ itens: itens.filter((i) => i.loteId !== loteId) })
+  const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
+  // carga editada pode citar lote que zerou no SAP desde então — avisar, não sumir calado
+  const foraDoMapa = completos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
+  const bloqueado =
+    duplicados.length > 0 || incompletos.length > 0 || itensInvalidos.length > 0
 
   async function salvar() {
-    if (!numero.trim() || !cultivar || !tratamento || selecionados.length === 0) return
+    if (!numero.trim() || completos.length === 0 || bloqueado) return
     setSalvando(true)
     setErro(null)
     const carga = {
       numero: numero.trim(),
-      cultivar,
-      tratamento,
-      bags_solicitados: solicitados || totalBags,
       peso_total_kg: Math.round(totalPesoKg * 100) / 100,
       placa: placa.trim() ? placa.trim().toUpperCase() : null,
       cliente: cliente.trim() || null,
       tara_kg: Number(tara) > 0 ? Number(tara) : null,
     }
-    const itensGravar = selecionados.map((i) => ({
-      lote_id: i.loteId,
-      bags: Number(i.bags) || 0,
-      peso_kg: Math.round((Number(i.bags) || 0) * i.lote.peso_bag_kg * 100) / 100,
-      destinacao: i.lote.destinacao,
-    }))
+    const produtosGravar = completos.map((p) => {
+      const sel = selecionadosDe(p)
+      return {
+        cultivar: p.cultivar,
+        tratamento: p.tratamento,
+        bags_solicitados: Number(p.bags) || sel.reduce((s, i) => s + (Number(i.bags) || 0), 0),
+        itens: sel.map((i) => ({
+          lote_id: i.loteId,
+          bags: Number(i.bags) || 0,
+          peso_kg: Math.round((Number(i.bags) || 0) * i.lote.peso_bag_kg * 100) / 100,
+          destinacao: i.lote.destinacao,
+        })),
+      }
+    })
     try {
-      if (editandoId) await m.atualizarCargaMontada(editandoId, carga, itensGravar)
-      else await m.criarCargaMontada(carga, itensGravar, usuarioId)
+      if (editandoId) await m.atualizarCargaMontada(editandoId, carga, produtosGravar)
+      else await m.criarCargaMontada(carga, produtosGravar, usuarioId)
       const texto = editandoId ? `Carga ${carga.numero} atualizada.` : 'Carga gravada.'
       rascunho.limpar()
       onSalva(texto)
@@ -1165,6 +1251,7 @@ function MontagemCarga({
           </Aviso>
         </div>
       )}
+      {/* etapa 1: o cabeçalho da ordem de carregamento */}
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={numero}
@@ -1172,34 +1259,6 @@ function MontagemCarga({
           placeholder="nº da ordem de carregamento"
           className={`${INPUT} w-56`}
         />
-        <select
-          value={cultivar}
-          onChange={(e) => definir({ cultivar: e.target.value, itens: [] })}
-          className={INPUT}
-        >
-          <option value="">cultivar…</option>
-          {cultivares.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select
-          value={tratamento}
-          onChange={(e) => definir({ tratamento: e.target.value, itens: [] })}
-          className={INPUT}
-        >
-          <option value="">tratamento…</option>
-          <option value={SEM_TSI}>SEM TSI (branca)</option>
-          {tratamentosDoCultivar.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <input
-          type="number"
-          min={1}
-          value={bags}
-          onChange={(e) => definir({ bags: e.target.value })}
-          placeholder="bags"
-          className={`${INPUT} w-24`}
-        />
-      </div>
-      {/* placa/cliente/tara: opcionais, saem na ordem de carregamento impressa */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
           value={placa}
           onChange={(e) => definir({ placa: e.target.value })}
@@ -1222,18 +1281,217 @@ function MontagemCarga({
         />
       </div>
 
-      {cultivar && tratamento && (
+      {/* etapa 2: os produtos da carga; os lotes vêm depois, dentro de cada um */}
+      <p className="mt-4 mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
+        Produtos da carga ({completos.length})
+      </p>
+      {produtos.length === 0 && (
+        <p className="mb-1 text-sm text-stone-500 dark:text-stone-400">
+          Monte a ordem produto a produto — cultivar, tratamento e quantidade de bags. Os
+          lotes são escolhidos depois, dentro de cada produto.
+        </p>
+      )}
+      <div className="space-y-3">
+        {produtos.map((p) => (
+          <ProdutoDaCarga
+            key={p.chave}
+            produto={p}
+            lotes={lotes}
+            cultivares={cultivares}
+            duplicado={duplicados.includes(p)}
+            selecionados={selecionadosDe(p)}
+            onMudar={(patch) => mudarProduto(p.chave, patch)}
+            onRemover={() => removerProduto(p.chave)}
+          />
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => definir({ produtos: [...produtos, produtoVazio()] })}
+        className="mt-2 text-sm text-green-800 underline dark:text-green-400"
+      >
+        + adicionar produto
+      </button>
+
+      {duplicados.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            Produto repetido na carga:{' '}
+            {duplicados.map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`).join(' · ')}
+            {' '}— junte as quantidades numa linha só pra salvar.
+          </Aviso>
+        </div>
+      )}
+
+      {comDestinacao.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            <b>Atenção:</b> lote(s) com DESTINAÇÃO no SAP selecionado(s):{' '}
+            {comDestinacao.map((i) => `${i.loteId} → ${i.lote.destinacao}`).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+
+      {foraDoMapa.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            Fora do mapa (saíram do saldo do SAP) e por isso FORA da carga:{' '}
+            {foraDoMapa.map((i) => i.loteId).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+
+      {completos.length > 0 && (
+        <div className="mt-4">
+          {incompletos.length > 0 && (
+            <div className="mb-3">
+              <Aviso gravidade="alerta">
+                {incompletos.length} produto(s) sem cultivar ou tratamento — complete ou
+                remova (×) antes de salvar; nada é descartado por conta própria.
+              </Aviso>
+            </div>
+          )}
+          {itensInvalidos.length > 0 && (
+            <div className="mb-3">
+              <Aviso gravidade="alerta">
+                Lote(s) com bags em branco ou zero:{' '}
+                {itensInvalidos.map((i) => i.loteId).join(' · ')} — informe a quantidade ou
+                remova o lote.
+              </Aviso>
+            </div>
+          )}
+          <p className="text-sm font-medium text-stone-600 dark:text-stone-300">
+            Total da carga: <b>{inteiro(totalBags)} bags</b> ·{' '}
+            <b>{inteiro(totalPesoKg)} kg</b> ({n(totalPesoKg / 1000, 1)} t)
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Botao
+              variante="primario"
+              disabled={salvando || !numero.trim() || bloqueado}
+              onClick={salvar}
+            >
+              {salvando ? 'gravando…' : editandoId ? 'Salvar alterações' : 'Salvar carga'}
+            </Botao>
+            <Botao onClick={() => rascunho.limpar()}>Limpar</Botao>
+          </div>
+        </div>
+      )}
+    </Cartao>
+  )
+}
+
+/**
+ * Um produto dentro da montagem: cultivar + tratamento + bags pedidos e,
+ * abaixo, os lotes escolhidos pra ele (candidatos do acesso mais fácil pro
+ * mais difícil). Pode ser salvo sem lote — a ordem nasce primeiro e os
+ * lotes entram depois, editando a carga.
+ */
+function ProdutoDaCarga({
+  produto: p, lotes, cultivares, duplicado, selecionados, onMudar, onRemover,
+}: {
+  produto: ProdutoCargaForm
+  lotes: LoteMapaLinha[]
+  cultivares: string[]
+  duplicado: boolean
+  selecionados: (ItemCargaForm & { lote: LoteMapaLinha })[]
+  onMudar: (patch: Partial<ProdutoCargaForm>) => void
+  onRemover: () => void
+}) {
+  const tratamentosDoCultivar = useMemo(
+    () =>
+      [...new Set(
+        lotes
+          .filter((l) => !p.cultivar || l.cultivar === p.cultivar)
+          .map((l) => l.tratamento)
+          .filter((t) => t !== SEM_TSI),
+      )].sort(),
+    [lotes, p.cultivar],
+  )
+
+  const candidatos = useMemo(() => {
+    if (!p.cultivar || !p.tratamento) return []
+    return lotes
+      .filter((l) => l.cultivar === p.cultivar && l.tratamento === p.tratamento && l.bags > 0)
+      .sort((a, b) => maiorQuadra(b) - maiorQuadra(a))
+  }, [lotes, p.cultivar, p.tratamento])
+
+  const solicitados = Number(p.bags) || 0
+  const bagsDoProduto = selecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
+  const pesoDoProduto = selecionados.reduce(
+    (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
+    0,
+  )
+
+  const adicionar = (l: LoteMapaLinha) => {
+    if (p.itens.some((i) => i.loteId === l.lote)) return
+    const restante = Math.max(0, solicitados - bagsDoProduto)
+    const sugestao = restante > 0 ? Math.min(restante, l.bags) : l.bags
+    onMudar({ itens: [...p.itens, { loteId: l.lote, bags: String(sugestao) }] })
+  }
+  const atualizarBags = (loteId: string, v: string) =>
+    onMudar({ itens: p.itens.map((i) => (i.loteId === loteId ? { ...i, bags: v } : i)) })
+  const remover = (loteId: string) =>
+    onMudar({ itens: p.itens.filter((i) => i.loteId !== loteId) })
+
+  return (
+    <div
+      className={`rounded-lg border p-3 ${duplicado ? 'border-red-400 dark:border-red-700' : 'border-stone-200 dark:border-stone-700'}`}
+    >
+      {/* a combinação pedida — trocar cultivar/tratamento descarta os lotes escolhidos */}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={p.cultivar}
+          onChange={(e) => onMudar({ cultivar: e.target.value, tratamento: '', itens: [] })}
+          className={INPUT}
+        >
+          <option value="">cultivar…</option>
+          {cultivares.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select
+          value={p.tratamento}
+          onChange={(e) => onMudar({ tratamento: e.target.value, itens: [] })}
+          className={INPUT}
+        >
+          <option value="">tratamento…</option>
+          <option value={SEM_TSI}>SEM TSI (branca)</option>
+          {tratamentosDoCultivar.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input
+          type="number"
+          min={1}
+          value={p.bags}
+          onChange={(e) => onMudar({ bags: e.target.value })}
+          placeholder="bags"
+          className={`${INPUT} w-24`}
+        />
+        <span
+          className={`text-sm ${solicitados > 0 && bagsDoProduto >= solicitados ? 'font-medium text-green-700 dark:text-green-400' : 'text-stone-500 dark:text-stone-400'}`}
+        >
+          {inteiro(bagsDoProduto)}
+          {solicitados > 0 ? ` de ${inteiro(solicitados)}` : ''} bg em lotes ·{' '}
+          {inteiro(pesoDoProduto)} kg
+        </span>
+        <button
+          type="button"
+          onClick={onRemover}
+          title="Remover produto"
+          className="ml-auto px-1 text-lg leading-none text-stone-400 hover:text-red-600"
+        >
+          ×
+        </button>
+      </div>
+
+      {p.cultivar && p.tratamento && (
         <>
-          {/* candidatos, do acesso mais fácil pro mais difícil */}
-          <p className="mt-4 mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
+          <p className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
             Lotes disponíveis ({candidatos.length}) — acesso mais fácil primeiro
           </p>
           {candidatos.length === 0 ? (
-            <Vazio>Nenhum lote de {cultivar} · {rotuloTratamento(tratamento)} no mapa.</Vazio>
+            <Vazio>Nenhum lote de {p.cultivar} · {rotuloTratamento(p.tratamento)} no mapa.</Vazio>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {candidatos.map((l) => {
-                const jaSelecionado = itens.some((i) => i.loteId === l.lote)
+                const jaSelecionado = p.itens.some((i) => i.loteId === l.lote)
                 return (
                   <button
                     key={chaveDe(l)}
@@ -1257,24 +1515,6 @@ function MontagemCarga({
                   </button>
                 )
               })}
-            </div>
-          )}
-
-          {comDestinacao.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="bloqueio">
-                <b>Atenção:</b> lote(s) com DESTINAÇÃO no SAP selecionado(s):{' '}
-                {comDestinacao.map((i) => `${i.loteId} → ${i.lote.destinacao}`).join(' · ')}
-              </Aviso>
-            </div>
-          )}
-
-          {foraDoMapa.length > 0 && (
-            <div className="mt-3">
-              <Aviso gravidade="alerta">
-                Fora do mapa (saíram do saldo do SAP) e por isso FORA da carga:{' '}
-                {foraDoMapa.map((i) => i.loteId).join(' · ')}
-              </Aviso>
             </div>
           )}
 
@@ -1317,26 +1557,10 @@ function MontagemCarga({
                   </tr>
                 ))}
               </Tabela>
-
-              <p className={`mt-3 text-sm font-medium ${solicitados > 0 && totalBags >= solicitados ? 'text-green-700 dark:text-green-400' : 'text-stone-600 dark:text-stone-300'}`}>
-                {inteiro(totalBags)}{solicitados > 0 ? ` de ${inteiro(solicitados)}` : ''} bags ·
-                peso total <b>{inteiro(totalPesoKg)} kg</b> ({n(totalPesoKg / 1000, 1)} t)
-              </p>
-
-              <div className="mt-3 flex gap-2">
-                <Botao
-                  variante="primario"
-                  disabled={salvando || !numero.trim() || selecionados.length === 0}
-                  onClick={salvar}
-                >
-                  {salvando ? 'gravando…' : editandoId ? 'Salvar alterações' : 'Salvar carga'}
-                </Botao>
-                <Botao onClick={() => rascunho.limpar()}>Limpar</Botao>
-              </div>
             </div>
           )}
         </>
       )}
-    </Cartao>
+    </div>
   )
 }

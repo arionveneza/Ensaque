@@ -343,21 +343,30 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
   abrirParaImpressao(html)
 }
 
+export interface ItemCarregamentoImpressao {
+  lote: string
+  endereco: string
+  bags: number
+  pesoBagKg: number | null
+  pesoKg: number
+  destinacao: string | null
+}
+
+/** Um produto da carga: a combinação pedida e os lotes escolhidos pra ela. */
+export interface ProdutoCarregamentoImpressao {
+  cultivar: string
+  tratamento: string
+  bagsSolicitados: number
+  itens: ItemCarregamentoImpressao[]
+}
+
 export interface OrdemCarregamentoImpressao {
   numero: string
   cliente: string | null
   placa: string | null
-  cultivar: string
-  tratamento: string
   data: string
-  itens: {
-    lote: string
-    endereco: string
-    bags: number
-    pesoBagKg: number | null
-    pesoKg: number
-    destinacao: string | null
-  }[]
+  /** A carga leva VÁRIOS produtos (28/08/2026) — a folha agrupa por produto. */
+  produtos: ProdutoCarregamentoImpressao[]
   totalBags: number
   pesoTotalKg: number
   /** Informada, a impressao ja soma tara + carga; em branco, sai campo pra anotar. */
@@ -373,16 +382,26 @@ export interface OrdemCarregamentoImpressao {
  */
 export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
   const fmt = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
-  const linhas = c.itens
-    .map(
-      (i) => `<tr>
+  const linhas = c.produtos
+    .map((p) => {
+      const carregados = p.itens.reduce((s, i) => s + i.bags, 0)
+      const cabecalho = `<tr class="produto"><td colspan="5">${esc(p.cultivar)} · ${esc(p.tratamento)} — pedido ${fmt(p.bagsSolicitados)} bags${carregados !== p.bagsSolicitados ? ` · na carga ${fmt(carregados)}` : ''}</td></tr>`
+      if (p.itens.length === 0) {
+        return `${cabecalho}<tr><td colspan="5" class="pendente">lotes a definir</td></tr>`
+      }
+      const itens = p.itens
+        .map(
+          (i) => `<tr>
         <td><b>${esc(i.lote)}</b>${i.destinacao ? `<br><span class="dest">DESTINAÇÃO: ${esc(i.destinacao)}</span>` : ''}</td>
         <td>${esc(i.endereco) || '—'}</td>
         <td class="num">${fmt(i.bags)}</td>
         <td class="num">${i.pesoBagKg != null ? fmt(i.pesoBagKg) : '—'}</td>
         <td class="num">${fmt(i.pesoKg)}</td>
       </tr>`,
-    )
+        )
+        .join('')
+      return cabecalho + itens
+    })
     .join('')
 
   const brutoKg = c.taraKg != null ? c.taraKg + c.pesoTotalKg : null
@@ -402,6 +421,8 @@ export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
   th { background: #eee; font-size: 11px; text-transform: uppercase; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .dest { color: #b00020; font-weight: bold; font-size: 11px; }
+  .produto td { background: #e8e8e8; font-weight: bold; font-size: 12px; }
+  .pendente { color: #666; font-style: italic; }
   .totais td { font-weight: bold; background: #f5f5f5; }
   .pesagem { border: 2px solid #111; padding: 10px 14px; margin-top: 8px; }
   .pesagem h2 { font-size: 13px; text-transform: uppercase; margin: 0 0 8px; }
@@ -421,9 +442,9 @@ export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
   <div class="campo"><span>Cliente</span><b>${esc(c.cliente) || '—'}</b></div>
   <div class="campo"><span>Placa do veículo</span><b>${esc(c.placa) || '—'}</b></div>
   <div class="campo"><span>Data</span><b>${esc(c.data)}</b></div>
-  <div class="campo"><span>Cultivar</span><b>${esc(c.cultivar)}</b></div>
-  <div class="campo"><span>Tratamento</span><b>${esc(c.tratamento)}</b></div>
+  <div class="campo"><span>Produtos</span><b>${fmt(c.produtos.length)}</b></div>
   <div class="campo"><span>Total</span><b>${fmt(c.totalBags)} bags</b></div>
+  <div class="campo"><span>Peso da carga</span><b>${fmt(c.pesoTotalKg)} kg</b></div>
 </div>
 
 <table>
