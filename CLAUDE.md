@@ -480,17 +480,21 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    quadras — número MAIOR = frente = acesso fácil, quadra de texto vai pro fim; filtros
    cultivar/tratamento/embalagem + **Destinação e Classe (A–D) com multiseleção** acendem
    os lotes (verde) e apagam o resto; chip azul = tratado, vermelho = com **Destinação**
-   no SAP. **Montagem de carga (Balança) é POR PRODUTO, em duas etapas** (decisão de
-   28/08/2026): primeiro a ordem de carregamento — nº + placa/cliente/tara opcionais e
-   CADA produto que vai na carga (cultivar + tratamento + bags; um caminhão leva vários) —
-   e só depois os lotes, produto a produto (candidatos do acesso mais fácil pro difícil;
-   aviso forte ao selecionar lote com Destinação). Produto SEM lote pode ser salvo — a
-   ordem nasce antes da separação; os lotes entram depois, editando a carga. Gravação em
+   no SAP. **Montagem de carga (Balança) é POR PRODUTO, em duas OPERAÇÕES separadas,
+   cada uma com o seu Salvar** (decisão de 29/08/2026, depois de duas tentativas de
+   wizard): (1) **Montagem** — nº + placa/cliente/tara opcionais e CADA produto da carga
+   (cultivar + tratamento + quantidade, os três obrigatórios; um caminhão leva vários),
+   SEM lote nenhum na tela; Salvar grava a carga **"aguardando lotear"** (tag amarela,
+   status derivado: produto sem lote) e limpa o formulário. (2) **Lotear** — botão na
+   lista de cargas pendentes; abre cartão próprio com busca e lista de lotes por produto
+   (acesso mais fácil primeiro; aviso forte em lote com Destinação); "Salvar lotes"
+   grava — todos os produtos loteados viram **"loteada"** (verde), sobrou produto sem
+   lote continua pendente. Gravação TRANSACIONAL via RPC `salvar_carga_montada` em
    `cargas_montadas` → `carga_montada_produtos` → `carga_montada_itens` (migração
    `carga-por-produto.sql`; itens sem FK pro lote — o registro sobrevive ao lote zerar).
-   A carga salva tem **Imprimir / Editar / Excluir**; o detalhe de uma posição do mapa
-   tem **"+ Carga"** (joga o lote no produto da combinação dele, criando o produto se
-   preciso). A **ordem de carregamento impressa** agrupa por produto: lotes com endereço
+   A carga salva tem **Lotear (se pendente) / Imprimir / Editar / Excluir** — Editar mexe
+   só em cabeçalho/produtos e preserva os lotes. A **ordem impressa** agrupa por produto:
+   "lotes a definir" quando pendente, e lotes com endereço
    ATUAL (onde buscar), DESTINAÇÃO em vermelho, pesos por lote e total, e o quadro de
    pesagem — peso da carga, TARA (valor ou campo em branco pra anotar) e peso bruto
    (tara + carga). Recurso `mapa`: ver (todos) · importar (PCP/Logística/Gestor) ·
