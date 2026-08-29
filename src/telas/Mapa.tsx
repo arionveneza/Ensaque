@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as m from '@/dados/api-mapa'
 import type {
@@ -374,6 +374,118 @@ export default function Mapa() {
     })
   }
 
+  /**
+   * Linhas de uma carga na tabela: uma por LOTE, com o produto e a carga
+   * fundidos por rowSpan — o resumo tudo-numa-célula ficava ilegível com
+   * mais de um produto (pedido do Arion, 29/08/2026).
+   */
+  function linhasDaCarga(c: CargaMontadaLinha): ReactNode[] {
+    const produtos = c.carga_montada_produtos
+    const totalLinhas = Math.max(
+      1,
+      produtos.reduce((s, p) => s + Math.max(1, p.carga_montada_itens.length), 0),
+    )
+    const totalBags = produtos.reduce(
+      (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+      0,
+    )
+    const celulaCarga = (
+      <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
+        <span className="font-medium">{c.numero}</span>
+        <span className="block text-xs text-stone-500">
+          {inteiro(totalBags)} bg · {inteiro(c.peso_total_kg)} kg
+        </span>
+      </td>
+    )
+    const celulasFinais = (
+      <>
+        <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top text-xs text-stone-500">
+          {[c.placa, c.cliente].filter(Boolean).join(' · ') || '—'}
+        </td>
+        <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top text-xs text-stone-500">
+          {dataHoraCurta(c.criada_em)}
+        </td>
+        <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
+          <div className="flex justify-end gap-1.5 whitespace-nowrap">
+            <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
+            {podeMontar && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
+            {podeMontar && (
+              <button
+                type="button"
+                onClick={() => void excluirCarga(c)}
+                className="px-1 text-xs text-stone-400 underline hover:text-red-600"
+              >
+                excluir
+              </button>
+            )}
+          </div>
+        </td>
+      </>
+    )
+
+    if (produtos.length === 0) {
+      return [
+        <tr key={c.id} className="border-t-2 border-stone-200 dark:border-stone-700">
+          {celulaCarga}
+          <td colSpan={4} className="px-2 py-1.5 text-xs italic text-stone-400">
+            sem produtos
+          </td>
+          {celulasFinais}
+        </tr>,
+      ]
+    }
+
+    const linhas: ReactNode[] = []
+    let primeira = true
+    for (const p of produtos) {
+      const itens: (typeof p.carga_montada_itens[number] | null)[] =
+        p.carga_montada_itens.length > 0 ? p.carga_montada_itens : [null]
+      itens.forEach((i, idx) => {
+        linhas.push(
+          <tr
+            key={`${c.id}-${p.id}-${i ? i.lote_id : 'vazio'}-${idx}`}
+            className={
+              primeira
+                ? 'border-t-2 border-stone-200 dark:border-stone-700'
+                : 'border-t border-stone-100 dark:border-stone-800/60'
+            }
+          >
+            {primeira && celulaCarga}
+            {idx === 0 && (
+              <td rowSpan={itens.length} className="px-2 py-1.5 align-top">
+                {p.cultivar} · {rotuloTratamento(p.tratamento)}
+                <span className="block text-xs text-stone-500">
+                  pedido {inteiro(p.bags_solicitados)} bg
+                </span>
+              </td>
+            )}
+            {i ? (
+              <>
+                <td className="px-2 py-1.5 text-xs">
+                  {i.lote_id}
+                  {i.destinacao && (
+                    <span className="ml-1.5">
+                      <Tag cor="perigo">{i.destinacao}</Tag>
+                    </span>
+                  )}
+                </td>
+                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(i.bags)}</td>
+                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(i.peso_kg)}</td>
+              </>
+            ) : (
+              <td colSpan={3} className="px-2 py-1.5 text-xs italic text-stone-400">
+                lotes a definir
+              </td>
+            )}
+            {primeira && celulasFinais}
+          </tr>,
+        )
+        primeira = false
+      })
+    }
+    return linhas
+  }
+
   // -------- upload --------
   async function lerPlanilha(ev: ChangeEvent<HTMLInputElement>) {
     const arquivo = ev.target.files?.[0]
@@ -589,54 +701,13 @@ export default function Mapa() {
         />
       )}
 
-      {/* -------- cargas recentes -------- */}
+      {/* -------- cargas recentes: 1 linha por produto, 1 por lote (28/08/2026) -------- */}
       <Cartao titulo={`Cargas montadas (${cargas.length} recentes)`}>
         {cargas.length === 0 ? (
           <Vazio>Nenhuma carga montada ainda.</Vazio>
         ) : (
-          <Tabela cabecalho={['Ordem', 'Produtos', '#Bags', '#Peso (kg)', 'Placa · Cliente', 'Lotes', 'Quando', '']}>
-            {cargas.map((c) => (
-              <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{c.numero}</td>
-                <td className="px-2 py-1.5 text-xs">
-                  {c.carga_montada_produtos
-                    .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)} × ${inteiro(p.bags_solicitados)}`)
-                    .join(' + ') || '—'}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right">
-                  {inteiro(c.carga_montada_produtos.reduce(
-                    (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
-                    0,
-                  ))}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.peso_total_kg)}</td>
-                <td className="px-2 py-1.5 text-xs text-stone-500">
-                  {[c.placa, c.cliente].filter(Boolean).join(' · ') || '—'}
-                </td>
-                <td className="px-2 py-1.5 text-xs text-stone-500">
-                  {c.carga_montada_produtos
-                    .flatMap((p) => p.carga_montada_itens)
-                    .map((i) => `${i.lote_id} (${inteiro(i.bags)})`)
-                    .join(' · ') || 'a definir'}
-                </td>
-                <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(c.criada_em)}</td>
-                <td className="px-2 py-1.5">
-                  <div className="flex justify-end gap-1.5 whitespace-nowrap">
-                    <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
-                    {podeMontar && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
-                    {podeMontar && (
-                      <button
-                        type="button"
-                        onClick={() => void excluirCarga(c)}
-                        className="px-1 text-xs text-stone-400 underline hover:text-red-600"
-                      >
-                        excluir
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+          <Tabela cabecalho={['Ordem', 'Produto', 'Lote', '#Bags', '#Peso (kg)', 'Placa · Cliente', 'Quando', '']}>
+            {cargas.flatMap((c) => linhasDaCarga(c))}
           </Tabela>
         )}
       </Cartao>
@@ -1181,6 +1252,8 @@ function MontagemCarga({
   const completos = produtos.filter((p) => p.cultivar && p.tratamento)
   // meio-preenchido não pode ser descartado em silêncio: bloqueia o salvar
   const incompletos = produtos.filter((p) => !p.cultivar || !p.tratamento)
+  // quantidade é OBRIGATÓRIA no produto (pedido do Arion, 29/08/2026)
+  const semQuantidade = completos.filter((p) => !(Number(p.bags) > 0))
   const duplicados = completos.filter((p, idx) =>
     completos.some(
       (o, oidx) => oidx < idx && o.cultivar === p.cultivar && o.tratamento === p.tratamento,
@@ -1198,7 +1271,10 @@ function MontagemCarga({
   // carga editada pode citar lote que zerou no SAP desde então — avisar, não sumir calado
   const foraDoMapa = completos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
   const bloqueado =
-    duplicados.length > 0 || incompletos.length > 0 || itensInvalidos.length > 0
+    duplicados.length > 0 ||
+    incompletos.length > 0 ||
+    semQuantidade.length > 0 ||
+    itensInvalidos.length > 0
 
   async function salvar() {
     if (!numero.trim() || completos.length === 0 || bloqueado) return
@@ -1351,6 +1427,16 @@ function MontagemCarga({
               </Aviso>
             </div>
           )}
+          {semQuantidade.length > 0 && (
+            <div className="mb-3">
+              <Aviso gravidade="alerta">
+                A quantidade de bags é obrigatória — falta em:{' '}
+                {semQuantidade
+                  .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`)
+                  .join(' · ')}
+              </Aviso>
+            </div>
+          )}
           {itensInvalidos.length > 0 && (
             <div className="mb-3">
               <Aviso gravidade="alerta">
@@ -1397,6 +1483,8 @@ function ProdutoDaCarga({
   onMudar: (patch: Partial<ProdutoCargaForm>) => void
   onRemover: () => void
 }) {
+  const [buscaLote, setBuscaLote] = useState('')
+
   const tratamentosDoCultivar = useMemo(
     () =>
       [...new Set(
@@ -1414,6 +1502,14 @@ function ProdutoDaCarga({
       .filter((l) => l.cultivar === p.cultivar && l.tratamento === p.tratamento && l.bags > 0)
       .sort((a, b) => maiorQuadra(b) - maiorQuadra(a))
   }, [lotes, p.cultivar, p.tratamento])
+
+  const filtrados = useMemo(() => {
+    const b = buscaLote.trim().toLowerCase()
+    if (!b) return candidatos
+    return candidatos.filter(
+      (l) => l.lote.toLowerCase().includes(b) || enderecoDe(l).toLowerCase().includes(b),
+    )
+  }, [candidatos, buscaLote])
 
   const solicitados = Number(p.bags) || 0
   const bagsDoProduto = selecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
@@ -1461,8 +1557,12 @@ function ProdutoDaCarga({
           min={1}
           value={p.bags}
           onChange={(e) => onMudar({ bags: e.target.value })}
-          placeholder="bags"
-          className={`${INPUT} w-24`}
+          placeholder="bags *"
+          className={`${INPUT} w-24 ${
+            p.cultivar && p.tratamento && !(Number(p.bags) > 0)
+              ? 'border-red-400 dark:border-red-700'
+              : ''
+          }`}
         />
         <span
           className={`text-sm ${solicitados > 0 && bagsDoProduto >= solicitados ? 'font-medium text-green-700 dark:text-green-400' : 'text-stone-500 dark:text-stone-400'}`}
@@ -1483,14 +1583,27 @@ function ProdutoDaCarga({
 
       {p.cultivar && p.tratamento && (
         <>
-          <p className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            Lotes disponíveis ({candidatos.length}) — acesso mais fácil primeiro
-          </p>
+          <div className="mt-3 mb-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+              Lotes disponíveis ({filtrados.length}
+              {buscaLote.trim() ? ` de ${candidatos.length}` : ''}) — acesso mais fácil primeiro
+            </p>
+            <input
+              value={buscaLote}
+              onChange={(e) => setBuscaLote(e.target.value)}
+              placeholder="buscar lote ou endereço…"
+              className={`${INPUT} w-56 py-1.5`}
+            />
+          </div>
           {candidatos.length === 0 ? (
             <Vazio>Nenhum lote de {p.cultivar} · {rotuloTratamento(p.tratamento)} no mapa.</Vazio>
+          ) : filtrados.length === 0 ? (
+            <p className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">
+              Nenhum lote casa com “{buscaLote.trim()}”.
+            </p>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {candidatos.map((l) => {
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-stone-200 dark:border-stone-700">
+              {filtrados.map((l) => {
                 const jaSelecionado = p.itens.some((i) => i.loteId === l.lote)
                 return (
                   <button
@@ -1498,19 +1611,27 @@ function ProdutoDaCarga({
                     type="button"
                     disabled={jaSelecionado}
                     onClick={() => adicionar(l)}
-                    title={l.destinacao ? `DESTINAÇÃO: ${l.destinacao}` : 'livre'}
-                    className={`rounded-md border px-2 py-1 text-left text-xs transition-colors ${
+                    className={`flex w-full items-center justify-between gap-2 border-b border-stone-100 px-3 py-1.5 text-left text-xs last:border-b-0 dark:border-stone-800/60 ${
                       jaSelecionado
-                        ? 'border-stone-200 text-stone-300 dark:border-stone-800'
+                        ? 'opacity-40'
                         : l.destinacao
-                          ? 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'
-                          : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+                          ? 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50'
+                          : 'hover:bg-stone-100 dark:hover:bg-stone-800'
                     }`}
                   >
-                    <span className="font-medium">{l.lote}</span> · {inteiro(l.bags)} bg
-                    {l.destinacao && <span className="ml-1 font-semibold">· {l.destinacao}</span>}
-                    <span className="block text-[10px] opacity-70">
-                      {enderecoDe(l) || 'sem endereço'}
+                    <span className="min-w-0">
+                      <span className="font-medium">{l.lote}</span> · {inteiro(l.bags)} bg
+                      <span className="block text-[10px] text-stone-500 dark:text-stone-400">
+                        {enderecoDe(l) || 'sem endereço'}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {l.destinacao
+                        ? <Tag cor="perigo">{l.destinacao}</Tag>
+                        : <Tag cor="ok">livre</Tag>}
+                      <span className={jaSelecionado ? 'text-stone-400' : 'font-medium text-green-800 dark:text-green-400'}>
+                        {jaSelecionado ? 'na carga' : '+ adicionar'}
+                      </span>
                     </span>
                   </button>
                 )
