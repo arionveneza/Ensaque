@@ -278,6 +278,41 @@ export interface CargaMontadaLinha extends NovaCargaMontada {
   carga_montada_produtos: ProdutoCargaLinha[]
 }
 
+/** Bags de um lote já alocados numa carga salva — trava o loteamento duplo. */
+export interface LoteComprometido {
+  carga_id: string
+  /** Tratamento do PRODUTO da carga (o item não guarda tratamento). */
+  tratamento: string
+  lote_id: string
+  bags: number
+}
+
+/**
+ * Tudo que as cargas salvas já tomaram de cada lote (29/08/2026): o mesmo
+ * lote pode estar em várias cargas, e a soma não pode passar do saldo do
+ * SAP. Sem limite de linhas de propósito — a lista de cargas recentes
+ * corta em 20, mas o comprometimento precisa enxergar todas.
+ */
+export async function listarLotesComprometidos(): Promise<LoteComprometido[]> {
+  const { data, error } = await supabase
+    .from('carga_montada_produtos')
+    .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags )')
+  if (error) return []
+  const linhas = (data ?? []) as unknown as {
+    carga_id: string
+    tratamento: string
+    carga_montada_itens: { lote_id: string; bags: number }[]
+  }[]
+  return linhas.flatMap((p) =>
+    (p.carga_montada_itens ?? []).map((i) => ({
+      carga_id: p.carga_id,
+      tratamento: p.tratamento,
+      lote_id: i.lote_id,
+      bags: i.bags,
+    })),
+  )
+}
+
 export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
   // itens penduram no PRODUTO (produto_id) — o embed aninhado usa essa FK
   const r = await supabase

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from '
 import readXlsxFile from 'read-excel-file/browser'
 import * as m from '@/dados/api-mapa'
 import type {
-  CargaMontadaLinha, EnderecoLote, LoteMapaLinha, ProdutoCargaLinha,
+  CargaMontadaLinha, EnderecoLote, LoteComprometido, LoteMapaLinha, ProdutoCargaLinha,
 } from '@/dados/api-mapa'
 import {
   converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, SEM_TSI, type ResultadoLotesMapa,
@@ -205,6 +205,31 @@ const maiorQuadra = (l: LoteMapaLinha): number => {
   return l.lote_enderecos.length > 0 ? -1 : -2
 }
 
+/**
+ * Quantos bags estão NA FRENTE do lote (quadras numéricas maiores do mesmo
+ * armazém+bloco, rateado), no melhor endereço dele — é o material que
+ * precisa sair da frente do box pra alcançar o lote. null = sem endereço
+ * numérico, não dá pra ranquear. O próprio lote na frente não conta.
+ */
+function bagsNaFrenteDe(l: LoteMapaLinha, alocacoes: Alocacao[]): number | null {
+  const custos = l.lote_enderecos
+    .filter((e) => ehNumero(e.quadra))
+    .map((e) =>
+      alocacoes
+        .filter(
+          (a) =>
+            a.endereco.armazem === e.armazem &&
+            a.endereco.bloco === e.bloco &&
+            ehNumero(a.endereco.quadra) &&
+            Number(a.endereco.quadra) > Number(e.quadra) &&
+            !(a.lote.lote === l.lote && a.lote.tratamento === l.tratamento),
+        )
+        .reduce((s, a) => s + a.bags, 0),
+    )
+  if (custos.length === 0) return null
+  return Math.round(Math.min(...custos))
+}
+
 export default function Mapa() {
   const { usuario, permitido } = useAuth()
   const podeImportar = permitido('mapa', 'importar')
@@ -213,6 +238,7 @@ export default function Mapa() {
 
   const [lotes, setLotes] = useState<LoteMapaLinha[] | null>([])
   const [cargas, setCargas] = useState<CargaMontadaLinha[]>([])
+  const [comprometidos, setComprometidos] = useState<LoteComprometido[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -223,10 +249,11 @@ export default function Mapa() {
   const [movendo, setMovendo] = useState<Alocacao | null>(null)
 
   const recarregar = () =>
-    Promise.all([m.listarLotesMapa(), m.listarCargasMontadas()])
-      .then(([l, c]) => {
+    Promise.all([m.listarLotesMapa(), m.listarCargasMontadas(), m.listarLotesComprometidos()])
+      .then(([l, c, cp]) => {
         setLotes(l)
         setCargas(c)
+        setComprometidos(cp)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
 
@@ -718,6 +745,8 @@ export default function Mapa() {
         <LotearCarga
           carga={loteando}
           lotes={todos}
+          alocacoes={aloc}
+          comprometidos={comprometidos}
           rascunho={rascunhoLotear}
           onFechar={() => rascunhoLotear.limpar()}
           onSalva={(texto) => {
@@ -1463,10 +1492,12 @@ function MontagemCarga({
  * carga continua "aguardando lotear" e o botão Lotear permanece na lista.
  */
 function LotearCarga({
-  carga, lotes, rascunho, onFechar, onSalva,
+  carga, lotes, alocacoes, comprometidos, rascunho, onFechar, onSalva,
 }: {
   carga: CargaMontadaLinha
   lotes: LoteMapaLinha[]
+  alocacoes: Alocacao[]
+  comprometidos: LoteComprometido[]
   rascunho: Rascunho<LotearForm>
   onFechar: () => void
   onSalva: (msg: string) => void
@@ -1474,6 +1505,11 @@ function LotearCarga({
   const { produtos } = rascunho.valor
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // acordeão: só a lista de UM produto aberta por vez — 10 produtos com as
+  // listas todas abertas viravam rolagem sem fim (pedido do Arion, 29/08/2026)
+  const [aberto, setAberto] = useState<string | null>(
+    produtos.length === 1 ? produtos[0].chave : null,
+  )
 
   const mudarProduto = (chave: string, patch: Partial<ProdutoCargaForm>) =>
     rascunho.definir({
@@ -1487,9 +1523,23 @@ function LotearCarga({
       .map((i) => ({ ...i, lote: loteDe(p, i.loteId) }))
       .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
 
-  const todosSelecionados = produtos.flatMap((p) => selecionadosDe(p))
+  /** Bags do lote já tomados por OUTRAS cargas salvas — o saldo não pode ser loteado 2×. */
+  const usadoFora = (tratamento: string, loteId: string) =>
+    comprometidos
+      .filter(
+        (x) => x.carga_id !== carga.id && x.tratamento === tratamento && x.lote_id === loteId,
+      )
+      .reduce((s, x) => s + x.bags, 0)
+  const disponivelDe = (p: ProdutoCargaForm, l: LoteMapaLinha) =>
+    Math.max(0, l.bags - usadoFora(p.tratamento, l.lote))
+
+  const todosSelecionados = produtos.flatMap((p) =>
+    selecionadosDe(p).map((i) => ({ ...i, disponivel: disponivelDe(p, i.lote) })),
+  )
   // bags vazio/0 derrubaria o check (bags > 0) do banco — travar antes
   const itensInvalidos = todosSelecionados.filter((i) => !(Number(i.bags) > 0))
+  // mais do que o saldo menos o que já está em outras cargas: travado
+  const excedidos = todosSelecionados.filter((i) => Number(i.bags) > i.disponivel)
   const semQuantidade = produtos.filter((p) => !(Number(p.bags) > 0))
   const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
   const foraDoMapa = produtos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
@@ -1498,7 +1548,8 @@ function LotearCarga({
     (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
     0,
   )
-  const bloqueado = itensInvalidos.length > 0 || semQuantidade.length > 0
+  const bloqueado =
+    itensInvalidos.length > 0 || semQuantidade.length > 0 || excedidos.length > 0
 
   async function salvar() {
     if (bloqueado) return
@@ -1564,7 +1615,11 @@ function LotearCarga({
             key={p.chave}
             produto={p}
             lotes={lotes}
+            alocacoes={alocacoes}
             selecionados={selecionadosDe(p)}
+            disponivelDe={(l) => disponivelDe(p, l)}
+            aberto={aberto === p.chave}
+            onAlternar={() => setAberto((a) => (a === p.chave ? null : p.chave))}
             onMudar={(patch) => mudarProduto(p.chave, patch)}
           />
         ))}
@@ -1576,6 +1631,17 @@ function LotearCarga({
             A quantidade pedida é obrigatória — falta em:{' '}
             {semQuantidade
               .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)}`)
+              .join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {excedidos.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            Mais bags que o disponível do lote (o saldo desconta o que JÁ está em outras
+            cargas):{' '}
+            {excedidos
+              .map((i) => `${i.loteId} (${inteiro(Number(i.bags))} > ${inteiro(i.disponivel)} disp.)`)
               .join(' · ')}
           </Aviso>
         </div>
@@ -1699,16 +1765,22 @@ function ProdutoLinha({
 }
 
 /**
- * 2ª etapa — os lotes de UM produto: candidatos do acesso mais fácil pro
- * mais difícil, com busca por nº ou endereço. Produto pode ficar sem lote
- * (a ordem nasce antes da separação; completa-se depois, editando).
+ * 2ª etapa — os lotes de UM produto, RECOLHIDO por padrão (acordeão): com
+ * vários produtos, as listas todas abertas viravam rolagem sem fim. Os
+ * candidatos saem ordenados pelo que tem MENOS material na frente do box
+ * (menos remoção pra alcançar), com a classe do lote e o saldo já
+ * descontando o que outras cargas tomaram (29/08/2026).
  */
 function ProdutoLotes({
-  produto: p, lotes, selecionados, onMudar,
+  produto: p, lotes, alocacoes, selecionados, disponivelDe, aberto, onAlternar, onMudar,
 }: {
   produto: ProdutoCargaForm
   lotes: LoteMapaLinha[]
+  alocacoes: Alocacao[]
   selecionados: (ItemCargaForm & { lote: LoteMapaLinha })[]
+  disponivelDe: (l: LoteMapaLinha) => number
+  aberto: boolean
+  onAlternar: () => void
   onMudar: (patch: Partial<ProdutoCargaForm>) => void
 }) {
   const [buscaLote, setBuscaLote] = useState('')
@@ -1717,14 +1789,32 @@ function ProdutoLotes({
     if (!p.cultivar || !p.tratamento) return []
     return lotes
       .filter((l) => l.cultivar === p.cultivar && l.tratamento === p.tratamento && l.bags > 0)
-      .sort((a, b) => maiorQuadra(b) - maiorQuadra(a))
-  }, [lotes, p.cultivar, p.tratamento])
+      .map((l) => ({
+        lote: l,
+        frente: bagsNaFrenteDe(l, alocacoes),
+        disponivel: disponivelDe(l),
+      }))
+      .sort((a, b) => {
+        // esgotado em outras cargas vai pro fim; depois, menos material na
+        // frente primeiro; sem endereço numérico não ranqueia (fim)
+        if (a.disponivel > 0 !== b.disponivel > 0) return a.disponivel > 0 ? -1 : 1
+        if ((a.frente == null) !== (b.frente == null)) return a.frente == null ? 1 : -1
+        if (a.frente != null && b.frente != null && a.frente !== b.frente) {
+          return a.frente - b.frente
+        }
+        return maiorQuadra(b.lote) - maiorQuadra(a.lote)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lotes, alocacoes, p.cultivar, p.tratamento, selecionados.length])
 
   const filtrados = useMemo(() => {
     const b = buscaLote.trim().toLowerCase()
     if (!b) return candidatos
     return candidatos.filter(
-      (l) => l.lote.toLowerCase().includes(b) || enderecoDe(l).toLowerCase().includes(b),
+      (c) =>
+        c.lote.lote.toLowerCase().includes(b) ||
+        enderecoDe(c.lote).toLowerCase().includes(b) ||
+        (c.lote.classificacao ?? '').toLowerCase().includes(b),
     )
   }, [candidatos, buscaLote])
 
@@ -1734,11 +1824,12 @@ function ProdutoLotes({
     (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
     0,
   )
+  const completo = solicitados > 0 && bagsDoProduto >= solicitados
 
-  const adicionar = (l: LoteMapaLinha) => {
-    if (p.itens.some((i) => i.loteId === l.lote)) return
+  const adicionar = (l: LoteMapaLinha, disponivel: number) => {
+    if (p.itens.some((i) => i.loteId === l.lote) || disponivel <= 0) return
     const restante = Math.max(0, solicitados - bagsDoProduto)
-    const sugestao = restante > 0 ? Math.min(restante, l.bags) : l.bags
+    const sugestao = Math.min(restante > 0 ? restante : disponivel, disponivel)
     onMudar({ itens: [...p.itens, { loteId: l.lote, bags: String(sugestao) }] })
   }
   const atualizarBags = (loteId: string, v: string) =>
@@ -1748,6 +1839,7 @@ function ProdutoLotes({
 
   return (
     <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-700">
+      {/* cabeçalho sempre visível; a lista abre pelo botão (acordeão) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-sm font-semibold">
           {p.cultivar} · {rotuloTratamento(p.tratamento)}
@@ -1764,25 +1856,42 @@ function ProdutoLotes({
           bg
         </label>
         <span
-          className={`text-sm ${solicitados > 0 && bagsDoProduto >= solicitados ? 'font-medium text-green-700 dark:text-green-400' : 'text-stone-500 dark:text-stone-400'}`}
+          className={`text-sm ${completo ? 'font-medium text-green-700 dark:text-green-400' : 'text-stone-500 dark:text-stone-400'}`}
         >
+          {completo ? '✓ ' : ''}
           {inteiro(bagsDoProduto)}
           {solicitados > 0 ? ` de ${inteiro(solicitados)}` : ''} bg em lotes ·{' '}
           {inteiro(pesoDoProduto)} kg
         </span>
+        <div className="ml-auto">
+          <Botao variante={aberto || completo ? 'normal' : 'primario'} onClick={onAlternar}>
+            {aberto ? 'Fechar lotes' : selecionados.length > 0 ? 'Ajustar lotes' : 'Escolher lotes'}
+          </Botao>
+        </div>
       </div>
 
-      <>
+      {/* recolhido: só o resumo do que já foi escolhido */}
+      {!aberto && selecionados.length > 0 && (
+        <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+          {selecionados
+            .map((i) => `${i.loteId} (${inteiro(Number(i.bags) || 0)} bg)`)
+            .join(' · ')}
+        </p>
+      )}
+
+      {aberto && (
+        <>
           <div className="mt-3 mb-1 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
               Lotes disponíveis ({filtrados.length}
-              {buscaLote.trim() ? ` de ${candidatos.length}` : ''}) — acesso mais fácil primeiro
+              {buscaLote.trim() ? ` de ${candidatos.length}` : ''}) — menos material na
+              frente primeiro
             </p>
             <input
               value={buscaLote}
               onChange={(e) => setBuscaLote(e.target.value)}
-              placeholder="buscar lote ou endereço…"
-              className={`${INPUT} w-56 py-1.5`}
+              placeholder="buscar lote, endereço ou classe…"
+              className={`${INPUT} w-64 py-1.5`}
             />
           </div>
           {candidatos.length === 0 ? (
@@ -1793,16 +1902,19 @@ function ProdutoLotes({
             </p>
           ) : (
             <div className="max-h-72 overflow-y-auto rounded-lg border border-stone-200 dark:border-stone-700">
-              {filtrados.map((l) => {
+              {filtrados.map((c) => {
+                const l = c.lote
                 const jaSelecionado = p.itens.some((i) => i.loteId === l.lote)
+                const esgotado = c.disponivel <= 0
+                const emOutras = l.bags - c.disponivel
                 return (
                   <button
                     key={chaveDe(l)}
                     type="button"
-                    disabled={jaSelecionado}
-                    onClick={() => adicionar(l)}
+                    disabled={jaSelecionado || esgotado}
+                    onClick={() => adicionar(l, c.disponivel)}
                     className={`flex w-full items-center justify-between gap-2 border-b border-stone-100 px-3 py-1.5 text-left text-xs last:border-b-0 dark:border-stone-800/60 ${
-                      jaSelecionado
+                      jaSelecionado || esgotado
                         ? 'opacity-40'
                         : l.destinacao
                           ? 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50'
@@ -1810,17 +1922,28 @@ function ProdutoLotes({
                     }`}
                   >
                     <span className="min-w-0">
-                      <span className="font-medium">{l.lote}</span> · {inteiro(l.bags)} bg
+                      <span className="font-medium">{l.lote}</span> ·{' '}
+                      <b>{inteiro(c.disponivel)} bg disp.</b>
+                      {emOutras > 0 && (
+                        <span className="text-stone-500"> ({inteiro(emOutras)} em outras cargas)</span>
+                      )}
+                      {l.classificacao && (
+                        <span className="ml-1.5">
+                          <Tag cor="neutro">{l.classificacao}</Tag>
+                        </span>
+                      )}
                       <span className="block text-[10px] text-stone-500 dark:text-stone-400">
                         {enderecoDe(l) || 'sem endereço'}
+                        {c.frente != null &&
+                          ` · ${c.frente === 0 ? 'nada na frente' : `~${inteiro(c.frente)} bg na frente`}`}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {l.destinacao
                         ? <Tag cor="perigo">{l.destinacao}</Tag>
                         : <Tag cor="ok">livre</Tag>}
-                      <span className={jaSelecionado ? 'text-stone-400' : 'font-medium text-green-800 dark:text-green-400'}>
-                        {jaSelecionado ? 'na carga' : '+ adicionar'}
+                      <span className={jaSelecionado || esgotado ? 'text-stone-400' : 'font-medium text-green-800 dark:text-green-400'}>
+                        {jaSelecionado ? 'na carga' : esgotado ? 'esgotado em cargas' : '+ adicionar'}
                       </span>
                     </span>
                   </button>
@@ -1831,46 +1954,57 @@ function ProdutoLotes({
 
           {selecionados.length > 0 && (
             <div className="mt-3">
-              <Tabela cabecalho={['Lote', 'Endereço', '#Bags', '#Peso (kg)', 'Destinação', '']}>
-                {selecionados.map((i) => (
-                  <tr key={i.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
-                    <td className="px-2 py-1.5 font-medium">{i.loteId}</td>
-                    <td className="px-2 py-1.5 text-xs text-stone-500">
-                      {enderecoDe(i.lote) || '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right">
-                      <input
-                        type="number"
-                        min={1}
-                        max={i.lote.bags}
-                        value={i.bags}
-                        onChange={(e) => atualizarBags(i.loteId, e.target.value)}
-                        className={`${INPUT} w-20 py-1 text-right`}
-                      />
-                    </td>
-                    <td className="num-tabular px-2 py-1.5 text-right">
-                      {inteiro((Number(i.bags) || 0) * i.lote.peso_bag_kg)}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {i.lote.destinacao
-                        ? <Tag cor="perigo">{i.lote.destinacao}</Tag>
-                        : <Tag cor="ok">livre</Tag>}
-                    </td>
-                    <td className="px-2 py-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => remover(i.loteId)}
-                        className="text-xs text-stone-400 underline hover:text-red-600"
-                      >
-                        remover
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+              <Tabela cabecalho={['Lote', 'Classe', 'Endereço', '#Bags', '#Peso (kg)', 'Destinação', '']}>
+                {selecionados.map((i) => {
+                  const disponivel = disponivelDe(i.lote)
+                  const excede = Number(i.bags) > disponivel
+                  return (
+                    <tr key={i.loteId} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <td className="px-2 py-1.5 font-medium">{i.loteId}</td>
+                      <td className="px-2 py-1.5 text-xs text-stone-500">
+                        {i.lote.classificacao || '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-xs text-stone-500">
+                        {enderecoDe(i.lote) || '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <input
+                          type="number"
+                          min={1}
+                          max={disponivel}
+                          value={i.bags}
+                          onChange={(e) => atualizarBags(i.loteId, e.target.value)}
+                          className={`${INPUT} w-20 py-1 text-right ${excede ? 'border-red-400 dark:border-red-700' : ''}`}
+                        />
+                        <span className="block text-[10px] text-stone-400">
+                          de {inteiro(disponivel)} disp.
+                        </span>
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {inteiro((Number(i.bags) || 0) * i.lote.peso_bag_kg)}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {i.lote.destinacao
+                          ? <Tag cor="perigo">{i.lote.destinacao}</Tag>
+                          : <Tag cor="ok">livre</Tag>}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => remover(i.loteId)}
+                          className="text-xs text-stone-400 underline hover:text-red-600"
+                        >
+                          remover
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </Tabela>
             </div>
           )}
-      </>
+        </>
+      )}
     </div>
   )
 }
