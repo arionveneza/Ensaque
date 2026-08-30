@@ -102,7 +102,7 @@ export function imprimirTabela(
   abrirParaImpressao(html)
 }
 
-function abrirParaImpressao(html: string): void {
+function abrirParaImpressao(html: string, aguardarImagens = false): void {
   const janela = window.open('', '_blank', 'width=1024,height=768')
   if (!janela) {
     alert('O navegador bloqueou a janela de impressão. Libere os pop-ups para este site.')
@@ -111,6 +111,20 @@ function abrirParaImpressao(html: string): void {
   janela.document.write(html)
   janela.document.close()
   janela.focus()
+  if (aguardarImagens) {
+    // fotos vêm por URL assinada: sem esperar, o diálogo abria com o quadro vazio
+    const imagens = Array.from(janela.document.images)
+    void Promise.all(
+      imagens.map((img) =>
+        img.complete
+          ? null
+          : new Promise((res) => {
+              img.onload = img.onerror = res
+            }),
+      ),
+    ).then(() => setTimeout(() => janela.print(), 150))
+    return
+  }
   // dá um tique para o layout assentar antes de abrir o diálogo
   setTimeout(() => janela.print(), 250)
 }
@@ -486,6 +500,8 @@ export interface CroquiCargaImpressao {
   data: string
   lotesNaCarga: number
   totalBags: number
+  /** URLs (assinadas) das fotos da carga/placa — saem no quadro do croqui. */
+  fotos: string[]
 }
 
 /**
@@ -536,6 +552,9 @@ export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
   .foto { padding: 8px 10px; }
   .foto h2 { margin: 0; font-size: 15px; text-align: center; border-bottom: 1.5px solid #333;
              padding-bottom: 6px; }
+  .grade-fotos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding-top: 10px; }
+  .grade-fotos.uma { grid-template-columns: 1fr; }
+  .grade-fotos img { width: 100%; max-height: 340px; object-fit: contain; border: 1px solid #999; }
   .rodape { display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 9px 10px;
             border-top: 1.5px solid #333; font-size: 13px; }
 </style></head><body>
@@ -557,7 +576,17 @@ export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
       <div class="chassi"></div>
       ${carretas}
     </div>
-    <div class="foto"><h2>Foto carga/placa</h2></div>
+    <div class="foto">
+      <h2>Foto carga/placa</h2>
+      ${
+        c.fotos.length > 0
+          ? `<div class="grade-fotos${c.fotos.length === 1 ? ' uma' : ''}">${c.fotos
+              .slice(0, 4)
+              .map((u) => `<img src="${esc(u)}" alt="Foto da carga">`)
+              .join('')}</div>`
+          : ''
+      }
+    </div>
   </div>
   <div class="rodape">
     <span>Quantidade lotes na Carga: <b>${c.lotesNaCarga > 0 ? c.lotesNaCarga : ''}</b><span class="linha-escrever" style="min-width:${c.lotesNaCarga > 0 ? 20 : 90}px">&nbsp;</span></span>
@@ -567,5 +596,5 @@ export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
 </div>
 </body></html>`
 
-  abrirParaImpressao(html)
+  abrirParaImpressao(html, c.fotos.length > 0)
 }

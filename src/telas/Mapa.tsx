@@ -482,7 +482,7 @@ export default function Mapa() {
   }
 
   /** Imprime o croqui de carregamento (réplica do formulário de papel). */
-  function imprimirCroqui(c: CargaMontadaLinha) {
+  async function imprimirCroqui(c: CargaMontadaLinha) {
     const v = veiculoDe(c.veiculo)
     if (!v) {
       setErro(
@@ -493,6 +493,10 @@ export default function Mapa() {
     const lotesDistintos = new Set(
       c.carga_montada_produtos.flatMap((p) => p.carga_montada_itens.map((i) => i.lote_id)),
     ).size
+    // as fotos anexadas saem no quadro "Foto carga/placa" (30/08/2026)
+    const fotos = (
+      await Promise.all(c.fotos.slice(0, 4).map((caminho) => m.urlFotoCarga(caminho)))
+    ).filter((u): u is string => !!u)
     imprimirCroquiCarga({
       numero: c.numero,
       veiculo: v,
@@ -504,6 +508,7 @@ export default function Mapa() {
           0,
         ),
       ),
+      fotos,
     })
   }
 
@@ -646,7 +651,7 @@ export default function Mapa() {
                   ? [{ rotulo: 'Marcar finalizada', onClick: () => void marcarCarga(c, 'finalizada') }]
                   : []),
                 { rotulo: 'Imprimir ordem', onClick: () => imprimirCarga(c) },
-                { rotulo: 'Imprimir croqui', onClick: () => imprimirCroqui(c) },
+                { rotulo: 'Imprimir croqui', onClick: () => void imprimirCroqui(c) },
                 { rotulo: `Fotos (${c.fotos.length})`, onClick: () => setFotosDe(c.id) },
                 ...(podeMontar && !ativa
                   ? [{ rotulo: finalizada ? 'Desfazer finalizada' : 'Desfazer carregada', onClick: () => void desfazerMarca(c) }]
