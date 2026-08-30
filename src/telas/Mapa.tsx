@@ -386,7 +386,11 @@ export default function Mapa() {
    * carga com o lote já no produto da combinação. Lotear da MESMA carga já
    * aberto acumula sem perder as escolhas não salvas.
    */
-  function enviarLoteParaCarga(l: LoteMapaLinha, c: CargaMontadaLinha) {
+  function enviarLoteParaCarga(
+    l: LoteMapaLinha,
+    c: CargaMontadaLinha,
+    bagsEscolhidos: number | null,
+  ) {
     const draft = rascunhoLotear.valor
     const mesmaCarga = draft.cargaId === c.id
     if (!mesmaCarga && loteando && loteando.id !== c.id) {
@@ -417,17 +421,22 @@ export default function Mapa() {
     }
     const jaEmLotes = alvo.itens.reduce((s, i) => s + (Number(i.bags) || 0), 0)
     const restante = Math.max(0, (Number(alvo.bags) || 0) - jaEmLotes)
-    const sugestao = Math.min(restante > 0 ? restante : l.bags, l.bags)
+    // a quantidade escolhida no detalhe da posição vale; sem ela, sugere o
+    // que falta do pedido — sempre limitado ao saldo do lote
+    const qtd =
+      bagsEscolhidos && bagsEscolhidos > 0
+        ? Math.min(bagsEscolhidos, l.bags)
+        : Math.min(restante > 0 ? restante : l.bags, l.bags)
     rascunhoLotear.substituir({
       cargaId: c.id,
       produtos: produtosBase.map((p) =>
         p.chave === alvo.chave
-          ? { ...p, itens: [...p.itens, { loteId: l.lote, bags: String(sugestao) }] }
+          ? { ...p, itens: [...p.itens, { loteId: l.lote, bags: String(qtd) }] }
           : p,
       ),
     })
     setMsg(
-      `${l.lote} adicionado ao lotear da carga ${c.numero} (${l.cultivar} · ${rotuloTratamento(l.tratamento)}) — confira as quantidades e salve.`,
+      `${l.lote}: ${inteiro(qtd)} bg adicionados ao lotear da carga ${c.numero} (${l.cultivar} · ${rotuloTratamento(l.tratamento)}) — confira e salve.`,
     )
   }
 
@@ -953,8 +962,8 @@ export default function Mapa() {
             setEnderecando(l)
             setPosicao(null)
           }}
-          onEnviarParaCarga={(l, c) => {
-            enviarLoteParaCarga(l, c)
+          onEnviarParaCarga={(l, c, bags) => {
+            enviarLoteParaCarga(l, c, bags)
             setPosicao(null)
           }}
         />
@@ -1206,8 +1215,10 @@ function ModalPosicao({
   onFechar: () => void
   onMover: (a: Alocacao) => void
   onEnderecar: (l: LoteMapaLinha) => void
-  onEnviarParaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha) => void
+  onEnviarParaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha, bags: number | null) => void
 }) {
+  // bags a enviar por linha — nasce com o que há NESTA posição (rateado)
+  const [bagsEnvio, setBagsEnvio] = useState<Record<string, string>>({})
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
@@ -1242,18 +1253,39 @@ function ModalPosicao({
                   {a.estimado && ' · estimado — sem contagem por endereço'}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                {/* manda o lote pro lotear de uma carga pendente da combinação */}
-                {podeMontar &&
-                  cargasParaLote(a.lote).map((c) => (
-                    <Botao
-                      key={c.id}
-                      variante="primario"
-                      onClick={() => onEnviarParaCarga(a.lote, c)}
-                    >
-                      + carga {c.numero}
-                    </Botao>
-                  ))}
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {/* manda o lote pro lotear de uma carga pendente da combinação;
+                    a quantidade nasce com o que há NESTA posição e é editável */}
+                {podeMontar && cargasParaLote(a.lote).length > 0 && (() => {
+                  const chaveEnvio = `${chaveDe(a.lote)}|${a.endereco.id}`
+                  const valor = bagsEnvio[chaveEnvio] ?? String(Math.max(1, Math.round(a.bags)))
+                  return (
+                    <>
+                      <label className="flex items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
+                        enviar
+                        <input
+                          type="number"
+                          min={1}
+                          value={valor}
+                          onChange={(e) =>
+                            setBagsEnvio((m) => ({ ...m, [chaveEnvio]: e.target.value }))
+                          }
+                          className={`${INPUT} w-20 py-1 text-right`}
+                        />
+                        bg
+                      </label>
+                      {cargasParaLote(a.lote).map((c) => (
+                        <Botao
+                          key={c.id}
+                          variante="primario"
+                          onClick={() => onEnviarParaCarga(a.lote, c, Number(valor) || null)}
+                        >
+                          + carga {c.numero}{c.cliente ? ` · ${c.cliente}` : ''}
+                        </Botao>
+                      ))}
+                    </>
+                  )
+                })()}
                 {podeEnderecar && (
                   <>
                     <Botao onClick={() => onMover(a)}>Mover</Botao>
