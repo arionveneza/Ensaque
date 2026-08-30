@@ -530,7 +530,7 @@ export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
                 border: 2px solid #333; border-radius: 4px; }
   .chassi { width: 4px; height: 18px; background: #333; margin: 0 auto; }
   .carreta { width: 240px; margin: 0 auto; border: 2.5px solid #333; }
-  .fila { height: 42px; border-bottom: 1.6px solid #333; }
+  .fila { height: 40px; border-bottom: 1.6px solid #333; }
   .fila:last-child { border-bottom: none; }
   .engate { width: 4px; height: 22px; background: #333; margin: 0 auto; }
   .foto { padding: 8px 10px; }

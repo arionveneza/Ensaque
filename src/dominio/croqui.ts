@@ -24,7 +24,8 @@ export const VEICULOS_CARGA: VeiculoCarga[] = [
   { id: 'BITRUCK', nome: 'Bitruck', capacidadeBags: 22, carretas: [6] },
   { id: 'CARRETA_LS', nome: 'Carreta LS', capacidadeBags: 40, carretas: [10] },
   { id: 'BITREM', nome: 'Bitrem', capacidadeBags: 48, carretas: [6, 6] },
-  { id: 'RODOTREM', nome: 'Rodotrem 9 eixos', capacidadeBags: 60, carretas: [8, 7] },
+  // 9 fileiras por carreta (Arion, 30/08/2026)
+  { id: 'RODOTREM', nome: 'Rodotrem 9 eixos', capacidadeBags: 60, carretas: [9, 9] },
 ]
 
 export const veiculoDe = (id: string | null | undefined): VeiculoCarga | null =>
