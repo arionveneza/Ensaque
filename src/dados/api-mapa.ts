@@ -13,7 +13,7 @@
  */
 
 import { supabase } from '@/lib/supabase'
-import type { LoteMapaConvertido } from '@/dominio/importacao/mapa'
+import { SEM_TSI, type EnriquecimentoTratado, type LoteMapaConvertido } from '@/dominio/importacao/mapa'
 
 const erro = (contexto: string, e: { message: string } | null) => {
   if (e) throw new Error(`${contexto}: ${e.message}`)
@@ -51,25 +51,35 @@ export interface LoteMapaLinha {
  * pendente) — a tela avisa em vez de quebrar.
  */
 export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
+  // bags > 0: carga CARREGADA zera o lote no mapa (gatilho) — a linha fica
+  // no banco pro desfazer devolver, mas some da tela
   const { data, error } = await supabase
     .from('lotes_mapa')
     .select(
       'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, lote_enderecos ( id, armazem, bloco, quadra, bags )',
     )
+    .gt('bags', 0)
     .order('cultivar')
   if (error) return null
   return (data ?? []) as unknown as LoteMapaLinha[]
 }
 
 /**
- * Substituição total: upsert de tudo que veio (chave lote + tratamento), e
- * o que não veio é apagado (combinação que zerou no SAP some). O upsert
- * preserva os endereços das combinações que continuam; o delete em cascata
- * leva os endereços das que sumiram.
+ * Upload do SAP no modelo alimentado pela produção (30/08/2026):
+ * - semente BRANCA segue com substituição total (upsert + delete do que não
+ *   veio — combinação que zerou no SAP some; endereços de quem continua
+ *   sobrevivem pelo upsert);
+ * - lote TRATADO não é criado nem apagado pelo upload (quem cria é a ordem
+ *   de produção em "Qualidade apontada"; quem baixa é a carga CARREGADA) —
+ *   o upload só ENRIQUECE destinação/classe pela RPC, casando número base
+ *   + tratamento.
  */
-export async function importarLotesMapa(lotes: LoteMapaConvertido[]): Promise<number> {
+export async function importarLotesMapa(
+  brancos: LoteMapaConvertido[],
+  enriquecimentos: EnriquecimentoTratado[],
+): Promise<{ gravados: number; enriquecidos: number }> {
   const agora = new Date().toISOString()
-  const registros = lotes.map((l) => ({ ...l, atualizado_em: agora }))
+  const registros = brancos.map((l) => ({ ...l, atualizado_em: agora }))
   for (let i = 0; i < registros.length; i += 500) {
     const { error } = await supabase.from('lotes_mapa').upsert(registros.slice(i, i + 500))
     if (error) {
@@ -78,10 +88,21 @@ export async function importarLotesMapa(lotes: LoteMapaConvertido[]): Promise<nu
       )
     }
   }
-  // o que não foi tocado nesta carga não existe mais no SAP → sai do mapa
-  const del = await supabase.from('lotes_mapa').delete().lt('atualizado_em', agora)
-  erro('remover lotes que sumiram do SAP', del.error)
-  return registros.length
+  // branca que não veio nesta carga não existe mais no SAP → sai do mapa
+  const del = await supabase
+    .from('lotes_mapa')
+    .delete()
+    .eq('tratamento', SEM_TSI)
+    .lt('atualizado_em', agora)
+  erro('remover lotes brancos que sumiram do SAP', del.error)
+
+  const rpc = await supabase.rpc('enriquecer_tratados', { p_itens: enriquecimentos })
+  if (rpc.error) {
+    throw new Error(
+      `carimbar destinação dos tratados: ${rpc.error.message} — a migração mapa-alimentado-pela-producao.sql já rodou?`,
+    )
+  }
+  return { gravados: registros.length, enriquecidos: (rpc.data as number) ?? 0 }
 }
 
 /** Substitui os endereços de UMA combinação lote + tratamento. */

@@ -785,9 +785,14 @@ export default function Mapa() {
     setImportando(true)
     setErro(null)
     try {
-      const qtd = await m.importarLotesMapa(previa.lotes)
+      const { gravados, enriquecidos } = await m.importarLotesMapa(
+        previa.lotes,
+        previa.enriquecimentos,
+      )
       setPrevia(null)
-      setMsg(`${qtd} lote(s) gravados — lote que zerou no SAP saiu do mapa.`)
+      setMsg(
+        `${gravados} lote(s) brancos gravados (quem zerou no SAP saiu do mapa) · destinação/classe carimbadas em ${enriquecidos} tratado(s).`,
+      )
       await recarregar()
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
@@ -844,13 +849,14 @@ export default function Mapa() {
         {previa ? (
           <>
             <Aviso gravidade="alerta">
-              <b>Prévia — nada foi gravado ainda.</b> {previa.lotes.length} combinação(ões)
-              lote + tratamento do {DEPOSITO_MAPA} ({previa.brancos} branca(s),{' '}
-              {previa.tratados} tratada(s), {previa.comDestinacao} com destinação ·{' '}
-              {inteiro(previa.totalBags)} bags). Fora: {previa.outrosDepositos} de outros
-              depósitos, {previa.zerados} zeradas, {previa.granel} granel. Confirmar
-              SUBSTITUI o mapa inteiro — o que não veio some (endereços de quem continua
-              são preservados).
+              <b>Prévia — nada foi gravado ainda.</b> {previa.brancos} lote(s) de semente
+              BRANCA do {DEPOSITO_MAPA} ({inteiro(previa.totalBags)} bags) — substituição
+              total: branca que não veio some (endereços de quem continua são
+              preservados). {previa.tratados} combinação(ões) TRATADA(s) só carimbam
+              destinação/classe ({previa.comDestinacao} com destinação) — lote tratado
+              entra no mapa pela ordem de produção, não pelo upload. Fora:{' '}
+              {previa.outrosDepositos} de outros depósitos, {previa.zerados} zeradas,{' '}
+              {previa.granel} granel.
             </Aviso>
             <div className="mt-3 flex gap-2">
               <Botao variante="primario" disabled={importando} onClick={confirmarImportacao}>

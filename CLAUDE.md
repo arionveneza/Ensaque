@@ -470,9 +470,17 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    `mapa-lote-tratamento.sql`, que substituiu a `mapa-montagem-carga.sql` do mesmo dia):
    o endereçamento físico do Arion provou que o MESMO lote existe branco e tratado ao
    mesmo tempo, em endereços diferentes (SV0891056060482 tinha 5 tratamentos, um por
-   lugar). Upload do export de saldo do SAP (SAP.xlsx, com colunas Destinação e Depósito;
-   mesmo arquivo serve ao saldo da tela Ordens) — substituição total: combinação zerada
-   some, endereços de quem continua sobrevivem por upsert. A **Logística endereça**
+   lugar). **O mapa é alimentado pela PRODUÇÃO** (decisão de 30/08/2026 — a integração
+   SAP em tempo real ficou de fora): ordem que vira `Qualidade apontada` põe a combinação
+   (lote base + tratamento da receita) no mapa com os **bags apontados pela produção**
+   (gatilho `tg_lote_tratado_no_mapa`, SECURITY DEFINER; receita SEM TSI não cria);
+   carga marcada **Carregada desconta** os bags do mapa (desfazer devolve; linha zerada
+   fica no banco e some da tela). O upload do SAP.xlsx mudou de papel: **substituição
+   total SÓ da semente branca**; pro tratado ele apenas CARIMBA destinação/classe (RPC
+   `enriquecer_tratados`), casando pelo **número BASE + tratamento** — os sufixos
+   -1/-2/-3 do SAP morrem na entrada (`loteBase`), destinações divergentes de sub-lotes
+   viram "A / B" (migração `mapa-alimentado-pela-producao.sql`, que também fundiu os
+   tratados sufixados pré-existentes preservando endereços). A **Logística endereça**
    (`lote_enderecos`: Armazém + Bloco + **Quadra em TEXTO** — nem sempre é número:
    CORREDOR, SILO — e **bags opcional**, o físico não controla quantidade por endereço;
    uma combinação pode ter VÁRIOS endereços); fila "Sem localização" mostra quem chegou
@@ -498,9 +506,9 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    ATUAL (onde buscar), DESTINAÇÃO em vermelho, pesos por lote e total, e o quadro de
    pesagem — peso da carga, TARA (valor ou campo em branco pra anotar) e peso bruto
    (tara + carga). Recurso `mapa`: ver (todos) · importar (PCP/Logística/Gestor) ·
-   enderecar (Logística/Gestor) · montar_carga (Balança/Logística/Gestor). Pendente:
-   consulta em tempo real ao SAP (a TSI_SALDOS de hoje não devolve a Destinação —
-   precisa de consulta nova lá); por ora o upload cobre.
+   enderecar (Logística/Gestor) · montar_carga (Balança/Logística/Gestor). A consulta
+   em tempo real ao SAP foi DESCARTADA por ora (30/08/2026): o tratado entra pela
+   produção e o upload segue cobrindo branca + destinação/classe.
 
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.

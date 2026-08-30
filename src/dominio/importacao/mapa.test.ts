@@ -39,20 +39,35 @@ describe('ehRelatorioMapa', () => {
 })
 
 describe('converterLotesMapa', () => {
-  it('a unidade é lote + tratamento: o MESMO lote branco e tratado vira duas linhas', () => {
-    // o caso real que definiu o modelo (endereçamento de 28/08/2026):
-    // mesmo lote existe branco e tratado ao mesmo tempo
+  it('branca vira lote; tratada vira ENRIQUECIMENTO (a ordem de produção cria o lote)', () => {
+    // modelo de 30/08/2026: o upload só substitui semente branca; o lote
+    // tratado entra no mapa pela ordem "Qualidade apontada", e o upload
+    // apenas carimba destinação/classe
     const r = converterLotesMapa([
       CAB,
       linha({ lote: 'A', trat: null, qtd: 10 }),
-      linha({ lote: 'A', trat: 'FTZ60', qtd: 5 }),
+      linha({ lote: 'A', trat: 'FTZ60', qtd: 5, dest: 'COMIGO' }),
     ])
-    expect(r.lotes.map((l) => [l.lote, l.tratamento, l.bags])).toEqual([
-      ['A', 'FTZ60', 5],
-      ['A', SEM_TSI, 10],
+    expect(r.lotes.map((l) => [l.lote, l.tratamento, l.bags])).toEqual([['A', SEM_TSI, 10]])
+    expect(r.enriquecimentos).toEqual([
+      { lote: 'A', tratamento: 'FTZ60', destinacao: 'COMIGO', classificacao: 'Classe C' },
     ])
     expect(r.brancos).toBe(1)
     expect(r.tratados).toBe(1)
+  })
+
+  it('o sufixo do SAP morre na entrada: -1/-2 do mesmo base agregam destinações', () => {
+    const r = converterLotesMapa([
+      CAB,
+      linha({ lote: 'A-1', trat: 'FTZ60', dest: 'COMIGO' }),
+      linha({ lote: 'A-2', trat: 'FTZ60', dest: 'Multiplicação' }),
+      linha({ lote: 'A-3', trat: 'V&P', dest: null }),
+    ])
+    expect(r.lotes).toHaveLength(0)
+    expect(r.enriquecimentos.map((e) => [e.lote, e.tratamento, e.destinacao])).toEqual([
+      ['A', 'FTZ60', 'COMIGO / Multiplicação'],
+      ['A', 'V&P', null],
+    ])
   })
 
   it('tratamento vazio e "SEM TSI" viram a mesma combinação branca', () => {
@@ -66,9 +81,9 @@ describe('converterLotesMapa', () => {
     expect(r.lotes[0].bags).toBe(17)
   })
 
-  it('aplica o de-para de tratamento do SAP (VeP → V&P)', () => {
+  it('aplica o de-para de tratamento do SAP (VeP → V&P) no enriquecimento', () => {
     const r = converterLotesMapa([CAB, linha({ lote: 'A', trat: 'VeP' })])
-    expect(r.lotes[0].tratamento).toBe('V&P')
+    expect(r.enriquecimentos[0].tratamento).toBe('V&P')
   })
 
   it('só VEN_GER entra; outros depósitos são contados fora', () => {
