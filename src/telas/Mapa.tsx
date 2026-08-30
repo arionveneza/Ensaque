@@ -369,15 +369,37 @@ export default function Mapa() {
   // derivado do rascunho: sobrevive a F5, e some sozinho se a carga sumir
   const loteando = cargas.find((c) => c.id === rascunhoLotear.valor.cargaId) ?? null
 
-  /** Cargas ATIVAS com produto da combinação do lote — destinos do "+ carga" do mapa. */
+  /** Quanto FALTA do pedido do produto da combinação do lote na carga (0 = completo). */
+  const faltaNaCarga = (l: LoteMapaLinha, c: CargaMontadaLinha): number => {
+    // com o lotear da própria carga aberto, o rascunho (não salvo) é a verdade
+    if (rascunhoLotear.valor.cargaId === c.id) {
+      const p = rascunhoLotear.valor.produtos.find(
+        (x) => x.cultivar === l.cultivar && x.tratamento === l.tratamento,
+      )
+      if (!p) return 0
+      return Math.max(
+        0,
+        (Number(p.bags) || 0) - p.itens.reduce((s, i) => s + (Number(i.bags) || 0), 0),
+      )
+    }
+    const p = c.carga_montada_produtos.find(
+      (x) => x.cultivar === l.cultivar && x.tratamento === l.tratamento,
+    )
+    if (!p) return 0
+    return Math.max(
+      0,
+      p.bags_solicitados - p.carga_montada_itens.reduce((s, i) => s + i.bags, 0),
+    )
+  }
+
+  /**
+   * Cargas ATIVAS que ainda PRECISAM da combinação do lote — destinos do
+   * "+ carga" do mapa. Pedido completo fica de fora: nunca se loteia além
+   * do que a carga pede (30/08/2026).
+   */
   const cargasParaLote = (l: LoteMapaLinha) =>
     cargas.filter(
-      (c) =>
-        !c.carregada_em &&
-        !c.finalizada_em &&
-        c.carga_montada_produtos.some(
-          (p) => p.cultivar === l.cultivar && p.tratamento === l.tratamento,
-        ),
+      (c) => !c.carregada_em && !c.finalizada_em && faltaNaCarga(l, c) > 0,
     )
 
   /**
@@ -960,6 +982,7 @@ export default function Mapa() {
           podeEnderecar={podeEnderecar}
           podeMontar={podeMontar}
           cargasParaLote={cargasParaLote}
+          faltaNaCarga={faltaNaCarga}
           onFechar={() => setPosicao(null)}
           onMover={(a) => {
             setMovendo(a)
@@ -1211,7 +1234,7 @@ function MapaGrade({
 
 /** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 function ModalPosicao({
-  posicao, alocacoes, podeEnderecar, podeMontar, cargasParaLote,
+  posicao, alocacoes, podeEnderecar, podeMontar, cargasParaLote, faltaNaCarga,
   onFechar, onMover, onEnderecar, onEnviarParaCarga,
 }: {
   posicao: Posicao
@@ -1219,6 +1242,7 @@ function ModalPosicao({
   podeEnderecar: boolean
   podeMontar: boolean
   cargasParaLote: (l: LoteMapaLinha) => CargaMontadaLinha[]
+  faltaNaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha) => number
   onFechar: () => void
   onMover: (a: Alocacao) => void
   onEnderecar: (l: LoteMapaLinha) => void
@@ -1287,7 +1311,8 @@ function ModalPosicao({
                           variante="primario"
                           onClick={() => onEnviarParaCarga(a.lote, c, Number(valor) || null)}
                         >
-                          + carga {c.numero}{c.cliente ? ` · ${c.cliente}` : ''}
+                          + carga {c.numero}{c.cliente ? ` · ${c.cliente}` : ''} (falta{' '}
+                          {inteiro(faltaNaCarga(a.lote, c))})
                         </Botao>
                       ))}
                     </>
