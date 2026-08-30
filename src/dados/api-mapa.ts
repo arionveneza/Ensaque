@@ -455,6 +455,28 @@ export async function listarConsumoOrdens(): Promise<ConsumoOrdens[]> {
 const SELECT_PRODUTOS_CARGA =
   'carga_montada_produtos ( id, cultivar, tratamento, bags_solicitados, carga_montada_itens ( lote_id, bags, peso_kg, destinacao ) )'
 
+/**
+ * Tudo que foi CARREGADO (relatório da expedição, 30/08/2026): cargas com
+ * carregada_em no período — sem o corte de 20 da lista de recentes.
+ * `desdeIso` null = desde sempre.
+ */
+export async function listarCargasCarregadas(
+  desdeIso: string | null,
+): Promise<CargaMontadaLinha[]> {
+  let q = supabase
+    .from('cargas_montadas')
+    .select(
+      `id, numero, placa, cliente, tara_kg, peso_total_kg, veiculo, criada_em, carregada_em, finalizada_em, fotos, ${SELECT_PRODUTOS_CARGA}`,
+    )
+    .not('carregada_em', 'is', null)
+    .order('carregada_em', { ascending: false })
+    .limit(500)
+  if (desdeIso) q = q.gte('carregada_em', desdeIso)
+  const { data, error } = await q
+  if (error) return []
+  return (data ?? []) as unknown as CargaMontadaLinha[]
+}
+
 export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
   // itens penduram no PRODUTO (produto_id) — o embed aninhado usa essa FK
   let r = await supabase

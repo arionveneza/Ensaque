@@ -16,7 +16,8 @@ import { imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, inteiro, n,
+  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, exportarCsv,
+  inteiro, n, somaDias,
 } from '@/componentes/ui'
 
 /**
@@ -255,6 +256,29 @@ export default function Mapa() {
   const [posicao, setPosicao] = useState<Posicao | null>(null)
   const [movendo, setMovendo] = useState<Alocacao | null>(null)
   const [fotosDe, setFotosDe] = useState<string | null>(null)
+
+  // -------- relatório do que foi carregado --------
+  const [periodoCarregadas, setPeriodoCarregadas] =
+    useState<'dia' | 'semana' | 'mes' | 'tudo'>('semana')
+  const [carregadas, setCarregadas] = useState<CargaMontadaLinha[]>([])
+  const desdeCarregadas = useMemo(() => {
+    if (periodoCarregadas === 'tudo') return null
+    const hoje = new Date().toISOString().slice(0, 10)
+    return periodoCarregadas === 'dia'
+      ? hoje
+      : somaDias(hoje, periodoCarregadas === 'semana' ? -7 : -30)
+  }, [periodoCarregadas])
+  useEffect(() => {
+    let vivo = true
+    m.listarCargasCarregadas(desdeCarregadas).then((c) => {
+      if (vivo) setCarregadas(c)
+    })
+    return () => {
+      vivo = false
+    }
+    // `cargas` na dependência: marcar/desfazer carregada recarrega o relatório
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desdeCarregadas, cargas])
 
   const recarregar = () =>
     Promise.all([
@@ -1108,6 +1132,124 @@ export default function Mapa() {
         />
       )}
 
+      {/* -------- relatório: tudo que foi carregado -------- */}
+      <CartaoRecolhivel
+        titulo="Carregadas"
+        ocorrencias={carregadas.length}
+        resumo="Tudo que já saiu carregado — clique em Mostrar pra ver por período e exportar."
+        destaque={false}
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {(['dia', 'semana', 'mes', 'tudo'] as const).map((p) => (
+            <Botao
+              key={p}
+              variante={periodoCarregadas === p ? 'primario' : 'normal'}
+              onClick={() => setPeriodoCarregadas(p)}
+            >
+              {p === 'dia' ? 'Hoje' : p === 'semana' ? '7 dias' : p === 'mes' ? '30 dias' : 'Tudo'}
+            </Botao>
+          ))}
+          <div className="ml-auto">
+            <Botao
+              disabled={carregadas.length === 0}
+              onClick={() =>
+                exportarCsv(`carregadas-${periodoCarregadas}`, [
+                  ['Carregada em', 'Ordem', 'Produtos', 'Lotes', 'Bags', 'Peso (kg)', 'Placa', 'Cliente', 'Veículo', 'Situação'],
+                  ...carregadas.map((c) => [
+                    c.carregada_em ? new Date(c.carregada_em).toLocaleString('pt-BR') : '',
+                    c.numero,
+                    c.carga_montada_produtos
+                      .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)} × ${inteiro(p.bags_solicitados)}`)
+                      .join(' + '),
+                    c.carga_montada_produtos
+                      .flatMap((p) => p.carga_montada_itens)
+                      .map((i) => `${i.lote_id} (${inteiro(i.bags)})`)
+                      .join(' · '),
+                    Math.round(
+                      c.carga_montada_produtos.reduce(
+                        (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+                        0,
+                      ),
+                    ),
+                    c.peso_total_kg,
+                    c.placa ?? '',
+                    c.cliente ?? '',
+                    veiculoDe(c.veiculo)?.nome ?? '',
+                    c.finalizada_em ? 'Finalizada' : 'Carregada',
+                  ]),
+                ])
+              }
+            >
+              Exportar
+            </Botao>
+          </div>
+        </div>
+
+        {carregadas.length === 0 ? (
+          <Vazio>Nada carregado no período.</Vazio>
+        ) : (
+          <>
+            <Tabela cabecalho={['Carregada em', 'Ordem', 'Produtos', 'Lotes', '#Bags', '#Peso (kg)', 'Placa · Cliente', 'Veículo', 'Situação']}>
+              {carregadas.map((c) => {
+                const bags = c.carga_montada_produtos.reduce(
+                  (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+                  0,
+                )
+                return (
+                  <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                    <td className="px-2 py-1.5 text-xs text-stone-500">
+                      {c.carregada_em ? dataHoraCurta(c.carregada_em) : '—'}
+                    </td>
+                    <td className="px-2 py-1.5 font-medium">{c.numero}</td>
+                    <td className="px-2 py-1.5 text-xs">
+                      {c.carga_montada_produtos
+                        .map((p) => `${p.cultivar} · ${rotuloTratamento(p.tratamento)} × ${inteiro(p.bags_solicitados)}`)
+                        .join(' + ')}
+                    </td>
+                    <td className="px-2 py-1.5 text-xs text-stone-500">
+                      {c.carga_montada_produtos
+                        .flatMap((p) => p.carga_montada_itens)
+                        .map((i) => `${i.lote_id} (${inteiro(i.bags)})`)
+                        .join(' · ')}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(bags)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.peso_total_kg)}</td>
+                    <td className="px-2 py-1.5 text-xs text-stone-500">
+                      {[c.placa, c.cliente].filter(Boolean).join(' · ') || '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-xs">{veiculoDe(c.veiculo)?.nome ?? '—'}</td>
+                    <td className="px-2 py-1.5">
+                      {c.finalizada_em
+                        ? <Tag cor="neutro">finalizada</Tag>
+                        : <Tag cor="info">carregada</Tag>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </Tabela>
+            <p className="mt-3 text-sm font-medium text-stone-600 dark:text-stone-300">
+              Total do período: <b>{carregadas.length} carga(s)</b> ·{' '}
+              <b>
+                {inteiro(
+                  carregadas.reduce(
+                    (s, c) =>
+                      s +
+                      c.carga_montada_produtos.reduce(
+                        (sp, p) => sp + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+                        0,
+                      ),
+                    0,
+                  ),
+                )}{' '}
+                bags
+              </b>{' '}
+              ·{' '}
+              <b>{inteiro(carregadas.reduce((s, c) => s + c.peso_total_kg, 0))} kg</b>
+            </p>
+          </>
+        )}
+      </CartaoRecolhivel>
+
       {cargaFotos && (
         <ModalFotosCarga
           carga={cargaFotos}
@@ -1142,14 +1284,16 @@ export default function Mapa() {
  * vermelho — e abrem sob demanda; senão a tela virava rolagem sem fim.
  */
 function CartaoRecolhivel({
-  titulo, ocorrencias, resumo, children,
+  titulo, ocorrencias, resumo, children, destaque = true,
 }: {
   titulo: string
-  /** Contagem em vermelho ao lado do título. */
+  /** Contagem ao lado do título. */
   ocorrencias: number
   /** Uma linha explicando o que tem dentro, visível quando minimizado. */
   resumo: string
   children: ReactNode
+  /** true = contagem em VERMELHO (pendência); false = neutra (histórico). */
+  destaque?: boolean
 }) {
   const [aberto, setAberto] = useState(false)
   return (
@@ -1157,7 +1301,13 @@ function CartaoRecolhivel({
       titulo={
         <span>
           {titulo}{' '}
-          <span className={ocorrencias > 0 ? 'font-bold text-red-600 dark:text-red-400' : 'text-stone-400'}>
+          <span
+            className={
+              ocorrencias > 0 && destaque
+                ? 'font-bold text-red-600 dark:text-red-400'
+                : 'font-semibold text-stone-500 dark:text-stone-400'
+            }
+          >
             ({inteiro(ocorrencias)})
           </span>
         </span>
