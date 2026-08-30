@@ -333,6 +333,32 @@ export default function Mapa() {
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
   const aloc = useMemo(() => alocar(todos), [todos])
 
+  /** Posições (armazém+bloco+quadra) com MAIS DE UM lote — conferência física. */
+  const posicoesLotadas = useMemo(() => {
+    const porPos = new Map<string, { armazem: string; bloco: string; quadra: string; alocacoes: Alocacao[] }>()
+    for (const a of aloc) {
+      const k = `${a.endereco.armazem}|${a.endereco.bloco}|${a.endereco.quadra}`
+      const p = porPos.get(k)
+      if (p) p.alocacoes.push(a)
+      else {
+        porPos.set(k, {
+          armazem: a.endereco.armazem,
+          bloco: a.endereco.bloco,
+          quadra: a.endereco.quadra,
+          alocacoes: [a],
+        })
+      }
+    }
+    return [...porPos.values()]
+      .filter((p) => p.alocacoes.length > 1)
+      .sort(
+        (a, b) =>
+          a.armazem.localeCompare(b.armazem) ||
+          a.bloco.localeCompare(b.bloco, undefined, { numeric: true }) ||
+          ordenaQuadras(a.quadra, b.quadra),
+      )
+  }, [aloc])
+
   /** Reabre uma carga salva pra edição do CABEÇALHO e dos produtos (1ª etapa). */
   function editarCarga(c: CargaMontadaLinha) {
     rascunhoCarga.substituir({
@@ -874,11 +900,15 @@ export default function Mapa() {
         )}
       </Cartao>
 
-      {/* -------- fila de endereçamento -------- */}
+      {/* -------- fila de endereçamento (recolhida por padrão) -------- */}
       {semEndereco.length > 0 && (
-        <Cartao titulo={`Sem localização (${semEndereco.length})`} className="mb-5">
+        <CartaoRecolhivel
+          titulo="Sem localização"
+          ocorrencias={semEndereco.length}
+          resumo="Combinações ainda sem endereço físico — clique em Mostrar pra ver a lista e endereçar."
+        >
           <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
-            Combinações do SAP ainda sem endereço físico — a Logística informa armazém,
+            Combinações ainda sem endereço físico — a Logística informa armazém,
             bloco e quadra (pode dividir em mais de um endereço).
           </p>
           <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags', 'Destinação', '']}>
@@ -902,7 +932,47 @@ export default function Mapa() {
               </tr>
             ))}
           </Tabela>
-        </Cartao>
+        </CartaoRecolhivel>
+      )}
+
+      {/* -------- quadras com mais de um lote (conferência) -------- */}
+      {posicoesLotadas.length > 0 && (
+        <CartaoRecolhivel
+          titulo="Quadras com mais de um lote"
+          ocorrencias={posicoesLotadas.length}
+          resumo="Posições dividindo espaço entre lotes — clique em Mostrar pra conferir e, se for o caso, movimentar."
+        >
+          <Tabela cabecalho={['Armazém', 'Bloco', 'Quadra', '#Lotes', 'Lotes na posição', '']}>
+            {posicoesLotadas.map((p) => (
+              <tr
+                key={`${p.armazem}|${p.bloco}|${p.quadra}`}
+                className="border-t border-stone-100 dark:border-stone-800/60"
+              >
+                <td className="px-2 py-1.5 font-medium">{p.armazem}</td>
+                <td className="px-2 py-1.5">{p.bloco}</td>
+                <td className="px-2 py-1.5">{rotuloQuadra(p.quadra)}</td>
+                <td className="num-tabular px-2 py-1.5 text-right font-bold text-red-600 dark:text-red-400">
+                  {p.alocacoes.length}
+                </td>
+                <td className="px-2 py-1.5 text-xs text-stone-500 dark:text-stone-400">
+                  {p.alocacoes
+                    .map(
+                      (a) =>
+                        `${a.lote.lote} · ${rotuloTratamento(a.lote.tratamento)} (${a.estimado ? '~' : ''}${inteiro(Math.round(a.bags))} bg)`,
+                    )
+                    .join('  ·  ')}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <Botao
+                    onClick={() => setPosicao({ armazem: p.armazem, bloco: p.bloco, quadra: p.quadra })}
+                  >
+                    Ver posição
+                  </Botao>
+                </td>
+              </tr>
+            ))}
+          </Tabela>
+        </CartaoRecolhivel>
       )}
 
       {/* -------- mapa em grade -------- */}
@@ -1063,6 +1133,42 @@ export default function Mapa() {
         />
       )}
     </Pagina>
+  )
+}
+
+/**
+ * Cartão recolhível (30/08/2026): listas de conferência (Sem localização,
+ * quadras com 2+ lotes) nascem MINIMIZADAS — só o título com a contagem em
+ * vermelho — e abrem sob demanda; senão a tela virava rolagem sem fim.
+ */
+function CartaoRecolhivel({
+  titulo, ocorrencias, resumo, children,
+}: {
+  titulo: string
+  /** Contagem em vermelho ao lado do título. */
+  ocorrencias: number
+  /** Uma linha explicando o que tem dentro, visível quando minimizado. */
+  resumo: string
+  children: ReactNode
+}) {
+  const [aberto, setAberto] = useState(false)
+  return (
+    <Cartao
+      titulo={
+        <span>
+          {titulo}{' '}
+          <span className={ocorrencias > 0 ? 'font-bold text-red-600 dark:text-red-400' : 'text-stone-400'}>
+            ({inteiro(ocorrencias)})
+          </span>
+        </span>
+      }
+      acoes={<Botao onClick={() => setAberto((v) => !v)}>{aberto ? 'Minimizar' : 'Mostrar'}</Botao>}
+      className="mb-5"
+    >
+      {aberto ? children : (
+        <p className="text-sm text-stone-500 dark:text-stone-400">{resumo}</p>
+      )}
+    </Cartao>
   )
 }
 
