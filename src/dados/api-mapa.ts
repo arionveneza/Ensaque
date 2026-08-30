@@ -281,7 +281,48 @@ export interface CargaMontadaLinha extends NovaCargaMontada {
   carregada_em: string | null
   /** Ciclo encerrado (depois de carregada). */
   finalizada_em: string | null
+  /** Caminhos no bucket `cargas` — foto da carga pronta e da placa. */
+  fotos: string[]
   carga_montada_produtos: ProdutoCargaLinha[]
+}
+
+// ================================================================
+// Fotos da carga/placa — bucket `cargas`, mesma receita da Qualidade
+// (upload na seleção; ver `src/componentes/SeletorFotos.tsx`)
+// ================================================================
+
+const BUCKET_FOTOS = 'cargas'
+
+export async function enviarFotoCarga(cargaId: string, dataUrl: string): Promise<string> {
+  const blob = await (await fetch(dataUrl)).blob()
+  const caminho = `${cargaId}/${Date.now()}.jpg`
+  const { error } = await supabase.storage
+    .from(BUCKET_FOTOS)
+    .upload(caminho, blob, { contentType: 'image/jpeg', upsert: false })
+  if (error) {
+    throw new Error(`enviar foto: ${error.message} — a migração carga-fotos.sql já rodou?`)
+  }
+  return caminho
+}
+
+/** O bucket é privado: a imagem só abre por link assinado, que expira. */
+export async function urlFotoCarga(caminho: string): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET_FOTOS)
+    .createSignedUrl(caminho, 3600)
+  if (error) return null
+  return data?.signedUrl ?? null
+}
+
+/** Best-effort: falhar aqui só deixa um arquivo órfão no bucket privado. */
+export async function removerFotoCarga(caminho: string): Promise<void> {
+  await supabase.storage.from(BUCKET_FOTOS).remove([caminho])
+}
+
+/** Grava a lista de caminhos na carga (a RPC de salvar não toca em fotos). */
+export async function salvarFotosCarga(id: string, fotos: string[]): Promise<void> {
+  const { error } = await supabase.from('cargas_montadas').update({ fotos }).eq('id', id)
+  erro('gravar fotos da carga — a migração carga-fotos.sql já rodou?', error)
 }
 
 /** Bags de um lote já alocados numa carga salva — trava o loteamento duplo. */
@@ -397,7 +438,7 @@ export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLin
   let r = await supabase
     .from('cargas_montadas')
     .select(
-      `id, numero, placa, cliente, tara_kg, peso_total_kg, veiculo, criada_em, carregada_em, finalizada_em, ${SELECT_PRODUTOS_CARGA}`,
+      `id, numero, placa, cliente, tara_kg, peso_total_kg, veiculo, criada_em, carregada_em, finalizada_em, fotos, ${SELECT_PRODUTOS_CARGA}`,
     )
     .order('criada_em', { ascending: false })
     .limit(limite)
@@ -421,6 +462,7 @@ export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLin
     carregada_em: null,
     finalizada_em: null,
     veiculo: null,
+    fotos: [],
     ...(c as object),
   })) as unknown as CargaMontadaLinha[]
 }

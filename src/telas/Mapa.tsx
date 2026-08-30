@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as m from '@/dados/api-mapa'
 import type {
@@ -14,6 +14,7 @@ import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
 import { imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
+import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, inteiro, n,
 } from '@/componentes/ui'
@@ -253,6 +254,7 @@ export default function Mapa() {
   const [enderecando, setEnderecando] = useState<LoteMapaLinha | null>(null)
   const [posicao, setPosicao] = useState<Posicao | null>(null)
   const [movendo, setMovendo] = useState<Alocacao | null>(null)
+  const [fotosDe, setFotosDe] = useState<string | null>(null)
 
   const recarregar = () =>
     Promise.all([
@@ -466,6 +468,19 @@ export default function Mapa() {
     )
   }
 
+  // derivado: modal de fotos aberto (recarregar atualiza a carga por baixo)
+  const cargaFotos = cargas.find((c) => c.id === fotosDe) ?? null
+
+  /** Grava a lista de fotos da carga (chamado a cada foto pelo SeletorFotos). */
+  async function mudarFotosCarga(c: CargaMontadaLinha, fotos: string[]) {
+    try {
+      await m.salvarFotosCarga(c.id, fotos)
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   /** Imprime o croqui de carregamento (réplica do formulário de papel). */
   function imprimirCroqui(c: CargaMontadaLinha) {
     const v = veiculoDe(c.veiculo)
@@ -616,45 +631,31 @@ export default function Mapa() {
           {dataHoraCurta(c.criada_em)}
         </td>
         <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
-          <div className="flex justify-end gap-1.5 whitespace-nowrap">
-            {/* loteada continua ajustável até marcar Carregada (30/08/2026) */}
-            {podeMontar && ativa && (
-              <Botao variante={pendente ? 'primario' : 'normal'} onClick={() => lotearCarga(c)}>
-                {pendente ? 'Lotear' : 'Ajustar lotes'}
-              </Botao>
-            )}
-            {podeMontar && ativa && !pendente && (
-              <Botao variante="primario" onClick={() => void marcarCarga(c, 'carregada')}>
-                Carregada
-              </Botao>
-            )}
-            {podeMontar && carregada && !finalizada && (
-              <Botao variante="primario" onClick={() => void marcarCarga(c, 'finalizada')}>
-                Finalizada
-              </Botao>
-            )}
-            <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
-            <Botao onClick={() => imprimirCroqui(c)}>Croqui</Botao>
+          {/* só Editar à mostra; o resto vive no menu Opções (pedido do Arion, 30/08/2026) */}
+          <div className="flex items-start justify-end gap-1.5 whitespace-nowrap">
             {podeMontar && ativa && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
-            {podeMontar && ativa && (
-              <button
-                type="button"
-                onClick={() => void excluirCarga(c)}
-                className="px-1 text-xs text-stone-400 underline hover:text-red-600"
-              >
-                excluir
-              </button>
-            )}
-            {podeMontar && !ativa && (
-              <button
-                type="button"
-                onClick={() => void desfazerMarca(c)}
-                title={finalizada ? 'Volta pra carregada' : 'Volta pra loteada'}
-                className="px-1 text-xs text-stone-400 underline hover:text-amber-600"
-              >
-                desfazer
-              </button>
-            )}
+            <MenuOpcoes
+              itens={[
+                ...(podeMontar && ativa
+                  ? [{ rotulo: pendente ? 'Lotear' : 'Ajustar lotes', onClick: () => lotearCarga(c) }]
+                  : []),
+                ...(podeMontar && ativa && !pendente
+                  ? [{ rotulo: 'Marcar carregada', onClick: () => void marcarCarga(c, 'carregada') }]
+                  : []),
+                ...(podeMontar && carregada && !finalizada
+                  ? [{ rotulo: 'Marcar finalizada', onClick: () => void marcarCarga(c, 'finalizada') }]
+                  : []),
+                { rotulo: 'Imprimir ordem', onClick: () => imprimirCarga(c) },
+                { rotulo: 'Imprimir croqui', onClick: () => imprimirCroqui(c) },
+                { rotulo: `Fotos (${c.fotos.length})`, onClick: () => setFotosDe(c.id) },
+                ...(podeMontar && !ativa
+                  ? [{ rotulo: finalizada ? 'Desfazer finalizada' : 'Desfazer carregada', onClick: () => void desfazerMarca(c) }]
+                  : []),
+                ...(podeMontar && ativa
+                  ? [{ rotulo: 'Excluir', perigo: true, onClick: () => void excluirCarga(c) }]
+                  : []),
+              ]}
+            />
           </div>
         </td>
       </>
@@ -1026,6 +1027,15 @@ export default function Mapa() {
         />
       )}
 
+      {cargaFotos && (
+        <ModalFotosCarga
+          carga={cargaFotos}
+          podeMontar={podeMontar}
+          onMudar={(fotos) => void mudarFotosCarga(cargaFotos, fotos)}
+          onFechar={() => setFotosDe(null)}
+        />
+      )}
+
       {enderecando && usuario && (
         <ModalEnderecos
           lote={enderecando}
@@ -1042,6 +1052,148 @@ export default function Mapa() {
         />
       )}
     </Pagina>
+  )
+}
+
+/**
+ * Menu "Opções ▾" das ações da carga (30/08/2026) — a linha só mostra o
+ * Editar; o resto vive aqui. Posição FIXA calculada do botão, porque a
+ * tabela rola em overflow e um dropdown absoluto ficaria cortado.
+ */
+function MenuOpcoes({
+  itens,
+}: {
+  itens: { rotulo: string; perigo?: boolean; onClick: () => void }[]
+}) {
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const caixa = useRef<HTMLSpanElement>(null)
+  if (itens.length === 0) return null
+  return (
+    <span ref={caixa} className="inline-block">
+      <Botao
+        onClick={() => {
+          if (pos) {
+            setPos(null)
+            return
+          }
+          const r = caixa.current?.getBoundingClientRect()
+          if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+        }}
+      >
+        Opções ▾
+      </Botao>
+      {pos && (
+        <>
+          <button
+            type="button"
+            aria-label="fechar opções"
+            onClick={() => setPos(null)}
+            className="fixed inset-0 z-40 cursor-default"
+          />
+          <div
+            className="fixed z-50 w-48 rounded-lg border border-stone-200 bg-white py-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
+            style={{ top: pos.top, right: pos.right }}
+          >
+            {itens.map((i) => (
+              <button
+                key={i.rotulo}
+                type="button"
+                onClick={() => {
+                  setPos(null)
+                  i.onClick()
+                }}
+                className={`block w-full px-3 py-2 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800 ${
+                  i.perigo ? 'text-red-600 dark:text-red-400' : ''
+                }`}
+              >
+                {i.rotulo}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Fotos da carga/placa (30/08/2026) — o quadro do croqui de papel, digital:
+ * a Balança fotografa a carga pronta e a placa pelo tablet; quem só vê o
+ * mapa enxerga a galeria. Mesma receita das fotos da Qualidade.
+ */
+function ModalFotosCarga({
+  carga, podeMontar, onMudar, onFechar,
+}: {
+  carga: CargaMontadaLinha
+  podeMontar: boolean
+  onMudar: (fotos: string[]) => void
+  onFechar: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">Fotos da carga {carga.numero}</h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          Foto da carga pronta e da placa — o registro digital do quadro
+          “Foto carga/placa” do croqui.
+        </p>
+
+        {podeMontar ? (
+          <SeletorFotos
+            max={4}
+            titulo="Fotos (até 4)"
+            fotos={carga.fotos}
+            onMudar={onMudar}
+            enviar={(dataUrl) => m.enviarFotoCarga(carga.id, dataUrl)}
+            remover={(caminho) => m.removerFotoCarga(caminho)}
+            urlAssinada={(caminho) => m.urlFotoCarga(caminho)}
+          />
+        ) : (
+          <GaleriaFotosCarga fotos={carga.fotos} />
+        )}
+
+        <div className="mt-4 flex justify-end">
+          <Botao onClick={onFechar}>Fechar</Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Galeria só-leitura (PCP/Direção): miniaturas por URL assinada. */
+function GaleriaFotosCarga({ fotos }: { fotos: string[] }) {
+  const [urls, setUrls] = useState<Record<string, string | null>>({})
+  useEffect(() => {
+    let vivo = true
+    Promise.all(fotos.map(async (c) => [c, await m.urlFotoCarga(c)] as const)).then((pares) => {
+      if (vivo) setUrls(Object.fromEntries(pares))
+    })
+    return () => {
+      vivo = false
+    }
+  }, [fotos])
+  if (fotos.length === 0) {
+    return <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">Sem fotos ainda.</p>
+  }
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {fotos.map((c) =>
+        urls[c] ? (
+          <a key={c} href={urls[c]!} target="_blank" rel="noreferrer">
+            <img
+              src={urls[c]!}
+              alt="Foto da carga"
+              className="h-28 w-28 rounded-md border border-stone-200 object-cover dark:border-stone-700"
+            />
+          </a>
+        ) : (
+          <div
+            key={c}
+            className="h-28 w-28 animate-pulse rounded-md bg-stone-200 dark:bg-stone-800"
+          />
+        ),
+      )}
+    </div>
   )
 }
 
