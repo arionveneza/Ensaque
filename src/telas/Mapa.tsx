@@ -591,8 +591,11 @@ export default function Mapa() {
         </td>
         <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
           <div className="flex justify-end gap-1.5 whitespace-nowrap">
-            {podeMontar && ativa && pendente && (
-              <Botao variante="primario" onClick={() => lotearCarga(c)}>Lotear</Botao>
+            {/* loteada continua ajustável até marcar Carregada (30/08/2026) */}
+            {podeMontar && ativa && (
+              <Botao variante={pendente ? 'primario' : 'normal'} onClick={() => lotearCarga(c)}>
+                {pendente ? 'Lotear' : 'Ajustar lotes'}
+              </Botao>
             )}
             {podeMontar && ativa && !pendente && (
               <Botao variante="primario" onClick={() => void marcarCarga(c, 'carregada')}>
