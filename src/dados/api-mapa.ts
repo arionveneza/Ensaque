@@ -201,6 +201,8 @@ export interface NovaCargaMontada {
   placa: string | null
   cliente: string | null
   tara_kg: number | null
+  /** Tipo de veículo (id de VEICULOS_CARGA) — desenha o croqui (29/08/2026). */
+  veiculo: string | null
 }
 
 export interface ItemCargaMontada {
@@ -395,12 +397,12 @@ export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLin
   let r = await supabase
     .from('cargas_montadas')
     .select(
-      `id, numero, placa, cliente, tara_kg, peso_total_kg, criada_em, carregada_em, finalizada_em, ${SELECT_PRODUTOS_CARGA}`,
+      `id, numero, placa, cliente, tara_kg, peso_total_kg, veiculo, criada_em, carregada_em, finalizada_em, ${SELECT_PRODUTOS_CARGA}`,
     )
     .order('criada_em', { ascending: false })
     .limit(limite)
   if (r.error?.code === '42703') {
-    // antes da migração carga-carregada-finalizada.sql os marcos não existem
+    // janela pré-migração (carga-veiculo.sql / carga-carregada-finalizada.sql)
     r = (await supabase
       .from('cargas_montadas')
       .select(`id, numero, placa, cliente, tara_kg, peso_total_kg, criada_em, ${SELECT_PRODUTOS_CARGA}`)
@@ -418,6 +420,7 @@ export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLin
   return (r.data ?? []).map((c) => ({
     carregada_em: null,
     finalizada_em: null,
+    veiculo: null,
     ...(c as object),
   })) as unknown as CargaMontadaLinha[]
 }

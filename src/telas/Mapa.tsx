@@ -12,7 +12,8 @@ import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
 import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
-import { imprimirOrdemCarregamento } from '@/lib/exportar'
+import { imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
+import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, inteiro, n,
 } from '@/componentes/ui'
@@ -109,12 +110,14 @@ interface CargaForm {
   placa: string
   cliente: string
   tara: string
+  /** Tipo de veículo (id de VEICULOS_CARGA) — desenha o croqui. */
+  veiculo: string
   produtos: ProdutoCargaForm[]
   editandoId: string
 }
 
 const CARGA_VAZIA: CargaForm = {
-  numero: '', placa: '', cliente: '', tara: '', produtos: [], editandoId: '',
+  numero: '', placa: '', cliente: '', tara: '', veiculo: '', produtos: [], editandoId: '',
 }
 
 /**
@@ -157,6 +160,7 @@ function migraRascunhoCargaAntigo() {
       placa: typeof v.placa === 'string' ? v.placa : '',
       cliente: typeof v.cliente === 'string' ? v.cliente : '',
       tara: typeof v.tara === 'string' ? v.tara : '',
+      veiculo: '',
       editandoId: typeof v.editandoId === 'string' ? v.editandoId : '',
       produtos: temConteudo
         ? [{
@@ -334,6 +338,7 @@ export default function Mapa() {
       placa: c.placa ?? '',
       cliente: c.cliente ?? '',
       tara: c.tara_kg != null ? String(c.tara_kg) : '',
+      veiculo: c.veiculo ?? '',
       produtos: c.carga_montada_produtos.map((p) => ({
         chave: novaChave(),
         cultivar: p.cultivar,
@@ -363,6 +368,32 @@ export default function Mapa() {
 
   // derivado do rascunho: sobrevive a F5, e some sozinho se a carga sumir
   const loteando = cargas.find((c) => c.id === rascunhoLotear.valor.cargaId) ?? null
+
+  /** Imprime o croqui de carregamento (réplica do formulário de papel). */
+  function imprimirCroqui(c: CargaMontadaLinha) {
+    const v = veiculoDe(c.veiculo)
+    if (!v) {
+      setErro(
+        `A carga ${c.numero} não tem o veículo definido — abra Editar e escolha o tipo (o croqui é desenhado por veículo).`,
+      )
+      return
+    }
+    const lotesDistintos = new Set(
+      c.carga_montada_produtos.flatMap((p) => p.carga_montada_itens.map((i) => i.lote_id)),
+    ).size
+    imprimirCroquiCarga({
+      numero: c.numero,
+      veiculo: v,
+      data: new Date().toLocaleDateString('pt-BR'),
+      lotesNaCarga: lotesDistintos,
+      totalBags: Math.round(
+        c.carga_montada_produtos.reduce(
+          (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
+          0,
+        ),
+      ),
+    })
+  }
 
   /** Carregada (caminhão saiu → sai da conta de saldo) e Finalizada (encerra). */
   async function marcarCarga(c: CargaMontadaLinha, marco: m.MarcoCarga) {
@@ -503,6 +534,7 @@ export default function Mapa() {
               </Botao>
             )}
             <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
+            <Botao onClick={() => imprimirCroqui(c)}>Croqui</Botao>
             {podeMontar && ativa && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
             {podeMontar && ativa && (
               <button
@@ -1341,10 +1373,11 @@ function MontagemCarga({
   rascunho: Rascunho<CargaForm>
   onSalva: (msg: string) => void
 }) {
-  const { numero, placa, cliente, tara, produtos, editandoId } = rascunho.valor
+  const { numero, placa, cliente, tara, veiculo, produtos, editandoId } = rascunho.valor
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const definir = rascunho.definir
+  const veiculoSel = veiculoDe(veiculo)
 
   const cultivares = useMemo(() => [...new Set(lotes.map((l) => l.cultivar))].sort(), [lotes])
 
@@ -1396,6 +1429,7 @@ function MontagemCarga({
       placa: placa.trim() ? placa.trim().toUpperCase() : null,
       cliente: cliente.trim() || null,
       tara_kg: Number(tara) > 0 ? Number(tara) : null,
+      veiculo: veiculo || null,
     }
     const produtosGravar = completos.map((p) => {
       const sel = selecionadosDe(p)
@@ -1470,6 +1504,16 @@ function MontagemCarga({
           placeholder="tara do veículo (kg, opc.)"
           className={`${INPUT} w-48`}
         />
+        <select
+          value={veiculo}
+          onChange={(e) => definir({ veiculo: e.target.value })}
+          className={INPUT}
+        >
+          <option value="">veículo (pro croqui)…</option>
+          {VEICULOS_CARGA.map((v) => (
+            <option key={v.id} value={v.id}>{v.nome} — {v.capacidadeBags} bg</option>
+          ))}
+        </select>
       </div>
 
       {/* a carga inteira — todos os produtos, nenhum lote nesta etapa */}
@@ -1536,6 +1580,14 @@ function MontagemCarga({
           <Aviso gravidade="alerta">
             Lote(s) desta carga que saíram do saldo do SAP e por isso saem da carga ao
             salvar: {foraDoMapa.map((i) => i.loteId).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {veiculoSel && totalPedido > veiculoSel.capacidadeBags && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            A carga pede <b>{inteiro(totalPedido)} bags</b> — acima da capacidade do{' '}
+            {veiculoSel.nome} ({veiculoSel.capacidadeBags} bg). Aviso apenas; não bloqueia.
           </Aviso>
         </div>
       )}
@@ -1670,6 +1722,7 @@ function LotearCarga({
           placa: carga.placa,
           cliente: carga.cliente,
           tara_kg: carga.tara_kg,
+          veiculo: carga.veiculo,
         },
         produtosGravar,
       )
