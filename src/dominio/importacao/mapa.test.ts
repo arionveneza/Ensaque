@@ -56,6 +56,16 @@ describe('converterLotesMapa', () => {
     expect(r.tratados).toBe(1)
   })
 
+  it('branca sufixada também entra pelo número base, somando os sub-lotes', () => {
+    const r = converterLotesMapa([
+      CAB,
+      linha({ lote: 'A', trat: null, qtd: 10 }),
+      linha({ lote: 'A-1', trat: null, qtd: 7 }),
+    ])
+    expect(r.lotes.map((l) => [l.lote, l.bags])).toEqual([['A', 17]])
+    expect(r.brancos).toBe(1)
+  })
+
   it('o sufixo do SAP morre na entrada: -1/-2 do mesmo base agregam destinações', () => {
     const r = converterLotesMapa([
       CAB,
