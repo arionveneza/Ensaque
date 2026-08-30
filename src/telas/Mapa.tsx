@@ -1065,7 +1065,7 @@ function MenuOpcoes({
 }: {
   itens: { rotulo: string; perigo?: boolean; onClick: () => void }[]
 }) {
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
   const caixa = useRef<HTMLSpanElement>(null)
   if (itens.length === 0) return null
   return (
@@ -1077,7 +1077,15 @@ function MenuOpcoes({
             return
           }
           const r = caixa.current?.getBoundingClientRect()
-          if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+          if (!r) return
+          const right = Math.max(8, window.innerWidth - r.right)
+          // sem espaço abaixo (carga no fim da página), o menu abre PRA CIMA
+          const altura = itens.length * 37 + 10
+          if (r.bottom + 4 + altura <= window.innerHeight - 8) {
+            setPos({ top: r.bottom + 4, right })
+          } else {
+            setPos({ bottom: Math.max(8, window.innerHeight - r.top + 4), right })
+          }
         }}
       >
         Opções ▾
@@ -1091,8 +1099,8 @@ function MenuOpcoes({
             className="fixed inset-0 z-40 cursor-default"
           />
           <div
-            className="fixed z-50 w-48 rounded-lg border border-stone-200 bg-white py-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
-            style={{ top: pos.top, right: pos.right }}
+            className="fixed z-50 max-h-[70vh] w-48 overflow-y-auto rounded-lg border border-stone-200 bg-white py-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
+            style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}
           >
             {itens.map((i) => (
               <button
