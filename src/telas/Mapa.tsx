@@ -364,6 +364,36 @@ export default function Mapa() {
   // derivado do rascunho: sobrevive a F5, e some sozinho se a carga sumir
   const loteando = cargas.find((c) => c.id === rascunhoLotear.valor.cargaId) ?? null
 
+  /** Carregada (caminhão saiu → sai da conta de saldo) e Finalizada (encerra). */
+  async function marcarCarga(c: CargaMontadaLinha, marco: m.MarcoCarga) {
+    try {
+      await m.marcarCargaMontada(c.id, marco, usuario?.id ?? null)
+      if (marco === 'carregada' && rascunhoLotear.valor.cargaId === c.id) {
+        rascunhoLotear.limpar()
+      }
+      setMsg(
+        marco === 'carregada'
+          ? `Carga ${c.numero} carregada — os lotes dela não descontam mais o saldo.`
+          : `Carga ${c.numero} finalizada.`,
+      )
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** Desfaz o ÚLTIMO marco (misclick): finalizada → carregada → loteada. */
+  async function desfazerMarca(c: CargaMontadaLinha) {
+    try {
+      const marco: m.MarcoCarga = c.finalizada_em ? 'finalizada' : 'carregada'
+      await m.desmarcarCargaMontada(c.id, marco)
+      setMsg(`Carga ${c.numero}: ${marco} desfeita.`)
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   async function excluirCarga(c: CargaMontadaLinha) {
     if (!confirm(`Excluir a ordem de carregamento ${c.numero}?`)) return
     try {
@@ -425,9 +455,13 @@ export default function Mapa() {
       (s, p) => s + p.carga_montada_itens.reduce((si, i) => si + i.bags, 0),
       0,
     )
-    // aguardando lotear = algum produto ainda sem lote (status derivado)
+    // ciclo: aguardando lotear → loteada → carregada → finalizada
     const pendente =
       produtos.length === 0 || produtos.some((p) => p.carga_montada_itens.length === 0)
+    const finalizada = !!c.finalizada_em
+    const carregada = !!c.carregada_em
+    // ativa = ainda em montagem/loteamento (editável)
+    const ativa = !carregada && !finalizada
     const celulaCarga = (
       <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
         <span className="font-medium">{c.numero}</span>
@@ -435,9 +469,13 @@ export default function Mapa() {
           {inteiro(totalBags)} bg · {inteiro(c.peso_total_kg)} kg
         </span>
         <span className="mt-1 block">
-          {pendente
-            ? <Tag cor="alerta">aguardando lotear</Tag>
-            : <Tag cor="ok">loteada</Tag>}
+          {finalizada
+            ? <Tag cor="neutro">finalizada</Tag>
+            : carregada
+              ? <Tag cor="info">carregada</Tag>
+              : pendente
+                ? <Tag cor="alerta">aguardando lotear</Tag>
+                : <Tag cor="ok">loteada</Tag>}
         </span>
       </td>
     )
@@ -451,18 +489,38 @@ export default function Mapa() {
         </td>
         <td rowSpan={totalLinhas} className="px-2 py-1.5 align-top">
           <div className="flex justify-end gap-1.5 whitespace-nowrap">
-            {podeMontar && pendente && (
+            {podeMontar && ativa && pendente && (
               <Botao variante="primario" onClick={() => lotearCarga(c)}>Lotear</Botao>
             )}
+            {podeMontar && ativa && !pendente && (
+              <Botao variante="primario" onClick={() => void marcarCarga(c, 'carregada')}>
+                Carregada
+              </Botao>
+            )}
+            {podeMontar && carregada && !finalizada && (
+              <Botao variante="primario" onClick={() => void marcarCarga(c, 'finalizada')}>
+                Finalizada
+              </Botao>
+            )}
             <Botao onClick={() => imprimirCarga(c)}>Imprimir</Botao>
-            {podeMontar && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
-            {podeMontar && (
+            {podeMontar && ativa && <Botao onClick={() => editarCarga(c)}>Editar</Botao>}
+            {podeMontar && ativa && (
               <button
                 type="button"
                 onClick={() => void excluirCarga(c)}
                 className="px-1 text-xs text-stone-400 underline hover:text-red-600"
               >
                 excluir
+              </button>
+            )}
+            {podeMontar && !ativa && (
+              <button
+                type="button"
+                onClick={() => void desfazerMarca(c)}
+                title={finalizada ? 'Volta pra carregada' : 'Volta pra loteada'}
+                className="px-1 text-xs text-stone-400 underline hover:text-amber-600"
+              >
+                desfazer
               </button>
             )}
           </div>
@@ -473,7 +531,7 @@ export default function Mapa() {
     // o painel de lotear abre AQUI, logo abaixo da carga referenciada
     // (pedido do Arion, 29/08/2026 — antes abria acima da lista inteira)
     const linhaLotear =
-      podeMontar && loteando?.id === c.id ? (
+      podeMontar && ativa && loteando?.id === c.id ? (
         <tr key={`${c.id}-lotear`}>
           <td colSpan={8} className="bg-stone-50 p-3 dark:bg-stone-900/40">
             <LotearCarga

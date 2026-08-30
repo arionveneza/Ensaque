@@ -275,6 +275,10 @@ export interface ProdutoCargaLinha {
 export interface CargaMontadaLinha extends NovaCargaMontada {
   id: string
   criada_em: string
+  /** Caminhão saiu — a carga não desconta mais o saldo dos lotes. */
+  carregada_em: string | null
+  /** Ciclo encerrado (depois de carregada). */
+  finalizada_em: string | null
   carga_montada_produtos: ProdutoCargaLinha[]
 }
 
@@ -294,11 +298,20 @@ export interface LoteComprometido {
  * corta em 20, mas o comprometimento precisa enxergar todas.
  */
 export async function listarLotesComprometidos(): Promise<LoteComprometido[]> {
-  const { data, error } = await supabase
+  // carga CARREGADA não desconta mais: o caminhão saiu e o próximo upload
+  // do SAP já reflete a saída — contar de novo dobrava (29/08/2026)
+  let r = await supabase
     .from('carga_montada_produtos')
-    .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags )')
-  if (error) return []
-  const linhas = (data ?? []) as unknown as {
+    .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags ), cargas_montadas!inner ( carregada_em )')
+    .is('cargas_montadas.carregada_em', null)
+  if (r.error) {
+    // antes da migração carga-carregada-finalizada.sql a coluna não existe
+    r = (await supabase
+      .from('carga_montada_produtos')
+      .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags )')) as unknown as typeof r
+  }
+  if (r.error) return []
+  const linhas = (r.data ?? []) as unknown as {
     carga_id: string
     tratamento: string
     carga_montada_itens: { lote_id: string; bags: number }[]
@@ -311,6 +324,38 @@ export async function listarLotesComprometidos(): Promise<LoteComprometido[]> {
       bags: i.bags,
     })),
   )
+}
+
+/**
+ * Marcos do ciclo da carga (29/08/2026): CARREGADA quando o caminhão sai
+ * (sai da conta de saldo dos lotes) e FINALIZADA encerrando o ciclo.
+ * Ambos com data e autor, e desfazíveis (misclick no chão de fábrica).
+ */
+export type MarcoCarga = 'carregada' | 'finalizada'
+
+export async function marcarCargaMontada(
+  id: string,
+  marco: MarcoCarga,
+  usuarioId: string | null,
+): Promise<void> {
+  const campos =
+    marco === 'carregada'
+      ? { carregada_em: new Date().toISOString(), carregada_por: usuarioId }
+      : { finalizada_em: new Date().toISOString(), finalizada_por: usuarioId }
+  const { error } = await supabase.from('cargas_montadas').update(campos).eq('id', id)
+  erro(
+    `marcar carga como ${marco} — a migração carga-carregada-finalizada.sql já rodou?`,
+    error,
+  )
+}
+
+export async function desmarcarCargaMontada(id: string, marco: MarcoCarga): Promise<void> {
+  const campos =
+    marco === 'carregada'
+      ? { carregada_em: null, carregada_por: null }
+      : { finalizada_em: null, finalizada_por: null }
+  const { error } = await supabase.from('cargas_montadas').update(campos).eq('id', id)
+  erro(`desfazer ${marco}`, error)
 }
 
 /** Peso de semente já comprometido por ordens de PRODUÇÃO, por lote. */
@@ -342,15 +387,26 @@ export async function listarConsumoOrdens(): Promise<ConsumoOrdens[]> {
   return [...porLote.entries()].map(([lote_id, peso_kg]) => ({ lote_id, peso_kg }))
 }
 
+const SELECT_PRODUTOS_CARGA =
+  'carga_montada_produtos ( id, cultivar, tratamento, bags_solicitados, carga_montada_itens ( lote_id, bags, peso_kg, destinacao ) )'
+
 export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
   // itens penduram no PRODUTO (produto_id) — o embed aninhado usa essa FK
-  const r = await supabase
+  let r = await supabase
     .from('cargas_montadas')
     .select(
-      'id, numero, placa, cliente, tara_kg, peso_total_kg, criada_em, carga_montada_produtos ( id, cultivar, tratamento, bags_solicitados, carga_montada_itens ( lote_id, bags, peso_kg, destinacao ) )',
+      `id, numero, placa, cliente, tara_kg, peso_total_kg, criada_em, carregada_em, finalizada_em, ${SELECT_PRODUTOS_CARGA}`,
     )
     .order('criada_em', { ascending: false })
     .limit(limite)
+  if (r.error?.code === '42703') {
+    // antes da migração carga-carregada-finalizada.sql os marcos não existem
+    r = (await supabase
+      .from('cargas_montadas')
+      .select(`id, numero, placa, cliente, tara_kg, peso_total_kg, criada_em, ${SELECT_PRODUTOS_CARGA}`)
+      .order('criada_em', { ascending: false })
+      .limit(limite)) as unknown as typeof r
+  }
   if (r.error) {
     // só a janela pré-migração vira lista vazia (tabela/relacionamento ainda
     // não existem); o resto é erro de verdade e a tela mostra — devolver []
@@ -359,5 +415,9 @@ export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLin
     if (['42P01', 'PGRST200', 'PGRST205'].includes(r.error.code ?? '')) return []
     erro('listar cargas montadas', r.error)
   }
-  return (r.data ?? []) as unknown as CargaMontadaLinha[]
+  return (r.data ?? []).map((c) => ({
+    carregada_em: null,
+    finalizada_em: null,
+    ...(c as object),
+  })) as unknown as CargaMontadaLinha[]
 }
