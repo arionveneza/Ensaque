@@ -369,6 +369,68 @@ export default function Mapa() {
   // derivado do rascunho: sobrevive a F5, e some sozinho se a carga sumir
   const loteando = cargas.find((c) => c.id === rascunhoLotear.valor.cargaId) ?? null
 
+  /** Cargas ATIVAS com produto da combinação do lote — destinos do "+ carga" do mapa. */
+  const cargasParaLote = (l: LoteMapaLinha) =>
+    cargas.filter(
+      (c) =>
+        !c.carregada_em &&
+        !c.finalizada_em &&
+        c.carga_montada_produtos.some(
+          (p) => p.cultivar === l.cultivar && p.tratamento === l.tratamento,
+        ),
+    )
+
+  /**
+   * Manda o lote direto do mapa pro LOTEAR de uma carga pendente (30/08/2026
+   * — o "+ Carga" antigo, adaptado às operações separadas): abre o lotear da
+   * carga com o lote já no produto da combinação. Lotear da MESMA carga já
+   * aberto acumula sem perder as escolhas não salvas.
+   */
+  function enviarLoteParaCarga(l: LoteMapaLinha, c: CargaMontadaLinha) {
+    const draft = rascunhoLotear.valor
+    const mesmaCarga = draft.cargaId === c.id
+    if (!mesmaCarga && loteando && loteando.id !== c.id) {
+      if (
+        !confirm(
+          `Abrir o lotear da carga ${c.numero} descarta as escolhas NÃO SALVAS da ${loteando.numero}. Continuar?`,
+        )
+      ) {
+        return
+      }
+    }
+    const produtosBase: ProdutoCargaForm[] = mesmaCarga
+      ? draft.produtos
+      : c.carga_montada_produtos.map((p) => ({
+          chave: p.id,
+          cultivar: p.cultivar,
+          tratamento: p.tratamento,
+          bags: String(p.bags_solicitados || ''),
+          itens: p.carga_montada_itens.map((i) => ({ loteId: i.lote_id, bags: String(i.bags) })),
+        }))
+    const alvo = produtosBase.find(
+      (p) => p.cultivar === l.cultivar && p.tratamento === l.tratamento,
+    )
+    if (!alvo) return
+    if (alvo.itens.some((i) => i.loteId === l.lote)) {
+      setMsg(`${l.lote} já está na carga ${c.numero}.`)
+      return
+    }
+    const jaEmLotes = alvo.itens.reduce((s, i) => s + (Number(i.bags) || 0), 0)
+    const restante = Math.max(0, (Number(alvo.bags) || 0) - jaEmLotes)
+    const sugestao = Math.min(restante > 0 ? restante : l.bags, l.bags)
+    rascunhoLotear.substituir({
+      cargaId: c.id,
+      produtos: produtosBase.map((p) =>
+        p.chave === alvo.chave
+          ? { ...p, itens: [...p.itens, { loteId: l.lote, bags: String(sugestao) }] }
+          : p,
+      ),
+    })
+    setMsg(
+      `${l.lote} adicionado ao lotear da carga ${c.numero} (${l.cultivar} · ${rotuloTratamento(l.tratamento)}) — confira as quantidades e salve.`,
+    )
+  }
+
   /** Imprime o croqui de carregamento (réplica do formulário de papel). */
   function imprimirCroqui(c: CargaMontadaLinha) {
     const v = veiculoDe(c.veiculo)
@@ -880,6 +942,8 @@ export default function Mapa() {
           posicao={posicao}
           alocacoes={naPosicao}
           podeEnderecar={podeEnderecar}
+          podeMontar={podeMontar}
+          cargasParaLote={cargasParaLote}
           onFechar={() => setPosicao(null)}
           onMover={(a) => {
             setMovendo(a)
@@ -887,6 +951,10 @@ export default function Mapa() {
           }}
           onEnderecar={(l) => {
             setEnderecando(l)
+            setPosicao(null)
+          }}
+          onEnviarParaCarga={(l, c) => {
+            enviarLoteParaCarga(l, c)
             setPosicao(null)
           }}
         />
@@ -1125,16 +1193,20 @@ function MapaGrade({
   )
 }
 
-/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover. */
+/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 function ModalPosicao({
-  posicao, alocacoes, podeEnderecar, onFechar, onMover, onEnderecar,
+  posicao, alocacoes, podeEnderecar, podeMontar, cargasParaLote,
+  onFechar, onMover, onEnderecar, onEnviarParaCarga,
 }: {
   posicao: Posicao
   alocacoes: Alocacao[]
   podeEnderecar: boolean
+  podeMontar: boolean
+  cargasParaLote: (l: LoteMapaLinha) => CargaMontadaLinha[]
   onFechar: () => void
   onMover: (a: Alocacao) => void
   onEnderecar: (l: LoteMapaLinha) => void
+  onEnviarParaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1170,12 +1242,25 @@ function ModalPosicao({
                   {a.estimado && ' · estimado — sem contagem por endereço'}
                 </p>
               </div>
-              {podeEnderecar && (
-                <div className="flex shrink-0 gap-2">
-                  <Botao onClick={() => onMover(a)}>Mover</Botao>
-                  <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
-                </div>
-              )}
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                {/* manda o lote pro lotear de uma carga pendente da combinação */}
+                {podeMontar &&
+                  cargasParaLote(a.lote).map((c) => (
+                    <Botao
+                      key={c.id}
+                      variante="primario"
+                      onClick={() => onEnviarParaCarga(a.lote, c)}
+                    >
+                      + carga {c.numero}
+                    </Botao>
+                  ))}
+                {podeEnderecar && (
+                  <>
+                    <Botao onClick={() => onMover(a)}>Mover</Botao>
+                    <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
