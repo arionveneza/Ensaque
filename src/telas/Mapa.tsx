@@ -421,12 +421,16 @@ export default function Mapa() {
     }
     const jaEmLotes = alvo.itens.reduce((s, i) => s + (Number(i.bags) || 0), 0)
     const restante = Math.max(0, (Number(alvo.bags) || 0) - jaEmLotes)
-    // a quantidade escolhida no detalhe da posição vale; sem ela, sugere o
-    // que falta do pedido — sempre limitado ao saldo do lote
-    const qtd =
-      bagsEscolhidos && bagsEscolhidos > 0
-        ? Math.min(bagsEscolhidos, l.bags)
-        : Math.min(restante > 0 ? restante : l.bags, l.bags)
+    // NUNCA além do PEDIDO do produto (regra do Arion, 30/08/2026): a
+    // quantidade escolhida vale, capada no que falta do pedido e no saldo
+    if (restante <= 0) {
+      setMsg(
+        `O produto ${l.cultivar} · ${rotuloTratamento(l.tratamento)} da carga ${c.numero} já está com o pedido completo — abra Ajustar lotes se quiser trocar de lote.`,
+      )
+      return
+    }
+    const pedidos = bagsEscolhidos && bagsEscolhidos > 0 ? bagsEscolhidos : restante
+    const qtd = Math.min(pedidos, restante, l.bags)
     rascunhoLotear.substituir({
       cargaId: c.id,
       produtos: produtosBase.map((p) =>
@@ -436,7 +440,7 @@ export default function Mapa() {
       ),
     })
     setMsg(
-      `${l.lote}: ${inteiro(qtd)} bg adicionados ao lotear da carga ${c.numero} (${l.cultivar} · ${rotuloTratamento(l.tratamento)}) — confira e salve.`,
+      `${l.lote}: ${inteiro(qtd)} bg adicionados ao lotear da carga ${c.numero}${qtd < pedidos ? ' (limitado ao que falta do pedido)' : ''} — confira e salve.`,
     )
   }
 
@@ -1805,6 +1809,14 @@ function LotearCarga({
   // mais do que o saldo menos o que já está em outras cargas: travado
   const excedidos = todosSelecionados.filter((i) => Number(i.bags) > i.disponivel)
   const semQuantidade = produtos.filter((p) => !(Number(p.bags) > 0))
+  // não se loteia MAIS que o pedido do produto (regra do Arion, 30/08/2026)
+  const pedidoExcedido = produtos
+    .map((p) => ({
+      p,
+      soma: selecionadosDe(p).reduce((s, i) => s + (Number(i.bags) || 0), 0),
+      pedido: Number(p.bags) || 0,
+    }))
+    .filter((x) => x.pedido > 0 && x.soma > x.pedido)
   const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
   const foraDoMapa = produtos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
   const totalBags = todosSelecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
@@ -1813,7 +1825,10 @@ function LotearCarga({
     0,
   )
   const bloqueado =
-    itensInvalidos.length > 0 || semQuantidade.length > 0 || excedidos.length > 0
+    itensInvalidos.length > 0 ||
+    semQuantidade.length > 0 ||
+    excedidos.length > 0 ||
+    pedidoExcedido.length > 0
 
   async function salvar() {
     if (bloqueado) return
@@ -1908,6 +1923,20 @@ function LotearCarga({
             {excedidos
               .map((i) => `${i.loteId} (${inteiro(Number(i.bags))} > ${inteiro(i.disponivel)} disp.)`)
               .join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {pedidoExcedido.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="bloqueio">
+            Mais bags que o PEDIDO do produto:{' '}
+            {pedidoExcedido
+              .map(
+                (x) =>
+                  `${x.p.cultivar} · ${rotuloTratamento(x.p.tratamento)} (${inteiro(x.soma)} > ${inteiro(x.pedido)})`,
+              )
+              .join(' · ')}
+            {' '}— ajuste as quantidades pra salvar.
           </Aviso>
         </div>
       )}
@@ -2090,11 +2119,14 @@ function ProdutoLotes({
     0,
   )
   const completo = solicitados > 0 && bagsDoProduto >= solicitados
+  const excedeu = solicitados > 0 && bagsDoProduto > solicitados
 
   const adicionar = (l: LoteMapaLinha, disponivel: number) => {
     if (p.itens.some((i) => i.loteId === l.lote) || disponivel <= 0) return
+    // nunca além do PEDIDO: pedido completo não recebe mais lote (30/08/2026)
     const restante = Math.max(0, solicitados - bagsDoProduto)
-    const sugestao = Math.min(restante > 0 ? restante : disponivel, disponivel)
+    if (restante <= 0) return
+    const sugestao = Math.min(restante, disponivel)
     onMudar({ itens: [...p.itens, { loteId: l.lote, bags: String(sugestao) }] })
   }
   const atualizarBags = (loteId: string, v: string) =>
@@ -2121,9 +2153,15 @@ function ProdutoLotes({
           bg
         </label>
         <span
-          className={`text-sm ${completo ? 'font-medium text-green-700 dark:text-green-400' : 'text-stone-500 dark:text-stone-400'}`}
+          className={`text-sm ${
+            excedeu
+              ? 'font-medium text-red-700 dark:text-red-400'
+              : completo
+                ? 'font-medium text-green-700 dark:text-green-400'
+                : 'text-stone-500 dark:text-stone-400'
+          }`}
         >
-          {completo ? '✓ ' : ''}
+          {excedeu ? '⚠ ' : completo ? '✓ ' : ''}
           {inteiro(bagsDoProduto)}
           {solicitados > 0 ? ` de ${inteiro(solicitados)}` : ''} bg em lotes ·{' '}
           {inteiro(pesoDoProduto)} kg
@@ -2171,6 +2209,7 @@ function ProdutoLotes({
                 const l = c.lote
                 const jaSelecionado = p.itens.some((i) => i.loteId === l.lote)
                 const esgotado = c.disponivel <= 0
+                const pedidoCompleto = completo && !jaSelecionado
                 const detalhes = [
                   c.emCargas > 0 ? `${inteiro(c.emCargas)} em outras cargas` : null,
                   c.emOrdens > 0 ? `${inteiro(c.emOrdens)} em ordens de produção` : null,
@@ -2179,10 +2218,10 @@ function ProdutoLotes({
                   <button
                     key={chaveDe(l)}
                     type="button"
-                    disabled={jaSelecionado || esgotado}
+                    disabled={jaSelecionado || esgotado || pedidoCompleto}
                     onClick={() => adicionar(l, c.disponivel)}
                     className={`flex w-full items-center justify-between gap-2 border-b border-stone-100 px-3 py-1.5 text-left text-xs last:border-b-0 dark:border-stone-800/60 ${
-                      jaSelecionado || esgotado
+                      jaSelecionado || esgotado || pedidoCompleto
                         ? 'opacity-40'
                         : l.destinacao
                           ? 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50'
@@ -2210,8 +2249,14 @@ function ProdutoLotes({
                       {l.destinacao
                         ? <Tag cor="perigo">{l.destinacao}</Tag>
                         : <Tag cor="ok">livre</Tag>}
-                      <span className={jaSelecionado || esgotado ? 'text-stone-400' : 'font-medium text-green-800 dark:text-green-400'}>
-                        {jaSelecionado ? 'na carga' : esgotado ? 'esgotado' : '+ adicionar'}
+                      <span className={jaSelecionado || esgotado || pedidoCompleto ? 'text-stone-400' : 'font-medium text-green-800 dark:text-green-400'}>
+                        {jaSelecionado
+                          ? 'na carga'
+                          : esgotado
+                            ? 'esgotado'
+                            : pedidoCompleto
+                              ? 'pedido completo'
+                              : '+ adicionar'}
                       </span>
                     </span>
                   </button>
