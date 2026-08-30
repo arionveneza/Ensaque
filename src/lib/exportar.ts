@@ -506,38 +506,38 @@ export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
   const html = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><title>Croqui da carga ${esc(c.numero)}</title>
 <style>
-  @page { size: A4 landscape; margin: 8mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; color: #111; margin: 0; font-size: 12px; }
+  body { font-family: system-ui, sans-serif; color: #111; margin: 0; font-size: 13px; }
   .moldura { border: 1.5px solid #333; }
-  .topo { display: grid; grid-template-columns: 170px 1fr 190px; border-bottom: 1.5px solid #333; }
+  .topo { display: grid; grid-template-columns: 165px 1fr 150px; border-bottom: 1.5px solid #333; }
   .topo > div { padding: 8px 10px; }
   .logo { border-right: 1.5px solid #333; font-weight: 800; font-size: 15px; color: #1a7a3a; }
   .logo small { display: block; color: #666; font-weight: 600; font-size: 9px; }
   .titulo { display: flex; align-items: center; justify-content: center; text-align: center;
             font-weight: 700; font-size: 14px; text-transform: uppercase; }
   .revisao { border-left: 1.5px solid #333; font-size: 10px; color: #444; }
-  .campos { display: flex; flex-wrap: wrap; gap: 4px 28px; padding: 8px 10px;
-            border-bottom: 1.5px solid #333; font-size: 12px; }
-  .campos b { font-size: 13px; }
+  .campos { display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 8px 10px;
+            border-bottom: 1.5px solid #333; font-size: 13px; }
+  .campos b { font-size: 14px; }
   .linha-escrever { display: inline-block; min-width: 120px; border-bottom: 1.2px solid #333; }
-  .corpo { display: grid; grid-template-columns: 300px 1fr; min-height: 480px; }
-  .desenho { border-right: 1.5px solid #333; padding: 8px; text-align: center; }
-  .desenho h2 { margin: 0 0 6px; font-size: 14px; }
-  .cab { width: 92px; height: 52px; margin: 0 auto; border: 2px solid #333;
-         border-radius: 10px 10px 4px 4px; position: relative; }
-  .cab::after { content: ''; position: absolute; left: 10px; right: 10px; top: 7px; height: 12px;
-                border: 1.5px solid #333; border-radius: 3px; }
-  .chassi { width: 3px; height: 12px; background: #333; margin: 0 auto; }
-  .carreta { width: 140px; margin: 0 auto; border: 2px solid #333; }
-  .fila { height: 25px; border-bottom: 1.2px solid #333; }
+  .corpo { display: grid; grid-template-columns: 330px 1fr; min-height: 800px; }
+  .desenho { border-right: 1.5px solid #333; padding: 12px; text-align: center; }
+  .desenho h2 { margin: 0 0 10px; font-size: 17px; }
+  .cab { width: 150px; height: 84px; margin: 0 auto; border: 2.5px solid #333;
+         border-radius: 14px 14px 6px 6px; position: relative; }
+  .cab::after { content: ''; position: absolute; left: 16px; right: 16px; top: 11px; height: 20px;
+                border: 2px solid #333; border-radius: 4px; }
+  .chassi { width: 4px; height: 18px; background: #333; margin: 0 auto; }
+  .carreta { width: 240px; margin: 0 auto; border: 2.5px solid #333; }
+  .fila { height: 42px; border-bottom: 1.6px solid #333; }
   .fila:last-child { border-bottom: none; }
-  .engate { width: 3px; height: 14px; background: #333; margin: 0 auto; }
+  .engate { width: 4px; height: 22px; background: #333; margin: 0 auto; }
   .foto { padding: 8px 10px; }
-  .foto h2 { margin: 0; font-size: 14px; text-align: center; border-bottom: 1.5px solid #333;
+  .foto h2 { margin: 0; font-size: 15px; text-align: center; border-bottom: 1.5px solid #333;
              padding-bottom: 6px; }
-  .rodape { display: flex; flex-wrap: wrap; gap: 4px 26px; padding: 8px 10px;
-            border-top: 1.5px solid #333; font-size: 12px; }
+  .rodape { display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 9px 10px;
+            border-top: 1.5px solid #333; font-size: 13px; }
 </style></head><body>
 <div class="moldura">
   <div class="topo">
