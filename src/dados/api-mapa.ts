@@ -430,10 +430,11 @@ export interface ConsumoOrdens {
 }
 
 /**
- * Ordens de produção abertas consomem semente branca que o saldo do SAP
- * ainda mostra (mesma régua do balanço: tudo que não é Apontada — a
- * apontada já foi lançada e o próximo upload desconta). O loteamento da
- * carga precisa descontar isso do disponível (pedido do Arion, 29/08/2026).
+ * Ordens de produção abertas consomem semente branca que o mapa ainda
+ * mostra. O loteamento desconta isso do disponível (pedido do Arion,
+ * 29/08/2026). A régua vai até a ordem virar "Qualidade apontada": desse
+ * ponto em diante o PRÓPRIO MAPA já foi debitado pelo gatilho
+ * (mapa-consumo-branca.sql, 30/08/2026) — contar de novo dobraria.
  * peso_kg vem da v_ordens (bags × peso do bag DA ORDEM); a conversão pra
  * bags DO LOTE é no front, dividindo pelo peso_bag_kg do lote no mapa.
  */
@@ -441,7 +442,7 @@ export async function listarConsumoOrdens(): Promise<ConsumoOrdens[]> {
   const { data, error } = await supabase
     .from('v_ordens')
     .select('lote_id, peso_kg, status')
-    .not('status', 'in', '("Apontada","Excluida")')
+    .not('status', 'in', '("Qualidade apontada","Apontada","Excluida")')
   if (error) return []
   const porLote = new Map<string, number>()
   for (const o of (data ?? []) as { lote_id: string | null; peso_kg: number | null }[]) {
