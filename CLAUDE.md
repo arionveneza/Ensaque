@@ -505,8 +505,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    "lotes a definir" quando pendente, e lotes com endereço
    ATUAL (onde buscar), DESTINAÇÃO em vermelho, pesos por lote e total, e o quadro de
    pesagem — peso da carga, TARA (valor ou campo em branco pra anotar) e peso bruto
-   (tara + carga). Recurso `mapa`: ver (todos) · importar (PCP/Logística/Gestor) ·
-   enderecar (Logística/Gestor) · montar_carga (Balança/Logística/Gestor). A consulta
+   (tara + carga). Recurso `mapa` (30/08/2026): ver (todos) · importar
+   (PCP/Logística/Gestor) · enderecar (Logística/Gestor) · montar_carga — montagem E
+   loteamento — (**PCP/Gestor**; a Balança perdeu a ação e só vê). Fotos da carga: quem
+   monta OU quem endereça. A consulta
    em tempo real ao SAP foi DESCARTADA por ora (30/08/2026): o tratado entra pela
    produção e o upload segue cobrindo branca + destinação/classe.
 

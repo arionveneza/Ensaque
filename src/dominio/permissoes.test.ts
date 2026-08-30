@@ -67,9 +67,9 @@ describe('matriz padrao', () => {
         expect(permitidoPadrao('Gestor', recurso, acao)).toBe(true)
   })
 
-  it('Balanca so enxerga veiculos e o mapa (montagem de carga), nada mais', () => {
-    // veiculos desde 15/08/2026; mapa desde 28/08/2026 (a operadora da
-    // balanca monta a carga la) — e no mapa ela NAO importa nem endereca
+  it('Balanca so enxerga veiculos e o mapa (leitura), nada mais', () => {
+    // veiculos desde 15/08/2026; no mapa ela so VE — montar carga/lotear
+    // virou acao do PCP e Gestor em 30/08/2026
     for (const [recurso, acoes] of Object.entries(ACOES_POR_RECURSO)) {
       if (recurso === 'veiculos' || recurso === 'mapa') continue
       for (const acao of acoes)
@@ -80,13 +80,21 @@ describe('matriz padrao', () => {
     }
     for (const acao of ['ver', 'chamar', 'checklist'])
       expect(permitidoPadrao('Balanca', 'veiculos', acao)).toBe(true)
-    for (const acao of ['ver', 'montar_carga'])
-      expect(permitidoPadrao('Balanca', 'mapa', acao)).toBe(true)
-    for (const acao of ['importar', 'enderecar'])
+    expect(permitidoPadrao('Balanca', 'mapa', 'ver')).toBe(true)
+    for (const acao of ['importar', 'enderecar', 'montar_carga'])
       expect(
         permitidoPadrao('Balanca', 'mapa', acao),
         `Balanca nao pode ${acao} no mapa`,
       ).toBe(false)
+  })
+
+  it('mapa (30/08/2026): montar carga e lotear sao do PCP e Gestor; Logistica endereca', () => {
+    expect(permitidoPadrao('PCP', 'mapa', 'montar_carga')).toBe(true)
+    expect(permitidoPadrao('Gestor', 'mapa', 'montar_carga')).toBe(true)
+    expect(permitidoPadrao('Logistica', 'mapa', 'montar_carga')).toBe(false)
+    expect(permitidoPadrao('Logistica', 'mapa', 'enderecar')).toBe(true)
+    expect(permitidoPadrao('Logistica', 'mapa', 'importar')).toBe(true)
+    expect(permitidoPadrao('PCP', 'mapa', 'enderecar')).toBe(false)
   })
 
   it('nenhum perfil concede acao que o recurso nao tem', () => {

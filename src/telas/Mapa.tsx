@@ -242,6 +242,9 @@ export default function Mapa() {
   const podeImportar = permitido('mapa', 'importar')
   const podeEnderecar = permitido('mapa', 'enderecar')
   const podeMontar = permitido('mapa', 'montar_carga')
+  // fotos da carga: quem monta (PCP/Gestor) E quem está no pátio
+  // endereçando (Logística) — decisão de 30/08/2026
+  const podeFotografar = podeMontar || podeEnderecar
 
   const [lotes, setLotes] = useState<LoteMapaLinha[] | null>([])
   const [cargas, setCargas] = useState<CargaMontadaLinha[]>([])
@@ -1253,7 +1256,7 @@ export default function Mapa() {
       {cargaFotos && (
         <ModalFotosCarga
           carga={cargaFotos}
-          podeMontar={podeMontar}
+          podeEditar={podeFotografar}
           onMudar={(fotos) => void mudarFotosCarga(cargaFotos, fotos)}
           onFechar={() => setFotosDe(null)}
         />
@@ -1397,10 +1400,11 @@ function MenuOpcoes({
  * mapa enxerga a galeria. Mesma receita das fotos da Qualidade.
  */
 function ModalFotosCarga({
-  carga, podeMontar, onMudar, onFechar,
+  carga, podeEditar, onMudar, onFechar,
 }: {
   carga: CargaMontadaLinha
-  podeMontar: boolean
+  /** PCP/Gestor (montar) e Logística (enderecar) fotografam; o resto vê. */
+  podeEditar: boolean
   onMudar: (fotos: string[]) => void
   onFechar: () => void
 }) {
@@ -1413,7 +1417,7 @@ function ModalFotosCarga({
           “Foto carga/placa” do croqui.
         </p>
 
-        {podeMontar ? (
+        {podeEditar ? (
           <SeletorFotos
             max={4}
             titulo="Fotos (até 4)"

@@ -64,9 +64,9 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     // MRP (27/08/2026): necessidade de material — PCP, Gestor e Direção;
     // importar = subir o estoque de químicos do SAP (PCP/Gestor)
     mrp: ['ver', 'importar'],
-    // Mapa (28/08/2026): PCP vê e sobe o saldo do SAP; endereçar é da
-    // Logística, montar carga é da Balança
-    mapa: ['ver', 'importar'],
+    // Mapa (30/08/2026): montar carga e lotear são do PCP (e Gestor);
+    // endereçar/movimentar segue da Logística
+    mapa: ['ver', 'importar', 'montar_carga'],
     cadastros: ['ver', 'editar'],
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],
@@ -76,9 +76,9 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     lotes: ['ver', 'baixar_lote', 'conferir'],
     etapas: ['ver'],
     indicadores: ['ver'],
-    // Mapa (28/08/2026): endereçamento e movimentação de lote são da
-    // Logística; ela também pode subir o saldo e montar carga se precisar
-    mapa: ['ver', 'importar', 'enderecar', 'montar_carga'],
+    // Mapa (30/08/2026): endereçamento, movimentação, filtros, upload e
+    // FOTOS da carga são da Logística; montar carga/lotear virou do PCP
+    mapa: ['ver', 'importar', 'enderecar'],
     // os carregamentos são agenda da logística tanto quanto do PCP
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],
@@ -116,13 +116,13 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     veiculos: ['ver'],
   },
   /**
-   * Balança (15/08/2026): perfil do pátio/portaria — checklist de veículo,
-   * chamada de motorista e, desde 28/08/2026, a montagem de carga na aba
-   * Mapa (a operadora informa a ordem de carregamento e escolhe os lotes).
+   * Balança (15/08/2026): perfil do pátio/portaria — checklist de veículo e
+   * chamada de motorista. A montagem de carga passou pro PCP em 30/08/2026;
+   * a Balança segue VENDO o mapa e as cargas.
    */
   Balanca: {
     veiculos: ['ver', 'chamar', 'checklist'],
-    mapa: ['ver', 'montar_carga'],
+    mapa: ['ver'],
   },
   Gestor: { ...ACOES_POR_RECURSO },
 }
