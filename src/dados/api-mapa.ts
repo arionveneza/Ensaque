@@ -106,6 +106,37 @@ export async function importarLotesMapa(
   return { gravados: (sub.data as number) ?? brancos.length, enriquecidos: (rpc.data as number) ?? 0 }
 }
 
+/**
+ * Lote AVULSO no mapa (31/08/2026): entrada manual pra o que não veio de
+ * upload nem de ordem (lote antigo, correção, chegada fora do fluxo).
+ * ATENÇÃO à semântica: branca avulsa que não estiver na planilha SOME no
+ * próximo upload do SAP (substituição total); tratada persiste.
+ */
+export async function criarLoteMapa(l: {
+  lote: string
+  tratamento: string
+  cultivar: string
+  embalagem: string
+  pms: number | null
+  peso_bag_kg: number
+  bags: number
+  destinacao: string | null
+  classificacao: string | null
+}): Promise<void> {
+  const { error } = await supabase.from('lotes_mapa').insert({
+    ...l,
+    peneira: null,
+    categoria: null,
+    atualizado_em: new Date().toISOString(),
+  })
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error(`A combinação ${l.lote} · ${l.tratamento} já existe no mapa.`)
+    }
+    throw new Error(`criar lote no mapa: ${error.message}`)
+  }
+}
+
 /** Substitui os endereços de UMA combinação lote + tratamento. */
 export async function salvarEnderecos(
   lote: string,

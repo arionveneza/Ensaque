@@ -6,7 +6,8 @@ import type {
   ProdutoCargaLinha,
 } from '@/dados/api-mapa'
 import {
-  converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, SEM_TSI, type ResultadoLotesMapa,
+  converterLotesMapa, DEPOSITO_MAPA, ehRelatorioMapa, loteBase, SEM_TSI,
+  type ResultadoLotesMapa,
 } from '@/dominio/importacao/mapa'
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
@@ -266,6 +267,7 @@ export default function Mapa() {
   const [posicao, setPosicao] = useState<Posicao | null>(null)
   const [movendo, setMovendo] = useState<Alocacao | null>(null)
   const [fotosDe, setFotosDe] = useState<string | null>(null)
+  const [novoLote, setNovoLote] = useState(false)
 
   // -------- relatório do que foi carregado --------
   const [periodoCarregadas, setPeriodoCarregadas] =
@@ -939,10 +941,13 @@ export default function Mapa() {
         titulo={`Saldo do SAP (${todos.length} lotes no mapa)`}
         acoes={
           podeImportar ? (
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:hover:bg-stone-800">
-              Carregar planilha (.xlsx)
-              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerPlanilha} />
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Botao onClick={() => setNovoLote(true)}>Novo lote</Botao>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:hover:bg-stone-800">
+                Carregar planilha (.xlsx)
+                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerPlanilha} />
+              </label>
+            </div>
           ) : undefined
         }
         className="mb-5"
@@ -1304,6 +1309,25 @@ export default function Mapa() {
         )}
       </CartaoRecolhivel>
 
+      {novoLote && (
+        <ModalNovoLote
+          tratamentosExistentes={tratamentos}
+          onFechar={() => setNovoLote(false)}
+          onSalvar={async (l) => {
+            try {
+              await m.criarLoteMapa(l)
+              setNovoLote(false)
+              setMsg(
+                `${l.lote} · ${rotuloTratamento(l.tratamento)} entrou no mapa — aguardando endereçamento.`,
+              )
+              await recarregar()
+            } catch (e) {
+              throw e instanceof Error ? e : new Error(String(e))
+            }
+          }}
+        />
+      )}
+
       {cargaFotos && (
         <ModalFotosCarga
           carga={cargaFotos}
@@ -1442,6 +1466,178 @@ function MenuOpcoes({
         </>
       )}
     </span>
+  )
+}
+
+/**
+ * Lote AVULSO no mapa (31/08/2026): entrada manual pro que não veio de
+ * upload nem de ordem de produção — lote antigo, correção, chegada fora do
+ * fluxo. Cai direto na fila "Sem localização". Branca avulsa que não
+ * estiver na planilha SOME no próximo upload do SAP (substituição total).
+ */
+function ModalNovoLote({
+  tratamentosExistentes, onFechar, onSalvar,
+}: {
+  tratamentosExistentes: string[]
+  onFechar: () => void
+  onSalvar: (l: {
+    lote: string
+    tratamento: string
+    cultivar: string
+    embalagem: string
+    pms: number | null
+    peso_bag_kg: number
+    bags: number
+    destinacao: string | null
+    classificacao: string | null
+  }) => Promise<void>
+}) {
+  const [lote, setLote] = useState('')
+  const [tratamento, setTratamento] = useState(SEM_TSI)
+  const [cultivar, setCultivar] = useState('')
+  const [embalagem, setEmbalagem] = useState('BG5M')
+  const [pms, setPms] = useState('')
+  const [pesoBag, setPesoBag] = useState('')
+  const [bags, setBags] = useState('')
+  const [destinacao, setDestinacao] = useState('')
+  const [classificacao, setClassificacao] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
+  const fator = embalagem === 'MEIOBAG' ? 2.5 : 5
+  const pesoCalculado =
+    Number(pesoBag) > 0 ? Number(pesoBag) : Number(pms) > 0 ? Number(pms) * fator : 0
+  const valido =
+    lote.trim() !== '' && cultivar.trim() !== '' && tratamento.trim() !== '' &&
+    Number(bags) > 0 && pesoCalculado > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">Novo lote no mapa (avulso)</h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          Pro que não veio do upload nem de ordem de produção. O lote cai na fila
+          “Sem localização” pra Logística endereçar.
+        </p>
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <input
+            value={lote}
+            onChange={(e) => setLote(e.target.value)}
+            placeholder="nº do lote *"
+            className={`${INPUT} w-56`}
+          />
+          <input
+            value={cultivar}
+            onChange={(e) => setCultivar(e.target.value)}
+            placeholder="cultivar *"
+            className={`${INPUT} w-48`}
+          />
+          <input
+            value={tratamento}
+            onChange={(e) => setTratamento(e.target.value)}
+            list="tratamentos-mapa"
+            placeholder="tratamento * (SEM TSI = branca)"
+            className={`${INPUT} w-64`}
+          />
+          <datalist id="tratamentos-mapa">
+            <option value={SEM_TSI} />
+            {tratamentosExistentes.map((t) => <option key={t} value={t} />)}
+          </datalist>
+          <select value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} className={INPUT}>
+            <option value="BG5M">BG5M</option>
+            <option value="MEIOBAG">MEIOBAG</option>
+          </select>
+          <input
+            type="number"
+            min={1}
+            value={bags}
+            onChange={(e) => setBags(e.target.value)}
+            placeholder="bags *"
+            className={`${INPUT} w-28`}
+          />
+          <input
+            type="number"
+            min={0}
+            value={pms}
+            onChange={(e) => setPms(e.target.value)}
+            placeholder="PMS (g)"
+            className={`${INPUT} w-28`}
+          />
+          <input
+            type="number"
+            min={0}
+            value={pesoBag}
+            onChange={(e) => setPesoBag(e.target.value)}
+            placeholder="peso do bag (kg)"
+            className={`${INPUT} w-40`}
+          />
+          <input
+            value={destinacao}
+            onChange={(e) => setDestinacao(e.target.value)}
+            placeholder="destinação (opc.)"
+            className={`${INPUT} w-44`}
+          />
+          <input
+            value={classificacao}
+            onChange={(e) => setClassificacao(e.target.value)}
+            placeholder="classe (opc., ex. Classe A)"
+            className={`${INPUT} w-52`}
+          />
+        </div>
+
+        <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+          Peso do bag: informe o PMS (calcula {embalagem === 'MEIOBAG' ? 'PMS × 2,5' : 'PMS × 5'})
+          ou o peso direto — um dos dois é obrigatório.
+          {pesoCalculado > 0 && (
+            <> Vai gravar <b>{inteiro(pesoCalculado)} kg/bag</b>.</>
+          )}
+        </p>
+        {tratamento.trim().toUpperCase() === SEM_TSI && (
+          <div className="mt-3">
+            <Aviso gravidade="alerta">
+              Semente BRANCA avulsa: se este lote não vier na próxima planilha do SAP,
+              ele SOME no upload (substituição total da branca). Tratado avulso permanece.
+            </Aviso>
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante="primario"
+            disabled={salvando || !valido}
+            onClick={async () => {
+              setSalvando(true)
+              setErro(null)
+              try {
+                await onSalvar({
+                  // número BASE, maiúsculo — mesmo invariante do upload
+                  lote: loteBase(lote.trim().toUpperCase()),
+                  tratamento:
+                    tratamento.trim().toUpperCase() === SEM_TSI ? SEM_TSI : tratamento.trim(),
+                  cultivar: cultivar.trim(),
+                  embalagem,
+                  pms: Number(pms) > 0 ? Number(pms) : null,
+                  peso_bag_kg: Math.round(pesoCalculado * 1000) / 1000,
+                  bags: Number(bags),
+                  destinacao: destinacao.trim() || null,
+                  classificacao: classificacao.trim() || null,
+                })
+              } catch (e) {
+                setErro(e instanceof Error ? e.message : String(e))
+              } finally {
+                setSalvando(false)
+              }
+            }}
+          >
+            {salvando ? 'gravando…' : 'Gravar lote'}
+          </Botao>
+        </div>
+      </div>
+    </div>
   )
 }
 
