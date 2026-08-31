@@ -102,11 +102,32 @@ export function imprimirTabela(
   abrirParaImpressao(html)
 }
 
-function abrirParaImpressao(html: string, aguardarImagens = false): void {
+/**
+ * Abre a janela de impressão AINDA no clique (gesto do usuário) — quem
+ * precisa buscar dados antes de montar o HTML (croqui com fotos) chama
+ * isto primeiro e passa a janela adiante, senão o window.open depois do
+ * await cai no bloqueador de pop-up em rede lenta (varredura 30/08/2026).
+ */
+export function abrirJanelaImpressao(): Window | null {
   const janela = window.open('', '_blank', 'width=1024,height=768')
   if (!janela) {
     alert('O navegador bloqueou a janela de impressão. Libere os pop-ups para este site.')
+    return null
+  }
+  janela.document.write(
+    '<p style="font-family:system-ui;padding:24px;color:#666">Preparando a impressão…</p>',
+  )
+  return janela
+}
+
+function abrirParaImpressao(html: string, aguardarImagens = false, janelaPronta?: Window): void {
+  const janela = janelaPronta ?? window.open('', '_blank', 'width=1024,height=768')
+  if (!janela) {
+    alert('O navegador bloqueou a janela de impressão. Libere os pop-ups para este site.')
     return
+  }
+  if (janelaPronta) {
+    janela.document.open()
   }
   janela.document.write(html)
   janela.document.close()
@@ -396,10 +417,13 @@ export interface OrdemCarregamentoImpressao {
  */
 export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
   const fmt = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+  // bags são fracionários por projeto (MEIOBAG consome 0,5 bag): arredondar
+  // no papel mandava buscar bag que o lote não tem (varredura 30/08/2026)
+  const fmtBags = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
   const linhas = c.produtos
     .map((p) => {
       const carregados = p.itens.reduce((s, i) => s + i.bags, 0)
-      const cabecalho = `<tr class="produto"><td colspan="5">${esc(p.cultivar)} · ${esc(p.tratamento)} — pedido ${fmt(p.bagsSolicitados)} bags${carregados !== p.bagsSolicitados ? ` · na carga ${fmt(carregados)}` : ''}</td></tr>`
+      const cabecalho = `<tr class="produto"><td colspan="5">${esc(p.cultivar)} · ${esc(p.tratamento)} — pedido ${fmtBags(p.bagsSolicitados)} bags${Math.abs(carregados - p.bagsSolicitados) > 0.005 ? ` · na carga ${fmtBags(carregados)}` : ''}</td></tr>`
       if (p.itens.length === 0) {
         return `${cabecalho}<tr><td colspan="5" class="pendente">lotes a definir</td></tr>`
       }
@@ -408,7 +432,7 @@ export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
           (i) => `<tr>
         <td><b>${esc(i.lote)}</b>${i.destinacao ? `<br><span class="dest">DESTINAÇÃO: ${esc(i.destinacao)}</span>` : ''}</td>
         <td>${esc(i.endereco) || '—'}</td>
-        <td class="num">${fmt(i.bags)}</td>
+        <td class="num">${fmtBags(i.bags)}</td>
         <td class="num">${i.pesoBagKg != null ? fmt(i.pesoBagKg) : '—'}</td>
         <td class="num">${fmt(i.pesoKg)}</td>
       </tr>`,
@@ -418,7 +442,10 @@ export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
     })
     .join('')
 
-  const brutoKg = c.taraKg != null ? c.taraKg + c.pesoTotalKg : null
+  // com produto ainda sem lote, o peso é PARCIAL: imprimir um "peso bruto"
+  // definitivo enganava a balança (varredura de 30/08/2026)
+  const parcial = c.produtos.some((p) => p.itens.length === 0)
+  const brutoKg = !parcial && c.taraKg != null ? c.taraKg + c.pesoTotalKg : null
 
   const html = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><title>Ordem de carregamento ${esc(c.numero)}</title>
@@ -457,7 +484,7 @@ export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
   <div class="campo"><span>Placa do veículo</span><b>${esc(c.placa) || '—'}</b></div>
   <div class="campo"><span>Data</span><b>${esc(c.data)}</b></div>
   <div class="campo"><span>Produtos</span><b>${fmt(c.produtos.length)}</b></div>
-  <div class="campo"><span>Total</span><b>${fmt(c.totalBags)} bags</b></div>
+  <div class="campo"><span>Total</span><b>${fmtBags(c.totalBags)} bags</b></div>
   <div class="campo"><span>Peso da carga</span><b>${fmt(c.pesoTotalKg)} kg</b></div>
 </div>
 
@@ -465,13 +492,13 @@ export function imprimirOrdemCarregamento(c: OrdemCarregamentoImpressao): void {
   <thead><tr><th>Lote</th><th>Endereço (onde buscar)</th><th class="num">Bags</th><th class="num">Peso/bag (kg)</th><th class="num">Peso (kg)</th></tr></thead>
   <tbody>
     ${linhas}
-    <tr class="totais"><td colspan="2">TOTAL</td><td class="num">${fmt(c.totalBags)}</td><td></td><td class="num">${fmt(c.pesoTotalKg)}</td></tr>
+    <tr class="totais"><td colspan="2">TOTAL</td><td class="num">${fmtBags(c.totalBags)}</td><td></td><td class="num">${fmt(c.pesoTotalKg)}</td></tr>
   </tbody>
 </table>
 
 <div class="pesagem">
   <h2>Pesagem</h2>
-  <div class="linha"><span>Peso da carga (ordem de carregamento)</span><span class="valor">${fmt(c.pesoTotalKg)} kg</span></div>
+  <div class="linha"><span>Peso da carga (ordem de carregamento)${parcial ? ' — PARCIAL: há produto sem lote' : ''}</span><span class="valor">${fmt(c.pesoTotalKg)} kg</span></div>
   <div class="linha"><span>Tara do veículo</span>${
     c.taraKg != null
       ? `<span class="valor">${fmt(c.taraKg)} kg</span>`
@@ -511,7 +538,7 @@ export interface CroquiCargaImpressao {
  * anota à mão o que foi em cada posição), quadro pra foto da carga/placa
  * e os campos de assinatura. Paisagem, uma folha por carga.
  */
-export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
+export function imprimirCroquiCarga(c: CroquiCargaImpressao, janelaPronta?: Window): void {
   const carretas = c.veiculo.carretas
     .map(
       (filas, idx) => `${idx > 0 ? '<div class="engate"></div>' : ''}
@@ -596,5 +623,5 @@ export function imprimirCroquiCarga(c: CroquiCargaImpressao): void {
 </div>
 </body></html>`
 
-  abrirParaImpressao(html, c.fotos.length > 0)
+  abrirParaImpressao(html, c.fotos.length > 0, janelaPronta)
 }

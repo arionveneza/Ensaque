@@ -13,7 +13,7 @@
  */
 
 import { supabase } from '@/lib/supabase'
-import { SEM_TSI, type EnriquecimentoTratado, type LoteMapaConvertido } from '@/dominio/importacao/mapa'
+import type { EnriquecimentoTratado, LoteMapaConvertido } from '@/dominio/importacao/mapa'
 
 const erro = (contexto: string, e: { message: string } | null) => {
   if (e) throw new Error(`${contexto}: ${e.message}`)
@@ -52,7 +52,9 @@ export interface LoteMapaLinha {
  */
 export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
   // bags > 0: carga CARREGADA zera o lote no mapa (gatilho) — a linha fica
-  // no banco pro desfazer devolver, mas some da tela
+  // no banco pro desfazer devolver, mas some da tela.
+  // limit explícito: o PostgREST corta em 1000 linhas EM SILÊNCIO sem ele,
+  // e o mapa já passa de 750 combinações (varredura de 30/08/2026)
   const { data, error } = await supabase
     .from('lotes_mapa')
     .select(
@@ -60,7 +62,14 @@ export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
     )
     .gt('bags', 0)
     .order('cultivar')
-  if (error) return null
+    .limit(10000)
+  if (error) {
+    // null SÓ na janela pré-migração (tabela ausente); erro transitório
+    // (rede) propaga — devolver null fazia a tela operar com mapa vazio e
+    // salvar carga apagando lotes (varredura de 30/08/2026)
+    if (['42P01', 'PGRST200', 'PGRST205'].includes(error.code ?? '')) return null
+    throw new Error(`carregar o mapa: ${error.message}`)
+  }
   return (data ?? []) as unknown as LoteMapaLinha[]
 }
 
@@ -78,23 +87,15 @@ export async function importarLotesMapa(
   brancos: LoteMapaConvertido[],
   enriquecimentos: EnriquecimentoTratado[],
 ): Promise<{ gravados: number; enriquecidos: number }> {
-  const agora = new Date().toISOString()
-  const registros = brancos.map((l) => ({ ...l, atualizado_em: agora }))
-  for (let i = 0; i < registros.length; i += 500) {
-    const { error } = await supabase.from('lotes_mapa').upsert(registros.slice(i, i + 500))
-    if (error) {
-      throw new Error(
-        `gravar lotes do mapa: ${error.message} — a migração mapa-lote-tratamento.sql já rodou?`,
-      )
-    }
+  // substituição total NO SERVIDOR, por conjunto — o delete por timestamp
+  // do cliente perdia/preservava lote errado quando um gatilho tocava a
+  // linha durante o upload (varredura de 30/08/2026)
+  const sub = await supabase.rpc('substituir_brancas_mapa', { p_lotes: brancos })
+  if (sub.error) {
+    throw new Error(
+      `gravar lotes do mapa: ${sub.error.message} — a migração varredura-mapa-2026-08-30.sql já rodou?`,
+    )
   }
-  // branca que não veio nesta carga não existe mais no SAP → sai do mapa
-  const del = await supabase
-    .from('lotes_mapa')
-    .delete()
-    .eq('tratamento', SEM_TSI)
-    .lt('atualizado_em', agora)
-  erro('remover lotes brancos que sumiram do SAP', del.error)
 
   const rpc = await supabase.rpc('enriquecer_tratados', { p_itens: enriquecimentos })
   if (rpc.error) {
@@ -102,7 +103,7 @@ export async function importarLotesMapa(
       `carimbar destinação dos tratados: ${rpc.error.message} — a migração mapa-alimentado-pela-producao.sql já rodou?`,
     )
   }
-  return { gravados: registros.length, enriquecidos: (rpc.data as number) ?? 0 }
+  return { gravados: (sub.data as number) ?? brancos.length, enriquecidos: (rpc.data as number) ?? 0 }
 }
 
 /** Substitui os endereços de UMA combinação lote + tratamento. */
@@ -163,12 +164,28 @@ export async function moverEndereco(params: {
   )
 
   const atualizar = async (id: string, campos: Record<string, unknown>) => {
-    const { error } = await supabase.from('lote_enderecos').update(campos).eq('id', id)
+    const { data, error } = await supabase
+      .from('lote_enderecos')
+      .update(campos)
+      .eq('id', id)
+      .select('id')
     erro('mover endereço', error)
+    // 0 linhas = o endereço mudou por baixo (outro usuário) — sem isto os
+    // bags sumiam em silêncio (varredura de 30/08/2026)
+    if ((data ?? []).length === 0) {
+      throw new Error('o endereço mudou por baixo — recarregue e tente de novo')
+    }
   }
   const apagar = async (id: string) => {
-    const { error } = await supabase.from('lote_enderecos').delete().eq('id', id)
+    const { data, error } = await supabase
+      .from('lote_enderecos')
+      .delete()
+      .eq('id', id)
+      .select('id')
     erro('mover endereço (limpar origem)', error)
+    if ((data ?? []).length === 0) {
+      throw new Error('o endereço mudou por baixo — recarregue e tente de novo')
+    }
   }
   const inserir = async (campos: Record<string, unknown>) => {
     const { error } = await supabase
@@ -340,10 +357,14 @@ export async function removerFotoCarga(caminho: string): Promise<void> {
   await supabase.storage.from(BUCKET_FOTOS).remove([caminho])
 }
 
-/** Grava a lista de caminhos na carga (a RPC de salvar não toca em fotos). */
+/**
+ * Grava a lista de caminhos na carga via RPC dedicada (varredura de
+ * 30/08/2026): só a coluna fotos, com a permissão certa (quem monta OU
+ * quem endereça) — o UPDATE direto exigia policy irrestrita pra Logística.
+ */
 export async function salvarFotosCarga(id: string, fotos: string[]): Promise<void> {
-  const { error } = await supabase.from('cargas_montadas').update({ fotos }).eq('id', id)
-  erro('gravar fotos da carga — a migração carga-fotos.sql já rodou?', error)
+  const { error } = await supabase.rpc('salvar_fotos_carga', { p_id: id, p_fotos: fotos })
+  erro('gravar fotos da carga — a migração varredura-mapa-2026-08-30.sql já rodou?', error)
 }
 
 /** Bags de um lote já alocados numa carga salva — trava o loteamento duplo. */
@@ -368,13 +389,17 @@ export async function listarLotesComprometidos(): Promise<LoteComprometido[]> {
     .from('carga_montada_produtos')
     .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags ), cargas_montadas!inner ( carregada_em )')
     .is('cargas_montadas.carregada_em', null)
-  if (r.error) {
+    .limit(10000)
+  if (r.error?.code === '42703' || r.error?.code === 'PGRST200') {
     // antes da migração carga-carregada-finalizada.sql a coluna não existe
     r = (await supabase
       .from('carga_montada_produtos')
-      .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags )')) as unknown as typeof r
+      .select('carga_id, tratamento, carga_montada_itens ( lote_id, bags )')
+      .limit(10000)) as unknown as typeof r
   }
-  if (r.error) return []
+  // erro transitório PROPAGA — devolver [] desligava a trava de saldo em
+  // silêncio e deixava lotear o mesmo lote duas vezes (varredura 30/08)
+  if (r.error) throw new Error(`carregar comprometimento dos lotes: ${r.error.message}`)
   const linhas = (r.data ?? []) as unknown as {
     carga_id: string
     tratamento: string
@@ -443,7 +468,13 @@ export async function listarConsumoOrdens(): Promise<ConsumoOrdens[]> {
     .from('v_ordens')
     .select('lote_id, peso_kg, status')
     .not('status', 'in', '("Qualidade apontada","Apontada","Excluida")')
-  if (error) return []
+    .limit(10000)
+  if (error) {
+    // [] só quando a view não existe; o resto propaga (senão a trava de
+    // consumo de ordens desligava em silêncio — varredura 30/08/2026)
+    if (['42P01', '42703', 'PGRST205'].includes(error.code ?? '')) return []
+    throw new Error(`carregar consumo das ordens: ${error.message}`)
+  }
   const porLote = new Map<string, number>()
   for (const o of (data ?? []) as { lote_id: string | null; peso_kg: number | null }[]) {
     if (!o.lote_id) continue
@@ -477,7 +508,7 @@ export async function listarCargasCarregadas(
   return (data ?? []) as unknown as CargaMontadaLinha[]
 }
 
-export async function listarCargasMontadas(limite = 20): Promise<CargaMontadaLinha[]> {
+export async function listarCargasMontadas(limite = 100): Promise<CargaMontadaLinha[]> {
   // itens penduram no PRODUTO (produto_id) — o embed aninhado usa essa FK
   let r = await supabase
     .from('cargas_montadas')

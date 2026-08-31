@@ -12,7 +12,7 @@ import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
 import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
-import { imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
+import { abrirJanelaImpressao, imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
@@ -83,9 +83,16 @@ function alocar(lotes: LoteMapaLinha[]): Alocacao[] {
     const desconhecidos = es.filter((e) => e.bags == null)
     const restante = Math.max(0, l.bags - somaConhecida)
     const porDesconhecido = desconhecidos.length > 0 ? restante / desconhecidos.length : 0
+    // contagem por endereço maior que o SALDO do lote (carga saiu, upload
+    // baixou, endereço ficou): reduz proporcionalmente e marca ~estimado —
+    // sem isso o mapa mostrava bags que já foram embora (varredura 30/08)
+    const escala = somaConhecida > l.bags && somaConhecida > 0 ? l.bags / somaConhecida : 1
     for (const e of es) {
-      if (e.bags != null) out.push({ lote: l, endereco: e, bags: e.bags, estimado: false })
-      else out.push({ lote: l, endereco: e, bags: porDesconhecido, estimado: desconhecidos.length > 1 })
+      if (e.bags != null) {
+        out.push({ lote: l, endereco: e, bags: e.bags * escala, estimado: escala < 1 })
+      } else {
+        out.push({ lote: l, endereco: e, bags: porDesconhecido, estimado: desconhecidos.length > 1 })
+      }
     }
   }
   return out
@@ -266,7 +273,10 @@ export default function Mapa() {
   const [carregadas, setCarregadas] = useState<CargaMontadaLinha[]>([])
   const desdeCarregadas = useMemo(() => {
     if (periodoCarregadas === 'tudo') return null
-    const hoje = new Date().toISOString().slice(0, 10)
+    // data LOCAL — toISOString é UTC e o "Hoje" virava ontem depois das 21h
+    // no fuso de Goiás (varredura de 30/08/2026)
+    const d = new Date()
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     return periodoCarregadas === 'dia'
       ? hoje
       : somaDias(hoje, periodoCarregadas === 'semana' ? -7 : -30)
@@ -388,6 +398,12 @@ export default function Mapa() {
 
   /** Reabre uma carga salva pra edição do CABEÇALHO e dos produtos (1ª etapa). */
   function editarCarga(c: CargaMontadaLinha) {
+    const r = rascunhoCarga.valor
+    const temConteudo = r.editandoId !== c.id && (r.numero.trim() || r.produtos.length > 0)
+    if (temConteudo) {
+      const nome = r.editandoId ? `a edição da carga ${r.numero}` : 'a carga em montagem'
+      if (!confirm(`Editar a ${c.numero} descarta ${nome} (não salva). Continuar?`)) return
+    }
     rascunhoCarga.substituir({
       numero: c.numero,
       placa: c.placa ?? '',
@@ -408,6 +424,24 @@ export default function Mapa() {
 
   /** Abre a 2ª etapa: escolher os lotes de uma carga JÁ SALVA. */
   function lotearCarga(c: CargaMontadaLinha) {
+    if (lotes === null) {
+      setErro('O mapa não carregou — recarregue a página antes de lotear.')
+      return
+    }
+    // lotear da MESMA carga já aberto: preserva as escolhas não salvas
+    if (rascunhoLotear.valor.cargaId === c.id) {
+      setMsg(`O lotear da carga ${c.numero} já está aberto, logo abaixo dela na lista.`)
+      return
+    }
+    if (loteando && loteando.id !== c.id) {
+      if (
+        !confirm(
+          `Abrir o lotear da carga ${c.numero} descarta as escolhas NÃO SALVAS da ${loteando.numero}. Continuar?`,
+        )
+      ) {
+        return
+      }
+    }
     rascunhoLotear.substituir({
       cargaId: c.id,
       produtos: c.carga_montada_produtos.map((p) => ({
@@ -507,7 +541,11 @@ export default function Mapa() {
       return
     }
     const pedidos = bagsEscolhidos && bagsEscolhidos > 0 ? bagsEscolhidos : restante
-    const qtd = Math.min(pedidos, restante, l.bags)
+    const qtd = Math.floor(Math.min(pedidos, restante, l.bags))
+    if (qtd <= 0) {
+      setMsg(`${l.lote}: saldo fracionário insuficiente pra 1 bag inteiro.`)
+      return
+    }
     rascunhoLotear.substituir({
       cargaId: c.id,
       produtos: produtosBase.map((p) =>
@@ -546,6 +584,10 @@ export default function Mapa() {
     const lotesDistintos = new Set(
       c.carga_montada_produtos.flatMap((p) => p.carga_montada_itens.map((i) => i.lote_id)),
     ).size
+    // a janela abre AINDA no clique — window.open depois do await caía no
+    // bloqueador de pop-up em rede lenta (varredura de 30/08/2026)
+    const janela = abrirJanelaImpressao()
+    if (!janela) return
     // as fotos anexadas saem no quadro "Foto carga/placa" (30/08/2026)
     const fotos = (
       await Promise.all(c.fotos.slice(0, 4).map((caminho) => m.urlFotoCarga(caminho)))
@@ -562,7 +604,7 @@ export default function Mapa() {
         ),
       ),
       fotos,
-    })
+    }, janela)
   }
 
   /** Carregada (caminhão saiu → sai da conta de saldo) e Finalizada (encerra). */
@@ -571,6 +613,11 @@ export default function Mapa() {
       await m.marcarCargaMontada(c.id, marco, usuario?.id ?? null)
       if (marco === 'carregada' && rascunhoLotear.valor.cargaId === c.id) {
         rascunhoLotear.limpar()
+      }
+      // uma EDIÇÃO aberta da carga marcada vira bomba-relógio (salvar
+      // regravaria itens de carga já debitada) — invalida o rascunho
+      if (marco === 'carregada' && rascunhoCarga.valor.editandoId === c.id) {
+        rascunhoCarga.limpar()
       }
       setMsg(
         marco === 'carregada'
@@ -600,6 +647,7 @@ export default function Mapa() {
     try {
       await m.excluirCargaMontada(c.id)
       if (rascunhoLotear.valor.cargaId === c.id) rascunhoLotear.limpar()
+      if (rascunhoCarga.valor.editandoId === c.id) rascunhoCarga.limpar()
       setMsg(`Carga ${c.numero} excluída.`)
       await recarregar()
     } catch (e) {
@@ -722,7 +770,7 @@ export default function Mapa() {
     // o painel de lotear abre AQUI, logo abaixo da carga referenciada
     // (pedido do Arion, 29/08/2026 — antes abria acima da lista inteira)
     const linhaLotear =
-      podeMontar && ativa && loteando?.id === c.id ? (
+      podeMontar && ativa && lotes !== null && loteando?.id === c.id ? (
         <tr key={`${c.id}-lotear`}>
           <td colSpan={8} className="bg-stone-50 p-3 dark:bg-stone-900/40">
             <LotearCarga
@@ -1059,12 +1107,15 @@ export default function Mapa() {
         />
       </Cartao>
 
-      {/* -------- 1ª etapa: montagem de carga -------- */}
-      {podeMontar && (
+      {/* -------- 1ª etapa: montagem de carga (some se o mapa não carregou) -------- */}
+      {podeMontar && lotes !== null && (
         <MontagemCarga
           lotes={todos}
           usuarioId={usuario?.id ?? ''}
           rascunho={rascunhoCarga}
+          cargaEditando={
+            cargas.find((c) => c.id === rascunhoCarga.valor.editandoId) ?? null
+          }
           onSalva={(texto) => {
             setMsg(texto)
             void recarregar()
@@ -1946,11 +1997,13 @@ function ModalEnderecos({
  * Ao editar, os lotes já loteados são carregados invisíveis e preservados.
  */
 function MontagemCarga({
-  lotes, usuarioId, rascunho, onSalva,
+  lotes, usuarioId, rascunho, cargaEditando, onSalva,
 }: {
   lotes: LoteMapaLinha[]
   usuarioId: string
   rascunho: Rascunho<CargaForm>
+  /** A carga de editandoId como está HOJE no banco — null se sumiu. */
+  cargaEditando: CargaMontadaLinha | null
   onSalva: (msg: string) => void
 }) {
   const { numero, placa, cliente, tara, veiculo, produtos, editandoId } = rascunho.valor
@@ -1958,6 +2011,11 @@ function MontagemCarga({
   const [erro, setErro] = useState<string | null>(null)
   const definir = rascunho.definir
   const veiculoSel = veiculoDe(veiculo)
+  // edição virou inválida por baixo (carga excluída/carregada em outro
+  // tablet): salvar regravaria itens de carga já debitada — trava tudo
+  const edicaoInvalida =
+    !!editandoId &&
+    (!cargaEditando || !!cargaEditando.carregada_em || !!cargaEditando.finalizada_em)
 
   const cultivares = useMemo(() => [...new Set(lotes.map((l) => l.cultivar))].sort(), [lotes])
 
@@ -1965,16 +2023,6 @@ function MontagemCarga({
     definir({ produtos: produtos.map((p) => (p.chave === chave ? { ...p, ...patch } : p)) })
   const removerProduto = (chave: string) =>
     definir({ produtos: produtos.filter((p) => p.chave !== chave) })
-
-  // por lote + tratamento (a PK de lotes_mapa) — casar também pelo cultivar
-  // derrubava o lote da carga quando o TEXTO do cultivar mudava num upload
-  // do SAP, com aviso de motivo errado (revisão 28/08/2026)
-  const loteDe = (p: ProdutoCargaForm, loteId: string) =>
-    lotes.find((l) => l.lote === loteId && l.tratamento === p.tratamento)
-  const selecionadosDe = (p: ProdutoCargaForm) =>
-    p.itens
-      .map((i) => ({ ...i, lote: loteDe(p, i.loteId) }))
-      .filter((i): i is ItemCargaForm & { lote: LoteMapaLinha } => i.lote != null)
 
   // produtos com cultivar + tratamento definidos — os que contam pra salvar
   const completos = produtos.filter((p) => p.cultivar && p.tratamento)
@@ -1987,22 +2035,42 @@ function MontagemCarga({
       (o, oidx) => oidx < idx && o.cultivar === p.cultivar && o.tratamento === p.tratamento,
     ),
   )
-  // os itens vêm carregados invisíveis no Editar — o peso salvo sai deles
-  const todosSelecionados = completos.flatMap((p) => selecionadosDe(p))
-  const totalPesoKg = todosSelecionados.reduce(
-    (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
-    0,
-  )
   const totalPedido = completos.reduce((s, p) => s + (Number(p.bags) || 0), 0)
-  // carga editada pode citar lote que zerou no SAP desde então — avisar, não sumir calado
-  const foraDoMapa = completos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
   const bloqueado =
-    duplicados.length > 0 || incompletos.length > 0 || semQuantidade.length > 0
+    duplicados.length > 0 || incompletos.length > 0 || semQuantidade.length > 0 || edicaoInvalida
 
   async function salvar() {
     if (!numero.trim() || completos.length === 0 || bloqueado) return
     setSalvando(true)
     setErro(null)
+    // EDIÇÃO preserva os itens ATUAIS do banco (não a foto congelada no
+    // rascunho): sem isso, um loteamento feito depois de abrir o Editar era
+    // revertido em silêncio no salvar (varredura de 30/08/2026). Produto
+    // que trocou de combinação perde os lotes de propósito.
+    const itensAtuaisDe = (p: ProdutoCargaForm) => {
+      const salvo = cargaEditando?.carga_montada_produtos.find(
+        (x) => x.cultivar === p.cultivar && x.tratamento === p.tratamento,
+      )
+      return (salvo?.carga_montada_itens ?? []).map((i) => ({
+        lote_id: i.lote_id,
+        bags: i.bags,
+        peso_kg: i.peso_kg,
+        destinacao: i.destinacao,
+      }))
+    }
+    const produtosGravar = completos.map((p) => {
+      const itens = editandoId ? itensAtuaisDe(p) : []
+      return {
+        cultivar: p.cultivar,
+        tratamento: p.tratamento,
+        bags_solicitados: Number(p.bags) || 0,
+        itens,
+      }
+    })
+    const totalPesoKg = produtosGravar.reduce(
+      (s, p) => s + p.itens.reduce((si, i) => si + i.peso_kg, 0),
+      0,
+    )
     const carga = {
       numero: numero.trim(),
       peso_total_kg: Math.round(totalPesoKg * 100) / 100,
@@ -2011,20 +2079,6 @@ function MontagemCarga({
       tara_kg: Number(tara) > 0 ? Number(tara) : null,
       veiculo: veiculo || null,
     }
-    const produtosGravar = completos.map((p) => {
-      const sel = selecionadosDe(p)
-      return {
-        cultivar: p.cultivar,
-        tratamento: p.tratamento,
-        bags_solicitados: Number(p.bags) || sel.reduce((s, i) => s + (Number(i.bags) || 0), 0),
-        itens: sel.map((i) => ({
-          lote_id: i.loteId,
-          bags: Number(i.bags) || 0,
-          peso_kg: Math.round((Number(i.bags) || 0) * i.lote.peso_bag_kg * 100) / 100,
-          destinacao: i.lote.destinacao,
-        })),
-      }
-    })
     try {
       if (editandoId) await m.atualizarCargaMontada(editandoId, carga, produtosGravar)
       else await m.criarCargaMontada(carga, produtosGravar, usuarioId)
@@ -2155,11 +2209,14 @@ function MontagemCarga({
           </Aviso>
         </div>
       )}
-      {foraDoMapa.length > 0 && (
+      {edicaoInvalida && (
         <div className="mt-3">
-          <Aviso gravidade="alerta">
-            Lote(s) desta carga que saíram do saldo do SAP e por isso saem da carga ao
-            salvar: {foraDoMapa.map((i) => i.loteId).join(' · ')}
+          <Aviso gravidade="bloqueio">
+            A carga em edição foi {cargaEditando ? 'marcada como carregada/finalizada' : 'excluída'}{' '}
+            por outro usuário — salvar aqui corromperia o saldo do mapa.{' '}
+            <button type="button" onClick={() => rascunho.limpar()} className="underline">
+              cancelar edição
+            </button>
           </Aviso>
         </div>
       )}
@@ -2274,7 +2331,11 @@ function LotearCarga({
     }))
     .filter((x) => x.pedido > 0 && x.soma > x.pedido)
   const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
-  const foraDoMapa = produtos.flatMap((p) => p.itens.filter((i) => !loteDe(p, i.loteId)))
+  const foraDoMapa = produtos.flatMap((p) =>
+    p.itens
+      .filter((i) => !loteDe(p, i.loteId))
+      .map((i) => ({ chaveProduto: p.chave, loteId: i.loteId })),
+  )
   const totalBags = todosSelecionados.reduce((s, i) => s + (Number(i.bags) || 0), 0)
   const totalPesoKg = todosSelecionados.reduce(
     (s, i) => s + (Number(i.bags) || 0) * i.lote.peso_bag_kg,
@@ -2284,7 +2345,10 @@ function LotearCarga({
     itensInvalidos.length > 0 ||
     semQuantidade.length > 0 ||
     excedidos.length > 0 ||
-    pedidoExcedido.length > 0
+    pedidoExcedido.length > 0 ||
+    // lote fora do mapa seria DROPADO em silêncio no salvar — trava até
+    // o usuário remover o item de propósito (varredura de 30/08/2026)
+    foraDoMapa.length > 0
 
   async function salvar() {
     if (bloqueado) return
@@ -2406,9 +2470,26 @@ function LotearCarga({
       )}
       {foraDoMapa.length > 0 && (
         <div className="mt-3">
-          <Aviso gravidade="alerta">
-            Fora do mapa (saíram do saldo do SAP) e por isso FORA da carga:{' '}
-            {foraDoMapa.map((i) => i.loteId).join(' · ')}
+          <Aviso gravidade="bloqueio">
+            Lote(s) que saíram do saldo do SAP — o salvar está travado pra nada sumir em
+            silêncio. Remova de propósito:{' '}
+            {foraDoMapa.map((f) => (
+              <button
+                key={`${f.chaveProduto}-${f.loteId}`}
+                type="button"
+                onClick={() => {
+                  const p = produtos.find((x) => x.chave === f.chaveProduto)
+                  if (p) {
+                    mudarProduto(p.chave, {
+                      itens: p.itens.filter((i) => i.loteId !== f.loteId),
+                    })
+                  }
+                }}
+                className="mr-2 underline"
+              >
+                remover {f.loteId}
+              </button>
+            ))}
           </Aviso>
         </div>
       )}
@@ -2582,7 +2663,10 @@ function ProdutoLotes({
     // nunca além do PEDIDO: pedido completo não recebe mais lote (30/08/2026)
     const restante = Math.max(0, solicitados - bagsDoProduto)
     if (restante <= 0) return
-    const sugestao = Math.min(restante, disponivel)
+    // piso inteiro: saldo fracionário (consumo de ordens MEIOBAG) sugeria
+    // 9,53 bags — a folha mandaria buscar bag que não existe (varredura)
+    const sugestao = Math.floor(Math.min(restante, disponivel))
+    if (sugestao <= 0) return
     onMudar({ itens: [...p.itens, { loteId: l.lote, bags: String(sugestao) }] })
   }
   const atualizarBags = (loteId: string, v: string) =>
