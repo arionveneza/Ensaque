@@ -23,6 +23,8 @@ export interface OrdemVisao {
   lote_id: string
   cliente: string | null
   observacao: string | null
+  /** Destinação da produção — o lote tratado herda no mapa (31/08/2026). */
+  destinacao: string | null
   /** Endereço de onde buscar o lote para esta ordem. */
   armazem: string | null
   bloco: string | null
@@ -141,6 +143,12 @@ export interface NovaOrdem {
   lote_id: string
   cliente?: string | null
   observacao?: string | null
+  /**
+   * Destinação da produção (COMIGO, Multiplicação, GDM…) — obrigatória no
+   * FORMULÁRIO (31/08/2026); opcional aqui porque a importação por planilha
+   * não traz o campo. O lote tratado herda no mapa quando a ordem é apontada.
+   */
+  destinacao?: string | null
   /** Endereço de onde buscar o lote: armazém, bloco e quadra. */
   armazem?: string | null
   bloco?: string | null

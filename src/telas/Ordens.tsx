@@ -2908,6 +2908,7 @@ function NovaOrdemForm({
       bags: editando?.bags ?? 0,
       cliente: editando?.cliente ?? '',
       observacao: editando?.observacao ?? '',
+      destinacao: editando?.destinacao ?? '',
       armazem: editando?.armazem ?? '',
       bloco: editando?.bloco ?? '',
       quadra: editando?.quadra ?? '',
@@ -2920,7 +2921,7 @@ function NovaOrdemForm({
   const chaveRascunho = editando ? `ordem.${editando.id}` : 'ordem.nova'
   const { valor: f, definir, limpar, recuperado } = useRascunho(chaveRascunho, inicial)
   const {
-    numero, loteId, receitaId, embalagem, bags, cliente, observacao,
+    numero, loteId, receitaId, embalagem, bags, cliente, observacao, destinacao,
     armazem, bloco, quadra, maquinaId, dataProg, foraBalanco,
   } = f
 
@@ -3106,6 +3107,14 @@ function NovaOrdemForm({
         <Campo rotulo="Cliente (opcional)">
           <input value={cliente} onChange={(e) => definir({ cliente: e.target.value })} className={INPUT} />
         </Campo>
+        <Campo rotulo="Destinação *">
+          <input
+            value={destinacao}
+            onChange={(e) => definir({ destinacao: e.target.value })}
+            placeholder="ex.: COMIGO, Multiplicação, Venda"
+            className={`${INPUT} ${!destinacao.trim() ? 'border-red-400 dark:border-red-700' : ''}`}
+          />
+        </Campo>
         <Campo rotulo="Observação de processo">
           <input
             value={observacao} onChange={(e) => definir({ observacao: e.target.value })}
@@ -3208,7 +3217,7 @@ function NovaOrdemForm({
       <div className="mt-4">
         <Botao
           variante="primario"
-          disabled={!numero || !loteId || !receitaId || bags <= 0 ||
+          disabled={!numero || !loteId || !receitaId || bags <= 0 || !destinacao.trim() ||
             (analise ? !podeCriarOrdem(analise) : false)}
           onClick={async () => {
             try {
@@ -3222,6 +3231,7 @@ function NovaOrdemForm({
                 lote_id: loteId,
                 cliente: cliente.trim() || null,
                 observacao: observacao.trim() || null,
+                destinacao: destinacao.trim() || null,
                 armazem: armazem.trim() || null,
                 bloco: bloco.trim() || null,
                 quadra: quadra.trim() || null,
@@ -3238,7 +3248,7 @@ function NovaOrdemForm({
                 await g.criarOrdem(dados)
                 // limpa só o que é da ordem; endereço, lote e receita costumam
                 // repetir na próxima e ficam preenchidos
-                definir({ numero: '', bags: 0, cliente: '', observacao: '' })
+                definir({ numero: '', bags: 0, cliente: '', observacao: '', destinacao: '' })
                 onCriada(`Ordem criada.`)
               }
             } catch (e) {

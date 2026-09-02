@@ -198,6 +198,7 @@ export default function ModalOrdem({
       loteId: ordem.lote_id,
       endereco: ordem.armazem || ordem.bloco || ordem.quadra ? enderecoLote(ordem) : null,
       cliente: ordem.cliente,
+      destinacao: ordem.destinacao,
       observacao: ordem.observacao,
       maquina: ordem.maquina_id,
       dia: ordem.data_prog ? diaCurto(ordem.data_prog) : null,

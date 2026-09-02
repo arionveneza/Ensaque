@@ -162,6 +162,7 @@ export interface OrdemImpressao {
   loteId: string
   endereco: string | null
   cliente: string | null
+  destinacao: string | null
   observacao: string | null
   maquina: string | null
   dia: string | null
@@ -247,6 +248,7 @@ export function imprimirOrdemProducao(o: OrdemImpressao): void {
   ${campo('Peso do bag', `${o.pesoBagKg} kg`)}
   ${campo('Ensaque por bag', `${o.ensaqueBagKg} kg`)}
   ${o.cliente ? campo('Cliente', o.cliente) : ''}
+  ${o.destinacao ? campo('Destinação', o.destinacao) : ''}
 </div>
 
 ${o.observacao ? `<div class="obs"><b>Observação de processo:</b> ${esc(o.observacao)}</div>` : ''}

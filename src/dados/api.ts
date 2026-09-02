@@ -37,6 +37,8 @@ export interface LinhaOrdem {
   lote_id: string
   cliente: string | null
   observacao: string | null
+  /** Destinação da produção (31/08/2026) — sai na folha impressa. */
+  destinacao: string | null
   armazem: string | null
   bloco: string | null
   quadra: string | null
@@ -89,7 +91,7 @@ export interface LinhaOrdem {
 
 const SELECT_ORDEM = `
   id, numero, cultivar, receita_id, embalagem, bags, lote_id, cliente, observacao,
-  armazem, bloco, quadra,
+  destinacao, armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, seq, turno_id, status, fim_pendente, bags_produzidos,
   lote_liberado_em, confirmada_em,
   embalagens ( fator_peso, peso_fixo_kg ),
