@@ -3258,6 +3258,23 @@ function NovaOrdemForm({
         >
           {editando ? 'Salvar alterações' : 'Criar ordem'}
         </Botao>
+        {/* botão travado e mudo confundia — ordem antiga não tem Destinação
+            e o Editar exigia sem dizer (achado do Arion, 03/09/2026) */}
+        {(!numero || !loteId || !receitaId || bags <= 0 || !destinacao.trim()) && (
+          <p className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
+            Falta preencher:{' '}
+            {[
+              !numero && 'nº da ordem',
+              !loteId && 'lote',
+              !receitaId && 'tratamento',
+              bags <= 0 && 'bags',
+              !destinacao.trim() && 'Destinação (obrigatória desde 31/08)',
+            ]
+              .filter(Boolean)
+              .join(', ')}
+            .
+          </p>
+        )}
       </div>
     </Cartao>
   )
