@@ -68,6 +68,26 @@ export interface OrdemVisao {
   fora_balanco: boolean
 }
 
+/**
+ * Ordens programadas em dias que JÁ PASSARAM e nunca tocadas pela produção
+ * — a faixa "Atrasadas" da Programação (03/09/2026). Busca própria, fora
+ * da janela da semana: atrasada não pode sumir por navegação (o susto do
+ * Arion: 13 ordens de 27/08 "sumiram" quando a semana virou).
+ */
+export async function listarOrdensAtrasadas(hoje: string): Promise<OrdemVisao[]> {
+  const { data, error } = await supabase
+    .from('v_ordens')
+    .select('*')
+    .eq('status', 'Programada') // status CRU: nada que a produção já tocou
+    .not('maquina_id', 'is', null)
+    .not('data_prog', 'is', null)
+    .lt('data_prog', hoje)
+    .order('data_prog')
+    .limit(500)
+  erro('ordens atrasadas', error)
+  return (data ?? []) as OrdemVisao[]
+}
+
 export async function listarOrdens(de?: string, ate?: string): Promise<OrdemVisao[]> {
   // ordem excluída é só registro (25/08/2026) — não entra em nenhuma tela
   // de trabalho do dia a dia, só fica gravada no banco

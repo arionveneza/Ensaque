@@ -64,6 +64,14 @@ export default function Programacao() {
   const [alvo, setAlvo] = useState<Alvo>(null)
   const [movendo, setMovendo] = useState<string | null>(null)
   const [previa, setPrevia] = useState<ReturnType<typeof reprogramarCascata> | null>(null)
+  /** De onde a prévia da cascata partiu (o botão da semana usa diaSel; o das atrasadas, ontem). */
+  const [previaDesde, setPreviaDesde] = useState('')
+  /**
+   * Atrasadas: programadas em dia que já passou e nunca iniciadas. Busca
+   * PRÓPRIA, fora da janela da semana — atrasada não some por navegação
+   * (13 ordens de 27/08 "sumiram" quando a semana virou; 03/09/2026).
+   */
+  const [atrasadas, setAtrasadas] = useState<OrdemVisao[]>([])
   /**
    * Filtro por status do quadro do dia. Vazio = mostra tudo — o dia
    * misturava ordens em estágios bem diferentes (pronta para produzir,
@@ -90,14 +98,16 @@ export default function Programacao() {
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const [lista, poolLista, cal] = await Promise.all([
+      const [lista, poolLista, cal, atrasadasLista] = await Promise.all([
         g.listarOrdens(janela.de, janela.ate),
         g.listarPool(),
         g.listarDiasProducao(janela.de, janela.ate),
+        g.listarOrdensAtrasadas(diaDeProducao(new Date())),
       ])
       setOrdens(lista)
       setPool(poolLista)
       setCalendario(cal)
+      setAtrasadas(atrasadasLista)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -111,13 +121,15 @@ export default function Programacao() {
       g.listarOrdens(janela.de, janela.ate),
       g.listarPool(),
       g.listarDiasProducao(janela.de, janela.ate),
+      g.listarOrdensAtrasadas(diaDeProducao(new Date())),
     ])
-      .then(([c, lista, poolLista, cal]) => {
+      .then(([c, lista, poolLista, cal, atrasadasLista]) => {
         if (!vivo) return
         setMaquinas(c.maquinas)
         setOrdens(lista)
         setPool(poolLista)
         setCalendario(cal)
+        setAtrasadas(atrasadasLista)
       })
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
@@ -313,8 +325,9 @@ export default function Programacao() {
   )
 
   const numeroDe = useCallback(
-    (id: string) => [...ordens, ...pool].find((o) => o.id === id)?.numero ?? id.slice(0, 8),
-    [ordens, pool],
+    (id: string) =>
+      [...ordens, ...pool, ...atrasadas].find((o) => o.id === id)?.numero ?? id.slice(0, 8),
+    [ordens, pool, atrasadas],
   )
 
   /** Quantas ordens do dia (nas duas máquinas) têm cada status — monta os chips. */
@@ -401,6 +414,7 @@ export default function Programacao() {
                   )
                   return
                 }
+                setPreviaDesde(diaSel)
                 setPrevia(r)
               }}
             >
@@ -426,6 +440,80 @@ export default function Programacao() {
       }
     >
       {erro && <Erro>{erro}</Erro>}
+
+      {/* -------- atrasadas: programadas em dia que já passou, sem iniciar.
+          Faixa FIXA, independente da semana à vista — atrasada não pode
+          sumir por navegação (03/09/2026) -------- */}
+      {atrasadas.length > 0 && (
+        <Cartao
+          titulo={
+            <span>
+              Atrasadas{' '}
+              <span className="font-bold text-red-600 dark:text-red-400">
+                ({atrasadas.length})
+              </span>
+            </span>
+          }
+          acoes={
+            podeProgramar ? (
+              <Botao
+                variante="primario"
+                titulo="Puxa as atrasadas pra frente a partir de hoje, junto com a fila dos próximos dias — com prévia antes de gravar"
+                onClick={() => {
+                  setErro(null)
+                  const hoje = diaDeProducao(new Date())
+                  const ontem = somaDias(hoje, -1)
+                  const diasDesdeHoje = Array.from(
+                    { length: DIAS_CASCATA + 1 },
+                    (_, i) => somaDias(hoje, i),
+                  )
+                  // janela da semana + atrasadas (que podem estar fora dela)
+                  const unicas = new Map(
+                    [...ordens, ...atrasadas].map((o) => [o.id, o]),
+                  )
+                  const r = reprogramarCascata(
+                    [...unicas.values()].map(paraDominio),
+                    capacidades,
+                    diasDesdeHoje,
+                    ontem,
+                    capDia,
+                  )
+                  if (r.movimentos.length === 0) {
+                    setErro(
+                      r.naoCouberam.length > 0
+                        ? `Nada a reprogramar: ${r.naoCouberam.length} ordem(ns) não cabe(m) nos próximos ${DIAS_CASCATA} dias.`
+                        : 'Nada a reprogramar.',
+                    )
+                    return
+                  }
+                  setPreviaDesde(ontem)
+                  setPrevia(r)
+                }}
+              >
+                Reprogramar atrasadas →
+              </Botao>
+            ) : undefined
+          }
+          className="mb-5 border-red-300 dark:border-red-800"
+        >
+          <p className="mb-2 text-sm text-stone-500 dark:text-stone-400">
+            Programadas em dias que já passaram e nunca iniciadas — não aparecem na semana
+            atual do plano, mas continuam ocupando lote e numeração. Reprograme ou
+            desprograme.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {atrasadas.map((o) => (
+              <span
+                key={o.id}
+                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+              >
+                <b>{o.numero}</b> {o.cultivar} · {diaCurto(o.data_prog!)} · {o.maquina_id}
+                {o.prioridade === 'Urgente' && <b>· URGENTE</b>}
+              </span>
+            ))}
+          </div>
+        </Cartao>
+      )}
 
       {/* -------- plano semanal -------- */}
       <Cartao
@@ -982,7 +1070,7 @@ export default function Programacao() {
         <PreviaCascata
           resultado={previa}
           numeroDe={numeroDe}
-          apartirDe={diaSel}
+          apartirDe={previaDesde || diaSel}
           onCancelar={() => setPrevia(null)}
           onAplicar={() => {
             const r = previa
