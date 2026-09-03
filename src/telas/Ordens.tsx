@@ -2632,9 +2632,11 @@ function FragmentoDia({
   const totalT = lista.reduce((a, o) => a + o.peso_t, 0)
   /** Qual linha está com o menu "ações ▾" aberto — um por vez. */
   const [menuAberto, setMenuAberto] = useState<string | null>(null)
-  // nas últimas linhas da tabela o menu, abrindo pra baixo, não cabia na
-  // tela — sem espaço embaixo, ele abre pra CIMA (achado do Arion, 25/08/2026)
-  const [menuParaCima, setMenuParaCima] = useState(false)
+  // posição FIXA medida do botão: o menu absoluto dentro da tabela (que
+  // rola em overflow) era CORTADO — pra cima nas primeiras linhas, pra
+  // baixo nas últimas (achados do Arion, 25/08 e 03/09/2026). Sem espaço
+  // pra nenhum lado, o top é clampado e o menu ganha rolagem própria.
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
 
   // sub-agrupamento por máquina (pedido do Arion, 13/08/2026) — a lista já
   // chega ordenada por maquina_id/seq (listarOrdens), então o Map preserva
@@ -2785,9 +2787,20 @@ function FragmentoDia({
                             setMenuAberto(null)
                             return
                           }
-                          // sem espaço embaixo pro menu (~220px) — abre pra cima
                           const r = e.currentTarget.getBoundingClientRect()
-                          setMenuParaCima(window.innerHeight - r.bottom < 220)
+                          const right = Math.max(8, window.innerWidth - r.right)
+                          const ALTURA = 320 // estimativa; o max-h + rolagem seguram o resto
+                          if (r.bottom + 4 + ALTURA <= window.innerHeight - 8) {
+                            setMenuPos({ top: r.bottom + 4, right })
+                          } else if (r.top - 4 - ALTURA >= 8) {
+                            setMenuPos({ bottom: window.innerHeight - r.top + 4, right })
+                          } else {
+                            // não cabe inteiro pra lado nenhum: clampa e rola
+                            setMenuPos({
+                              top: Math.max(8, window.innerHeight - ALTURA - 8),
+                              right,
+                            })
+                          }
                           setMenuAberto(o.id)
                         }}
                         disabled={abrindoId === o.id}
@@ -2796,14 +2809,13 @@ function FragmentoDia({
                         {abrindoId === o.id ? 'abrindo…' : 'ações ▾'}
                       </button>
                     </span>
-                    {menuAberto === o.id && (
+                    {menuAberto === o.id && menuPos && (
                       <>
                         {/* véu invisível: clicar fora fecha, sem listener global */}
                         <div className="fixed inset-0 z-10" onClick={() => setMenuAberto(null)} />
                         <div
-                          className={`absolute right-2 z-20 w-48 rounded-md border border-stone-300 bg-white p-1 text-left shadow-lg dark:border-stone-700 dark:bg-stone-900 ${
-                            menuParaCima ? 'bottom-full mb-1' : 'top-full mt-1'
-                          }`}
+                          className="fixed z-20 max-h-[70vh] w-48 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 text-left shadow-lg dark:border-stone-700 dark:bg-stone-900"
+                          style={{ top: menuPos.top, bottom: menuPos.bottom, right: menuPos.right }}
                         >
                           <ItemMenuAcao
                             rotulo="detalhes"
