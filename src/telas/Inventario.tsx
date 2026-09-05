@@ -810,18 +810,20 @@ function ContagemCartao({
                     >
                       editar
                     </button>
+                    {/* por extenso e em vermelho: o "×" cinza passava batido
+                        e o Arion achou que excluir não existia (05/09/2026) */}
                     <button
                       onClick={() =>
                         onAcao(async () => {
-                          if (!confirm(`Remover o lançamento de ${i.lote} (${fmtBg(i.bags)} bg)?`)) return
+                          if (!confirm(`Excluir o lançamento de ${i.lote} (${fmtBg(i.bags)} bg)?`)) return
                           await api.removerItemInventario(i.id)
                           if (editando?.id === i.id) setEditando(null)
                         })
                       }
-                      title="Remover este lançamento"
-                      className="rounded px-2 py-1 text-stone-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                      title="Excluir este lançamento"
+                      className="rounded px-2 py-1 text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
                     >
-                      ×
+                      excluir
                     </button>
                   </div>
                 </td>
