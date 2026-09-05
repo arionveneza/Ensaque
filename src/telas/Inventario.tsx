@@ -71,6 +71,28 @@ const ORDEM_CHIPS: SituacaoInventario[] = [
   'falta', 'sobra', 'fora_do_sap', 'nao_contado', 'bate',
 ]
 
+/** Armazéns padronizados A–E (pedido do Arion, 05/09/2026) — lista, não texto livre. */
+const ARMAZENS = ['A', 'B', 'C', 'D', 'E']
+
+function SeletorArmazem({
+  valor, aoMudar,
+}: {
+  valor: string
+  aoMudar: (v: string) => void
+}) {
+  // lançamento antigo com armazém fora do padrão continua visível e
+  // selecionável na edição — sumir com ele corromperia o valor calado
+  const opcoes = valor && !ARMAZENS.includes(valor) ? [valor, ...ARMAZENS] : ARMAZENS
+  return (
+    <select value={valor} onChange={(e) => aoMudar(e.target.value)} className={INPUT}>
+      <option value="">—</option>
+      {opcoes.map((a) => (
+        <option key={a} value={a}>{a}</option>
+      ))}
+    </select>
+  )
+}
+
 const tituloSugerido = (): string => {
   const d = new Date()
   const p2 = (v: number) => String(v).padStart(2, '0')
@@ -799,19 +821,19 @@ function ContagemCartao({
                 <td className="px-2 py-1.5 text-right">{fmtBg(i.bags)}</td>
                 <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(i.criado_em)}</td>
                 <td className="px-2 py-1.5">
-                  <div className="flex justify-end gap-1">
+                  {/* botões com borda e alvo de dedo — o link discreto passou
+                      batido duas vezes no tablet (05/09/2026) */}
+                  <div className="flex justify-end gap-1.5">
                     <button
                       onClick={() => {
                         setLancandoEm(null)
                         setEditando(i)
                       }}
                       title="Editar este lançamento"
-                      className="rounded px-2 py-1 text-xs text-stone-500 underline-offset-2 hover:underline dark:text-stone-400"
+                      className="rounded-md border border-stone-300 px-2.5 py-1.5 text-xs font-medium whitespace-nowrap hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
                     >
-                      editar
+                      Editar
                     </button>
-                    {/* por extenso e em vermelho: o "×" cinza passava batido
-                        e o Arion achou que excluir não existia (05/09/2026) */}
                     <button
                       onClick={() =>
                         onAcao(async () => {
@@ -821,9 +843,9 @@ function ContagemCartao({
                         })
                       }
                       title="Excluir este lançamento"
-                      className="rounded px-2 py-1 text-xs text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+                      className="rounded-md border border-red-300 px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
-                      excluir
+                      Excluir
                     </button>
                   </div>
                 </td>
@@ -886,7 +908,7 @@ function FormEnderecoQuantidade({
     >
       <div>
         <label className={ROTULO_CAMPO}>Armazém *</label>
-        <input value={armazem} onChange={(e) => setArmazem(e.target.value)} className={INPUT} />
+        <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
       </div>
       <div>
         <label className={ROTULO_CAMPO}>Bloco</label>
@@ -1019,7 +1041,7 @@ function FormLancamentoManual({
         </div>
         <div>
           <label className={ROTULO_CAMPO}>Armazém *</label>
-          <input value={f.armazem} onChange={(e) => muda('armazem')(e.target.value)} className={INPUT} />
+          <SeletorArmazem valor={f.armazem} aoMudar={muda('armazem')} />
         </div>
         <div>
           <label className={ROTULO_CAMPO}>Bloco</label>
