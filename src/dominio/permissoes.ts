@@ -23,6 +23,7 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   indicadores: ['ver'],
   mrp: ['ver', 'importar'],
   mapa: ['ver', 'importar', 'enderecar', 'montar_carga'],
+  inventario: ['ver', 'abrir', 'contar'],
   cadastros: ['ver', 'editar'],
   expedicao: ['ver', 'importar'],
   veiculos: ['ver', 'chamar', 'checklist'],
@@ -44,6 +45,8 @@ export const ROTULO_ACAO: Record<string, string> = {
   checklist: 'Preencher checklist',
   enderecar: 'Endereçar lote',
   montar_carga: 'Montar carga',
+  abrir: 'Abrir/fechar inventário',
+  contar: 'Lançar contagem',
 }
 
 /**
@@ -67,6 +70,9 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     // Mapa (30/08/2026): montar carga e lotear são do PCP (e Gestor);
     // endereçar/movimentar segue da Logística
     mapa: ['ver', 'importar', 'montar_carga'],
+    // Inventário (04/09/2026): o PCP abre, insere o estoque do SAP e fecha;
+    // contar é da Logística e da Produção (e do PCP também)
+    inventario: ['ver', 'abrir', 'contar'],
     cadastros: ['ver', 'editar'],
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],
@@ -79,6 +85,8 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     // Mapa (30/08/2026): endereçamento, movimentação, filtros, upload e
     // FOTOS da carga são da Logística; montar carga/lotear virou do PCP
     mapa: ['ver', 'importar', 'enderecar'],
+    // Inventário (04/09/2026): a Logística conta (lança endereço + quantidade)
+    inventario: ['ver', 'contar'],
     // os carregamentos são agenda da logística tanto quanto do PCP
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],
@@ -88,6 +96,8 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     execucao: ['ver', 'apontar'],
     etapas: ['ver'],
     indicadores: ['ver'],
+    // Inventário (04/09/2026): o operador de produção também conta
+    inventario: ['ver', 'contar'],
   },
   Qualidade: {
     execucao: ['ver'],
@@ -111,6 +121,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     indicadores: ['ver'],
     mrp: ['ver'],
     mapa: ['ver'],
+    inventario: ['ver'],
     cadastros: ['ver'],
     expedicao: ['ver'],
     veiculos: ['ver'],

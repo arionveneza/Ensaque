@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { converterLotesMapa, ehRelatorioMapa, SEM_TSI } from './mapa'
+import {
+  converterEstoqueInventario, converterLotesMapa, ehRelatorioMapa, SEM_TSI,
+} from './mapa'
 import type { Linha } from './simpleagro'
 
 // espelho do export real (SAP.xlsx, 28/08/2026)
@@ -149,5 +151,67 @@ describe('converterLotesMapa', () => {
     const r = converterLotesMapa([CAB, linha({ lote: 'A', emb: 'PRE-LOTE' })])
     expect(r.lotes).toHaveLength(0)
     expect(r.granel).toBe(1)
+  })
+})
+
+describe('converterEstoqueInventario', () => {
+  it('TRATADO entra com quantidade — diferente do mapa, que só carimba', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'A', trat: null, qtd: 10 }),
+      linha({ lote: 'A', trat: 'FTZ60', qtd: 5 }),
+    ])
+    // ordenação alfabética por cultivar/lote/tratamento: FTZ60 < SEM TSI
+    expect(r.saldos.map((s) => [s.lote, s.tratamento, s.embalagem, s.bags])).toEqual([
+      ['A', 'FTZ60', 'BG5M', 5],
+      ['A', SEM_TSI, 'BG5M', 10],
+    ])
+    expect(r.brancos).toBe(1)
+    expect(r.tratados).toBe(1)
+    expect(r.totalBags).toBe(15)
+  })
+
+  it('sufixos -1/-2 agregam no número BASE, tratado inclusive', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'A-1', trat: 'FTZ60', qtd: 4 }),
+      linha({ lote: 'A-2', trat: 'FTZ60', qtd: 6 }),
+    ])
+    expect(r.saldos).toHaveLength(1)
+    expect(r.saldos[0].lote).toBe('A')
+    expect(r.saldos[0].bags).toBe(10)
+  })
+
+  it('embalagens diferentes do mesmo lote NÃO somam — bag de BB5M ≠ bag de BMB', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'A', trat: null, qtd: 10, emb: 'BB5M' }),
+      linha({ lote: 'A', trat: null, qtd: 8, emb: 'BMB' }),
+    ])
+    expect(r.saldos.map((s) => [s.embalagem, s.bags])).toEqual([
+      ['BG5M', 10],
+      ['MEIOBAG', 8],
+    ])
+  })
+
+  it('só VEN_GER; zerado, NEGATIVO e granel ficam fora, contados separado', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'A', qtd: 10 }),
+      linha({ lote: 'B', dep: 'VTP_GER' }),
+      linha({ lote: 'C', qtd: 0 }),
+      linha({ lote: 'E', qtd: -3 }),
+      linha({ lote: 'D', emb: 'PRE-LOTE' }),
+    ])
+    expect(r.saldos).toHaveLength(1)
+    expect(r.outrosDepositos).toBe(1)
+    expect(r.zerados).toBe(1)
+    expect(r.negativos).toBe(1)
+    expect(r.granel).toBe(1)
+  })
+
+  it('aplica o de-para de tratamento do SAP (VeP → V&P)', () => {
+    const r = converterEstoqueInventario([CAB, linha({ lote: 'A', trat: 'VeP', qtd: 3 })])
+    expect(r.saldos[0].tratamento).toBe('V&P')
   })
 })

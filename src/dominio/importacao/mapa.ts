@@ -77,6 +77,120 @@ export interface ResultadoLotesMapa {
 /** Número base do lote — remove os sufixos -1/-2/-3 que só o SAP conhece. */
 export const loteBase = (lote: string): string => lote.replace(/(-\d+)+$/, '')
 
+/**
+ * Estoque do SAP pro INVENTÁRIO (04/09/2026): a MESMA planilha, mas toda
+ * linha vira saldo COM quantidade — branca E tratada (diferente do
+ * converterLotesMapa, que joga o tratado fora sem bags: lá quem cria lote
+ * tratado é a ordem de produção; aqui a lista é a referência da contagem
+ * física). Agrega por lote BASE + tratamento + embalagem — bag de BB5M e
+ * de BMB não podem somar juntos.
+ */
+export interface SaldoInventarioConvertido {
+  lote: string
+  /** 'SEM TSI' = semente branca. */
+  tratamento: string
+  cultivar: string
+  embalagem: string
+  bags: number
+}
+
+export interface ResultadoEstoqueInventario {
+  saldos: SaldoInventarioConvertido[]
+  totalLinhas: number
+  outrosDepositos: number
+  zerados: number
+  /** Saldo NEGATIVO no SAP — fora da lista, mas reportado (não some calado). */
+  negativos: number
+  granel: number
+  /** Combinações por tipo — conferência visual da prévia. */
+  brancos: number
+  tratados: number
+  totalBags: number
+}
+
+export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInventario {
+  const h = (rows[0] ?? []).map((c) => txt(c).toUpperCase())
+  const iLote = idx(h, 'Nº DO LOTE')
+  const iCult = idx(h, 'CULTIVAR')
+  const iTrat = idx(h, 'TRATAMENTO (TSI)')
+  const iEmb = idx(h, 'EMBALAGEM')
+  const iSaldo = idx(h, 'QTD EM ESTOQUE')
+  const iDep = idx(h, 'DEPÓSITO')
+  if (iLote < 0 || iCult < 0 || iEmb < 0 || iSaldo < 0 || iDep < 0) {
+    throw new Error(
+      'Não achei as colunas "Nº do Lote", "Cultivar", "Embalagem", "Qtd em Estoque" e "Depósito" — é o export de saldo do SAP?',
+    )
+  }
+
+  const saldos = new Map<string, SaldoInventarioConvertido>()
+  const r: ResultadoEstoqueInventario = {
+    saldos: [],
+    totalLinhas: Math.max(0, rows.length - 1),
+    outrosDepositos: 0,
+    zerados: 0,
+    negativos: 0,
+    granel: 0,
+    brancos: 0,
+    tratados: 0,
+    totalBags: 0,
+  }
+
+  for (const linha of rows.slice(1)) {
+    const lote = txt(linha[iLote])
+    if (!lote) continue
+    if (txt(linha[iDep]).toUpperCase() !== DEPOSITO_MAPA) {
+      r.outrosDepositos++
+      continue
+    }
+    const emb = EMBALAGEM_DEPARA[normaliza(txt(linha[iEmb]))]
+    if (!emb) {
+      r.granel++
+      continue
+    }
+    const bags = num(linha[iSaldo])
+    if (bags < 0) {
+      // negativo é anomalia do SAP: fica fora da lista, mas CONTADO — a
+      // prévia avisa em vez de sumir calado (varredura de 04/09/2026)
+      r.negativos++
+      continue
+    }
+    if (bags === 0) {
+      r.zerados++
+      continue
+    }
+
+    const tratBruto = txt(linha[iTrat])
+    const tratamento =
+      !tratBruto || normaliza(tratBruto) === SEM_TSI ? SEM_TSI : corrigeTratamentoSap(tratBruto)
+    const base = loteBase(lote)
+    const chave = `${base}|${tratamento}|${emb.codigo}`
+    const acc = saldos.get(chave)
+    if (acc) acc.bags += bags
+    else
+      saldos.set(chave, {
+        lote: base,
+        tratamento,
+        cultivar: txt(linha[iCult]),
+        embalagem: emb.codigo,
+        bags,
+      })
+  }
+
+  r.saldos = [...saldos.values()].sort(
+    (a, b) =>
+      a.cultivar.localeCompare(b.cultivar) ||
+      a.lote.localeCompare(b.lote) ||
+      a.tratamento.localeCompare(b.tratamento),
+  )
+  for (const s of r.saldos) {
+    if (s.tratamento === SEM_TSI) r.brancos++
+    else r.tratados++
+    r.totalBags += s.bags
+  }
+  r.totalBags = Math.round(r.totalBags * 100) / 100
+  return r
+}
+
 const idx = (h: string[], nome: string) => h.indexOf(nome)
 
 export function ehRelatorioMapa(rows: Linha[]): boolean {

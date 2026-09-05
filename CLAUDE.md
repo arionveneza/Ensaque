@@ -512,6 +512,28 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    em tempo real ao SAP foi DESCARTADA por ora (30/08/2026): o tratado entra pela
    produção e o upload segue cobrindo branca + destinação/classe.
 
+6d. **Inventário** (04/09/2026) — contagem física de sementes (branca e tratada) × estoque
+   do SAP, **FORA do mapa** de propósito: nenhum saldo é ajustado, a tela só responde "bate
+   ou não bate". Fluxo do Arion: o **PCP cria o inventário e INSERE o estoque do SAP** nele
+   (upload da MESMA planilha do mapa; `converterEstoqueInventario` — toda linha COM
+   quantidade, branca E tratada, só VEN_GER, agregada por lote BASE + tratamento +
+   **embalagem**, porque bag de BB5M e de BMB não somam juntos) — a lista fica congelada em
+   `inventario_saldos` (substituição total via RPC `substituir_saldos_inventario`). O
+   **operador (Logística/Produção) conta contra a lista**: lança **endereço
+   (Armazém/Bloco/Quadra, como no mapa) + quantidade** — um lançamento por endereço, a
+   conferência SOMA; cada lançamento tem **editar e excluir**. **Contagem CEGA**: a
+   quantidade do SAP não aparece na contagem, só na conferência (mesma regra da conferência
+   de estoque). Achado fora da lista → lançamento manual completo (`fora_da_lista`;
+   cultivar SÓ dos da planilha inserida, tratamento do cadastro de receitas + SEM TSI,
+   embalagem do cadastro). Conferência por combinação: bate / sobra / falta / não contado /
+   fora do SAP (tolerância 0,01 bg; bags 0 = "contei e está vazio", ≠ não contado), chips
+   de filtro, acuracidade das contadas, export CSV. **Fechar congela** a comparação no
+   servidor (`fechar_inventario` → `inventario_resultados`, com lock; inventário fechado é
+   registro — gatilho trava itens e saldos; **reabrir** apaga o congelado e libera).
+   Recurso `inventario`: ver (PCP/Logística/Produção/Direção) · **abrir** (criar, inserir
+   SAP, fechar, reabrir, excluir — PCP/Gestor) · **contar** (Logística/Produção/PCP/
+   Gestor). Migração `inventario.sql`.
+
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 

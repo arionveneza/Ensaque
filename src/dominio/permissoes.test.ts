@@ -97,6 +97,23 @@ describe('matriz padrao', () => {
     expect(permitidoPadrao('PCP', 'mapa', 'enderecar')).toBe(false)
   })
 
+  it('inventario (04/09/2026): PCP abre e insere o SAP; Logistica e Producao contam', () => {
+    expect(permitidoPadrao('PCP', 'inventario', 'abrir')).toBe(true)
+    expect(permitidoPadrao('PCP', 'inventario', 'contar')).toBe(true)
+    expect(permitidoPadrao('Gestor', 'inventario', 'abrir')).toBe(true)
+    for (const p of ['Logistica', 'Producao'] as const) {
+      expect(permitidoPadrao(p, 'inventario', 'ver')).toBe(true)
+      expect(permitidoPadrao(p, 'inventario', 'contar')).toBe(true)
+      expect(permitidoPadrao(p, 'inventario', 'abrir'), `${p} nao abre inventario`).toBe(false)
+    }
+    expect(permitidoPadrao('Direcao', 'inventario', 'ver')).toBe(true)
+    for (const acao of ['ver', 'abrir', 'contar'])
+      expect(
+        permitidoPadrao('Qualidade', 'inventario', acao),
+        `Qualidade nao pode ${acao} no inventario`,
+      ).toBe(false)
+  })
+
   it('nenhum perfil concede acao que o recurso nao tem', () => {
     // protege contra typo no padrao ('bajxar_lote' viraria permissao morta)
     for (const [perfil, recursos] of Object.entries(MATRIZ_PADRAO))
