@@ -7,14 +7,23 @@ import userEvent from '@testing-library/user-event'
  * tela, não a autenticação real.
  */
 const signInWithPassword = vi.fn()
+const resetPasswordForEmail = vi.fn()
 vi.mock('@/lib/supabase', () => ({
-  supabase: { auth: { signInWithPassword: (...a: unknown[]) => signInWithPassword(...a) } },
+  supabase: {
+    auth: {
+      signInWithPassword: (...a: unknown[]) => signInWithPassword(...a),
+      resetPasswordForEmail: (...a: unknown[]) => resetPasswordForEmail(...a),
+    },
+  },
 }))
 
 const { default: Login } = await import('./Login')
 
 describe('tela de login', () => {
-  beforeEach(() => signInWithPassword.mockReset())
+  beforeEach(() => {
+    signInWithPassword.mockReset()
+    resetPasswordForEmail.mockReset()
+  })
 
   it('mostra os campos e o botao', () => {
     render(<Login />)
@@ -50,6 +59,26 @@ describe('tela de login', () => {
     await user.click(screen.getByRole('button', { name: /entrar/i }))
 
     expect(await screen.findByText('E-mail ou senha incorretos.')).toBeInTheDocument()
+  })
+
+  it('esqueci minha senha sem e-mail digitado pede o e-mail, sem chamar o servidor', async () => {
+    const user = userEvent.setup()
+    render(<Login />)
+    await user.click(screen.getByRole('button', { name: /esqueci minha senha/i }))
+    expect(await screen.findByText(/digite seu e-mail acima/i)).toBeInTheDocument()
+    expect(resetPasswordForEmail).not.toHaveBeenCalled()
+  })
+
+  it('esqueci minha senha envia o link e avisa onde chegou', async () => {
+    resetPasswordForEmail.mockResolvedValue({ error: null })
+    const user = userEvent.setup()
+    render(<Login />)
+    await user.type(screen.getByLabelText(/e-mail/i), 'pessoa@sementesveneza.com.br')
+    await user.click(screen.getByRole('button', { name: /esqueci minha senha/i }))
+    await waitFor(() =>
+      expect(resetPasswordForEmail).toHaveBeenCalledWith('pessoa@sementesveneza.com.br'),
+    )
+    expect(await screen.findByText(/enviamos um link/i)).toBeInTheDocument()
   })
 
   it('mostra outros erros como vieram, para nao esconder a causa', async () => {

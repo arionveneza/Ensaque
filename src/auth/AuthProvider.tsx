@@ -28,6 +28,12 @@ interface Ctx {
    * interface — a proteção real é o RLS.
    */
   permitido: (recurso: string, acao: string) => boolean
+  /**
+   * Entrou pelo link de recuperação de senha (PASSWORD_RECOVERY): antes de
+   * qualquer tela, o app pede a senha nova (DefinirSenha.tsx, 05/09/2026).
+   */
+  definindoSenha: boolean
+  senhaDefinida: () => void
   sair: () => Promise<void>
 }
 
@@ -39,17 +45,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [explicitas, setExplicitas] = useState<PermissaoExplicita[]>([])
   const [carregando, setCarregando] = useState(true)
   const [semCadastro, setSemCadastro] = useState(false)
+  const [definindoSenha, setDefinindoSenha] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       if (!data.session) setCarregando(false)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_evento, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
       setSession(s)
+      // link de recuperação de senha abriu o app: pedir a senha nova
+      if (evento === 'PASSWORD_RECOVERY') setDefinindoSenha(true)
       if (!s) {
         setUsuario(null)
         setSemCadastro(false)
+        setDefinindoSenha(false)
         setCarregando(false)
       }
     })
@@ -102,7 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthCtx.Provider
-      value={{ session, usuario, carregando, semCadastro, permitido, sair }}
+      value={{
+        session, usuario, carregando, semCadastro, permitido,
+        definindoSenha,
+        senhaDefinida: () => setDefinindoSenha(false),
+        sair,
+      }}
     >
       {children}
     </AuthCtx.Provider>

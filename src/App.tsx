@@ -28,6 +28,7 @@ const Administracao = lazy(() => import('@/telas/Administracao'))
 const Painel = lazy(() => import('@/telas/Painel'))
 const PainelChamada = lazy(() => import('@/telas/PainelChamada'))
 const SapTeste = lazy(() => import('@/telas/SapTeste'))
+const DefinirSenha = lazy(() => import('@/telas/DefinirSenha'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
@@ -54,7 +55,10 @@ const TELAS: { id: TelaId; nome: string }[] = [
 ]
 
 function Shell() {
-  const { session, usuario, carregando, semCadastro, permitido, sair } = useAuth()
+  const {
+    session, usuario, carregando, semCadastro, permitido,
+    definindoSenha, senhaDefinida, sair,
+  } = useAuth()
   const [tela, setTela] = useState<TelaId>('execucao')
   // modo TV: tela cheia, fora do shell. Quem enxerga Execução pode abrir.
   const [painel, setPainel] = useState(false)
@@ -95,6 +99,17 @@ function Shell() {
   }
 
   if (!session) return <Login />
+
+  // chegou pelo link de recuperação de senha: definir a nova ANTES de tudo
+  // (inclusive antes do aviso de "sem perfil" — usuário novo define a senha
+  // mesmo que o cadastro em tsi.usuarios ainda esteja pendente)
+  if (definindoSenha) {
+    return (
+      <Suspense fallback={<div className="fixed inset-0 bg-stone-100 dark:bg-stone-950" />}>
+        <DefinirSenha email={session.user.email ?? null} onConcluir={senhaDefinida} />
+      </Suspense>
+    )
+  }
 
   if (semCadastro || !usuario) {
     return (

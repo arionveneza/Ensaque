@@ -5,11 +5,13 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
 
   async function entrar(e: FormEvent) {
     e.preventDefault()
     setErro(null)
+    setAviso(null)
     setEnviando(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
     if (error) {
@@ -19,6 +21,29 @@ export default function Login() {
           : error.message,
       )
     }
+    setEnviando(false)
+  }
+
+  /**
+   * Esqueci minha senha (05/09/2026): manda o e-mail de recuperação do
+   * Supabase; o link loga a pessoa no app, que abre a tela "Definir nova
+   * senha" (DefinirSenha.tsx). O mesmo caminho serve pro gestor dar a
+   * primeira senha a um usuário novo — "Send password recovery" no painel.
+   */
+  async function esqueciSenha() {
+    setErro(null)
+    setAviso(null)
+    if (!email.trim()) {
+      setErro('Digite seu e-mail acima e clique de novo em "esqueci minha senha".')
+      return
+    }
+    setEnviando(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
+    if (error) setErro(error.message)
+    else
+      setAviso(
+        `Enviamos um link para ${email.trim()} — abra o e-mail e clique nele para definir uma nova senha.`,
+      )
     setEnviando(false)
   }
 
@@ -64,6 +89,11 @@ export default function Login() {
             {erro}
           </p>
         )}
+        {aviso && (
+          <p className="mt-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950/40 dark:text-green-300">
+            {aviso}
+          </p>
+        )}
 
         <button
           type="submit"
@@ -71,6 +101,15 @@ export default function Login() {
           className="mt-6 w-full rounded-md bg-stone-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-stone-100 dark:text-stone-900"
         >
           {enviando ? 'Entrando…' : 'Entrar'}
+        </button>
+
+        <button
+          type="button"
+          onClick={esqueciSenha}
+          disabled={enviando}
+          className="mt-3 w-full text-center text-sm text-stone-500 underline-offset-2 hover:underline disabled:opacity-50 dark:text-stone-400"
+        >
+          Esqueci minha senha
         </button>
       </form>
     </div>
