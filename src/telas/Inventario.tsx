@@ -71,6 +71,15 @@ const ORDEM_CHIPS: SituacaoInventario[] = [
   'falta', 'sobra', 'fora_do_sap', 'nao_contado', 'bate',
 ]
 
+/** Cor do número nos cartões-resumo da conferência. */
+const COR_NUMERO: Record<SituacaoInventario, string> = {
+  bate: 'text-green-700 dark:text-green-400',
+  sobra: 'text-red-600 dark:text-red-400',
+  falta: 'text-red-600 dark:text-red-400',
+  nao_contado: 'text-amber-600 dark:text-amber-400',
+  fora_do_sap: 'text-sky-600 dark:text-sky-400',
+}
+
 /** Armazéns padronizados A–E (pedido do Arion, 05/09/2026) — lista, não texto livre. */
 const ARMAZENS = ['A', 'B', 'C', 'D', 'E']
 
@@ -611,6 +620,9 @@ function ContagemCartao({
   // combinação da lista escolhida pra lançar (chave), ou 'manual'
   const [lancandoEm, setLancandoEm] = useState<string | null>(null)
   const [editando, setEditando] = useState<api.ItemInventario | null>(null)
+  // recolhida por padrão: com o galpão andando a lista passa fácil de cem
+  // linhas e enterrava o formulário de contagem (pedido do Arion, 05/09/2026)
+  const [mostrarLancamentos, setMostrarLancamentos] = useState(false)
 
   const lancamentosPor = useMemo(() => {
     const c = new Map<string, number>()
@@ -806,7 +818,21 @@ function ContagemCartao({
 
       {itens.length > 0 && (
         <div className="mt-4">
-          <Tabela cabecalho={['Lote', 'Tratamento', 'Emb.', 'Endereço', '#Bags', 'Hora', '']}>
+          <button
+            onClick={() => setMostrarLancamentos((v) => !v)}
+            className="flex w-full items-center justify-between rounded-lg border border-stone-200 px-3 py-2.5 text-sm font-medium hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/60"
+          >
+            <span>
+              Lançamentos já feitos{' '}
+              <span className="text-stone-500 dark:text-stone-400">({itens.length})</span>
+            </span>
+            <span className="text-xs text-stone-500 dark:text-stone-400">
+              {mostrarLancamentos ? '▴ esconder' : '▾ mostrar'}
+            </span>
+          </button>
+          {mostrarLancamentos && (
+            <div className="mt-2">
+              <Tabela cabecalho={['Lote', 'Tratamento', 'Emb.', 'Endereço', '#Bags', 'Hora', '']}>
             {itens.map((i) => (
               <tr key={i.id} className="border-t border-stone-100 dark:border-stone-800/60">
                 <td className="px-2 py-1.5 font-mono text-xs">
@@ -852,6 +878,8 @@ function ContagemCartao({
               </tr>
             ))}
           </Tabela>
+            </div>
+          )}
         </div>
       )}
     </Cartao>
@@ -1085,6 +1113,9 @@ function ConferenciaCartao({
 }) {
   const [busca, setBusca] = useState('')
   const [filtro, setFiltro] = useState<Set<SituacaoInventario>>(new Set())
+  // só os cartões-resumo à vista; a lista completa abre sob demanda — com o
+  // galpão inteiro ela passa de 700 linhas (pedido do Arion, 05/09/2026)
+  const [mostrarLista, setMostrarLista] = useState(false)
 
   const porSituacao = useMemo(() => {
     const c = new Map<SituacaoInventario, number>()
@@ -1149,35 +1180,61 @@ function ConferenciaCartao({
         <Vazio>Nada pra comparar ainda — insira a lista do SAP e lance a contagem.</Vazio>
       ) : (
         <>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
             {ORDEM_CHIPS.map((s) => {
               const qtd = porSituacao.get(s) ?? 0
               const ativo = filtro.has(s)
               return (
                 <button
                   key={s}
-                  onClick={() => alternarChip(s)}
-                  // chip ATIVO nunca desabilita: se a situação zerar com o
+                  onClick={() => {
+                    alternarChip(s)
+                    // tocar num cartão já abre a lista filtrada nele
+                    setMostrarLista(true)
+                  }}
+                  // cartão ATIVO nunca desabilita: se a situação zerar com o
                   // filtro ligado, ainda dá pra desligá-lo (varredura 04/09)
                   disabled={qtd === 0 && !ativo}
-                  title="Clique pra filtrar por esta situação"
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+                  title="Toque pra ver só esta situação na lista"
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-40 ${
                     ativo
-                      ? 'border-green-700 bg-green-900 text-white dark:bg-green-700'
-                      : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+                      ? 'border-green-700 bg-green-50 ring-1 ring-green-700 dark:bg-green-950/40'
+                      : 'border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/60'
                   }`}
                 >
-                  {ROTULO_SITUACAO[s]} <b>{qtd}</b>
+                  <span className={`block text-xl font-bold ${COR_NUMERO[s]}`}>
+                    {inteiro(qtd)}
+                  </span>
+                  <span className="text-xs text-stone-500 dark:text-stone-400">
+                    {ROTULO_SITUACAO[s]}
+                  </span>
                 </button>
               )
             })}
-            {acuracidade != null && (
-              <span className="ml-auto text-xs text-stone-500 dark:text-stone-400">
-                Acuracidade das contadas: <b>{acuracidade}%</b>
-              </span>
-            )}
           </div>
+          {acuracidade != null && (
+            <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+              Acuracidade das contadas: <b>{acuracidade}%</b>
+            </p>
+          )}
 
+          <button
+            onClick={() => setMostrarLista((v) => !v)}
+            className="mb-3 flex w-full items-center justify-between rounded-lg border border-stone-200 px-3 py-2.5 text-sm font-medium hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/60"
+          >
+            <span>
+              Lista da conferência{' '}
+              <span className="text-stone-500 dark:text-stone-400">
+                ({inteiro(visiveis.length)} linha(s))
+              </span>
+            </span>
+            <span className="text-xs text-stone-500 dark:text-stone-400">
+              {mostrarLista ? '▴ esconder' : '▾ mostrar'}
+            </span>
+          </button>
+
+          {mostrarLista && (
+            <>
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
@@ -1220,6 +1277,8 @@ function ConferenciaCartao({
             <p className="mt-3 text-center text-sm text-stone-500">
               Nenhuma linha com esse filtro.
             </p>
+          )}
+            </>
           )}
         </>
       )}
