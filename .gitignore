@@ -14,6 +14,7 @@ build/
 .env.local
 .env.*.local
 .env.production
+.env.test
 
 # editor / SO
 .vscode/*
