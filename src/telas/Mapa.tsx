@@ -309,19 +309,58 @@ export default function Mapa() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // recontagem inline no cartão de pendências
+  // recontagem inline no cartão de pendências; no NÃO CONTADO, contar e
+  // endereçar é um ato só (pedido do Arion, 10/09/2026)
   const [recontandoPend, setRecontandoPend] = useState<string | null>(null)
   const [valorRecontaPend, setValorRecontaPend] = useState('')
-  const recontarPendencia = async (resultadoId: string, bags: number) => {
+  const [recontaArmazem, setRecontaArmazem] = useState('')
+  const [recontaBloco, setRecontaBloco] = useState('')
+  const [recontaQuadra, setRecontaQuadra] = useState('')
+  const limparReconta = () => {
+    setRecontandoPend(null)
+    setValorRecontaPend('')
+    setRecontaArmazem('')
+    setRecontaBloco('')
+    setRecontaQuadra('')
+  }
+  const recontarPendencia = async (
+    resultadoId: string,
+    bags: number,
+    enderecar: { lote: string; tratamento: string } | null,
+  ) => {
     try {
       await recontarInventario(resultadoId, bags)
-      setRecontandoPend(null)
-      setValorRecontaPend('')
+      // não contado que foi contado COM endereço: o endereço da recontagem
+      // vira a verdade da combinação (substitui, como a aplicação faz)
+      if (enderecar && bags > 0 && recontaArmazem.trim()) {
+        try {
+          await m.salvarEnderecos(
+            enderecar.lote,
+            enderecar.tratamento,
+            [{
+              armazem: recontaArmazem.trim().toUpperCase(),
+              bloco: recontaBloco.trim().toUpperCase(),
+              quadra: recontaQuadra.trim().toUpperCase(),
+              bags,
+            }],
+            usuario?.id ?? '',
+          )
+        } catch (e) {
+          throw new Error(
+            `Recontagem gravada, mas o endereçamento falhou: ${
+              e instanceof Error ? e.message : String(e)
+            } — enderece pelo botão Endereçar (quem endereça é a Logística).`,
+          )
+        }
+      }
+      limparReconta()
       setMsg('Recontagem gravada no inventário — a linha some quando bater com o SAP.')
       await carregarDivInv()
       await recarregar()
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
+      await carregarDivInv()
+      await recarregar()
     }
   }
 
@@ -1212,7 +1251,7 @@ export default function Mapa() {
             </p>
             <p>
               <Tag cor="alerta">não contado</Tag> o SAP diz que existe e ninguém contou —
-              aguardando contagem e endereçamento.
+              o <b>Contar</b> pede a quantidade E onde está: conta e endereça num ato só.
             </p>
             <p className="text-xs text-stone-500 dark:text-stone-400">
               Até os valores serem conferidos, o saldo que vale no mapa é o do SAP. A
@@ -1263,33 +1302,68 @@ export default function Mapa() {
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
-                      {podeRecontar && (
-                        recontandoPend === chave ? (
+                      {podeRecontar && (() => {
+                        // no NÃO CONTADO com linha no mapa, contar exige dizer
+                        // ONDE: endereço junto da quantidade, um ato só
+                        const pedeEndereco = p.situacao === 'nao_contado' && !!p.loteMapa
+                        const bags = parseBagsReconta(valorRecontaPend)
+                        const okValido =
+                          bags != null &&
+                          (!pedeEndereco || bags === 0 || recontaArmazem.trim() !== '')
+                        return recontandoPend === chave ? (
                           <>
+                            {pedeEndereco && (
+                              <>
+                                <span className="w-20">
+                                  <SeletorArmazem
+                                    valor={recontaArmazem}
+                                    aoMudar={setRecontaArmazem}
+                                    className="w-full rounded-md border border-stone-300 px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
+                                  />
+                                </span>
+                                <input
+                                  value={recontaBloco}
+                                  onChange={(e) => setRecontaBloco(e.target.value)}
+                                  placeholder="bloco"
+                                  className="w-20 rounded-md border border-stone-300 px-2 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
+                                />
+                                <input
+                                  value={recontaQuadra}
+                                  onChange={(e) => setRecontaQuadra(e.target.value)}
+                                  placeholder="quadra"
+                                  className="w-20 rounded-md border border-stone-300 px-2 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
+                                />
+                              </>
+                            )}
                             <input
                               value={valorRecontaPend}
                               onChange={(e) => setValorRecontaPend(e.target.value)}
                               inputMode="decimal"
                               placeholder="bags"
-                              autoFocus
+                              autoFocus={!pedeEndereco}
                               className="w-20 rounded-md border border-stone-300 px-2 py-1 text-right text-xs dark:border-stone-700 dark:bg-stone-800"
                             />
                             <Botao
                               variante="primario"
-                              disabled={parseBagsReconta(valorRecontaPend) == null}
+                              disabled={!okValido}
+                              titulo={
+                                pedeEndereco && bags != null && bags > 0 && !recontaArmazem.trim()
+                                  ? 'Contou? Diga também ONDE está (armazém)'
+                                  : undefined
+                              }
                               onClick={() => {
-                                const bags = parseBagsReconta(valorRecontaPend)
-                                if (bags == null) return
-                                void recontarPendencia(p.resultadoId, bags)
+                                if (bags == null || !okValido) return
+                                void recontarPendencia(
+                                  p.resultadoId,
+                                  bags,
+                                  pedeEndereco ? { lote: p.lote, tratamento: p.tratamento } : null,
+                                )
                               }}
                             >
                               OK
                             </Botao>
                             <button
-                              onClick={() => {
-                                setRecontandoPend(null)
-                                setValorRecontaPend('')
-                              }}
+                              onClick={limparReconta}
                               className="rounded px-1.5 py-1 text-stone-400 hover:text-red-600"
                             >
                               ×
@@ -1297,19 +1371,24 @@ export default function Mapa() {
                           </>
                         ) : (
                           <Botao
-                            titulo="Recontou no físico? Informe o novo valor do inventário"
+                            titulo={
+                              pedeEndereco
+                                ? 'Contar agora: informe quantidade E onde está (endereça junto)'
+                                : 'Recontou no físico? Informe o novo valor do inventário'
+                            }
                             onClick={() => {
+                              limparReconta()
                               setRecontandoPend(chave)
-                              setValorRecontaPend('')
                             }}
                           >
-                            Recontar
+                            {p.situacao === 'nao_contado' ? 'Contar' : 'Recontar'}
                           </Botao>
                         )
-                      )}
-                      {p.situacao === 'nao_contado' && p.loteMapa && podeEnderecar && (
-                        <Botao onClick={() => setEnderecando(p.loteMapa!)}>Endereçar</Botao>
-                      )}
+                      })()}
+                      {p.situacao === 'nao_contado' && p.loteMapa && podeEnderecar &&
+                        recontandoPend !== chave && (
+                          <Botao onClick={() => setEnderecando(p.loteMapa!)}>Endereçar</Botao>
+                        )}
                     </div>
                   </td>
                 </tr>
