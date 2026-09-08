@@ -559,6 +559,15 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    produzida** (tela Logística: armazém A–E obrigatório + bloco/quadra; SOMA ao endereço
    existente — `somarEndereco`; ordem SEM TSI não pede endereço). Formulário de ordem
    ganhou aviso (nunca bloqueante) quando a branca do lote não tem saldo LIVRE no mapa.
+   **Pendências do inventário no Mapa** (10/09/2026, especificação final — substituiu 3
+   cartões que confundiam): UM cartão, sempre CONTADO × SAP (a foto congelada), uma linha
+   por lote+tratamento+embalagem — falta/sobra (vermelho), fora do SAP (azul), não
+   contado (âmbar, aguardando contagem E endereçamento) — e a Logística resolve TUDO por
+   **RECONTAGEM inline** (RPC `recontar_inventario`, quantas vezes precisar; linha que
+   bater sai sozinha; rastro da 1ª contagem em bags_primeira_contagem). Até conferir,
+   **o saldo que vale no mapa é o do SAP**. Grade: borda vermelha = divergente, azul =
+   fora do SAP, "?" âmbar = não contado. A recontagem também existe na conferência da
+   tela Inventário; o Ajuste de estoque fica no botão do topo (etapa pós-acerto no SAP).
 
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.

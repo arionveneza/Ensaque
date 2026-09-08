@@ -12,9 +12,10 @@ import {
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  listarResultadosInventario, ultimoInventarioAplicado,
+  listarResultadosInventario, recontarInventario, ultimoInventarioAplicado,
   type ResultadoInventario,
 } from '@/dados/api-inventario'
+import { situacaoDe } from '@/dominio/inventario'
 import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
 import { abrirJanelaImpressao, imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
@@ -64,6 +65,13 @@ const normalizaBloco = (s: string): string => {
 
 const INPUT =
   'rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800'
+
+/** Quantidade recontada: inteiro ou até 2 casas — milhar recusado (1.000 ≠ 1). */
+const parseBagsReconta = (t: string): number | null => {
+  const s = t.trim()
+  if (!/^\d+([.,]\d{1,2})?$/.test(s)) return null
+  return Number(s.replace(',', '.'))
+}
 
 /** Um lote alocado num endereço, com os bags RATEADOS daquele lugar. */
 interface Alocacao {
@@ -255,6 +263,8 @@ export default function Mapa() {
   const podeEnderecar = permitido('mapa', 'enderecar')
   const podeMontar = permitido('mapa', 'montar_carga')
   const podeAjustar = permitido('mapa', 'ajustar')
+  // recontagem das pendências do inventário: quem conta, reconta
+  const podeRecontar = permitido('inventario', 'contar')
   // fotos da carga: quem monta (PCP/Gestor) E quem está no pátio
   // endereçando (Logística) — decisão de 30/08/2026
   const podeFotografar = podeMontar || podeEnderecar
@@ -275,36 +285,45 @@ export default function Mapa() {
   const [novoLote, setNovoLote] = useState(false)
   const [ajustando, setAjustando] = useState(false)
   // prefill do modal de ajuste quando vem do cartão de divergências
-  const [ajustePrefill, setAjustePrefill] = useState<{
-    lote: string
-    tratamento: string
-    delta: number
-    motivo: string
-  } | null>(null)
   const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
-  // último inventário APLICADO — referência do cartão de divergências
+  // último inventário APLICADO — referência do cartão de pendências
   const [divInv, setDivInv] = useState<{
     titulo: string
     aplicado_em: string
     resultados: ResultadoInventario[]
   } | null>(null)
 
-  useEffect(() => {
-    let vivo = true
-    void (async () => {
-      try {
-        const inv = await ultimoInventarioAplicado()
-        if (!inv) return
-        const resultados = await listarResultadosInventario(inv.id)
-        if (vivo) setDivInv({ titulo: inv.titulo, aplicado_em: inv.aplicado_em, resultados })
-      } catch {
-        // o cartão de divergências é cortesia — sem dados, sem cartão
-      }
-    })()
-    return () => {
-      vivo = false
+  // recarregável: a recontagem no cartão de pendências atualiza a foto
+  const carregarDivInv = async () => {
+    try {
+      const inv = await ultimoInventarioAplicado()
+      if (!inv) return
+      const resultados = await listarResultadosInventario(inv.id)
+      setDivInv({ titulo: inv.titulo, aplicado_em: inv.aplicado_em, resultados })
+    } catch {
+      // o cartão de pendências é cortesia — sem dados, sem cartão
     }
+  }
+  useEffect(() => {
+    void carregarDivInv()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // recontagem inline no cartão de pendências
+  const [recontandoPend, setRecontandoPend] = useState<string | null>(null)
+  const [valorRecontaPend, setValorRecontaPend] = useState('')
+  const recontarPendencia = async (resultadoId: string, bags: number) => {
+    try {
+      await recontarInventario(resultadoId, bags)
+      setRecontandoPend(null)
+      setValorRecontaPend('')
+      setMsg('Recontagem gravada no inventário — a linha some quando bater com o SAP.')
+      await carregarDivInv()
+      await recarregar()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   // -------- relatório do que foi carregado --------
   const [periodoCarregadas, setPeriodoCarregadas] =
@@ -409,8 +428,6 @@ export default function Mapa() {
     return [...new Set(['A', 'B', 'C', 'D', ...doDado])].sort()
   }, [todos])
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
-  // marcados pelo inventário aplicado: o SAP diz que existem, ninguém achou
-  const naoEncontrados = todos.filter((l) => l.nao_encontrado_inventario_em)
   const aloc = useMemo(() => alocar(todos), [todos])
 
   /**
@@ -429,39 +446,6 @@ export default function Mapa() {
     return { emCargas, emOrdens, livre: Math.max(0, l.bags - emCargas - emOrdens) }
   }
 
-  /**
-   * Não contadas do último inventário aplicado SEM saldo no mapa
-   * (10/09/2026, pedido do Arion): existir no SAP basta pra ser pendência —
-   * sem linha (ou zerada) no mapa não tem onde a marca viver, então elas
-   * entram no cartão direto da foto congelada, com a quantidade do SAP da
-   * época. Achada SÓ batendo lote+tratamento+EMBALAGEM: contada em outra
-   * embalagem não tira daqui (mesma régua da RPC).
-   */
-  const naoEncontradosSemMapa = useMemo(() => {
-    if (!divInv) return []
-    const noMapa = new Set(todos.map((l) => `${l.lote}|${l.tratamento}`))
-    const out = new Map<
-      string,
-      { lote: string; tratamento: string; cultivar: string | null; embalagem: string; sap: number }
-    >()
-    for (const r of divInv.resultados) {
-      if (r.bags_contados != null || r.bags_sistema == null) continue
-      if (noMapa.has(`${r.lote}|${r.tratamento}`)) continue
-      const k = `${r.lote}|${r.tratamento}|${r.embalagem}`
-      const e = out.get(k)
-      if (e) e.sap += r.bags_sistema
-      else
-        out.set(k, {
-          lote: r.lote,
-          tratamento: r.tratamento,
-          cultivar: r.cultivar,
-          embalagem: r.embalagem,
-          sap: r.bags_sistema,
-        })
-    }
-    return [...out.values()].sort((a, b) => a.lote.localeCompare(b.lote))
-  }, [divInv, todos])
-
   /** Contado do último inventário aplicado, por combinação — vai pro modal
    *  de Ajuste, que trabalha EM CIMA DO CONTADO (pedido do Arion, 10/09). */
   const contadoInventarioPor = useMemo(() => {
@@ -476,62 +460,67 @@ export default function Mapa() {
   }, [divInv])
 
   /**
-   * Divergências EM ABERTO do último inventário aplicado (10/09/2026):
-   * contado CONGELADO × saldo ATUAL do mapa, por (lote, tratamento) — a
-   * linha some sozinha quando os dois batem (ajuste, upload da branca ou
-   * apontamento). Contagem errada sai quando o próximo inventário aplicado
-   * substituir a referência.
+   * PENDÊNCIAS do inventário (10/09/2026, especificação final do Arion):
+   * uma linha por RESULTADO (lote+tratamento+embalagem), sempre CONTADO ×
+   * SAP (a foto congelada) — o operador da Logística resolve RECONTANDO no
+   * físico e informando o novo valor; linha que passa a bater sai sozinha.
+   * Até os valores serem conferidos, o saldo que vale no mapa é o do SAP.
    */
-  const divergenciasInventario = useMemo(() => {
+  const pendenciasInventario = useMemo(() => {
     if (!divInv) return []
-    const contadoPor = new Map<
-      string,
-      { lote: string; tratamento: string; cultivar: string | null; contado: number; recontado: boolean }
-    >()
-    for (const r of divInv.resultados) {
-      if (r.bags_contados == null) continue
-      const k = `${r.lote}|${r.tratamento}`
-      const e = contadoPor.get(k)
-      if (e) {
-        e.contado += r.bags_contados
-        e.cultivar = e.cultivar ?? r.cultivar
-        e.recontado = e.recontado || !!r.recontado_em
-      } else {
-        contadoPor.set(k, {
+    const PESO: Record<string, number> = { falta: 0, sobra: 0, fora_do_sap: 1, nao_contado: 2 }
+    return divInv.resultados
+      .map((r) => {
+        const situacao = situacaoDe(r.bags_contados, r.bags_sistema)
+        const loteMapa =
+          todos.find((l) => l.lote === r.lote && l.tratamento === r.tratamento) ?? null
+        return {
+          resultadoId: r.id,
           lote: r.lote,
           tratamento: r.tratamento,
-          cultivar: r.cultivar,
+          embalagem: r.embalagem,
+          cultivar: r.cultivar ?? loteMapa?.cultivar ?? null,
           contado: r.bags_contados,
-          recontado: !!r.recontado_em,
-        })
-      }
-    }
-    const out: {
-      lote: string
-      tratamento: string
-      cultivar: string | null
-      contado: number
-      saldo: number
-      dif: number
-      noMapa: boolean
-      recontado: boolean
-    }[] = []
-    for (const c of contadoPor.values()) {
-      const atual = todos.find((l) => l.lote === c.lote && l.tratamento === c.tratamento)
-      const saldo = atual?.bags ?? 0
-      const dif = Math.round((c.contado - saldo) * 100) / 100
-      if (Math.abs(dif) > 0.01) {
-        out.push({
-          ...c,
-          cultivar: c.cultivar ?? atual?.cultivar ?? null,
-          saldo,
-          dif,
-          noMapa: !!atual,
-        })
-      }
-    }
-    return out.sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif))
+          sap: r.bags_sistema,
+          dif:
+            r.bags_contados != null && r.bags_sistema != null
+              ? Math.round((r.bags_contados - r.bags_sistema) * 100) / 100
+              : null,
+          situacao,
+          recontadoEm: r.recontado_em,
+          primeira: r.bags_primeira_contagem,
+          loteMapa,
+        }
+      })
+      .filter((p) => p.situacao !== 'bate')
+      .sort(
+        (a, b) =>
+          (PESO[a.situacao] ?? 9) - (PESO[b.situacao] ?? 9) ||
+          Math.abs(b.dif ?? 0) - Math.abs(a.dif ?? 0) ||
+          a.lote.localeCompare(b.lote),
+      )
   }, [divInv, todos])
+
+  /** Combinações (lote|tratamento) pra pintar a GRADE: vermelho = saldo
+   *  divergente do SAP · azul = contado que não está no SAP. */
+  const gradeDivergentes = useMemo(
+    () =>
+      new Set(
+        pendenciasInventario
+          .filter((p) => p.situacao === 'sobra' || p.situacao === 'falta')
+          .map((p) => `${p.lote}|${p.tratamento}`),
+      ),
+    [pendenciasInventario],
+  )
+  const gradeForaDoSap = useMemo(
+    () =>
+      new Set(
+        pendenciasInventario
+          .filter((p) => p.situacao === 'fora_do_sap')
+          .map((p) => `${p.lote}|${p.tratamento}`),
+      ),
+    [pendenciasInventario],
+  )
 
   /** "livre X" sob os bags, só quando há reserva — com o racha no title. */
   const celulaLivre = (l: LoteMapaLinha) => {
@@ -1203,146 +1192,129 @@ export default function Mapa() {
         </CartaoRecolhivel>
       )}
 
-      {/* -------- não encontrados no inventário (08/09/2026) -------- */}
-      {naoEncontrados.length + naoEncontradosSemMapa.length > 0 && (
+      {/* -------- PENDÊNCIAS do inventário (10/09/2026): contado × SAP,
+          resolvidas por RECONTAGEM da Logística; até conferir, o saldo que
+          vale no mapa é o do SAP -------- */}
+      {divInv && pendenciasInventario.length > 0 && (
         <CartaoRecolhivel
-          titulo="Não encontrados no inventário"
-          ocorrencias={naoEncontrados.length + naoEncontradosSemMapa.length}
-          resumo="O SAP diz que existem, mas ninguém achou na última contagem — investigar no galpão."
+          titulo="Pendências do inventário"
+          ocorrencias={pendenciasInventario.length}
+          resumo={`Contagem do ${divInv.titulo} × SAP — recontar no físico e informar o novo valor; a linha que bater sai sozinha.`}
         >
-          <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
-            Saldo e endereços seguem intactos. A combinação sai da lista quando alguém a
-            endereça, quando é contada num próximo inventário aplicado, ou zerando pelo
-            Ajuste de estoque (com motivo).
-          </p>
-          {naoEncontrados.length > 0 && (
-            <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags', 'Endereço atual', 'Desde', '']}>
-              {naoEncontrados.map((l) => (
-                <tr key={chaveDe(l)} className="border-t border-stone-100 dark:border-stone-800/60">
-                  <td className="px-2 py-1.5 font-medium">{l.lote}</td>
-                  <td className="px-2 py-1.5">{l.cultivar}</td>
+          <div className="mb-3 space-y-1.5 text-sm text-stone-600 dark:text-stone-300">
+            <p>
+              <Tag cor="perigo">falta / sobra</Tag> contado diferente do SAP — recontar até
+              confirmar; confirmado, é acerto no SAP.
+            </p>
+            <p>
+              <Tag cor="info">fora do SAP</Tag> contado no físico, mas não existe no SAP —
+              recontar; confirmado, dar entrada no SAP.
+            </p>
+            <p>
+              <Tag cor="alerta">não contado</Tag> o SAP diz que existe e ninguém contou —
+              aguardando contagem e endereçamento.
+            </p>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Até os valores serem conferidos, o saldo que vale no mapa é o do SAP. A
+              recontagem grava o novo valor NO INVENTÁRIO (com rastro da 1ª contagem) e
+              pode ser feita quantas vezes for preciso.
+            </p>
+          </div>
+          <Tabela cabecalho={['Situação', 'Cultivar', 'Lote', 'Tratamento', 'Emb.', '#Contado', '#SAP', '']}>
+            {pendenciasInventario.map((p) => {
+              const chave = `${p.lote}|${p.tratamento}|${p.embalagem}`
+              return (
+                <tr key={chave} className="border-t border-stone-100 dark:border-stone-800/60">
                   <td className="px-2 py-1.5">
-                    {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
+                    {p.situacao === 'fora_do_sap' ? (
+                      <Tag cor="info">fora do SAP</Tag>
+                    ) : p.situacao === 'nao_contado' ? (
+                      <Tag cor="alerta">não contado</Tag>
+                    ) : (
+                      <Tag cor="perigo">
+                        {p.situacao === 'sobra' ? 'sobra +' : 'falta −'}
+                        {n(Math.abs(p.dif ?? 0), (p.dif ?? 0) % 1 === 0 ? 0 : 2)}
+                      </Tag>
+                    )}
+                    {p.recontadoEm && (
+                      <span
+                        title={`1ª contagem: ${p.primeira != null ? inteiro(p.primeira) : 'não contado'} · recontado em ${dataHoraCurta(p.recontadoEm)}`}
+                      >
+                        <Tag cor="alerta" className="ml-1">recontado</Tag>
+                      </span>
+                    )}
                   </td>
-                  <td className="px-2 py-1.5">{l.embalagem}</td>
+                  <td className="px-2 py-1.5">{p.cultivar ?? '—'}</td>
+                  <td
+                    className="px-2 py-1.5 font-medium"
+                    title={p.loteMapa ? enderecoDe(p.loteMapa) || 'sem endereço' : 'sem saldo no mapa'}
+                  >
+                    {p.lote}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    {p.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : p.tratamento}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs">{p.embalagem}</td>
                   <td className="num-tabular px-2 py-1.5 text-right">
-                    {inteiro(l.bags)}
-                    {celulaLivre(l)}
+                    {p.contado != null ? inteiro(p.contado) : '—'}
                   </td>
-                  <td className="px-2 py-1.5 text-xs">{enderecoDe(l) || '—'}</td>
-                  <td className="px-2 py-1.5 text-xs text-stone-500">
-                    {dataHoraCurta(l.nao_encontrado_inventario_em)}
+                  <td className="num-tabular px-2 py-1.5 text-right">
+                    {p.sap != null ? inteiro(p.sap) : '—'}
                   </td>
-                  <td className="px-2 py-1.5 text-right">
-                    {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
+                  <td className="px-2 py-1.5">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {podeRecontar && (
+                        recontandoPend === chave ? (
+                          <>
+                            <input
+                              value={valorRecontaPend}
+                              onChange={(e) => setValorRecontaPend(e.target.value)}
+                              inputMode="decimal"
+                              placeholder="bags"
+                              autoFocus
+                              className="w-20 rounded-md border border-stone-300 px-2 py-1 text-right text-xs dark:border-stone-700 dark:bg-stone-800"
+                            />
+                            <Botao
+                              variante="primario"
+                              disabled={parseBagsReconta(valorRecontaPend) == null}
+                              onClick={() => {
+                                const bags = parseBagsReconta(valorRecontaPend)
+                                if (bags == null) return
+                                void recontarPendencia(p.resultadoId, bags)
+                              }}
+                            >
+                              OK
+                            </Botao>
+                            <button
+                              onClick={() => {
+                                setRecontandoPend(null)
+                                setValorRecontaPend('')
+                              }}
+                              className="rounded px-1.5 py-1 text-stone-400 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </>
+                        ) : (
+                          <Botao
+                            titulo="Recontou no físico? Informe o novo valor do inventário"
+                            onClick={() => {
+                              setRecontandoPend(chave)
+                              setValorRecontaPend('')
+                            }}
+                          >
+                            Recontar
+                          </Botao>
+                        )
+                      )}
+                      {p.situacao === 'nao_contado' && p.loteMapa && podeEnderecar && (
+                        <Botao onClick={() => setEnderecando(p.loteMapa!)}>Endereçar</Botao>
+                      )}
+                    </div>
                   </td>
                 </tr>
-              ))}
-            </Tabela>
-          )}
-
-          {/* existir no SAP basta (pedido do Arion, 10/09/2026): não contadas
-              SEM saldo no mapa também são pendência — vêm da foto congelada
-              do inventário, com a quantidade do SAP da época */}
-          {naoEncontradosSemMapa.length > 0 && divInv && (
-            <>
-              <p className="mt-4 mb-2 text-sm font-semibold">
-                Sem saldo no mapa ({inteiro(naoEncontradosSemMapa.length)}) — estavam na lista
-                do SAP do {divInv.titulo} e ninguém contou
-              </p>
-              <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags no SAP (na época)', '']}>
-                {naoEncontradosSemMapa.map((l) => (
-                  <tr
-                    key={`${l.lote}|${l.tratamento}|${l.embalagem}`}
-                    className="border-t border-stone-100 dark:border-stone-800/60"
-                  >
-                    <td className="px-2 py-1.5 font-medium">{l.lote}</td>
-                    <td className="px-2 py-1.5">{l.cultivar ?? '—'}</td>
-                    <td className="px-2 py-1.5">
-                      {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
-                    </td>
-                    <td className="px-2 py-1.5">{l.embalagem}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.sap)}</td>
-                    <td className="px-2 py-1.5 text-right text-xs text-stone-500">
-                      achou no galpão? entra pelo Novo lote · não existe? acerte no SAP
-                    </td>
-                  </tr>
-                ))}
-              </Tabela>
-            </>
-          )}
-        </CartaoRecolhivel>
-      )}
-
-      {/* -------- divergências do inventário, EM ABERTO (10/09/2026) -------- */}
-      {divInv && divergenciasInventario.length > 0 && (
-        <CartaoRecolhivel
-          titulo="Divergências do inventário — em aberto"
-          ocorrencias={divergenciasInventario.length}
-          resumo={`Contado no ${divInv.titulo} (aplicado em ${dataHoraCurta(divInv.aplicado_em)}) ainda diferente do saldo do mapa — clique em Mostrar pra ajustar.`}
-        >
-          <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
-            Contagem congelada × saldo atual: a linha <b>some sozinha</b> quando os dois
-            baterem (Ajuste de estoque, upload da planilha ou apontamento da produção). Se a
-            CONTAGEM é que estava errada (etiqueta/número trocado), a linha sai quando o
-            próximo inventário aplicado substituir a referência. A conferência completa e o
-            CSV pro acerto no SAP seguem na tela Inventário.
-          </p>
-          <Tabela cabecalho={['Cultivar', 'Lote', 'Tratamento', '#Contado', '#Mapa', '#Dif', '']}>
-            {divergenciasInventario.map((d) => (
-              <tr
-                key={`${d.lote}|${d.tratamento}`}
-                className="border-t border-stone-100 dark:border-stone-800/60"
-              >
-                <td className="px-2 py-1.5">{d.cultivar ?? '—'}</td>
-                <td className="px-2 py-1.5 font-medium">
-                  {d.lote}
-                  {d.recontado && (
-                    <span title="Divergência confirmada por RECONTAGEM no físico">
-                      <Tag cor="alerta" className="ml-1.5">recontado</Tag>
-                    </span>
-                  )}
-                </td>
-                <td className="px-2 py-1.5">
-                  {d.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : d.tratamento}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(d.contado)}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(d.saldo)}</td>
-                <td
-                  className={`num-tabular px-2 py-1.5 text-right font-bold ${
-                    d.dif > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                  }`}
-                >
-                  {d.dif > 0 ? '+' : ''}{n(d.dif, d.dif % 1 === 0 ? 0 : 2)}
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  {d.noMapa && podeAjustar && (
-                    <Botao
-                      titulo="Abre o Ajuste de estoque já preenchido com esta diferença"
-                      onClick={() => {
-                        setAjustePrefill({
-                          lote: d.lote,
-                          tratamento: d.tratamento,
-                          delta: d.dif,
-                          motivo: `${divInv.titulo}: contado ${inteiro(d.contado)}, sistema ${inteiro(d.saldo)}`,
-                        })
-                        setAjustando(true)
-                      }}
-                    >
-                      Ajustar
-                    </Botao>
-                  )}
-                  {!d.noMapa && (
-                    <span className="inline-flex flex-wrap items-center justify-end gap-2">
-                      <span className="text-xs text-stone-500">fora do mapa — acerte no SAP</span>
-                      {podeImportar && (
-                        <Botao onClick={() => setNovoLote(true)}>Novo lote</Botao>
-                      )}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
+              )
+            })}
           </Tabela>
         </CartaoRecolhivel>
       )}
@@ -1440,6 +1412,8 @@ export default function Mapa() {
           alocacoes={aloc}
           casaFiltro={casaFiltro}
           filtroAtivo={filtroAtivo}
+          gradeDivergentes={gradeDivergentes}
+          gradeForaDoSap={gradeForaDoSap}
           onPosicao={setPosicao}
         />
       </Cartao>
@@ -1676,15 +1650,10 @@ export default function Mapa() {
           lotes={todos}
           contadoInventario={contadoInventarioPor}
           inventarioTitulo={divInv?.titulo ?? null}
-          inicial={ajustePrefill ?? undefined}
-          onFechar={() => {
-            setAjustando(false)
-            setAjustePrefill(null)
-          }}
+          onFechar={() => setAjustando(false)}
           onSalvar={async (a) => {
             const novo = await m.ajustarSaldoMapa(a)
             setAjustando(false)
-            setAjustePrefill(null)
             setMsg(
               `Ajuste gravado: ${a.lote} · ${rotuloTratamento(a.tratamento)} ` +
                 `${a.delta > 0 ? '+' : ''}${n(a.delta, 0)} bg → saldo ${inteiro(novo)} bg.`,
@@ -2164,11 +2133,14 @@ function FiltroMulti({
  * rateados da posição; clicar abre o detalhe com os lotes dali.
  */
 function MapaGrade({
-  alocacoes, casaFiltro, filtroAtivo, onPosicao,
+  alocacoes, casaFiltro, filtroAtivo, gradeDivergentes, gradeForaDoSap, onPosicao,
 }: {
   alocacoes: Alocacao[]
   casaFiltro: (l: LoteMapaLinha) => boolean
   filtroAtivo: boolean
+  /** Marcas do inventário (10/09/2026): combinações lote|tratamento. */
+  gradeDivergentes: Set<string>
+  gradeForaDoSap: Set<string>
   onPosicao: (p: Posicao) => void
 }) {
   const porArmazem = useMemo(() => {
@@ -2251,8 +2223,15 @@ function MapaGrade({
                         const bags = cs.reduce((s, c) => s + c.bags, 0)
                         const casa = cs.some((c) => casaFiltro(c.lote))
                         const apagada = filtroAtivo && !casa
-                        // posição com lote que o inventário NÃO encontrou:
-                        // marca visual âmbar + "?" (pedido do Arion, 09/09/2026)
+                        // marcas do inventário na grade (pedido do Arion,
+                        // 10/09/2026): VERMELHO = saldo divergente do SAP ·
+                        // AZUL = contado que não está no SAP · "?" âmbar =
+                        // não contado. Prioridade vermelho > azul > âmbar.
+                        const divergente =
+                          !apagada && cs.some((c) => gradeDivergentes.has(chaveDe(c.lote)))
+                        const foraSap =
+                          !apagada && !divergente &&
+                          cs.some((c) => gradeForaDoSap.has(chaveDe(c.lote)))
                         const suspeita =
                           !apagada && cs.some((c) => c.lote.nao_encontrado_inventario_em)
                         const intensidade = bags / maxCelula
@@ -2271,12 +2250,24 @@ function MapaGrade({
                               type="button"
                               onClick={() => onPosicao({ armazem, bloco: b, quadra: q })}
                               title={
-                                suspeita
-                                  ? 'Tem lote NÃO ENCONTRADO no inventário nesta posição — investigar'
-                                  : undefined
+                                divergente
+                                  ? 'Tem lote com saldo DIVERGENTE do SAP (contado ≠ SAP) — recontar'
+                                  : foraSap
+                                    ? 'Tem lote contado que NÃO está no SAP — recontar/acertar SAP'
+                                    : suspeita
+                                      ? 'Tem lote NÃO CONTADO no inventário nesta posição — contar e endereçar'
+                                      : undefined
                               }
                               className={`w-full min-w-16 rounded-md px-1.5 py-1.5 transition-transform hover:scale-105 ${cor} ${
-                                suspeita && !(filtroAtivo && casa) ? 'ring-2 ring-amber-500' : ''
+                                filtroAtivo && casa
+                                  ? ''
+                                  : divergente
+                                    ? 'ring-2 ring-red-500'
+                                    : foraSap
+                                      ? 'ring-2 ring-sky-500'
+                                      : suspeita
+                                        ? 'ring-2 ring-amber-500'
+                                        : ''
                               }`}
                             >
                               <span className="num-tabular block text-sm font-bold">
@@ -2304,8 +2295,10 @@ function MapaGrade({
         Quadra maior no topo = frente do bloco (acesso mais fácil); CORREDOR/SILO no fim.
         Clique numa posição pra ver os lotes dali — com a destinação do SAP (ou livre) e as
         ações de mover e endereçar. Com filtro ativo, as posições que casam ficam verdes.
-        Posição com <b className="text-amber-600 dark:text-amber-400">?</b> e borda âmbar tem
-        lote que o inventário <b>não encontrou</b> — investigar no galpão.
+        Marcas do inventário: borda <b className="text-red-600 dark:text-red-400">vermelha</b>{' '}
+        = saldo divergente do SAP · borda <b className="text-sky-600 dark:text-sky-400">azul</b>{' '}
+        = contado que não está no SAP · <b className="text-amber-600 dark:text-amber-400">?</b>{' '}
+        âmbar = não contado. Tudo se resolve recontando no cartão "Pendências do inventário".
       </p>
     </div>
   )
