@@ -2238,6 +2238,34 @@ function MapaGrade({
 
   return (
     <div className="space-y-6">
+      {/* legenda VISUAL das bordas (pedido do Arion, 10/09/2026) — cada
+          amostra usa exatamente o estilo da célula correspondente */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-600 dark:border-stone-800 dark:text-stone-300">
+        <span className="font-semibold uppercase tracking-wide text-stone-500">Legenda</span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-4 w-7 rounded-md bg-sky-200/70 ring-2 ring-red-500 dark:bg-sky-950/70" />
+          saldo divergente do SAP — recontar
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-4 w-7 rounded-md bg-sky-200/70 ring-2 ring-sky-500 dark:bg-sky-950/70" />
+          contado, mas não está no SAP
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-flex h-4 w-7 items-center justify-center rounded-md bg-sky-200/70 ring-2 ring-amber-500 text-[10px] font-black text-amber-600 dark:bg-sky-950/70 dark:text-amber-400">
+            ?
+          </span>
+          não contado no inventário
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-4 w-7 rounded-md bg-green-200 ring-2 ring-green-600 dark:bg-green-900" />
+          casa com o filtro ativo
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-4 w-7 rounded-md bg-sky-400/70 dark:bg-sky-900/80" />
+          sem pendência (cor = volume de bags)
+        </span>
+      </div>
+
       {porArmazem.map(([armazem, itens]) => {
         const blocos = [...new Set(itens.map((a) => a.endereco.bloco))].sort((a, b) =>
           a.localeCompare(b, undefined, { numeric: true }),
@@ -2373,11 +2401,8 @@ function MapaGrade({
       <p className="text-xs text-stone-500">
         Quadra maior no topo = frente do bloco (acesso mais fácil); CORREDOR/SILO no fim.
         Clique numa posição pra ver os lotes dali — com a destinação do SAP (ou livre) e as
-        ações de mover e endereçar. Com filtro ativo, as posições que casam ficam verdes.
-        Marcas do inventário: borda <b className="text-red-600 dark:text-red-400">vermelha</b>{' '}
-        = saldo divergente do SAP · borda <b className="text-sky-600 dark:text-sky-400">azul</b>{' '}
-        = contado que não está no SAP · <b className="text-amber-600 dark:text-amber-400">?</b>{' '}
-        âmbar = não contado. Tudo se resolve recontando no cartão "Pendências do inventário".
+        ações de mover e endereçar. As bordas da legenda acima se resolvem recontando no
+        cartão "Pendências do inventário".
       </p>
     </div>
   )
