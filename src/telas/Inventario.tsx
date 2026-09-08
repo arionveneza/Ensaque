@@ -1019,6 +1019,10 @@ function FormEnderecoQuantidade({
   const [quadra, setQuadra] = useState(inicial?.quadra ?? '')
   const [bags, setBags] = useState(inicial ? String(inicial.bags).replace('.', ',') : '')
   const [salvando, setSalvando] = useState(false)
+  // guarda SÍNCRONA contra clique/Enter duplo: o estado `salvando` só muda
+  // no re-render, e dois submits no mesmo instante passavam os dois — foi
+  // assim que nasceu o lançamento gêmeo do inventário de 05/09 (09/09/2026)
+  const enviandoRef = useRef(false)
 
   const bagsNum = parseBags(bags)
   const valido = armazem.trim() !== '' && bagsNum != null
@@ -1028,7 +1032,8 @@ function FormEnderecoQuantidade({
       className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_110px_auto]"
       onSubmit={(e) => {
         e.preventDefault()
-        if (!valido || salvando) return
+        if (!valido || enviandoRef.current) return
+        enviandoRef.current = true
         setSalvando(true)
         void (async () => {
           // limpa SÓ depois do servidor confirmar — limpar antes perdia a
@@ -1039,6 +1044,7 @@ function FormEnderecoQuantidade({
             quadra: quadra.trim().toUpperCase() || null,
             bags: bagsNum!,
           })
+          enviandoRef.current = false
           setSalvando(false)
           if (ok && !inicial) {
             setBloco('')
@@ -1111,6 +1117,8 @@ function FormLancamentoManual({
   const [salvando, setSalvando] = useState(false)
   const muda = (campo: keyof FormLancamento) => (v: string) =>
     setF((atual) => ({ ...atual, [campo]: v }))
+  // guarda síncrona anti-clique-duplo (mesma lição do lançamento gêmeo)
+  const enviandoRef = useRef(false)
 
   const bagsNum = parseBags(f.bags)
   const valido =
@@ -1123,7 +1131,8 @@ function FormLancamentoManual({
         className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
         onSubmit={(e) => {
           e.preventDefault()
-          if (!valido || salvando) return
+          if (!valido || enviandoRef.current) return
+          enviandoRef.current = true
           setSalvando(true)
           // quem fecha o cartão no sucesso é o dono (aoSalvar devolve ok);
           // em erro o formulário fica como está, sem perder a digitação
@@ -1137,7 +1146,10 @@ function FormLancamentoManual({
             quadra: f.quadra.trim().toUpperCase() || null,
             bags: bagsNum!,
             fora_da_lista: true,
-          }).finally(() => setSalvando(false))
+          }).finally(() => {
+            enviandoRef.current = false
+            setSalvando(false)
+          })
         }}
       >
         <div>

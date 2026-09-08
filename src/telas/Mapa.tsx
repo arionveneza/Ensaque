@@ -2090,6 +2090,10 @@ function ModalAjusteEstoque({
   const [quadra, setQuadra] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  // guarda síncrona anti-clique-duplo: o estado só muda no re-render e dois
+  // cliques no mesmo instante gravariam DOIS ajustes (lição do lançamento
+  // gêmeo do inventário, 09/09/2026)
+  const gravandoRef = useRef(false)
 
   const candidatos = useMemo(() => {
     const q = busca.trim().toLowerCase()
@@ -2244,7 +2248,8 @@ function ModalAjusteEstoque({
             variante="primario"
             disabled={!valido || salvando}
             onClick={() => {
-              if (!sel || !valido) return
+              if (!sel || !valido || gravandoRef.current) return
+              gravandoRef.current = true
               setSalvando(true)
               setErro(null)
               onSalvar({
@@ -2257,6 +2262,7 @@ function ModalAjusteEstoque({
                 quadra: quadra.trim().toUpperCase() || null,
               }).catch((e) => {
                 setErro(e instanceof Error ? e.message : String(e))
+                gravandoRef.current = false
                 setSalvando(false)
               })
             }}
