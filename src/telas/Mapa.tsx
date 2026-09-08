@@ -2000,6 +2000,10 @@ function MapaGrade({
                         const bags = cs.reduce((s, c) => s + c.bags, 0)
                         const casa = cs.some((c) => casaFiltro(c.lote))
                         const apagada = filtroAtivo && !casa
+                        // posição com lote que o inventário NÃO encontrou:
+                        // marca visual âmbar + "?" (pedido do Arion, 09/09/2026)
+                        const suspeita =
+                          !apagada && cs.some((c) => c.lote.nao_encontrado_inventario_em)
                         const intensidade = bags / maxCelula
                         const cor = apagada
                           ? 'bg-stone-100 text-stone-300 dark:bg-stone-800/40 dark:text-stone-600'
@@ -2015,9 +2019,19 @@ function MapaGrade({
                             <button
                               type="button"
                               onClick={() => onPosicao({ armazem, bloco: b, quadra: q })}
-                              className={`w-full min-w-16 rounded-md px-1.5 py-1.5 transition-transform hover:scale-105 ${cor}`}
+                              title={
+                                suspeita
+                                  ? 'Tem lote NÃO ENCONTRADO no inventário nesta posição — investigar'
+                                  : undefined
+                              }
+                              className={`w-full min-w-16 rounded-md px-1.5 py-1.5 transition-transform hover:scale-105 ${cor} ${
+                                suspeita && !(filtroAtivo && casa) ? 'ring-2 ring-amber-500' : ''
+                              }`}
                             >
                               <span className="num-tabular block text-sm font-bold">
+                                {suspeita && (
+                                  <span className="mr-0.5 font-black text-amber-600 dark:text-amber-400">?</span>
+                                )}
                                 {inteiro(Math.round(bags))} b
                               </span>
                               <span className="block text-[10px] opacity-80">
@@ -2039,12 +2053,13 @@ function MapaGrade({
         Quadra maior no topo = frente do bloco (acesso mais fácil); CORREDOR/SILO no fim.
         Clique numa posição pra ver os lotes dali — com a destinação do SAP (ou livre) e as
         ações de mover e endereçar. Com filtro ativo, as posições que casam ficam verdes.
+        Posição com <b className="text-amber-600 dark:text-amber-400">?</b> e borda âmbar tem
+        lote que o inventário <b>não encontrou</b> — investigar no galpão.
       </p>
     </div>
   )
 }
 
-/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 /**
  * Ajuste MANUAL de saldo do mapa (08/09/2026): ± quantidade numa
  * combinação, motivo obrigatório e endereço opcional — usado quando a
@@ -2254,6 +2269,7 @@ function ModalAjusteEstoque({
   )
 }
 
+/** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 function ModalPosicao({
   posicao, alocacoes, podeEnderecar, podeMontar, cargasParaLote, faltaNaCarga,
   onFechar, onMover, onEnderecar, onEnviarParaCarga,
@@ -2294,6 +2310,9 @@ function ModalPosicao({
                   {a.lote.destinacao
                     ? <Tag cor="perigo">{a.lote.destinacao}</Tag>
                     : <Tag cor="ok">livre</Tag>}
+                  {a.lote.nao_encontrado_inventario_em && (
+                    <Tag cor="alerta">? não encontrado no inventário</Tag>
+                  )}
                 </p>
                 <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
                   {a.lote.cultivar} · {rotuloTratamento(a.lote.tratamento)} · {a.lote.embalagem} ·{' '}
@@ -2870,6 +2889,10 @@ function LotearCarga({
     }))
     .filter((x) => x.pedido > 0 && x.soma > x.pedido)
   const comDestinacao = todosSelecionados.filter((i) => i.lote.destinacao)
+  // lote suspeito: o último inventário aplicado não o encontrou no físico
+  const naoEncontradosSel = todosSelecionados.filter(
+    (i) => i.lote.nao_encontrado_inventario_em,
+  )
   const foraDoMapa = produtos.flatMap((p) =>
     p.itens
       .filter((i) => !loteDe(p, i.loteId))
@@ -3004,6 +3027,15 @@ function LotearCarga({
           <Aviso gravidade="bloqueio">
             <b>Atenção:</b> lote(s) com DESTINAÇÃO no SAP selecionado(s):{' '}
             {comDestinacao.map((i) => `${i.loteId} → ${i.lote.destinacao}`).join(' · ')}
+          </Aviso>
+        </div>
+      )}
+      {naoEncontradosSel.length > 0 && (
+        <div className="mt-3">
+          <Aviso gravidade="alerta">
+            <b>Lote(s) que o inventário NÃO ENCONTROU no físico:</b>{' '}
+            {[...new Set(naoEncontradosSel.map((i) => i.loteId))].join(' · ')} — confirme no
+            galpão antes de mandar o caminhão atrás.
           </Aviso>
         </div>
       )}
