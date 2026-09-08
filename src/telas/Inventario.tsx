@@ -472,7 +472,32 @@ function DetalheInventario({
         />
       )}
 
-      <ConferenciaCartao inv={inv} linhas={linhas} aberto={aberto} />
+      <ConferenciaCartao
+        inv={inv}
+        linhas={linhas}
+        aberto={aberto}
+        recontagem={
+          !aberto
+            ? {
+                podeRecontar: podeLancar,
+                de: new Map(
+                  resultados.map((r) => [
+                    `${r.lote}|${r.tratamento}|${r.embalagem}`,
+                    {
+                      id: r.id,
+                      recontadoEm: r.recontado_em,
+                      primeira: r.bags_primeira_contagem,
+                    },
+                  ]),
+                ),
+                onRecontar: (id, bags) =>
+                  void onAcao(async () => {
+                    await api.recontarInventario(id, bags)
+                  }),
+              }
+            : undefined
+        }
+      />
     </div>
   )
 }
@@ -1235,15 +1260,30 @@ function FormLancamentoManual({
 // Conferência: contado × SAP, com filtro por situação e CSV
 // ================================================================
 
+interface RecontagemInfo {
+  id: string
+  recontadoEm: string | null
+  primeira: number | null
+}
+
 function ConferenciaCartao({
-  inv, linhas, aberto,
+  inv, linhas, aberto, recontagem,
 }: {
   inv: api.InventarioLinha
   linhas: LinhaInventario[]
   aberto: boolean
+  /** Recontagem no físico (10/09/2026) — só com o inventário FECHADO. */
+  recontagem?: {
+    podeRecontar: boolean
+    de: Map<string, RecontagemInfo>
+    onRecontar: (resultadoId: string, bags: number) => void
+  }
 }) {
   const [busca, setBusca] = useState('')
   const [filtro, setFiltro] = useState<Set<SituacaoInventario>>(new Set())
+  // linha em recontagem (chave lote|trat|emb) e o valor digitado
+  const [recontando, setRecontando] = useState<string | null>(null)
+  const [valorReconta, setValorReconta] = useState('')
   // só os cartões-resumo à vista; a lista completa abre sob demanda — com o
   // galpão inteiro ela passa de 700 linhas (pedido do Arion, 05/09/2026)
   const [mostrarLista, setMostrarLista] = useState(false)
@@ -1374,15 +1414,28 @@ function ConferenciaCartao({
           />
 
           <Tabela
-            cabecalho={['Situação', 'Cultivar', 'Lote', 'Tratamento', 'Emb.', '#Contado', '#SAP', '#Diferença']}
+            cabecalho={[
+              'Situação', 'Cultivar', 'Lote', 'Tratamento', 'Emb.', '#Contado', '#SAP', '#Diferença',
+              ...(recontagem ? [''] : []),
+            ]}
           >
-            {visiveis.map((l) => (
+            {visiveis.map((l) => {
+              const chave = `${l.lote}|${l.tratamento}|${l.embalagem}`
+              const info = recontagem?.de.get(chave)
+              return (
               <tr
-                key={`${l.lote}|${l.tratamento}|${l.embalagem}`}
+                key={chave}
                 className="border-t border-stone-100 dark:border-stone-800/60"
               >
                 <td className="px-2 py-1.5">
                   <Tag cor={COR_SITUACAO[l.situacao]}>{ROTULO_SITUACAO[l.situacao]}</Tag>
+                  {info?.recontadoEm && (
+                    <span
+                      title={`1ª contagem: ${info.primeira != null ? fmtBg(info.primeira) : 'não contado'} · recontado em ${dataHoraCurta(info.recontadoEm)}`}
+                    >
+                      <Tag cor="alerta" className="ml-1">recontado</Tag>
+                    </span>
+                  )}
                 </td>
                 <td className="px-2 py-1.5">{l.cultivar ?? '—'}</td>
                 <td className="px-2 py-1.5 font-mono text-xs">{l.lote}</td>
@@ -1401,8 +1454,59 @@ function ConferenciaCartao({
                 >
                   {fmtDif(l.diferenca)}
                 </td>
+                {recontagem && (
+                  <td className="px-2 py-1.5 text-right">
+                    {recontagem.podeRecontar && info?.id && (
+                      recontando === chave ? (
+                        <span className="flex items-center justify-end gap-1">
+                          <input
+                            value={valorReconta}
+                            onChange={(e) => setValorReconta(e.target.value)}
+                            inputMode="decimal"
+                            placeholder="bags"
+                            autoFocus
+                            className="w-20 rounded-md border border-stone-300 px-2 py-1 text-right text-xs dark:border-stone-700 dark:bg-stone-800"
+                          />
+                          <Botao
+                            variante="primario"
+                            disabled={parseBags(valorReconta) == null}
+                            onClick={() => {
+                              const bags = parseBags(valorReconta)
+                              if (bags == null) return
+                              recontagem.onRecontar(info.id, bags)
+                              setRecontando(null)
+                              setValorReconta('')
+                            }}
+                          >
+                            OK
+                          </Botao>
+                          <button
+                            onClick={() => {
+                              setRecontando(null)
+                              setValorReconta('')
+                            }}
+                            className="rounded px-1.5 py-1 text-stone-400 hover:text-red-600"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setRecontando(chave)
+                            setValorReconta('')
+                          }}
+                          title="Contou de novo no físico? Grava o valor recontado nesta linha — a 1ª contagem fica no rastro"
+                          className="rounded-md border border-stone-300 px-2.5 py-1.5 text-xs font-medium whitespace-nowrap hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
+                        >
+                          Recontar
+                        </button>
+                      )
+                    )}
+                  </td>
+                )}
               </tr>
-            ))}
+            )})}
           </Tabela>
           {visiveis.length === 0 && (
             <p className="mt-3 text-center text-sm text-stone-500">

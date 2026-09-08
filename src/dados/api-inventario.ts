@@ -259,22 +259,56 @@ export async function aplicarInventarioNoMapa(id: string): Promise<ResumoAplicac
 }
 
 export interface ResultadoInventario {
+  id: string
   lote: string
   tratamento: string
   cultivar: string | null
   embalagem: string
+  /** Depois de recontada, é o valor RECONTADO. */
   bags_contados: number | null
   bags_sistema: number | null
+  /** Recontagem no físico depois do fechamento (10/09/2026). */
+  recontado_em: string | null
+  /** A 1ª contagem, preservada quando há recontagem. */
+  bags_primeira_contagem: number | null
 }
 
 export async function listarResultadosInventario(
   inventarioId: string,
 ): Promise<ResultadoInventario[]> {
-  const { data, error } = await supabase
+  let r = await supabase
     .from('inventario_resultados')
-    .select('lote, tratamento, cultivar, embalagem, bags_contados, bags_sistema')
+    .select(
+      'id, lote, tratamento, cultivar, embalagem, bags_contados, bags_sistema, recontado_em, bags_primeira_contagem',
+    )
     .eq('inventario_id', inventarioId)
     .limit(10000)
-  erro('listar o resultado do inventário', error)
-  return (data ?? []) as unknown as ResultadoInventario[]
+  if (r.error?.code === '42703') {
+    // janela pré-migração inventario-recontagem.sql
+    r = (await supabase
+      .from('inventario_resultados')
+      .select('id, lote, tratamento, cultivar, embalagem, bags_contados, bags_sistema')
+      .eq('inventario_id', inventarioId)
+      .limit(10000)) as unknown as typeof r
+  }
+  erro('listar o resultado do inventário', r.error)
+  return (r.data ?? []).map((x) => ({
+    recontado_em: null,
+    bags_primeira_contagem: null,
+    ...(x as object),
+  })) as unknown as ResultadoInventario[]
+}
+
+/**
+ * Grava a RECONTAGEM de uma linha da conferência (inventário fechado, sem
+ * reabrir): bags_contados vira o valor recontado, a 1ª contagem fica
+ * preservada e a linha ganha a marca "recontado" — divergência que
+ * sobreviver à recontagem é divergência confirmada.
+ */
+export async function recontarInventario(resultadoId: string, bags: number): Promise<void> {
+  const { error } = await supabase.rpc('recontar_inventario', {
+    p_resultado: resultadoId,
+    p_bags: bags,
+  })
+  erro('gravar a recontagem — a migração inventario-recontagem.sql já rodou?', error)
 }

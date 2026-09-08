@@ -486,7 +486,7 @@ export default function Mapa() {
     if (!divInv) return []
     const contadoPor = new Map<
       string,
-      { lote: string; tratamento: string; cultivar: string | null; contado: number }
+      { lote: string; tratamento: string; cultivar: string | null; contado: number; recontado: boolean }
     >()
     for (const r of divInv.resultados) {
       if (r.bags_contados == null) continue
@@ -495,12 +495,14 @@ export default function Mapa() {
       if (e) {
         e.contado += r.bags_contados
         e.cultivar = e.cultivar ?? r.cultivar
+        e.recontado = e.recontado || !!r.recontado_em
       } else {
         contadoPor.set(k, {
           lote: r.lote,
           tratamento: r.tratamento,
           cultivar: r.cultivar,
           contado: r.bags_contados,
+          recontado: !!r.recontado_em,
         })
       }
     }
@@ -512,6 +514,7 @@ export default function Mapa() {
       saldo: number
       dif: number
       noMapa: boolean
+      recontado: boolean
     }[] = []
     for (const c of contadoPor.values()) {
       const atual = todos.find((l) => l.lote === c.lote && l.tratamento === c.tratamento)
@@ -1292,7 +1295,14 @@ export default function Mapa() {
                 className="border-t border-stone-100 dark:border-stone-800/60"
               >
                 <td className="px-2 py-1.5">{d.cultivar ?? '—'}</td>
-                <td className="px-2 py-1.5 font-medium">{d.lote}</td>
+                <td className="px-2 py-1.5 font-medium">
+                  {d.lote}
+                  {d.recontado && (
+                    <span title="Divergência confirmada por RECONTAGEM no físico">
+                      <Tag cor="alerta" className="ml-1.5">recontado</Tag>
+                    </span>
+                  )}
+                </td>
                 <td className="px-2 py-1.5">
                   {d.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : d.tratamento}
                 </td>
