@@ -430,6 +430,43 @@ export default function Mapa() {
   }
 
   /**
+   * Não contadas do último inventário aplicado SEM saldo no mapa
+   * (10/09/2026, pedido do Arion): existir no SAP basta pra ser pendência —
+   * sem linha (ou zerada) no mapa não tem onde a marca viver, então elas
+   * entram no cartão direto da foto congelada, com a quantidade do SAP da
+   * época. Contada em qualquer embalagem = achada (mesma régua da RPC).
+   */
+  const naoEncontradosSemMapa = useMemo(() => {
+    if (!divInv) return []
+    const contadas = new Set(
+      divInv.resultados
+        .filter((r) => r.bags_contados != null)
+        .map((r) => `${r.lote}|${r.tratamento}`),
+    )
+    const noMapa = new Set(todos.map((l) => `${l.lote}|${l.tratamento}`))
+    const out = new Map<
+      string,
+      { lote: string; tratamento: string; cultivar: string | null; embalagem: string; sap: number }
+    >()
+    for (const r of divInv.resultados) {
+      if (r.bags_contados != null || r.bags_sistema == null) continue
+      const k = `${r.lote}|${r.tratamento}`
+      if (contadas.has(k) || noMapa.has(k)) continue
+      const e = out.get(k)
+      if (e) e.sap += r.bags_sistema
+      else
+        out.set(k, {
+          lote: r.lote,
+          tratamento: r.tratamento,
+          cultivar: r.cultivar,
+          embalagem: r.embalagem,
+          sap: r.bags_sistema,
+        })
+    }
+    return [...out.values()].sort((a, b) => a.lote.localeCompare(b.lote))
+  }, [divInv, todos])
+
+  /**
    * Divergências EM ABERTO do último inventário aplicado (10/09/2026):
    * contado CONGELADO × saldo ATUAL do mapa, por (lote, tratamento) — a
    * linha some sozinha quando os dois batem (ajuste, upload da branca ou
@@ -1155,10 +1192,10 @@ export default function Mapa() {
       )}
 
       {/* -------- não encontrados no inventário (08/09/2026) -------- */}
-      {naoEncontrados.length > 0 && (
+      {naoEncontrados.length + naoEncontradosSemMapa.length > 0 && (
         <CartaoRecolhivel
           titulo="Não encontrados no inventário"
-          ocorrencias={naoEncontrados.length}
+          ocorrencias={naoEncontrados.length + naoEncontradosSemMapa.length}
           resumo="O SAP diz que existem, mas ninguém achou na última contagem — investigar no galpão."
         >
           <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
@@ -1166,29 +1203,62 @@ export default function Mapa() {
             endereça, quando é contada num próximo inventário aplicado, ou zerando pelo
             Ajuste de estoque (com motivo).
           </p>
-          <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags', 'Endereço atual', 'Desde', '']}>
-            {naoEncontrados.map((l) => (
-              <tr key={chaveDe(l)} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">{l.lote}</td>
-                <td className="px-2 py-1.5">{l.cultivar}</td>
-                <td className="px-2 py-1.5">
-                  {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
-                </td>
-                <td className="px-2 py-1.5">{l.embalagem}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">
-                  {inteiro(l.bags)}
-                  {celulaLivre(l)}
-                </td>
-                <td className="px-2 py-1.5 text-xs">{enderecoDe(l) || '—'}</td>
-                <td className="px-2 py-1.5 text-xs text-stone-500">
-                  {dataHoraCurta(l.nao_encontrado_inventario_em)}
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
-                </td>
-              </tr>
-            ))}
-          </Tabela>
+          {naoEncontrados.length > 0 && (
+            <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags', 'Endereço atual', 'Desde', '']}>
+              {naoEncontrados.map((l) => (
+                <tr key={chaveDe(l)} className="border-t border-stone-100 dark:border-stone-800/60">
+                  <td className="px-2 py-1.5 font-medium">{l.lote}</td>
+                  <td className="px-2 py-1.5">{l.cultivar}</td>
+                  <td className="px-2 py-1.5">
+                    {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
+                  </td>
+                  <td className="px-2 py-1.5">{l.embalagem}</td>
+                  <td className="num-tabular px-2 py-1.5 text-right">
+                    {inteiro(l.bags)}
+                    {celulaLivre(l)}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs">{enderecoDe(l) || '—'}</td>
+                  <td className="px-2 py-1.5 text-xs text-stone-500">
+                    {dataHoraCurta(l.nao_encontrado_inventario_em)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
+                  </td>
+                </tr>
+              ))}
+            </Tabela>
+          )}
+
+          {/* existir no SAP basta (pedido do Arion, 10/09/2026): não contadas
+              SEM saldo no mapa também são pendência — vêm da foto congelada
+              do inventário, com a quantidade do SAP da época */}
+          {naoEncontradosSemMapa.length > 0 && divInv && (
+            <>
+              <p className="mt-4 mb-2 text-sm font-semibold">
+                Sem saldo no mapa ({inteiro(naoEncontradosSemMapa.length)}) — estavam na lista
+                do SAP do {divInv.titulo} e ninguém contou
+              </p>
+              <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags no SAP (na época)', '']}>
+                {naoEncontradosSemMapa.map((l) => (
+                  <tr
+                    key={`${l.lote}|${l.tratamento}`}
+                    className="border-t border-stone-100 dark:border-stone-800/60"
+                  >
+                    <td className="px-2 py-1.5 font-medium">{l.lote}</td>
+                    <td className="px-2 py-1.5">{l.cultivar ?? '—'}</td>
+                    <td className="px-2 py-1.5">
+                      {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
+                    </td>
+                    <td className="px-2 py-1.5">{l.embalagem}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.sap)}</td>
+                    <td className="px-2 py-1.5 text-right text-xs text-stone-500">
+                      achou no galpão? entra pelo Novo lote · não existe? acerte no SAP
+                    </td>
+                  </tr>
+                ))}
+              </Tabela>
+            </>
+          )}
         </CartaoRecolhivel>
       )}
 
