@@ -452,22 +452,35 @@ export default function Mapa() {
   }
 
   const todos = useMemo(() => lotes ?? [], [lotes])
-  const cultivares = useMemo(() => [...new Set(todos.map((l) => l.cultivar))].sort(), [todos])
-  const tratamentos = useMemo(
-    () => [...new Set(todos.map((l) => l.tratamento).filter((t) => t !== SEM_TSI))].sort(),
+  /**
+   * O MAPA exibe SÓ o confirmado no físico (regra do Arion, 10/09/2026):
+   * combinação marcada como não contada fica fora da grade, das listas e
+   * do loteamento até alguém contá-la no cartão de Pendências (o Contar
+   * limpa a marca e endereça). `todos` (cheio) fica pra resolução interna
+   * (Pendências, Ajuste de estoque); saldo e travas de consumo seguem no
+   * servidor sobre a tabela cheia — nada de consumo muda.
+   */
+  const visiveis = useMemo(
+    () => todos.filter((l) => !l.nao_encontrado_inventario_em),
     [todos],
   )
+  const aguardandoContagem = todos.length - visiveis.length
+  const cultivares = useMemo(() => [...new Set(visiveis.map((l) => l.cultivar))].sort(), [visiveis])
+  const tratamentos = useMemo(
+    () => [...new Set(visiveis.map((l) => l.tratamento).filter((t) => t !== SEM_TSI))].sort(),
+    [visiveis],
+  )
   const destinacoes = useMemo(
-    () => [LIVRE, ...[...new Set(todos.map((l) => l.destinacao).filter((d): d is string => !!d))].sort()],
-    [todos],
+    () => [LIVRE, ...[...new Set(visiveis.map((l) => l.destinacao).filter((d): d is string => !!d))].sort()],
+    [visiveis],
   )
   const classes = useMemo(() => {
     // A–D sempre aparecem (pedido do Arion, 28/08/2026); letras extras do dado entram junto
-    const doDado = todos.map((l) => letraClasse(l.classificacao)).filter((c): c is string => !!c)
+    const doDado = visiveis.map((l) => letraClasse(l.classificacao)).filter((c): c is string => !!c)
     return [...new Set(['A', 'B', 'C', 'D', ...doDado])].sort()
-  }, [todos])
-  const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
-  const aloc = useMemo(() => alocar(todos), [todos])
+  }, [visiveis])
+  const semEndereco = visiveis.filter((l) => l.lote_enderecos.length === 0)
+  const aloc = useMemo(() => alocar(visiveis), [visiveis])
 
   /**
    * Reserva da combinação (08/09/2026): cargas ativas + (na branca) ordens
@@ -980,7 +993,7 @@ export default function Mapa() {
           <td colSpan={8} className="bg-stone-50 p-3 dark:bg-stone-900/40">
             <LotearCarga
               carga={loteando}
-              lotes={todos}
+              lotes={visiveis}
               alocacoes={aloc}
               comprometidos={comprometidos}
               consumoOrdens={consumoOrdens}
@@ -1141,7 +1154,9 @@ export default function Mapa() {
 
       {/* -------- carga do SAP -------- */}
       <Cartao
-        titulo={`Saldo do SAP (${todos.length} lotes no mapa)`}
+        titulo={`Saldo do SAP (${visiveis.length} lotes no mapa${
+          aguardandoContagem > 0 ? ` · ${aguardandoContagem} aguardando contagem` : ''
+        })`}
         acoes={
           podeImportar || podeAjustar ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -1188,7 +1203,11 @@ export default function Mapa() {
           <p className="text-sm text-stone-500 dark:text-stone-400">
             {todos.length === 0
               ? `Nenhum lote no mapa ainda. Suba o export de saldo do SAP (com as colunas Destinação e Depósito) — só o ${DEPOSITO_MAPA} entra.`
-              : `${semEndereco.length} combinação(ões) aguardando localização · ${todos.filter((l) => l.destinacao).length} com destinação no SAP. Suba a planilha de novo pra atualizar o saldo.`}
+              : `${semEndereco.length} combinação(ões) aguardando localização · ${visiveis.filter((l) => l.destinacao).length} com destinação no SAP${
+                  aguardandoContagem > 0
+                    ? ` · ${aguardandoContagem} aguardando contagem no inventário`
+                    : ''
+                }. Suba a planilha de novo pra atualizar o saldo.`}
           </p>
         )}
       </Cartao>
@@ -1251,7 +1270,8 @@ export default function Mapa() {
             </p>
             <p>
               <Tag cor="alerta">não contado</Tag> o SAP diz que existe e ninguém contou —
-              o <b>Contar</b> pede a quantidade E onde está: conta e endereça num ato só.
+              fica FORA do mapa até ser contado; o <b>Contar</b> pede a quantidade E onde
+              está: conta e endereça num ato só, e a combinação aparece no mapa.
             </p>
             <p className="text-xs text-stone-500 dark:text-stone-400">
               Até os valores serem conferidos, o saldo que vale no mapa é o do SAP. A
@@ -1500,7 +1520,7 @@ export default function Mapa() {
       {/* -------- 1ª etapa: montagem de carga (some se o mapa não carregou) -------- */}
       {podeMontar && lotes !== null && (
         <MontagemCarga
-          lotes={todos}
+          lotes={visiveis}
           usuarioId={usuario?.id ?? ''}
           rascunho={rascunhoCarga}
           cargaEditando={
@@ -2251,12 +2271,6 @@ function MapaGrade({
           contado, mas não está no SAP
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-flex h-4 w-7 items-center justify-center rounded-md bg-sky-200/70 ring-2 ring-amber-500 text-[10px] font-black text-amber-600 dark:bg-sky-950/70 dark:text-amber-400">
-            ?
-          </span>
-          não contado no inventário
-        </span>
-        <span className="flex items-center gap-1.5">
           <span className="inline-block h-4 w-7 rounded-md bg-green-200 ring-2 ring-green-600 dark:bg-green-900" />
           casa com o filtro ativo
         </span>
@@ -2332,15 +2346,14 @@ function MapaGrade({
                         const apagada = filtroAtivo && !casa
                         // marcas do inventário na grade (pedido do Arion,
                         // 10/09/2026): VERMELHO = saldo divergente do SAP ·
-                        // AZUL = contado que não está no SAP · "?" âmbar =
-                        // não contado. Prioridade vermelho > azul > âmbar.
+                        // PRETO = contado que não está no SAP. Não contado
+                        // não aparece mais aqui — fica fora do mapa até ser
+                        // contado (regra de exibição, 10/09/2026).
                         const divergente =
                           !apagada && cs.some((c) => gradeDivergentes.has(chaveDe(c.lote)))
                         const foraSap =
                           !apagada && !divergente &&
                           cs.some((c) => gradeForaDoSap.has(chaveDe(c.lote)))
-                        const suspeita =
-                          !apagada && cs.some((c) => c.lote.nao_encontrado_inventario_em)
                         const intensidade = bags / maxCelula
                         const cor = apagada
                           ? 'bg-stone-100 text-stone-300 dark:bg-stone-800/40 dark:text-stone-600'
@@ -2361,9 +2374,7 @@ function MapaGrade({
                                   ? 'Tem lote com saldo DIVERGENTE do SAP (contado ≠ SAP) — recontar'
                                   : foraSap
                                     ? 'Tem lote contado que NÃO está no SAP — recontar/acertar SAP'
-                                    : suspeita
-                                      ? 'Tem lote NÃO CONTADO no inventário nesta posição — contar e endereçar'
-                                      : undefined
+                                    : undefined
                               }
                               className={`w-full min-w-16 rounded-md px-1.5 py-1.5 transition-transform hover:scale-105 ${cor} ${
                                 filtroAtivo && casa
@@ -2372,15 +2383,10 @@ function MapaGrade({
                                     ? 'ring-2 ring-red-500'
                                     : foraSap
                                       ? 'ring-2 ring-black dark:ring-white'
-                                      : suspeita
-                                        ? 'ring-2 ring-amber-500'
-                                        : ''
+                                      : ''
                               }`}
                             >
                               <span className="num-tabular block text-sm font-bold">
-                                {suspeita && (
-                                  <span className="mr-0.5 font-black text-amber-600 dark:text-amber-400">?</span>
-                                )}
                                 {inteiro(Math.round(bags))} b
                               </span>
                               <span className="block text-[10px] opacity-80">

@@ -561,13 +561,27 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    ganhou aviso (nunca bloqueante) quando a branca do lote não tem saldo LIVRE no mapa.
    **Pendências do inventário no Mapa** (10/09/2026, especificação final — substituiu 3
    cartões que confundiam): UM cartão, sempre CONTADO × SAP (a foto congelada), uma linha
-   por lote+tratamento+embalagem — falta/sobra (vermelho), fora do SAP (azul), não
-   contado (âmbar, aguardando contagem E endereçamento) — e a Logística resolve TUDO por
-   **RECONTAGEM inline** (RPC `recontar_inventario`, quantas vezes precisar; linha que
-   bater sai sozinha; rastro da 1ª contagem em bags_primeira_contagem). Até conferir,
-   **o saldo que vale no mapa é o do SAP**. Grade: borda vermelha = divergente, azul =
-   fora do SAP, "?" âmbar = não contado. A recontagem também existe na conferência da
-   tela Inventário; o Ajuste de estoque fica no botão do topo (etapa pós-acerto no SAP).
+   por lote+tratamento+embalagem — falta/sobra (vermelho), fora do SAP (azul→preto na
+   grade), não contado (âmbar, aguardando contagem E endereçamento) — e a Logística
+   resolve TUDO por **RECONTAGEM inline** (RPC `recontar_inventario`, quantas vezes
+   precisar; linha que bater sai sozinha; rastro da 1ª contagem em
+   bags_primeira_contagem). Até conferir, **o saldo que vale no mapa é o do SAP**. A
+   recontagem também existe na conferência da tela Inventário; o Ajuste de estoque fica
+   no botão do topo (etapa pós-acerto no SAP).
+   **O MAPA exibe SÓ o confirmado no físico** (regra final do Arion, 10/09/2026): a
+   combinação marcada `nao_encontrado_inventario_em` fica FORA da grade, do "Sem
+   localização", das datalists de filtro e do loteamento de carga (`visiveis` em
+   `Mapa.tsx` — `todos` completo continua valendo pra Pendências, cuja coluna Contar
+   precisa achar a linha, e pro Ajuste de estoque, ferramenta de correção que enxerga
+   tudo) — não contado **entra no mapa conforme for contado** (o Contar do cartão de
+   Pendências limpa a marca e endereça num ato só). O título do cartão de saldo do SAP
+   soma "· N aguardando contagem" quando há marcados. Divergente de quantidade
+   (falta/sobra) CONTINUA visível no mapa, com borda vermelha — só o não contado some.
+   A grade ficou só com vermelho (divergente) e preto (fora do SAP) — o "?" âmbar do não
+   contado saiu da grade e da legenda, porque a combinação não aparece mais lá.
+   Novo lote de produção segue igual: apontou quantidade → "Sem localização" →
+   endereçado → mapa (botão Novo lote continua pra compra de terceiros); consumo e
+   reserva de ordens/cargas seguem sobre a tabela `lotes_mapa` cheia, sem mudança.
 
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
