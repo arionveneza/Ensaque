@@ -330,26 +330,30 @@ export default function Mapa() {
   ) => {
     try {
       await recontarInventario(resultadoId, bags)
-      // não contado que foi contado COM endereço: o endereço da recontagem
-      // vira a verdade da combinação (substitui, como a aplicação faz)
+      // não contado que foi contado COM endereço: SOMA o endereço (nunca
+      // substitui) — o lote+tratamento no mapa não distingue embalagem,
+      // e um mesmo lote+tratamento pode ter uma pendência por embalagem
+      // (BB5M e MEIOBAG não somam); usar salvarEnderecos aqui apagaria o
+      // endereço que a contagem de OUTRA embalagem acabou de gravar
+      // (11/09/2026 — achado ao validar a tela com o Arion).
       if (enderecar && bags > 0 && recontaArmazem.trim()) {
         try {
-          await m.salvarEnderecos(
+          await m.somarEndereco(
             enderecar.lote,
             enderecar.tratamento,
-            [{
+            {
               armazem: recontaArmazem.trim().toUpperCase(),
               bloco: recontaBloco.trim().toUpperCase(),
               quadra: recontaQuadra.trim().toUpperCase(),
-              bags,
-            }],
+            },
+            bags,
             usuario?.id ?? '',
           )
         } catch (e) {
           throw new Error(
             `Recontagem gravada, mas o endereçamento falhou: ${
               e instanceof Error ? e.message : String(e)
-            } — enderece pelo botão Endereçar (quem endereça é a Logística).`,
+            } — a combinação aparece em "Sem localização" pra endereçar de novo.`,
           )
         }
       }
@@ -1405,10 +1409,6 @@ export default function Mapa() {
                           </Botao>
                         )
                       })()}
-                      {p.situacao === 'nao_contado' && p.loteMapa && podeEnderecar &&
-                        recontandoPend !== chave && (
-                          <Botao onClick={() => setEnderecando(p.loteMapa!)}>Endereçar</Botao>
-                        )}
                     </div>
                   </td>
                 </tr>

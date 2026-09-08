@@ -577,6 +577,20 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Pendências limpa a marca e endereça num ato só). O título do cartão de saldo do SAP
    soma "· N aguardando contagem" quando há marcados. Divergente de quantidade
    (falta/sobra) CONTINUA visível no mapa, com borda vermelha — só o não contado some.
+   **Contar não pode apagar endereço de outra embalagem** (fix de 11/09/2026, migração
+   `inventario-recontagem-embalagem.sql`): `lote_enderecos` é por lote+tratamento (sem
+   embalagem), mas um mesmo lote+tratamento pode ter DUAS pendências (uma por
+   embalagem — BB5M e MEIOBAG não somam). A recontagem endereça com `somarEndereco`
+   (soma), nunca `salvarEnderecos` (substitui) — usar substitui apagava o endereço que
+   a contagem da OUTRA embalagem tinha acabado de gravar. Pelo mesmo motivo, "achada"
+   só limpa `nao_encontrado_inventario_em` quando NENHUMA outra embalagem da mesma
+   combinação, no inventário aplicado, continuar sem contagem — vale tanto no
+   `recontar_inventario` quanto no gatilho `fn_endereco_achado` (dispara em qualquer
+   insert em `lote_enderecos`, então precisa da mesma guarda). O botão solto
+   "Endereçar" nas linhas não-contado da Pendências foi removido — endereçar sem
+   contar furava a regra "só entra no mapa o que foi contado" (o gatilho limpava a
+   marca mesmo sem `recontar_inventario` ter rodado); quem quer trazer a combinação
+   pro mapa usa o **Contar**, único caminho que registra a contagem E o endereço.
    A grade ficou só com vermelho (divergente) e preto (fora do SAP) — o "?" âmbar do não
    contado saiu da grade e da legenda, porque a combinação não aparece mais lá.
    Novo lote de produção segue igual: apontou quantidade → "Sem localização" →
