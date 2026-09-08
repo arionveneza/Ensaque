@@ -533,6 +533,30 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Recurso `inventario`: ver (PCP/Logística/Produção/Direção) · **abrir** (criar, inserir
    SAP, fechar, reabrir, excluir — PCP/Gestor) · **contar** (Logística/Produção/PCP/
    Gestor). Migração `inventario.sql`.
+   **Aplicar no mapa** (08/09/2026, migração `inventario-mapa-ajuste-reserva.sql`): botão
+   em inventário FECHADO (ação `abrir`, uma vez só — aplicado NÃO reabre) que grava **SÓ
+   ENDEREÇOS**: os lançamentos contados SUBSTITUEM `lote_enderecos` da combinação (com
+   quantidade por endereço; contagem 0 não vira endereço); **o saldo continua o do SAP**
+   (sobra/falta é ajuste no SAP via CSV da conferência, e depois Ajuste de estoque no
+   mapa). Contada sem linha no mapa não cria nada (relatado). NÃO CONTADA nunca é mexida:
+   ganha `lotes_mapa.nao_encontrado_inventario_em` e aparece no cartão **"Não encontrados
+   no inventário"** do Mapa — sai ao ser endereçada (gatilho `tg_endereco_achado`), contada
+   numa aplicação futura, ou zerada por ajuste. **Ajuste de estoque** (ação
+   `mapa/ajustar` — PCP/Logística/Gestor): ± bags numa combinação com motivo obrigatório e
+   endereço opcional, rastro em `mapa_ajustes` (RPC `ajustar_saldo_mapa`, DEFINER; saldo
+   nunca fica negativo), cartão recolhível com o histórico. **Reserva contínua**: ordem
+   de produção com lote selecionado segura a branca do mapa até o APONTAMENTO —
+   `listarConsumoOrdens` (front) e a trava server de `salvar_carga_montada` usam a MESMA
+   régua (status not in Finalizada/QA/Apontada/Excluida — mudou um, mude o outro); a trava
+   da carga recusa cargas + ordens > saldo da branca. **Entrada do tratado no mapa
+   ANTECIPOU** de `Qualidade apontada` pra **`Finalizada`** (apontamento da quantidade
+   produzida): gatilho `tg_lote_tratado_no_mapa` recriado com desfazer SIMÉTRICO no
+   "Voltar para produção" (sem clamp; usa valores VELHOS da ordem) e idempotência por
+   `ordens.mapa_lancado_em` (backfill na migração). O lote tratado nasce "Sem
+   localização" e a **Logística o endereça na própria conferência de quantidade
+   produzida** (tela Logística: armazém A–E obrigatório + bloco/quadra; SOMA ao endereço
+   existente — `somarEndereco`; ordem SEM TSI não pede endereço). Formulário de ordem
+   ganhou aviso (nunca bloqueante) quando a branca do lote não tem saldo LIVRE no mapa.
 
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.

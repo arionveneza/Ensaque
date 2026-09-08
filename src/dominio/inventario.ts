@@ -178,3 +178,105 @@ export function compararInventario(
       a.embalagem.localeCompare(b.embalagem),
   )
 }
+
+// ================================================================
+// Aplicação no MAPA (08/09/2026): SÓ ENDEREÇOS — o saldo continua o do
+// SAP; sobra/falta é ajuste lá (e depois Ajuste de estoque no mapa).
+// Esta prévia é o ESPELHO da RPC aplicar_inventario_no_mapa
+// (inventario-mapa-ajuste-reserva.sql — mudou um, mude o outro).
+// ================================================================
+
+export interface EnderecoAplicacao {
+  armazem: string
+  bloco: string
+  quadra: string
+  bags: number
+}
+
+export interface CombinacaoAplicacao {
+  lote: string
+  tratamento: string
+  enderecos: EnderecoAplicacao[]
+}
+
+export interface PlanoAplicacao {
+  /** Combinações contadas que existem no mapa: endereços serão SUBSTITUÍDOS. */
+  enderecar: CombinacaoAplicacao[]
+  /** Na lista do SAP, ninguém contou: só ganham a marca no mapa. */
+  naoEncontrados: { lote: string; tratamento: string }[]
+  /** Contadas mas sem linha no mapa: nada muda — resolve-se pelo Ajuste. */
+  semMapa: { lote: string; tratamento: string }[]
+}
+
+interface ItemAplicacao {
+  lote: string
+  tratamento: string
+  armazem: string | null
+  bloco: string | null
+  quadra: string | null
+  bags: number
+}
+
+/**
+ * Prévia da aplicação: cruza o resultado congelado com os lançamentos e o
+ * mapa atual. Chave = (lote, tratamento) — a chave do MAPA; a embalagem
+ * fica de fora (a linha do mapa tem uma só). Lançamentos do mesmo endereço
+ * somam; contagem 0 num lugar não vira endereço.
+ */
+export function planoAplicacao(
+  resultados: { lote: string; tratamento: string; bags_contados: number | null }[],
+  itens: ItemAplicacao[],
+  lotesMapa: { lote: string; tratamento: string }[],
+): PlanoAplicacao {
+  const noMapa = new Set(lotesMapa.map((l) => `${l.lote}|${l.tratamento}`))
+
+  const chavesContadas = new Map<string, { lote: string; tratamento: string }>()
+  const chavesNao = new Map<string, { lote: string; tratamento: string }>()
+  for (const r of resultados) {
+    const lote = loteBaseMaiusculo(r.lote)
+    const tratamento = r.tratamento.trim().toUpperCase()
+    const chave = `${lote}|${tratamento}`
+    if (r.bags_contados != null) chavesContadas.set(chave, { lote, tratamento })
+    else if (!chavesContadas.has(chave)) chavesNao.set(chave, { lote, tratamento })
+  }
+  // a mesma combinação pode ter uma embalagem contada e outra não —
+  // contada em qualquer embalagem = contada
+  for (const chave of chavesContadas.keys()) chavesNao.delete(chave)
+
+  const enderecosPor = new Map<string, Map<string, EnderecoAplicacao>>()
+  for (const i of itens) {
+    const chave = `${loteBaseMaiusculo(i.lote)}|${i.tratamento.trim().toUpperCase()}`
+    if (!chavesContadas.has(chave)) continue
+    const armazem = (i.armazem ?? '').trim().toUpperCase()
+    if (!armazem) continue
+    const bloco = (i.bloco ?? '').trim().toUpperCase()
+    const quadra = (i.quadra ?? '').trim().toUpperCase()
+    const chaveEnd = `${armazem}|${bloco}|${quadra}`
+    const porEnd = enderecosPor.get(chave) ?? new Map<string, EnderecoAplicacao>()
+    const atual = porEnd.get(chaveEnd)
+    if (atual) atual.bags += i.bags
+    else porEnd.set(chaveEnd, { armazem, bloco, quadra, bags: i.bags })
+    enderecosPor.set(chave, porEnd)
+  }
+
+  const plano: PlanoAplicacao = { enderecar: [], naoEncontrados: [], semMapa: [] }
+  for (const [chave, c] of chavesContadas) {
+    if (noMapa.has(chave)) {
+      plano.enderecar.push({
+        ...c,
+        enderecos: [...(enderecosPor.get(chave)?.values() ?? [])].filter((e) => e.bags > 0),
+      })
+    } else {
+      plano.semMapa.push(c)
+    }
+  }
+  for (const [chave, c] of chavesNao) {
+    if (noMapa.has(chave)) plano.naoEncontrados.push(c)
+  }
+
+  const porLote = (a: { lote: string }, b: { lote: string }) => a.lote.localeCompare(b.lote)
+  plano.enderecar.sort(porLote)
+  plano.naoEncontrados.sort(porLote)
+  plano.semMapa.sort(porLote)
+  return plano
+}

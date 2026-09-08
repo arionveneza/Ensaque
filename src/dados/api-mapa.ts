@@ -42,6 +42,8 @@ export interface LoteMapaLinha {
   classificacao: string | null
   peneira: string | null
   categoria: string | null
+  /** Estava na lista do SAP do último inventário aplicado e ninguém contou. */
+  nao_encontrado_inventario_em: string | null
   lote_enderecos: EnderecoLote[]
 }
 
@@ -55,22 +57,36 @@ export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
   // no banco pro desfazer devolver, mas some da tela.
   // limit explícito: o PostgREST corta em 1000 linhas EM SILÊNCIO sem ele,
   // e o mapa já passa de 750 combinações (varredura de 30/08/2026)
-  const { data, error } = await supabase
+  let r = await supabase
     .from('lotes_mapa')
     .select(
-      'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, lote_enderecos ( id, armazem, bloco, quadra, bags )',
+      'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, nao_encontrado_inventario_em, lote_enderecos ( id, armazem, bloco, quadra, bags )',
     )
     .gt('bags', 0)
     .order('cultivar')
     .limit(10000)
-  if (error) {
+  if (r.error?.code === '42703') {
+    // janela pré-migração inventario-mapa-ajuste-reserva.sql (coluna nova)
+    r = (await supabase
+      .from('lotes_mapa')
+      .select(
+        'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, lote_enderecos ( id, armazem, bloco, quadra, bags )',
+      )
+      .gt('bags', 0)
+      .order('cultivar')
+      .limit(10000)) as unknown as typeof r
+  }
+  if (r.error) {
     // null SÓ na janela pré-migração (tabela ausente); erro transitório
     // (rede) propaga — devolver null fazia a tela operar com mapa vazio e
     // salvar carga apagando lotes (varredura de 30/08/2026)
-    if (['42P01', 'PGRST200', 'PGRST205'].includes(error.code ?? '')) return null
-    throw new Error(`carregar o mapa: ${error.message}`)
+    if (['42P01', 'PGRST200', 'PGRST205'].includes(r.error.code ?? '')) return null
+    throw new Error(`carregar o mapa: ${r.error.message}`)
   }
-  return (data ?? []) as unknown as LoteMapaLinha[]
+  return (r.data ?? []).map((l) => ({
+    nao_encontrado_inventario_em: null,
+    ...(l as object),
+  })) as unknown as LoteMapaLinha[]
 }
 
 /**
@@ -156,6 +172,98 @@ export async function salvarEnderecos(
     )
     erro('gravar endereços do lote', ins.error)
   }
+}
+
+/**
+ * SOMA um endereço à combinação (não substitui, diferente de
+ * salvarEnderecos): usado pelo endereçamento embutido na conferência de
+ * quantidade produzida (08/09/2026) — a ordem pode ser a segunda do mesmo
+ * lote+tratamento e os endereços anteriores devem sobreviver. Endereço
+ * igual já existente: bags somam (desconhecido continua desconhecido,
+ * mesma regra do moverEndereco).
+ */
+export async function somarEndereco(
+  lote: string,
+  tratamento: string,
+  endereco: { armazem: string; bloco: string; quadra: string },
+  bags: number | null,
+  usuarioId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('lote_enderecos')
+    .select('id, bags')
+    .eq('lote', lote)
+    .eq('tratamento', tratamento)
+    .eq('armazem', endereco.armazem)
+    .eq('bloco', endereco.bloco)
+    .eq('quadra', endereco.quadra)
+    .limit(1)
+  erro('consultar endereço do lote', error)
+  const existente = (data ?? [])[0] as { id: string; bags: number | null } | undefined
+  if (existente) {
+    const novo = existente.bags != null && bags != null ? existente.bags + bags : null
+    const upd = await supabase.from('lote_enderecos').update({ bags: novo }).eq('id', existente.id)
+    erro('somar no endereço do lote', upd.error)
+  } else {
+    const ins = await supabase
+      .from('lote_enderecos')
+      .insert({ ...endereco, lote, tratamento, bags, criado_por: usuarioId })
+    erro('endereçar o lote', ins.error)
+  }
+}
+
+/**
+ * Ajuste MANUAL de saldo do mapa (08/09/2026): ± quantidade numa
+ * combinação, com motivo obrigatório e endereço opcional — rastro em
+ * mapa_ajustes. Devolve o novo saldo.
+ */
+export async function ajustarSaldoMapa(a: {
+  lote: string
+  tratamento: string
+  delta: number
+  motivo: string
+  armazem: string | null
+  bloco: string | null
+  quadra: string | null
+}): Promise<number> {
+  const { data, error } = await supabase.rpc('ajustar_saldo_mapa', {
+    p_lote: a.lote,
+    p_tratamento: a.tratamento,
+    p_delta: a.delta,
+    p_motivo: a.motivo,
+    p_armazem: a.armazem,
+    p_bloco: a.bloco,
+    p_quadra: a.quadra,
+  })
+  erro('ajustar o estoque — a migração inventario-mapa-ajuste-reserva.sql já rodou?', error)
+  return (data as number) ?? 0
+}
+
+export interface AjusteMapa {
+  id: string
+  lote: string
+  tratamento: string
+  delta: number
+  motivo: string
+  armazem: string | null
+  bloco: string | null
+  quadra: string | null
+  saldo_depois: number
+  criado_em: string
+}
+
+export async function listarAjustesMapa(limite = 50): Promise<AjusteMapa[]> {
+  const { data, error } = await supabase
+    .from('mapa_ajustes')
+    .select('id, lote, tratamento, delta, motivo, armazem, bloco, quadra, saldo_depois, criado_em')
+    .order('criado_em', { ascending: false })
+    .limit(limite)
+  if (error) {
+    // janela pré-migração: tabela ainda não existe — a tela esconde o cartão
+    if (['42P01', 'PGRST200', 'PGRST205'].includes(error.code ?? '')) return []
+    throw new Error(`listar ajustes de estoque: ${error.message}`)
+  }
+  return (data ?? []) as unknown as AjusteMapa[]
 }
 
 export interface DestinoEndereco {
@@ -486,19 +594,20 @@ export interface ConsumoOrdens {
 }
 
 /**
- * Ordens de produção abertas consomem semente branca que o mapa ainda
- * mostra. O loteamento desconta isso do disponível (pedido do Arion,
- * 29/08/2026). A régua vai até a ordem virar "Qualidade apontada": desse
- * ponto em diante o PRÓPRIO MAPA já foi debitado pelo gatilho
- * (mapa-consumo-branca.sql, 30/08/2026) — contar de novo dobraria.
- * peso_kg vem da v_ordens (bags × peso do bag DA ORDEM); a conversão pra
- * bags DO LOTE é no front, dividindo pelo peso_bag_kg do lote no mapa.
+ * Ordens de produção com lote selecionado RESERVAM a semente branca que o
+ * mapa ainda mostra (pedido do Arion, 29/08 e 07/09/2026). A régua vai até
+ * o APONTAMENTO ('Finalizada'): desse ponto em diante o PRÓPRIO MAPA já
+ * foi debitado pelo gatilho (inventario-mapa-ajuste-reserva.sql) — contar
+ * de novo dobraria. ESPELHO da trava server-side em salvar_carga_montada
+ * (mudou um, mude o outro). peso_kg vem da v_ordens (bags × peso do bag DA
+ * ORDEM); a conversão pra bags DO LOTE é no front, dividindo pelo
+ * peso_bag_kg do lote no mapa.
  */
 export async function listarConsumoOrdens(): Promise<ConsumoOrdens[]> {
   const { data, error } = await supabase
     .from('v_ordens')
     .select('lote_id, peso_kg, status')
-    .not('status', 'in', '("Qualidade apontada","Apontada","Excluida")')
+    .not('status', 'in', '("Finalizada","Qualidade apontada","Apontada","Excluida")')
     .limit(10000)
   if (error) {
     // [] só quando a view não existe; o resto propaga (senão a trava de

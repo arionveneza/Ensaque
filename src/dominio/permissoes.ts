@@ -22,7 +22,7 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   etapas: ['ver'],
   indicadores: ['ver'],
   mrp: ['ver', 'importar'],
-  mapa: ['ver', 'importar', 'enderecar', 'montar_carga'],
+  mapa: ['ver', 'importar', 'enderecar', 'montar_carga', 'ajustar'],
   inventario: ['ver', 'abrir', 'contar'],
   cadastros: ['ver', 'editar'],
   expedicao: ['ver', 'importar'],
@@ -47,6 +47,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   montar_carga: 'Montar carga',
   abrir: 'Abrir/fechar inventário',
   contar: 'Lançar contagem',
+  ajustar: 'Ajustar estoque',
 }
 
 /**
@@ -68,8 +69,9 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     // importar = subir o estoque de químicos do SAP (PCP/Gestor)
     mrp: ['ver', 'importar'],
     // Mapa (30/08/2026): montar carga e lotear são do PCP (e Gestor);
-    // endereçar/movimentar segue da Logística
-    mapa: ['ver', 'importar', 'montar_carga'],
+    // endereçar/movimentar segue da Logística. Ajustar estoque (08/09/2026):
+    // PCP e Logística.
+    mapa: ['ver', 'importar', 'montar_carga', 'ajustar'],
     // Inventário (04/09/2026): o PCP abre, insere o estoque do SAP e fecha;
     // contar é da Logística e da Produção (e do PCP também)
     inventario: ['ver', 'abrir', 'contar'],
@@ -84,7 +86,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     indicadores: ['ver'],
     // Mapa (30/08/2026): endereçamento, movimentação, filtros, upload e
     // FOTOS da carga são da Logística; montar carga/lotear virou do PCP
-    mapa: ['ver', 'importar', 'enderecar'],
+    mapa: ['ver', 'importar', 'enderecar', 'ajustar'],
     // Inventário (04/09/2026): a Logística conta (lança endereço + quantidade)
     inventario: ['ver', 'contar'],
     // os carregamentos são agenda da logística tanto quanto do PCP

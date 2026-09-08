@@ -81,11 +81,19 @@ describe('matriz padrao', () => {
     for (const acao of ['ver', 'chamar', 'checklist'])
       expect(permitidoPadrao('Balanca', 'veiculos', acao)).toBe(true)
     expect(permitidoPadrao('Balanca', 'mapa', 'ver')).toBe(true)
-    for (const acao of ['importar', 'enderecar', 'montar_carga'])
+    for (const acao of ['importar', 'enderecar', 'montar_carga', 'ajustar'])
       expect(
         permitidoPadrao('Balanca', 'mapa', acao),
         `Balanca nao pode ${acao} no mapa`,
       ).toBe(false)
+  })
+
+  it('ajuste de estoque do mapa (08/09/2026) e do PCP e da Logistica', () => {
+    expect(permitidoPadrao('PCP', 'mapa', 'ajustar')).toBe(true)
+    expect(permitidoPadrao('Logistica', 'mapa', 'ajustar')).toBe(true)
+    expect(permitidoPadrao('Gestor', 'mapa', 'ajustar')).toBe(true)
+    expect(permitidoPadrao('Producao', 'mapa', 'ajustar')).toBe(false)
+    expect(permitidoPadrao('Direcao', 'mapa', 'ajustar')).toBe(false)
   })
 
   it('mapa (30/08/2026): montar carga e lotear sao do PCP e Gestor; Logistica endereca', () => {

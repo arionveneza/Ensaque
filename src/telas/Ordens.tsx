@@ -33,6 +33,11 @@ import {
   situacaoDemanda, type ChaveDemanda, type SituacaoDemanda,
 } from '@/dominio/balanco'
 import { diaDeProducao, pesoBagDaOrdemKg } from '@/dominio/calculos'
+import {
+  listarConsumoOrdens, listarLotesComprometidos, listarLotesMapa,
+  type ConsumoOrdens, type LoteComprometido,
+} from '@/dados/api-mapa'
+import { SEM_TSI } from '@/dominio/importacao/mapa'
 import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -2945,6 +2950,37 @@ function NovaOrdemForm({
   const [buscaTrat, setBuscaTrat] = useState('')
   const [erro, setErro] = useState<string | null>(null)
 
+  // reserva no MAPA (08/09/2026): a branca do lote pode já estar tomada por
+  // cargas montadas e outras ordens — aviso forte, nunca bloqueante (o mapa
+  // pode estar defasado; a decisão é do PCP). Carrega só com o form aberto.
+  const [reservaMapa, setReservaMapa] = useState<{
+    brancas: { lote: string; bags: number; peso_bag_kg: number }[]
+    comprometidos: LoteComprometido[]
+    consumo: ConsumoOrdens[]
+  } | null>(null)
+  useEffect(() => {
+    if (!aberto && !editando) return
+    let vivo = true
+    Promise.all([listarLotesMapa(), listarLotesComprometidos(), listarConsumoOrdens()])
+      .then(([l, cp, co]) => {
+        if (!vivo) return
+        setReservaMapa({
+          brancas: (l ?? [])
+            .filter((x) => x.tratamento === SEM_TSI)
+            .map((x) => ({ lote: x.lote, bags: x.bags, peso_bag_kg: x.peso_bag_kg })),
+          comprometidos: cp,
+          consumo: co,
+        })
+      })
+      .catch(() => {
+        // o aviso é cortesia — sem o mapa ao alcance, sem aviso
+      })
+    return () => {
+      vivo = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto])
+
   const lote = lotes.find((l) => l.id === loteId)
   const receita = receitas.find((r) => r.id === receitaId)
 
@@ -2999,6 +3035,42 @@ function NovaOrdemForm({
       (embalagens.find((e) => e.codigo === embalagem)?.peso_fixo_kg ?? 0) > 0 || foraBalanco,
     )
   }, [lote, receita, embalagem, bags, balanco, ordens, embalagens, foraBalanco])
+
+  // quanto da branca do lote está LIVRE no mapa pra esta ordem
+  const avisoMapa = useMemo(() => {
+    if (!reservaMapa || !lote || bags <= 0) return null
+    const branca = reservaMapa.brancas.find((b) => b.lote === lote.id)
+    if (!branca || branca.peso_bag_kg <= 0) return null
+    const emCargas = reservaMapa.comprometidos
+      .filter((c) => c.lote_id === lote.id && c.tratamento === SEM_TSI)
+      .reduce((s, c) => s + c.bags, 0)
+    // editando: o consumo agregado inclui ESTA ordem — desconta o peso dela
+    const pesoEstaKg =
+      editando && !['Finalizada', 'Qualidade apontada', 'Apontada', 'Excluida']
+        .includes(editando.status_efetivo)
+        ? (editando.peso_t ?? 0) * 1000
+        : 0
+    const consumoKg = Math.max(
+      0,
+      (reservaMapa.consumo.find((x) => x.lote_id === lote.id)?.peso_kg ?? 0) - pesoEstaKg,
+    )
+    const emOrdens = consumoKg / branca.peso_bag_kg
+    const livre = branca.bags - emCargas - emOrdens
+    const pesoBagOrdem = pesoBagDaOrdemKg(
+      lote.pms,
+      embalagens.find((e) => e.codigo === embalagem) ?? null,
+      lote.peso_bag_kg,
+    )
+    if (!(pesoBagOrdem > 0)) return null
+    const necessidade = (bags * pesoBagOrdem) / branca.peso_bag_kg
+    if (necessidade <= livre + 0.01) return null
+    return (
+      `No MAPA, o lote ${lote.id} tem ${Math.round(branca.bags)} bg de semente branca, mas ` +
+      `${Math.round(emCargas)} bg já estão em cargas montadas e ~${Math.round(emOrdens)} bg ` +
+      `reservados por outras ordens — livre ~${Math.max(0, Math.floor(livre))} bg, e esta ordem ` +
+      `precisa de ~${Math.ceil(necessidade)} bg do lote. Confira o galpão antes de programar.`
+    )
+  }, [reservaMapa, lote, bags, embalagem, embalagens, editando])
 
   if (!aberto && !editando) {
     return (
@@ -3223,6 +3295,12 @@ function NovaOrdemForm({
               Avisos não bloqueiam: a decisão de produzir é do PCP.
             </p>
           )}
+        </div>
+      )}
+
+      {avisoMapa && (
+        <div className="mt-4">
+          <Aviso gravidade="alerta">{avisoMapa}</Aviso>
         </div>
       )}
 

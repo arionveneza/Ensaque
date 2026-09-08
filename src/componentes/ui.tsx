@@ -327,6 +327,39 @@ export function exportarCsv(nome: string, linhas: (string | number)[][]): void {
   URL.revokeObjectURL(url)
 }
 
+/** Armazéns padronizados A–E (pedido do Arion, 05/09/2026) — lista, não texto livre. */
+export const ARMAZENS = ['A', 'B', 'C', 'D', 'E']
+
+/**
+ * Seleção de armazém padronizada (Inventário, conferência da Logística,
+ * ajuste de estoque). Valor antigo fora do padrão continua visível e
+ * selecionável na edição — sumir com ele corromperia o dado calado.
+ */
+export function SeletorArmazem({
+  valor, aoMudar, className = '',
+}: {
+  valor: string
+  aoMudar: (v: string) => void
+  className?: string
+}) {
+  const opcoes = valor && !ARMAZENS.includes(valor) ? [valor, ...ARMAZENS] : ARMAZENS
+  return (
+    <select
+      value={valor}
+      onChange={(e) => aoMudar(e.target.value)}
+      className={
+        className ||
+        'w-full rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800'
+      }
+    >
+      <option value="">—</option>
+      {opcoes.map((a) => (
+        <option key={a} value={a}>{a}</option>
+      ))}
+    </select>
+  )
+}
+
 /**
  * Toggle OK / Fora do padrão — usado em checklists (Qualidade, veículo).
  * `ok: null` = ainda sem resposta: nenhum dos dois botões fica destacado.

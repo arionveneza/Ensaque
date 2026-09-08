@@ -30,10 +30,12 @@ import {
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import {
   ROTULO_SITUACAO, chaveInventario, compararInventario, loteBaseMaiusculo,
+  planoAplicacao,
   type LinhaInventario, type SituacaoInventario,
 } from '@/dominio/inventario'
+import { listarLotesMapa } from '@/dados/api-mapa'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, Tabela, Tag, Vazio,
   dataHoraCurta, enderecoLote, exportarCsv, inteiro,
 } from '@/componentes/ui'
 
@@ -78,28 +80,6 @@ const COR_NUMERO: Record<SituacaoInventario, string> = {
   falta: 'text-red-600 dark:text-red-400',
   nao_contado: 'text-amber-600 dark:text-amber-400',
   fora_do_sap: 'text-sky-600 dark:text-sky-400',
-}
-
-/** Armazéns padronizados A–E (pedido do Arion, 05/09/2026) — lista, não texto livre. */
-const ARMAZENS = ['A', 'B', 'C', 'D', 'E']
-
-function SeletorArmazem({
-  valor, aoMudar,
-}: {
-  valor: string
-  aoMudar: (v: string) => void
-}) {
-  // lançamento antigo com armazém fora do padrão continua visível e
-  // selecionável na edição — sumir com ele corromperia o valor calado
-  const opcoes = valor && !ARMAZENS.includes(valor) ? [valor, ...ARMAZENS] : ARMAZENS
-  return (
-    <select value={valor} onChange={(e) => aoMudar(e.target.value)} className={INPUT}>
-      <option value="">—</option>
-      {opcoes.map((a) => (
-        <option key={a} value={a}>{a}</option>
-      ))}
-    </select>
-  )
 }
 
 const tituloSugerido = (): string => {
@@ -196,9 +176,12 @@ export default function Inventario() {
   // devolve se DEU CERTO: os formulários só limpam/fecham com true — limpar
   // antes da resposta perdia o que foi digitado quando o servidor recusava
   // (varredura de 04/09/2026)
+  const [msg, setMsg] = useState('')
+
   const acao = async (fn: () => Promise<void>): Promise<boolean> => {
     try {
       setErro('')
+      setMsg('')
       await fn()
       await recarregar()
       await recarregarSelecionado()
@@ -234,6 +217,11 @@ export default function Inventario() {
       descricao="Contagem física × estoque do SAP — o PCP insere a lista, o operador conta por endereço, e a conferência mostra o que bate. Nenhum saldo é ajustado."
     >
       {erro && <Erro>{erro}</Erro>}
+      {msg && (
+        <div className="mb-4">
+          <Aviso gravidade="ok">{msg}</Aviso>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <ListaInventarios
@@ -269,6 +257,7 @@ export default function Inventario() {
             podeAbrir={podeAbrir}
             podeLancar={podeLancar}
             onAcao={acao}
+            onMsg={setMsg}
             aoExcluir={() => setSelId(null)}
           />
         )}
@@ -342,7 +331,8 @@ function ListaInventarios({
 }
 
 function DetalheInventario({
-  inv, saldos, itens, resultados, tratamentos, embalagens, podeAbrir, podeLancar, onAcao, aoExcluir,
+  inv, saldos, itens, resultados, tratamentos, embalagens, podeAbrir, podeLancar,
+  onAcao, onMsg, aoExcluir,
 }: {
   inv: api.InventarioLinha
   saldos: api.SaldoInventarioLinha[]
@@ -353,9 +343,11 @@ function DetalheInventario({
   podeAbrir: boolean
   podeLancar: boolean
   onAcao: (fn: () => Promise<void>) => Promise<boolean>
+  onMsg: (m: string) => void
   aoExcluir: () => void
 }) {
   const aberto = inv.fechado_em == null
+  const aplicado = inv.aplicado_em != null
 
   /**
    * Aberto: comparação AO VIVO (contagem × lista do SAP). Fechado: a foto
@@ -387,6 +379,7 @@ function DetalheInventario({
           <span className="flex items-center gap-2">
             {inv.titulo}
             <Tag cor={aberto ? 'alerta' : 'ok'}>{aberto ? 'em contagem' : 'fechado'}</Tag>
+            {aplicado && <Tag cor="info">aplicado no mapa</Tag>}
           </span>
         }
         acoes={
@@ -411,7 +404,8 @@ function DetalheInventario({
                 >
                   Fechar inventário
                 </Botao>
-              ) : (
+              ) : aplicado ? null : (
+                // aplicado no mapa é registro definitivo — não reabre mais
                 <Botao
                   titulo="Apaga o resultado congelado e libera a contagem de novo"
                   onClick={() =>
@@ -448,9 +442,14 @@ function DetalheInventario({
         <p className="text-xs text-stone-500 dark:text-stone-400">
           Criado em {dataHoraCurta(inv.criado_em)}
           {inv.fechado_em && ` · fechado em ${dataHoraCurta(inv.fechado_em)}`}
+          {inv.aplicado_em && ` · endereços aplicados no mapa em ${dataHoraCurta(inv.aplicado_em)}`}
           {` · lista do SAP com ${inteiro(saldos.length)} combinação(ões)`}
         </p>
       </Cartao>
+
+      {!aberto && podeAbrir && !aplicado && (
+        <AplicarMapaCartao inv={inv} resultados={resultados} itens={itens} onAcao={onAcao} onMsg={onMsg} />
+      )}
 
       {aberto && podeAbrir && (
         <EstoqueSapCartao inv={inv} saldos={saldos} onAcao={onAcao} />
@@ -470,6 +469,121 @@ function DetalheInventario({
 
       <ConferenciaCartao inv={inv} linhas={linhas} aberto={aberto} />
     </div>
+  )
+}
+
+// ================================================================
+// Aplicar ENDEREÇOS no mapa (08/09/2026) — o saldo continua o do SAP;
+// sobra/falta é ajuste no SAP e, depois, Ajuste de estoque no mapa.
+// ================================================================
+
+function AplicarMapaCartao({
+  inv, resultados, itens, onAcao, onMsg,
+}: {
+  inv: api.InventarioLinha
+  resultados: api.ResultadoInventario[]
+  itens: api.ItemInventario[]
+  onAcao: (fn: () => Promise<void>) => Promise<boolean>
+  onMsg: (m: string) => void
+}) {
+  // só (lote, tratamento) do mapa — o suficiente pra prévia
+  const [mapa, setMapa] = useState<{ lote: string; tratamento: string }[] | null>(null)
+  const [erroLocal, setErroLocal] = useState('')
+  const [aplicando, setAplicando] = useState(false)
+
+  useEffect(() => {
+    let vivo = true
+    listarLotesMapa()
+      .then((ls) => {
+        if (vivo) setMapa((ls ?? []).map((l) => ({ lote: l.lote, tratamento: l.tratamento })))
+      })
+      .catch((e) => {
+        if (vivo) setErroLocal((e as Error).message)
+      })
+    return () => {
+      vivo = false
+    }
+  }, [])
+
+  const plano = useMemo(
+    () => (mapa ? planoAplicacao(resultados, itens, mapa) : null),
+    [resultados, itens, mapa],
+  )
+  const totalEnderecos = plano
+    ? plano.enderecar.reduce((s, c) => s + c.enderecos.length, 0)
+    : 0
+
+  return (
+    <Cartao
+      titulo="Aplicar endereços no mapa"
+      acoes={
+        <Botao
+          variante="primario"
+          disabled={!plano || aplicando || plano.enderecar.length + plano.naoEncontrados.length === 0}
+          onClick={() => {
+            if (!plano) return
+            if (
+              !confirm(
+                `Aplicar os endereços do inventário no mapa?\n\n` +
+                  `· ${plano.enderecar.length} combinação(ões) terão os endereços SUBSTITUÍDOS pelos contados\n` +
+                  `· ${plano.naoEncontrados.length} entram na lista "Não encontrados no inventário"\n\n` +
+                  `Nenhum saldo muda. Depois de aplicar, o inventário não reabre mais.`,
+              )
+            )
+              return
+            setAplicando(true)
+            void onAcao(async () => {
+              const r = await api.aplicarInventarioNoMapa(inv.id)
+              onMsg(
+                `Inventário aplicado no mapa: endereços substituídos em ${inteiro(r.enderecados)} combinação(ões)` +
+                  ` · ${inteiro(r.nao_encontrados)} marcada(s) como não encontrada(s)` +
+                  (r.sem_mapa.length > 0
+                    ? ` · ${r.sem_mapa.length} contada(s) fora do mapa (resolver pelo Ajuste de estoque)`
+                    : '') +
+                  '.',
+              )
+            }).finally(() => setAplicando(false))
+          }}
+        >
+          {aplicando ? 'Aplicando…' : 'Aplicar no mapa'}
+        </Botao>
+      }
+    >
+      {erroLocal && <Erro>{erroLocal}</Erro>}
+      {!plano ? (
+        <p className="text-sm text-stone-500">Carregando a prévia…</p>
+      ) : (
+        <>
+          <ul className="space-y-1 text-sm">
+            <li>
+              <b>{inteiro(plano.enderecar.length)}</b> combinação(ões) contada(s) terão os
+              endereços do mapa <b>substituídos</b> pelos da contagem —{' '}
+              {inteiro(totalEnderecos)} endereço(s), cada um com a quantidade contada.
+            </li>
+            <li>
+              <b>{inteiro(plano.naoEncontrados.length)}</b> combinação(ões) da lista do SAP não
+              foram contadas: entram na lista <b>"Não encontrados no inventário"</b> do Mapa —
+              saldo e endereços delas ficam intactos.
+            </li>
+            {plano.semMapa.length > 0 && (
+              <li className="text-sky-700 dark:text-sky-400">
+                <b>{inteiro(plano.semMapa.length)}</b> contada(s) não existem no mapa (fora do
+                SAP): nada muda por aqui — depois do ajuste no SAP, use o{' '}
+                <b>Ajuste de estoque</b> do Mapa. (
+                {plano.semMapa.slice(0, 5).map((c) => `${c.lote} · ${c.tratamento}`).join(', ')}
+                {plano.semMapa.length > 5 ? '…' : ''})
+              </li>
+            )}
+          </ul>
+          <div className="mt-3">
+            <Aviso>
+              O <b>saldo não muda</b> — sobra e falta são ajuste no SAP (exporte o CSV da
+              conferência). Aplicado, o inventário vira registro definitivo e não reabre.
+            </Aviso>
+          </div>
+        </>
+      )}
+    </Cartao>
   )
 }
 

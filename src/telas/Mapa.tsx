@@ -17,8 +17,8 @@ import { abrirJanelaImpressao, imprimirCroquiCarga, imprimirOrdemCarregamento } 
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, exportarCsv,
-  inteiro, n, somaDias,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, Tabela, Tag, Vazio, dataHoraCurta,
+  enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
 
 /**
@@ -250,6 +250,7 @@ export default function Mapa() {
   const podeImportar = permitido('mapa', 'importar')
   const podeEnderecar = permitido('mapa', 'enderecar')
   const podeMontar = permitido('mapa', 'montar_carga')
+  const podeAjustar = permitido('mapa', 'ajustar')
   // fotos da carga: quem monta (PCP/Gestor) E quem está no pátio
   // endereçando (Logística) — decisão de 30/08/2026
   const podeFotografar = podeMontar || podeEnderecar
@@ -268,6 +269,8 @@ export default function Mapa() {
   const [movendo, setMovendo] = useState<Alocacao | null>(null)
   const [fotosDe, setFotosDe] = useState<string | null>(null)
   const [novoLote, setNovoLote] = useState(false)
+  const [ajustando, setAjustando] = useState(false)
+  const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
 
   // -------- relatório do que foi carregado --------
   const [periodoCarregadas, setPeriodoCarregadas] =
@@ -301,12 +304,14 @@ export default function Mapa() {
       m.listarCargasMontadas(),
       m.listarLotesComprometidos(),
       m.listarConsumoOrdens(),
+      m.listarAjustesMapa(),
     ])
-      .then(([l, c, cp, co]) => {
+      .then(([l, c, cp, co, aj]) => {
         setLotes(l)
         setCargas(c)
         setComprometidos(cp)
         setConsumoOrdens(co)
+        setAjustes(aj)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
 
@@ -370,7 +375,39 @@ export default function Mapa() {
     return [...new Set(['A', 'B', 'C', 'D', ...doDado])].sort()
   }, [todos])
   const semEndereco = todos.filter((l) => l.lote_enderecos.length === 0)
+  // marcados pelo inventário aplicado: o SAP diz que existem, ninguém achou
+  const naoEncontrados = todos.filter((l) => l.nao_encontrado_inventario_em)
   const aloc = useMemo(() => alocar(todos), [todos])
+
+  /**
+   * Reserva da combinação (08/09/2026): cargas ativas + (na branca) ordens
+   * com lote selecionado ainda não apontadas — espelho do saldoDe do
+   * loteamento e da trava server-side de salvar_carga_montada.
+   */
+  const reservaDe = (l: LoteMapaLinha) => {
+    const emCargas = comprometidos
+      .filter((c) => c.lote_id === l.lote && c.tratamento === l.tratamento)
+      .reduce((s, c) => s + c.bags, 0)
+    const emOrdens =
+      l.tratamento === SEM_TSI && l.peso_bag_kg > 0
+        ? (consumoOrdens.find((x) => x.lote_id === l.lote)?.peso_kg ?? 0) / l.peso_bag_kg
+        : 0
+    return { emCargas, emOrdens, livre: Math.max(0, l.bags - emCargas - emOrdens) }
+  }
+
+  /** "livre X" sob os bags, só quando há reserva — com o racha no title. */
+  const celulaLivre = (l: LoteMapaLinha) => {
+    const r = reservaDe(l)
+    if (r.emCargas + r.emOrdens <= 0.01) return null
+    return (
+      <span
+        className="block text-xs font-normal text-sky-700 dark:text-sky-400"
+        title={`${inteiro(l.bags)} no mapa − ${inteiro(Math.round(r.emCargas))} em cargas − ${inteiro(Math.round(r.emOrdens))} reservados por ordens de produção`}
+      >
+        livre {inteiro(Math.floor(r.livre))}
+      </span>
+    )
+  }
 
   /** Posições (armazém+bloco+quadra) com MAIS DE UM lote — conferência física. */
   const posicoesLotadas = useMemo(() => {
@@ -940,13 +977,23 @@ export default function Mapa() {
       <Cartao
         titulo={`Saldo do SAP (${todos.length} lotes no mapa)`}
         acoes={
-          podeImportar ? (
+          podeImportar || podeAjustar ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Botao onClick={() => setNovoLote(true)}>Novo lote</Botao>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:hover:bg-stone-800">
-                Carregar planilha (.xlsx)
-                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerPlanilha} />
-              </label>
+              {podeAjustar && (
+                <Botao
+                  onClick={() => setAjustando(true)}
+                  titulo="± quantidade numa combinação, com motivo e endereço — fica registrado"
+                >
+                  Ajuste de estoque
+                </Botao>
+              )}
+              {podeImportar && <Botao onClick={() => setNovoLote(true)}>Novo lote</Botao>}
+              {podeImportar && (
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:hover:bg-stone-800">
+                  Carregar planilha (.xlsx)
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={lerPlanilha} />
+                </label>
+              )}
             </div>
           ) : undefined
         }
@@ -1000,11 +1047,52 @@ export default function Mapa() {
                   {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
                 </td>
                 <td className="px-2 py-1.5">{l.embalagem}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags)}</td>
+                <td className="num-tabular px-2 py-1.5 text-right">
+                  {inteiro(l.bags)}
+                  {celulaLivre(l)}
+                </td>
                 <td className="px-2 py-1.5">
                   {l.destinacao
                     ? <Tag cor="perigo">{l.destinacao}</Tag>
                     : <Tag cor="ok">livre</Tag>}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
+                </td>
+              </tr>
+            ))}
+          </Tabela>
+        </CartaoRecolhivel>
+      )}
+
+      {/* -------- não encontrados no inventário (08/09/2026) -------- */}
+      {naoEncontrados.length > 0 && (
+        <CartaoRecolhivel
+          titulo="Não encontrados no inventário"
+          ocorrencias={naoEncontrados.length}
+          resumo="O SAP diz que existem, mas ninguém achou na última contagem — investigar no galpão."
+        >
+          <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+            Saldo e endereços seguem intactos. A combinação sai da lista quando alguém a
+            endereça, quando é contada num próximo inventário aplicado, ou zerando pelo
+            Ajuste de estoque (com motivo).
+          </p>
+          <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags', 'Endereço atual', 'Desde', '']}>
+            {naoEncontrados.map((l) => (
+              <tr key={chaveDe(l)} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="px-2 py-1.5 font-medium">{l.lote}</td>
+                <td className="px-2 py-1.5">{l.cultivar}</td>
+                <td className="px-2 py-1.5">
+                  {l.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : l.tratamento}
+                </td>
+                <td className="px-2 py-1.5">{l.embalagem}</td>
+                <td className="num-tabular px-2 py-1.5 text-right">
+                  {inteiro(l.bags)}
+                  {celulaLivre(l)}
+                </td>
+                <td className="px-2 py-1.5 text-xs">{enderecoDe(l) || '—'}</td>
+                <td className="px-2 py-1.5 text-xs text-stone-500">
+                  {dataHoraCurta(l.nao_encontrado_inventario_em)}
                 </td>
                 <td className="px-2 py-1.5 text-right">
                   {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
@@ -1308,6 +1396,52 @@ export default function Mapa() {
           </>
         )}
       </CartaoRecolhivel>
+
+      {/* -------- rastro dos ajustes manuais de saldo (08/09/2026) -------- */}
+      {ajustes.length > 0 && (
+        <CartaoRecolhivel
+          titulo="Ajustes de estoque"
+          ocorrencias={ajustes.length}
+          resumo="Rastro dos ajustes manuais de saldo — quem fez deixa quanto, quando e por quê."
+          destaque={false}
+        >
+          <Tabela cabecalho={['Quando', 'Lote', 'Tratamento', '#Ajuste', '#Saldo depois', 'Endereço', 'Motivo']}>
+            {ajustes.map((a) => (
+              <tr key={a.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(a.criado_em)}</td>
+                <td className="px-2 py-1.5 font-medium">{a.lote}</td>
+                <td className="px-2 py-1.5">{rotuloTratamento(a.tratamento)}</td>
+                <td
+                  className={`num-tabular px-2 py-1.5 text-right font-medium ${
+                    a.delta > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {a.delta > 0 ? '+' : ''}{n(a.delta, 0)}
+                </td>
+                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(a.saldo_depois)}</td>
+                <td className="px-2 py-1.5 text-xs">{enderecoLote(a)}</td>
+                <td className="px-2 py-1.5 text-xs text-stone-500">{a.motivo}</td>
+              </tr>
+            ))}
+          </Tabela>
+        </CartaoRecolhivel>
+      )}
+
+      {ajustando && (
+        <ModalAjusteEstoque
+          lotes={todos}
+          onFechar={() => setAjustando(false)}
+          onSalvar={async (a) => {
+            const novo = await m.ajustarSaldoMapa(a)
+            setAjustando(false)
+            setMsg(
+              `Ajuste gravado: ${a.lote} · ${rotuloTratamento(a.tratamento)} ` +
+                `${a.delta > 0 ? '+' : ''}${n(a.delta, 0)} bg → saldo ${inteiro(novo)} bg.`,
+            )
+            await recarregar()
+          }}
+        />
+      )}
 
       {novoLote && (
         <ModalNovoLote
@@ -1911,6 +2045,215 @@ function MapaGrade({
 }
 
 /** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
+/**
+ * Ajuste MANUAL de saldo do mapa (08/09/2026): ± quantidade numa
+ * combinação, motivo obrigatório e endereço opcional — usado quando a
+ * divergência do inventário foi resolvida no SAP. Rastro em mapa_ajustes.
+ */
+function ModalAjusteEstoque({
+  lotes, onFechar, onSalvar,
+}: {
+  lotes: LoteMapaLinha[]
+  onFechar: () => void
+  onSalvar: (a: {
+    lote: string
+    tratamento: string
+    delta: number
+    motivo: string
+    armazem: string | null
+    bloco: string | null
+    quadra: string | null
+  }) => Promise<void>
+}) {
+  const [busca, setBusca] = useState('')
+  const [sel, setSel] = useState<LoteMapaLinha | null>(null)
+  const [sinal, setSinal] = useState<1 | -1>(1)
+  const [qtd, setQtd] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const [armazem, setArmazem] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [quadra, setQuadra] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
+  const candidatos = useMemo(() => {
+    const q = busca.trim().toLowerCase()
+    const base = q
+      ? lotes.filter((l) =>
+          [l.lote, l.cultivar, l.tratamento].some((v) => v.toLowerCase().includes(q)),
+        )
+      : lotes
+    return base.slice(0, 20)
+  }, [lotes, busca])
+
+  const qtdNum = Number(qtd.trim().replace(',', '.'))
+  const qtdOk = /^\d+([.,]\d{1,2})?$/.test(qtd.trim()) && qtdNum > 0
+  const delta = sinal * qtdNum
+  const novoSaldo = sel && qtdOk ? Math.round((sel.bags + delta) * 100) / 100 : null
+  const valido = !!sel && qtdOk && motivo.trim() !== '' && (novoSaldo ?? -1) >= 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">Ajuste de estoque</h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          Acrescenta ou subtrai bags de uma combinação do mapa — pra quando a divergência do
+          inventário foi resolvida no SAP. Fica registrado (quem, quando, quanto, motivo).
+        </p>
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        {!sel ? (
+          <>
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar lote, cultivar ou tratamento…"
+              className={`${INPUT} mt-4 w-full`}
+              autoFocus
+            />
+            <ul className="mt-2 max-h-72 divide-y divide-stone-100 overflow-y-auto rounded-lg border border-stone-200 dark:divide-stone-800/60 dark:border-stone-800">
+              {candidatos.map((l) => (
+                <li key={chaveDe(l)}>
+                  <button
+                    onClick={() => setSel(l)}
+                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-sm hover:bg-stone-50 dark:hover:bg-stone-800/60"
+                  >
+                    <span className="font-medium">{l.cultivar}</span>
+                    <span className="font-mono text-xs">{l.lote}</span>
+                    <Tag cor={l.tratamento === SEM_TSI ? 'neutro' : 'info'}>
+                      {rotuloTratamento(l.tratamento)}
+                    </Tag>
+                    <span className="ml-auto text-xs text-stone-500">{inteiro(l.bags)} bg</span>
+                  </button>
+                </li>
+              ))}
+              {candidatos.length === 0 && (
+                <li className="px-3 py-4 text-center text-sm text-stone-500">
+                  Nada no mapa com essa busca.
+                </li>
+              )}
+            </ul>
+          </>
+        ) : (
+          <>
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-sm dark:border-stone-800">
+              <span className="font-medium">{sel.cultivar}</span>
+              <span className="font-mono text-xs">{sel.lote}</span>
+              <Tag cor={sel.tratamento === SEM_TSI ? 'neutro' : 'info'}>
+                {rotuloTratamento(sel.tratamento)}
+              </Tag>
+              <span className="text-xs text-stone-500">saldo atual {inteiro(sel.bags)} bg</span>
+              <button
+                onClick={() => setSel(null)}
+                className="ml-auto text-xs text-stone-500 underline-offset-2 hover:underline"
+              >
+                trocar
+              </button>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <div className="flex gap-1">
+                {([1, -1] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSinal(s)}
+                    className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                      sinal === s
+                        ? s === 1
+                          ? 'border-green-600 bg-green-600 text-white'
+                          : 'border-red-500 bg-red-500 text-white'
+                        : 'border-stone-300 dark:border-stone-700'
+                    }`}
+                  >
+                    {s === 1 ? 'Acrescentar' : 'Subtrair'}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={qtd}
+                onChange={(e) => setQtd(e.target.value)}
+                inputMode="decimal"
+                placeholder="bags *"
+                title="Inteiro ou com vírgula (até 2 casas)"
+                className={`${INPUT} w-28`}
+              />
+              <input
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="motivo * (ex.: divergência do inventário acertada no SAP)"
+                className={`${INPUT} min-w-64 flex-1`}
+              />
+            </div>
+
+            <p className="mt-2 text-xs font-medium">
+              {novoSaldo != null && (
+                novoSaldo >= 0 ? (
+                  <span className="text-stone-600 dark:text-stone-300">
+                    {inteiro(sel.bags)} bg → <b>{n(novoSaldo, novoSaldo % 1 === 0 ? 0 : 2)} bg</b>
+                  </span>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400">
+                    O ajuste deixaria o saldo negativo ({n(novoSaldo, 2)} bg).
+                  </span>
+                )
+              )}
+            </p>
+
+            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-stone-500">
+              Endereço do ajuste (opcional — preenchido, o ± entra naquele lugar)
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <div className="w-28">
+                <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+              </div>
+              <input
+                value={bloco}
+                onChange={(e) => setBloco(e.target.value)}
+                placeholder="bloco"
+                className={`${INPUT} w-28`}
+              />
+              <input
+                value={quadra}
+                onChange={(e) => setQuadra(e.target.value)}
+                placeholder="quadra"
+                className={`${INPUT} w-28`}
+              />
+            </div>
+          </>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante="primario"
+            disabled={!valido || salvando}
+            onClick={() => {
+              if (!sel || !valido) return
+              setSalvando(true)
+              setErro(null)
+              onSalvar({
+                lote: sel.lote,
+                tratamento: sel.tratamento,
+                delta,
+                motivo: motivo.trim(),
+                armazem: armazem.trim().toUpperCase() || null,
+                bloco: bloco.trim().toUpperCase() || null,
+                quadra: quadra.trim().toUpperCase() || null,
+              }).catch((e) => {
+                setErro(e instanceof Error ? e.message : String(e))
+                setSalvando(false)
+              })
+            }}
+          >
+            {salvando ? 'Gravando…' : 'Gravar ajuste'}
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ModalPosicao({
   posicao, alocacoes, podeEnderecar, podeMontar, cargasParaLote, faltaNaCarga,
   onFechar, onMover, onEnderecar, onEnviarParaCarga,

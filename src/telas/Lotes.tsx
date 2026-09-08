@@ -6,8 +6,10 @@ import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
+import { somarEndereco } from '@/dados/api-mapa'
+import { loteBase } from '@/dominio/importacao/mapa'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, Tabela, Tag, Vazio,
   corDoStatus, dataHoraCurta, diaCurto, enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
 
@@ -321,8 +323,26 @@ export default function Lotes() {
                 key={o.id}
                 ordem={o}
                 podeConferir={podeConferir}
-                onConferir={(bags, obs) =>
-                  comErro(() => g.registrarConferencia(o.id, bags, obs, usuario!.id))
+                onConferir={(bags, obs, endereco) =>
+                  comErro(async () => {
+                    await g.registrarConferencia(o.id, bags, obs, usuario!.id)
+                    // endereçamento embutido (08/09/2026): o lote TRATADO
+                    // entrou no mapa quando a produção apontou (Finalizada);
+                    // a Logística confere a quantidade e já diz onde pôs.
+                    if (endereco && bags > 0) {
+                      try {
+                        await somarEndereco(
+                          loteBase(o.lote_id), o.receita_nome, endereco, bags, usuario!.id,
+                        )
+                      } catch (e) {
+                        throw new Error(
+                          `Conferência gravada, mas o endereçamento falhou: ${
+                            e instanceof Error ? e.message : String(e)
+                          } — enderece pelo Mapa (a migração inventario-mapa-ajuste-reserva.sql já rodou?).`,
+                        )
+                      }
+                    }
+                  })
                 }
               />
             ))}
@@ -717,14 +737,26 @@ function LinhaConferencia({
 }: {
   ordem: OrdemVisao
   podeConferir: boolean
-  onConferir: (bags: number, obs: string | null) => void
+  onConferir: (
+    bags: number,
+    obs: string | null,
+    endereco: { armazem: string; bloco: string; quadra: string } | null,
+  ) => void
 }) {
   const [bags, setBags] = useState('')
   const [obs, setObs] = useState('')
+  // endereçamento embutido (08/09/2026): o tratado entrou no mapa quando a
+  // produção apontou; quem confere diz ONDE pôs — armazém obrigatório.
+  // Ordem SEM TSI não cria tratado no mapa: sem campos de endereço.
+  const [armazem, setArmazem] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [quadra, setQuadra] = useState('')
+  const tratada = (ordem.receita_nome ?? '').trim().toUpperCase() !== 'SEM TSI'
   const contados = parseInt(bags, 10)
-  const valido = Number.isFinite(contados) && contados >= 0
+  const valido =
+    Number.isFinite(contados) && contados >= 0 && (!tratada || armazem.trim() !== '')
   const referencia = ordem.bags_produzidos ?? ordem.bags
-  const diverge = valido && contados !== referencia
+  const diverge = Number.isFinite(contados) && contados >= 0 && contados !== referencia
 
   return (
     <div className="rounded-md border border-stone-200 p-3 dark:border-stone-700">
@@ -767,10 +799,45 @@ function LinhaConferencia({
               placeholder={diverge ? 'motivo da diferença' : 'observação (opcional)'}
               className="w-44 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
             />
+            {tratada && (
+              <>
+                <label className="flex items-center gap-1.5 text-sm">
+                  armazém
+                  <span className="w-20">
+                    <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+                  </span>
+                </label>
+                <input
+                  value={bloco}
+                  onChange={(e) => setBloco(e.target.value)}
+                  placeholder="bloco"
+                  className="w-24 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
+                />
+                <input
+                  value={quadra}
+                  onChange={(e) => setQuadra(e.target.value)}
+                  placeholder="quadra"
+                  className="w-24 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
+                />
+              </>
+            )}
             <Botao
               variante="primario"
               disabled={!valido}
-              onClick={() => onConferir(contados, obs.trim() || null)}
+              titulo={tratada && !armazem ? 'Informe o armazém onde o lote foi guardado' : undefined}
+              onClick={() =>
+                onConferir(
+                  contados,
+                  obs.trim() || null,
+                  tratada && armazem.trim() !== ''
+                    ? {
+                        armazem: armazem.trim().toUpperCase(),
+                        bloco: bloco.trim().toUpperCase(),
+                        quadra: quadra.trim().toUpperCase(),
+                      }
+                    : null,
+                )
+              }
             >
               Conferir
             </Botao>

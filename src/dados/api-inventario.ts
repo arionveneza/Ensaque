@@ -23,23 +23,35 @@ export interface InventarioLinha {
   titulo: string
   criado_em: string
   fechado_em: string | null
+  /** Endereços aplicados no mapa — aplicado não reabre mais (08/09/2026). */
+  aplicado_em: string | null
   inventario_saldos: { count: number }[]
   inventario_itens: { count: number }[]
 }
 
 export async function listarInventarios(): Promise<InventarioLinha[] | null> {
-  const { data, error } = await supabase
+  let r = await supabase
     .from('inventarios')
     .select(
-      'id, titulo, criado_em, fechado_em, inventario_saldos ( count ), inventario_itens ( count )',
+      'id, titulo, criado_em, fechado_em, aplicado_em, inventario_saldos ( count ), inventario_itens ( count )',
     )
     .order('criado_em', { ascending: false })
     .limit(100)
-  if (error) {
-    if (PRE_MIGRACAO.includes(error.code ?? '')) return null
-    throw new Error(`listar inventários: ${error.message}`)
+  if (r.error?.code === '42703') {
+    // janela pré-migração inventario-mapa-ajuste-reserva.sql (sem aplicado_em)
+    r = (await supabase
+      .from('inventarios')
+      .select(
+        'id, titulo, criado_em, fechado_em, inventario_saldos ( count ), inventario_itens ( count )',
+      )
+      .order('criado_em', { ascending: false })
+      .limit(100)) as unknown as typeof r
   }
-  return (data ?? []) as unknown as InventarioLinha[]
+  if (r.error) {
+    if (PRE_MIGRACAO.includes(r.error.code ?? '')) return null
+    throw new Error(`listar inventários: ${r.error.message}`)
+  }
+  return (r.data ?? []).map((i) => ({ aplicado_em: null, ...(i as object) })) as unknown as InventarioLinha[]
 }
 
 export async function criarInventario(titulo: string): Promise<string> {
@@ -199,6 +211,26 @@ export async function fecharInventario(id: string): Promise<number> {
 export async function reabrirInventario(id: string): Promise<void> {
   const { error } = await supabase.rpc('reabrir_inventario', { p_id: id })
   erro('reabrir o inventário', error)
+}
+
+export interface ResumoAplicacao {
+  enderecados: number
+  nao_encontrados: number
+  sem_mapa: string[]
+}
+
+/**
+ * Aplica os ENDEREÇOS do inventário no mapa (08/09/2026) — o saldo continua
+ * o do SAP. Uma vez só; inventário aplicado não reabre mais. Transacional
+ * no servidor (RPC com guarda própria).
+ */
+export async function aplicarInventarioNoMapa(id: string): Promise<ResumoAplicacao> {
+  const { data, error } = await supabase.rpc('aplicar_inventario_no_mapa', { p_id: id })
+  erro(
+    'aplicar o inventário no mapa — a migração inventario-mapa-ajuste-reserva.sql já rodou?',
+    error,
+  )
+  return data as ResumoAplicacao
 }
 
 export interface ResultadoInventario {

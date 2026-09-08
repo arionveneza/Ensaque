@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  chaveInventario, compararInventario, situacaoDe,
+  chaveInventario, compararInventario, planoAplicacao, situacaoDe,
 } from './inventario'
 
 describe('chave de comparacao', () => {
@@ -132,5 +132,77 @@ describe('compararInventario', () => {
     const situacoes = linhas.map((l) => l.situacao)
     expect(situacoes.indexOf('sobra')).toBeLessThan(situacoes.indexOf('bate'))
     expect(situacoes.indexOf('nao_contado')).toBeLessThan(situacoes.indexOf('bate'))
+  })
+})
+
+describe('planoAplicacao (aplicar no mapa = so enderecos)', () => {
+  const mapa = [
+    { lote: 'SV001', tratamento: 'SEM TSI' },
+    { lote: 'SV002', tratamento: 'FTZ60' },
+    { lote: 'SV003', tratamento: 'SEM TSI' },
+  ]
+
+  it('contada no mapa vira substituicao de enderecos, somando por endereco', () => {
+    const p = planoAplicacao(
+      [{ lote: 'SV001', tratamento: 'SEM TSI', bags_contados: 100 }],
+      [
+        { lote: 'SV001', tratamento: 'SEM TSI', armazem: 'A', bloco: 'B1', quadra: '4', bags: 60 },
+        { lote: 'sv001-1', tratamento: 'sem tsi', armazem: 'a', bloco: 'b1', quadra: '4', bags: 30 },
+        { lote: 'SV001', tratamento: 'SEM TSI', armazem: 'B', bloco: '', quadra: '', bags: 10 },
+      ],
+      mapa,
+    )
+    expect(p.enderecar).toHaveLength(1)
+    const e = p.enderecar[0].enderecos
+    expect(e).toHaveLength(2)
+    expect(e.find((x) => x.armazem === 'A')!.bags).toBe(90)
+    expect(e.find((x) => x.armazem === 'B')!.bags).toBe(10)
+  })
+
+  it('contada SEM linha no mapa vai pra semMapa; nao contada pra naoEncontrados', () => {
+    const p = planoAplicacao(
+      [
+        { lote: 'SV999', tratamento: 'SEM TSI', bags_contados: 5 },
+        { lote: 'SV003', tratamento: 'SEM TSI', bags_contados: null },
+      ],
+      [{ lote: 'SV999', tratamento: 'SEM TSI', armazem: 'A', bloco: null, quadra: null, bags: 5 }],
+      mapa,
+    )
+    expect(p.semMapa).toEqual([{ lote: 'SV999', tratamento: 'SEM TSI' }])
+    expect(p.naoEncontrados).toEqual([{ lote: 'SV003', tratamento: 'SEM TSI' }])
+    expect(p.enderecar).toHaveLength(0)
+  })
+
+  it('lancamento com contagem zero nao vira endereco', () => {
+    const p = planoAplicacao(
+      [{ lote: 'SV002', tratamento: 'FTZ60', bags_contados: 0 }],
+      [{ lote: 'SV002', tratamento: 'FTZ60', armazem: 'C', bloco: 'B2', quadra: '1', bags: 0 }],
+      mapa,
+    )
+    expect(p.enderecar).toHaveLength(1)
+    expect(p.enderecar[0].enderecos).toHaveLength(0)
+  })
+
+  it('combinacao contada numa embalagem e nao contada em outra CONTA como contada', () => {
+    const p = planoAplicacao(
+      [
+        { lote: 'SV001', tratamento: 'SEM TSI', bags_contados: 50 },
+        { lote: 'SV001', tratamento: 'SEM TSI', bags_contados: null },
+      ],
+      [{ lote: 'SV001', tratamento: 'SEM TSI', armazem: 'A', bloco: 'B1', quadra: '2', bags: 50 }],
+      mapa,
+    )
+    expect(p.enderecar).toHaveLength(1)
+    expect(p.naoEncontrados).toHaveLength(0)
+  })
+
+  it('nao contada fora do mapa nao aparece em lugar nenhum (nada a marcar)', () => {
+    const p = planoAplicacao(
+      [{ lote: 'SVX', tratamento: 'V&P', bags_contados: null }],
+      [],
+      mapa,
+    )
+    expect(p.naoEncontrados).toHaveLength(0)
+    expect(p.semMapa).toHaveLength(0)
   })
 })
