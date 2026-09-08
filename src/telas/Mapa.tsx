@@ -462,6 +462,19 @@ export default function Mapa() {
     return [...out.values()].sort((a, b) => a.lote.localeCompare(b.lote))
   }, [divInv, todos])
 
+  /** Contado do último inventário aplicado, por combinação — vai pro modal
+   *  de Ajuste, que trabalha EM CIMA DO CONTADO (pedido do Arion, 10/09). */
+  const contadoInventarioPor = useMemo(() => {
+    const por = new Map<string, number>()
+    if (!divInv) return por
+    for (const r of divInv.resultados) {
+      if (r.bags_contados == null) continue
+      const k = `${r.lote}|${r.tratamento}`
+      por.set(k, (por.get(k) ?? 0) + r.bags_contados)
+    }
+    return por
+  }, [divInv])
+
   /**
    * Divergências EM ABERTO do último inventário aplicado (10/09/2026):
    * contado CONGELADO × saldo ATUAL do mapa, por (lote, tratamento) — a
@@ -1651,6 +1664,8 @@ export default function Mapa() {
       {ajustando && (
         <ModalAjusteEstoque
           lotes={todos}
+          contadoInventario={contadoInventarioPor}
+          inventarioTitulo={divInv?.titulo ?? null}
           inicial={ajustePrefill ?? undefined}
           onFechar={() => {
             setAjustando(false)
@@ -2292,9 +2307,13 @@ function MapaGrade({
  * divergência do inventário foi resolvida no SAP. Rastro em mapa_ajustes.
  */
 function ModalAjusteEstoque({
-  lotes, inicial, onFechar, onSalvar,
+  lotes, contadoInventario, inventarioTitulo, inicial, onFechar, onSalvar,
 }: {
   lotes: LoteMapaLinha[]
+  /** Contado do último inventário aplicado por "lote|tratamento" — o ajuste
+   *  trabalha EM CIMA DO CONTADO (pedido do Arion, 10/09/2026). */
+  contadoInventario?: Map<string, number>
+  inventarioTitulo?: string | null
   /** Prefill vindo do cartão de divergências do inventário (10/09/2026). */
   inicial?: { lote: string; tratamento: string; delta: number; motivo: string }
   onFechar: () => void
@@ -2344,6 +2363,11 @@ function ModalAjusteEstoque({
   const delta = sinal * qtdNum
   const novoSaldo = sel && qtdOk ? Math.round((sel.bags + delta) * 100) / 100 : null
   const valido = !!sel && qtdOk && motivo.trim() !== '' && (novoSaldo ?? -1) >= 0
+
+  // o contado do último inventário aplicado é a referência do ajuste
+  const contadoSel = sel ? contadoInventario?.get(`${sel.lote}|${sel.tratamento}`) : undefined
+  const deltaContado =
+    sel && contadoSel != null ? Math.round((contadoSel - sel.bags) * 100) / 100 : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -2405,6 +2429,34 @@ function ModalAjusteEstoque({
               </button>
             </div>
 
+            {contadoSel != null && sel && (
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-600 dark:text-stone-300">
+                Contado no {inventarioTitulo ?? 'último inventário'}:{' '}
+                <b>{inteiro(contadoSel)} bg</b>
+                {Math.abs(deltaContado ?? 0) <= 0.01 ? (
+                  <Tag cor="ok">já bate com o mapa</Tag>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = deltaContado!
+                      setSinal(d < 0 ? -1 : 1)
+                      setQtd(String(Math.abs(d)).replace('.', ','))
+                      if (!motivo.trim()) {
+                        setMotivo(
+                          `${inventarioTitulo ?? 'Inventário'}: contado ${inteiro(contadoSel)}, sistema ${inteiro(sel.bags)}`,
+                        )
+                      }
+                    }}
+                    className="rounded-md border border-green-700 px-2 py-1 font-medium text-green-800 hover:bg-green-50 dark:border-green-600 dark:text-green-300 dark:hover:bg-green-950/40"
+                  >
+                    usar o contado como novo saldo ({(deltaContado ?? 0) > 0 ? '+' : ''}
+                    {n(deltaContado ?? 0, (deltaContado ?? 0) % 1 === 0 ? 0 : 2)} bg)
+                  </button>
+                )}
+              </p>
+            )}
+
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <div className="flex gap-1">
                 {([1, -1] as const).map((s) => (
@@ -2444,6 +2496,11 @@ function ModalAjusteEstoque({
                 novoSaldo >= 0 ? (
                   <span className="text-stone-600 dark:text-stone-300">
                     {inteiro(sel.bags)} bg → <b>{n(novoSaldo, novoSaldo % 1 === 0 ? 0 : 2)} bg</b>
+                    {contadoSel != null && Math.abs(novoSaldo - contadoSel) <= 0.01 && (
+                      <span className="ml-1 text-green-700 dark:text-green-400">
+                        = o contado do inventário ✓
+                      </span>
+                    )}
                   </span>
                 ) : (
                   <span className="text-red-600 dark:text-red-400">
