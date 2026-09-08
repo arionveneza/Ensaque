@@ -183,7 +183,9 @@ describe('planoAplicacao (aplicar no mapa = so enderecos)', () => {
     expect(p.enderecar[0].enderecos).toHaveLength(0)
   })
 
-  it('combinacao contada numa embalagem e nao contada em outra CONTA como contada', () => {
+  it('contada numa embalagem e nao contada em outra fica nas DUAS listas (10/09/2026)', () => {
+    // achada so e achada batendo lote+tratamento+EMBALAGEM: a parte contada
+    // e enderecada E a combinacao segue marcada pela parte nao achada
     const p = planoAplicacao(
       [
         { lote: 'SV001', tratamento: 'SEM TSI', bags_contados: 50 },
@@ -193,7 +195,7 @@ describe('planoAplicacao (aplicar no mapa = so enderecos)', () => {
       mapa,
     )
     expect(p.enderecar).toHaveLength(1)
-    expect(p.naoEncontrados).toHaveLength(0)
+    expect(p.naoEncontrados).toEqual([{ lote: 'SV001', tratamento: 'SEM TSI' }])
   })
 
   it('nao contada fora do mapa nao aparece em lugar nenhum (nada a marcar)', () => {

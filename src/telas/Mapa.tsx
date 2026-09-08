@@ -434,15 +434,11 @@ export default function Mapa() {
    * (10/09/2026, pedido do Arion): existir no SAP basta pra ser pendência —
    * sem linha (ou zerada) no mapa não tem onde a marca viver, então elas
    * entram no cartão direto da foto congelada, com a quantidade do SAP da
-   * época. Contada em qualquer embalagem = achada (mesma régua da RPC).
+   * época. Achada SÓ batendo lote+tratamento+EMBALAGEM: contada em outra
+   * embalagem não tira daqui (mesma régua da RPC).
    */
   const naoEncontradosSemMapa = useMemo(() => {
     if (!divInv) return []
-    const contadas = new Set(
-      divInv.resultados
-        .filter((r) => r.bags_contados != null)
-        .map((r) => `${r.lote}|${r.tratamento}`),
-    )
     const noMapa = new Set(todos.map((l) => `${l.lote}|${l.tratamento}`))
     const out = new Map<
       string,
@@ -450,8 +446,8 @@ export default function Mapa() {
     >()
     for (const r of divInv.resultados) {
       if (r.bags_contados != null || r.bags_sistema == null) continue
-      const k = `${r.lote}|${r.tratamento}`
-      if (contadas.has(k) || noMapa.has(k)) continue
+      if (noMapa.has(`${r.lote}|${r.tratamento}`)) continue
+      const k = `${r.lote}|${r.tratamento}|${r.embalagem}`
       const e = out.get(k)
       if (e) e.sap += r.bags_sistema
       else
@@ -1241,7 +1237,7 @@ export default function Mapa() {
               <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', '#Bags no SAP (na época)', '']}>
                 {naoEncontradosSemMapa.map((l) => (
                   <tr
-                    key={`${l.lote}|${l.tratamento}`}
+                    key={`${l.lote}|${l.tratamento}|${l.embalagem}`}
                     className="border-t border-stone-100 dark:border-stone-800/60"
                   >
                     <td className="px-2 py-1.5 font-medium">{l.lote}</td>

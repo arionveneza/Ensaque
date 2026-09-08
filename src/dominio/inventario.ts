@@ -237,11 +237,12 @@ export function planoAplicacao(
     const tratamento = r.tratamento.trim().toUpperCase()
     const chave = `${lote}|${tratamento}`
     if (r.bags_contados != null) chavesContadas.set(chave, { lote, tratamento })
-    else if (!chavesContadas.has(chave)) chavesNao.set(chave, { lote, tratamento })
+    else chavesNao.set(chave, { lote, tratamento })
   }
-  // a mesma combinação pode ter uma embalagem contada e outra não —
-  // contada em qualquer embalagem = contada
-  for (const chave of chavesContadas.keys()) chavesNao.delete(chave)
+  // achada SÓ batendo lote+tratamento+EMBALAGEM (decisão do Arion,
+  // 10/09/2026): contada em outra embalagem NÃO tira a combinação dos não
+  // encontrados — ela pode aparecer nas duas listas (endereça a parte
+  // contada E fica marcada pela parte que ninguém achou)
 
   const enderecosPor = new Map<string, Map<string, EnderecoAplicacao>>()
   for (const i of itens) {
