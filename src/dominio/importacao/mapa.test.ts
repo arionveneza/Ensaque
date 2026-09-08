@@ -98,6 +98,15 @@ describe('converterLotesMapa', () => {
     expect(r.enriquecimentos[0].tratamento).toBe('V&P')
   })
 
+  it('aplica o de-para de cultivar truncado do SAP (O700 I2X → NEO700 I2X)', () => {
+    // achado do Arion, 11/09/2026: o filtro do Mapa mostrava "NEO700 I2X"
+    // e "O700 I2X" como cultivares separados — mesmo de-para que a
+    // SimpleAgro já usa (CULTIVAR_DEPARA em simpleagro.ts), nunca
+    // aplicado no importador do mapa
+    const r = converterLotesMapa([CAB, linha({ lote: 'A', cultivar: 'O700 I2X' })])
+    expect(r.lotes[0].cultivar).toBe('NEO700 I2X')
+  })
+
   it('só VEN_GER entra; outros depósitos são contados fora', () => {
     const r = converterLotesMapa([
       CAB,
@@ -213,5 +222,13 @@ describe('converterEstoqueInventario', () => {
   it('aplica o de-para de tratamento do SAP (VeP → V&P)', () => {
     const r = converterEstoqueInventario([CAB, linha({ lote: 'A', trat: 'VeP', qtd: 3 })])
     expect(r.saldos[0].tratamento).toBe('V&P')
+  })
+
+  it('aplica o de-para de cultivar truncado do SAP (O700 I2X → NEO700 I2X)', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'A', cultivar: 'O700 I2X', qtd: 3 }),
+    ])
+    expect(r.saldos[0].cultivar).toBe('NEO700 I2X')
   })
 })

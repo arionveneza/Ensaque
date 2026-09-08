@@ -20,7 +20,7 @@
  * dos demais campos.
  */
 
-import { EMBALAGEM_DEPARA, normaliza, num, txt, type Linha } from './simpleagro'
+import { EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, txt, type Linha } from './simpleagro'
 import { corrigeTratamentoSap } from './sap'
 
 export const DEPOSITO_MAPA = 'VEN_GER'
@@ -170,7 +170,12 @@ export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInven
       saldos.set(chave, {
         lote: base,
         tratamento,
-        cultivar: txt(linha[iCult]),
+        // mesmo de-para do cultivar truncado que a SimpleAgro usa
+        // (CULTIVAR_DEPARA em simpleagro.ts) — o SAP.xlsx tem o MESMO
+        // problema (achado do Arion, 11/09/2026: "NEO700 e 700 I2X" são
+        // o mesmo cultivar aparecendo separado no filtro do Mapa) e o
+        // importador do mapa nunca aplicava a correção.
+        cultivar: normalizaCultivar(txt(linha[iCult])),
         embalagem: emb.codigo,
         bags,
       })
@@ -305,7 +310,9 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
       lotes.set(chave, {
         lote: base,
         tratamento,
-        cultivar: txt(linha[iCult]),
+        // mesmo de-para do cultivar truncado que a SimpleAgro usa (ver
+        // comentário equivalente em converterEstoqueInventario acima)
+        cultivar: normalizaCultivar(txt(linha[iCult])),
         embalagem: emb.codigo,
         pms,
         peso_bag_kg: Math.round(pesoBag * 1000) / 1000,
