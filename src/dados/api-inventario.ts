@@ -213,6 +213,31 @@ export async function reabrirInventario(id: string): Promise<void> {
   erro('reabrir o inventário', error)
 }
 
+export interface InventarioAplicadoRef {
+  id: string
+  titulo: string
+  aplicado_em: string
+}
+
+/**
+ * O inventário aplicado mais recente — referência do cartão "Divergências
+ * do inventário" no Mapa (10/09/2026). Null quando nenhum foi aplicado ou
+ * na janela pré-migração.
+ */
+export async function ultimoInventarioAplicado(): Promise<InventarioAplicadoRef | null> {
+  const { data, error } = await supabase
+    .from('inventarios')
+    .select('id, titulo, aplicado_em')
+    .not('aplicado_em', 'is', null)
+    .order('aplicado_em', { ascending: false })
+    .limit(1)
+  if (error) {
+    if ([...PRE_MIGRACAO, '42703'].includes(error.code ?? '')) return null
+    throw new Error(`buscar o último inventário aplicado: ${error.message}`)
+  }
+  return ((data ?? [])[0] as InventarioAplicadoRef | undefined) ?? null
+}
+
 export interface ResumoAplicacao {
   enderecados: number
   nao_encontrados: number

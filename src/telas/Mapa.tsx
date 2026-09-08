@@ -11,6 +11,10 @@ import {
 } from '@/dominio/importacao/mapa'
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
+import {
+  listarResultadosInventario, ultimoInventarioAplicado,
+  type ResultadoInventario,
+} from '@/dados/api-inventario'
 import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
 import { abrirJanelaImpressao, imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
@@ -270,7 +274,37 @@ export default function Mapa() {
   const [fotosDe, setFotosDe] = useState<string | null>(null)
   const [novoLote, setNovoLote] = useState(false)
   const [ajustando, setAjustando] = useState(false)
+  // prefill do modal de ajuste quando vem do cartão de divergências
+  const [ajustePrefill, setAjustePrefill] = useState<{
+    lote: string
+    tratamento: string
+    delta: number
+    motivo: string
+  } | null>(null)
   const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
+  // último inventário APLICADO — referência do cartão de divergências
+  const [divInv, setDivInv] = useState<{
+    titulo: string
+    aplicado_em: string
+    resultados: ResultadoInventario[]
+  } | null>(null)
+
+  useEffect(() => {
+    let vivo = true
+    void (async () => {
+      try {
+        const inv = await ultimoInventarioAplicado()
+        if (!inv) return
+        const resultados = await listarResultadosInventario(inv.id)
+        if (vivo) setDivInv({ titulo: inv.titulo, aplicado_em: inv.aplicado_em, resultados })
+      } catch {
+        // o cartão de divergências é cortesia — sem dados, sem cartão
+      }
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [])
 
   // -------- relatório do que foi carregado --------
   const [periodoCarregadas, setPeriodoCarregadas] =
@@ -394,6 +428,61 @@ export default function Mapa() {
         : 0
     return { emCargas, emOrdens, livre: Math.max(0, l.bags - emCargas - emOrdens) }
   }
+
+  /**
+   * Divergências EM ABERTO do último inventário aplicado (10/09/2026):
+   * contado CONGELADO × saldo ATUAL do mapa, por (lote, tratamento) — a
+   * linha some sozinha quando os dois batem (ajuste, upload da branca ou
+   * apontamento). Contagem errada sai quando o próximo inventário aplicado
+   * substituir a referência.
+   */
+  const divergenciasInventario = useMemo(() => {
+    if (!divInv) return []
+    const contadoPor = new Map<
+      string,
+      { lote: string; tratamento: string; cultivar: string | null; contado: number }
+    >()
+    for (const r of divInv.resultados) {
+      if (r.bags_contados == null) continue
+      const k = `${r.lote}|${r.tratamento}`
+      const e = contadoPor.get(k)
+      if (e) {
+        e.contado += r.bags_contados
+        e.cultivar = e.cultivar ?? r.cultivar
+      } else {
+        contadoPor.set(k, {
+          lote: r.lote,
+          tratamento: r.tratamento,
+          cultivar: r.cultivar,
+          contado: r.bags_contados,
+        })
+      }
+    }
+    const out: {
+      lote: string
+      tratamento: string
+      cultivar: string | null
+      contado: number
+      saldo: number
+      dif: number
+      noMapa: boolean
+    }[] = []
+    for (const c of contadoPor.values()) {
+      const atual = todos.find((l) => l.lote === c.lote && l.tratamento === c.tratamento)
+      const saldo = atual?.bags ?? 0
+      const dif = Math.round((c.contado - saldo) * 100) / 100
+      if (Math.abs(dif) > 0.01) {
+        out.push({
+          ...c,
+          cultivar: c.cultivar ?? atual?.cultivar ?? null,
+          saldo,
+          dif,
+          noMapa: !!atual,
+        })
+      }
+    }
+    return out.sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif))
+  }, [divInv, todos])
 
   /** "livre X" sob os bags, só quando há reserva — com o racha no title. */
   const celulaLivre = (l: LoteMapaLinha) => {
@@ -1103,6 +1192,72 @@ export default function Mapa() {
         </CartaoRecolhivel>
       )}
 
+      {/* -------- divergências do inventário, EM ABERTO (10/09/2026) -------- */}
+      {divInv && divergenciasInventario.length > 0 && (
+        <CartaoRecolhivel
+          titulo="Divergências do inventário — em aberto"
+          ocorrencias={divergenciasInventario.length}
+          resumo={`Contado no ${divInv.titulo} (aplicado em ${dataHoraCurta(divInv.aplicado_em)}) ainda diferente do saldo do mapa — clique em Mostrar pra ajustar.`}
+        >
+          <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">
+            Contagem congelada × saldo atual: a linha <b>some sozinha</b> quando os dois
+            baterem (Ajuste de estoque, upload da planilha ou apontamento da produção). Se a
+            CONTAGEM é que estava errada (etiqueta/número trocado), a linha sai quando o
+            próximo inventário aplicado substituir a referência. A conferência completa e o
+            CSV pro acerto no SAP seguem na tela Inventário.
+          </p>
+          <Tabela cabecalho={['Cultivar', 'Lote', 'Tratamento', '#Contado', '#Mapa', '#Dif', '']}>
+            {divergenciasInventario.map((d) => (
+              <tr
+                key={`${d.lote}|${d.tratamento}`}
+                className="border-t border-stone-100 dark:border-stone-800/60"
+              >
+                <td className="px-2 py-1.5">{d.cultivar ?? '—'}</td>
+                <td className="px-2 py-1.5 font-medium">{d.lote}</td>
+                <td className="px-2 py-1.5">
+                  {d.tratamento === SEM_TSI ? <span className="text-stone-400">branca</span> : d.tratamento}
+                </td>
+                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(d.contado)}</td>
+                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(d.saldo)}</td>
+                <td
+                  className={`num-tabular px-2 py-1.5 text-right font-bold ${
+                    d.dif > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {d.dif > 0 ? '+' : ''}{n(d.dif, d.dif % 1 === 0 ? 0 : 2)}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  {d.noMapa && podeAjustar && (
+                    <Botao
+                      titulo="Abre o Ajuste de estoque já preenchido com esta diferença"
+                      onClick={() => {
+                        setAjustePrefill({
+                          lote: d.lote,
+                          tratamento: d.tratamento,
+                          delta: d.dif,
+                          motivo: `${divInv.titulo}: contado ${inteiro(d.contado)}, sistema ${inteiro(d.saldo)}`,
+                        })
+                        setAjustando(true)
+                      }}
+                    >
+                      Ajustar
+                    </Botao>
+                  )}
+                  {!d.noMapa && (
+                    <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                      <span className="text-xs text-stone-500">fora do mapa — acerte no SAP</span>
+                      {podeImportar && (
+                        <Botao onClick={() => setNovoLote(true)}>Novo lote</Botao>
+                      )}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </Tabela>
+        </CartaoRecolhivel>
+      )}
+
       {/* -------- quadras com mais de um lote (conferência) -------- */}
       {posicoesLotadas.length > 0 && (
         <CartaoRecolhivel
@@ -1430,10 +1585,15 @@ export default function Mapa() {
       {ajustando && (
         <ModalAjusteEstoque
           lotes={todos}
-          onFechar={() => setAjustando(false)}
+          inicial={ajustePrefill ?? undefined}
+          onFechar={() => {
+            setAjustando(false)
+            setAjustePrefill(null)
+          }}
           onSalvar={async (a) => {
             const novo = await m.ajustarSaldoMapa(a)
             setAjustando(false)
+            setAjustePrefill(null)
             setMsg(
               `Ajuste gravado: ${a.lote} · ${rotuloTratamento(a.tratamento)} ` +
                 `${a.delta > 0 ? '+' : ''}${n(a.delta, 0)} bg → saldo ${inteiro(novo)} bg.`,
@@ -2066,9 +2226,11 @@ function MapaGrade({
  * divergência do inventário foi resolvida no SAP. Rastro em mapa_ajustes.
  */
 function ModalAjusteEstoque({
-  lotes, onFechar, onSalvar,
+  lotes, inicial, onFechar, onSalvar,
 }: {
   lotes: LoteMapaLinha[]
+  /** Prefill vindo do cartão de divergências do inventário (10/09/2026). */
+  inicial?: { lote: string; tratamento: string; delta: number; motivo: string }
   onFechar: () => void
   onSalvar: (a: {
     lote: string
@@ -2081,10 +2243,16 @@ function ModalAjusteEstoque({
   }) => Promise<void>
 }) {
   const [busca, setBusca] = useState('')
-  const [sel, setSel] = useState<LoteMapaLinha | null>(null)
-  const [sinal, setSinal] = useState<1 | -1>(1)
-  const [qtd, setQtd] = useState('')
-  const [motivo, setMotivo] = useState('')
+  const [sel, setSel] = useState<LoteMapaLinha | null>(
+    inicial
+      ? lotes.find((l) => l.lote === inicial.lote && l.tratamento === inicial.tratamento) ?? null
+      : null,
+  )
+  const [sinal, setSinal] = useState<1 | -1>(inicial && inicial.delta < 0 ? -1 : 1)
+  const [qtd, setQtd] = useState(
+    inicial ? String(Math.round(Math.abs(inicial.delta) * 100) / 100).replace('.', ',') : '',
+  )
+  const [motivo, setMotivo] = useState(inicial?.motivo ?? '')
   const [armazem, setArmazem] = useState('')
   const [bloco, setBloco] = useState('')
   const [quadra, setQuadra] = useState('')
