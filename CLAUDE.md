@@ -593,6 +593,14 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    pro mapa usa o **Contar**, único caminho que registra a contagem E o endereço.
    A grade ficou só com vermelho (divergente) e preto (fora do SAP) — o "?" âmbar do não
    contado saiu da grade e da legenda, porque a combinação não aparece mais lá.
+   **Recontagem de falta/sobra/fora do SAP oferece revisar o endereço** (11/09/2026):
+   essas situações já tinham contagem e endereço antes, e uma combinação pode ter MAIS
+   de um endereço físico — corrigir só o número, sem revisar onde está, deixava a
+   informação velha. Depois de gravar a recontagem, abre (sem obrigar — dá pra fechar
+   sem mudar nada) o MESMO modal de endereçamento usado em "Sem localização"/grade,
+   pré-carregado com a lista atual da combinação, pra revisar/editar. Não-contado
+   continua com o fluxo obrigatório de sempre (armazém junto da quantidade, um ato só,
+   por já não ter endereço nenhum).
    Novo lote de produção segue igual: apontou quantidade → "Sem localização" →
    endereçado → mapa (botão Novo lote continua pra compra de terceiros); consumo e
    reserva de ordens/cargas seguem sobre a tabela `lotes_mapa` cheia, sem mudança.

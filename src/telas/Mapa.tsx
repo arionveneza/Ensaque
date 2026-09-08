@@ -327,6 +327,15 @@ export default function Mapa() {
     resultadoId: string,
     bags: number,
     enderecar: { lote: string; tratamento: string } | null,
+    /**
+     * falta/sobra/fora do SAP JÁ tinham contagem e endereço antes — a
+     * recontagem só corrigia o número, sem revisar onde está (pedido do
+     * Arion, 11/09/2026: pode haver mais de um endereço pra combinação).
+     * Reaproveita o MESMO modal de endereçamento (lista, não campo único)
+     * usado em "Sem localização"/grade — abre pra revisão depois de
+     * gravar, sem obrigar (o operador pode fechar sem mudar nada).
+     */
+    confirmarEndereco: LoteMapaLinha | null,
   ) => {
     try {
       await recontarInventario(resultadoId, bags)
@@ -358,9 +367,14 @@ export default function Mapa() {
         }
       }
       limparReconta()
-      setMsg('Recontagem gravada no inventário — a linha some quando bater com o SAP.')
+      setMsg(
+        confirmarEndereco
+          ? 'Recontagem gravada — confira o endereço da combinação.'
+          : 'Recontagem gravada no inventário — a linha some quando bater com o SAP.',
+      )
       await carregarDivInv()
       await recarregar()
+      if (confirmarEndereco) setEnderecando(confirmarEndereco)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
       await carregarDivInv()
@@ -1381,6 +1395,7 @@ export default function Mapa() {
                                   p.resultadoId,
                                   bags,
                                   pedeEndereco ? { lote: p.lote, tratamento: p.tratamento } : null,
+                                  !pedeEndereco && p.loteMapa ? p.loteMapa : null,
                                 )
                               }}
                             >
@@ -1799,6 +1814,9 @@ export default function Mapa() {
               await m.salvarEnderecos(enderecando.lote, enderecando.tratamento, enderecos, usuario.id)
               setEnderecando(null)
               await recarregar()
+              // pode ter chegado aqui vindo da confirmação pós-recontagem
+              // (11/09/2026) — mantém a Pendências em sincronia também
+              await carregarDivInv()
             } catch (e) {
               setErro(e instanceof Error ? e.message : String(e))
             }
