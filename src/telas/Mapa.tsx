@@ -2369,6 +2369,29 @@ function ModalAjusteEstoque({
   const deltaContado =
     sel && contadoSel != null ? Math.round((contadoSel - sel.bags) * 100) / 100 : null
 
+  /**
+   * Escolher a combinação já PREENCHE o ajuste pra bater com o contado do
+   * inventário (10/09/2026: "não entendi a tela" — os campos vazios
+   * obrigavam a fazer a conta de cabeça). Sem contagem, fica manual.
+   */
+  const selecionar = (l: LoteMapaLinha) => {
+    setSel(l)
+    const contado = contadoInventario?.get(`${l.lote}|${l.tratamento}`)
+    if (contado != null) {
+      const d = Math.round((contado - l.bags) * 100) / 100
+      if (Math.abs(d) > 0.01) {
+        setSinal(d < 0 ? -1 : 1)
+        setQtd(String(Math.abs(d)).replace('.', ','))
+        setMotivo(
+          `${inventarioTitulo ?? 'Inventário'}: contado ${inteiro(contado)}, sistema ${inteiro(l.bags)}`,
+        )
+        return
+      }
+    }
+    setQtd('')
+    setMotivo('')
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
@@ -2393,7 +2416,7 @@ function ModalAjusteEstoque({
               {candidatos.map((l) => (
                 <li key={chaveDe(l)}>
                   <button
-                    onClick={() => setSel(l)}
+                    onClick={() => selecionar(l)}
                     className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-sm hover:bg-stone-50 dark:hover:bg-stone-800/60"
                   >
                     <span className="font-medium">{l.cultivar}</span>

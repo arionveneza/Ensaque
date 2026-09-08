@@ -404,18 +404,23 @@ function DetalheInventario({
                 >
                   Fechar inventário
                 </Botao>
-              ) : aplicado ? null : (
-                // aplicado no mapa é registro definitivo — não reabre mais
+              ) : (
+                // reabrir vale TAMBÉM pra aplicado (10/09/2026): contagem
+                // errada precisa ser corrigível — corrige, fecha e aplica
+                // de novo (a re-aplicação substitui endereços e marcas)
                 <Botao
-                  titulo="Apaga o resultado congelado e libera a contagem de novo"
+                  titulo="Apaga o resultado congelado e libera a contagem pra correção"
                   onClick={() =>
                     onAcao(async () => {
-                      if (!confirm('Reabrir apaga o resultado congelado. Reabrir?')) return
+                      const aviso = aplicado
+                        ? 'Reabrir este inventário APLICADO apaga a conferência congelada e o carimbo de aplicado.\n\nDepois de corrigir a contagem: Fechar e Aplicar de novo — os endereços do mapa serão regravados pela contagem corrigida.\n\nReabrir?'
+                        : 'Reabrir apaga o resultado congelado. Reabrir?'
+                      if (!confirm(aviso)) return
                       await api.reabrirInventario(inv.id)
                     })
                   }
                 >
-                  Reabrir
+                  Reabrir{aplicado ? ' pra corrigir' : ''}
                 </Botao>
               )}
               <Botao
