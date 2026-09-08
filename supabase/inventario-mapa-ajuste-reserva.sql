@@ -32,11 +32,20 @@ alter table lotes_mapa add column if not exists nao_encontrado_inventario_em tim
 comment on column lotes_mapa.nao_encontrado_inventario_em is
   'Estava na lista do SAP do último inventário aplicado e ninguém contou. Limpa ao endereçar (gatilho), ao ser contado numa aplicação seguinte, ou zerando por ajuste.';
 
--- rastro de entrada no mapa por ordem: torna gatilho e backfill idempotentes
--- e é a régua do desfazer ("Voltar para produção" só reverte o que entrou)
-alter table ordens add column if not exists mapa_lancado_em timestamptz;
-comment on column ordens.mapa_lancado_em is
-  'Quando o apontamento desta ordem entrou no mapa (tratado criado + branca debitada). Null = ainda não entrou.';
+-- Rastro de entrada no mapa por ordem: torna gatilho e backfill idempotentes
+-- e é a régua do desfazer ("Voltar para produção" só reverte o que entrou).
+-- TABELA PRÓPRIA de propósito (09/09/2026): coluna em `ordens` esbarrava no
+-- gatilho fn_ordens_por_acao, que exige a ação Editar pra qualquer coluna
+-- fora das listas dele — quebraria o Confirmar finalização da Produção.
+create table if not exists ordem_mapa_lancado (
+  ordem_id   uuid primary key references ordens(id) on delete cascade,
+  lancado_em timestamptz not null default now()
+);
+comment on table ordem_mapa_lancado is
+  'Ordens cujo apontamento já entrou no mapa (tratado criado + branca debitada). Escrita só pelos gatilhos/backfill (SECURITY DEFINER).';
+alter table ordem_mapa_lancado enable row level security;
+-- sem policy nenhuma de propósito: cliente não lê nem escreve; só os
+-- gatilhos DEFINER tocam aqui
 
 -- ------------------------------------------------------------
 -- 2. Marcos do inventário: aplicado_em/por também só mudam pelas RPCs
@@ -417,7 +426,7 @@ end $$;
 -- 7. Entrada do tratado ANTECIPA pra Finalizada, com desfazer simétrico
 --    ("Voltar para produção" reverte usando os valores VELHOS da ordem).
 --    Sem clamp nos dois sentidos — o desfazer devolve exatamente o que o
---    marco tirou (lição da varredura de 30/08). mapa_lancado_em torna
+--    marco tirou (lição da varredura de 30/08). ordem_mapa_lancado torna
 --    gatilho e backfill idempotentes.
 -- ------------------------------------------------------------
 create or replace function fn_lote_tratado_no_mapa() returns trigger
@@ -431,12 +440,16 @@ declare
   v_peso     numeric;
   v_bags     numeric;
 begin
-  if new.status = 'Finalizada' and old.status is distinct from new.status
-     and new.mapa_lancado_em is null then
+  if new.status = 'Finalizada' and old.status is distinct from new.status then
+    if exists (select 1 from ordem_mapa_lancado where ordem_id = new.id) then
+      return new;  -- já entrou (idempotência)
+    end if;
     v_entrando := true;
     v_row := new;
-  elsif old.status = 'Finalizada' and new.status in ('Em producao', 'Parada')
-     and old.mapa_lancado_em is not null then
+  elsif old.status = 'Finalizada' and new.status in ('Em producao', 'Parada') then
+    if not exists (select 1 from ordem_mapa_lancado where ordem_id = old.id) then
+      return new;  -- nunca entrou (ex.: receita SEM TSI) — nada a reverter
+    end if;
     -- Voltar para produção: reverte com os valores de QUANDO entrou
     v_entrando := false;
     v_row := old;
@@ -493,7 +506,8 @@ begin
        where lote = v_row.lote_id and tratamento = 'SEM TSI';
     end if;
 
-    update ordens set mapa_lancado_em = now() where id = v_row.id;
+    insert into ordem_mapa_lancado (ordem_id) values (v_row.id)
+    on conflict (ordem_id) do nothing;
   else
     -- desfazer: tratado devolve, branca volta — espelho exato da entrada
     update lotes_mapa
@@ -514,7 +528,7 @@ begin
        where lote = v_row.lote_id and tratamento = 'SEM TSI';
     end if;
 
-    update ordens set mapa_lancado_em = null where id = v_row.id;
+    delete from ordem_mapa_lancado where ordem_id = v_row.id;
   end if;
 
   return new;
@@ -529,14 +543,17 @@ create trigger tg_lote_tratado_no_mapa
   execute function fn_lote_tratado_no_mapa();
 
 -- ------------------------------------------------------------
--- 8. Backfill idempotente:
+-- 8. Backfill idempotente (SÓ na tabela ordem_mapa_lancado — a tabela
+--    `ordens` não é tocada: o gatilho fn_ordens_por_acao exigiria a ação
+--    Editar até do SQL Editor):
 --    - ordens já em Qualidade apontada/Apontada entraram no mapa pela
---      regra antiga → só carimba mapa_lancado_em (sem reentrar);
+--      regra antiga → só ganham o registro (sem reentrar);
 --    - ordens hoje em Finalizada (ainda sem QA) NUNCA entraram → entram
 --      agora, pela mesma conta do gatilho.
 -- ------------------------------------------------------------
-update ordens set mapa_lancado_em = coalesce(mapa_lancado_em, now())
- where status in ('Qualidade apontada', 'Apontada');
+insert into ordem_mapa_lancado (ordem_id)
+select id from ordens where status in ('Qualidade apontada', 'Apontada')
+on conflict (ordem_id) do nothing;
 
 do $$
 declare
@@ -547,16 +564,19 @@ declare
   v_peso     numeric;
   v_bags     numeric;
 begin
-  for r in select * from ordens where status = 'Finalizada' and mapa_lancado_em is null
+  for r in
+    select o.* from ordens o
+     where o.status = 'Finalizada'
+       and not exists (select 1 from ordem_mapa_lancado m where m.ordem_id = o.id)
   loop
     select nome into v_receita from receitas where id = r.receita_id;
     if v_receita is null or upper(trim(v_receita)) = 'SEM TSI' then
-      update ordens set mapa_lancado_em = now() where id = r.id;
+      insert into ordem_mapa_lancado (ordem_id) values (r.id) on conflict do nothing;
       continue;
     end if;
     select * into v_ls from lotes_semente where id = r.lote_id;
     if not found then
-      update ordens set mapa_lancado_em = now() where id = r.id;
+      insert into ordem_mapa_lancado (ordem_id) values (r.id) on conflict do nothing;
       continue;
     end if;
     select * into v_emb from embalagens where codigo = r.embalagem;
@@ -587,7 +607,7 @@ begin
        where lote = r.lote_id and tratamento = 'SEM TSI';
     end if;
 
-    update ordens set mapa_lancado_em = now() where id = r.id;
+    insert into ordem_mapa_lancado (ordem_id) values (r.id) on conflict do nothing;
   end loop;
 end $$;
 
@@ -673,7 +693,8 @@ exception when others then null; end $$;
 -- select column_name from information_schema.columns
 --  where table_schema='tsi' and table_name='inventarios'
 --    and column_name like 'aplicado%';                        -- 2 colunas
--- select count(*) from ordens where status='Finalizada' and mapa_lancado_em is null;  -- 0
+-- select count(*) from ordens o where o.status='Finalizada'
+--   and not exists (select 1 from ordem_mapa_lancado m where m.ordem_id=o.id);  -- 0
 -- select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --  where n.nspname='tsi' and proname in
 --    ('aplicar_inventario_no_mapa','ajustar_saldo_mapa','fn_endereco_achado');  -- 3

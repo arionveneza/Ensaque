@@ -551,8 +551,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    da carga recusa cargas + ordens > saldo da branca. **Entrada do tratado no mapa
    ANTECIPOU** de `Qualidade apontada` pra **`Finalizada`** (apontamento da quantidade
    produzida): gatilho `tg_lote_tratado_no_mapa` recriado com desfazer SIMÉTRICO no
-   "Voltar para produção" (sem clamp; usa valores VELHOS da ordem) e idempotência por
-   `ordens.mapa_lancado_em` (backfill na migração). O lote tratado nasce "Sem
+   "Voltar para produção" (sem clamp; usa valores VELHOS da ordem) e idempotência pela
+   tabela `ordem_mapa_lancado` (backfill na migração) — tabela PRÓPRIA porque coluna em
+   `ordens` esbarrava no fn_ordens_por_acao, que exige a ação Editar pra coluna fora das
+   listas dele (achado de 09/09/2026). O lote tratado nasce "Sem
    localização" e a **Logística o endereça na própria conferência de quantidade
    produzida** (tela Logística: armazém A–E obrigatório + bloco/quadra; SOMA ao endereço
    existente — `somarEndereco`; ordem SEM TSI não pede endereço). Formulário de ordem
