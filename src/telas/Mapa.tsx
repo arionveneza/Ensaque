@@ -2247,7 +2247,7 @@ function MapaGrade({
           saldo divergente do SAP — recontar
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-4 w-7 rounded-md bg-sky-200/70 ring-2 ring-sky-500 dark:bg-sky-950/70" />
+          <span className="inline-block h-4 w-7 rounded-md bg-sky-200/70 ring-2 ring-black dark:bg-sky-950/70 dark:ring-white" />
           contado, mas não está no SAP
         </span>
         <span className="flex items-center gap-1.5">
@@ -2371,7 +2371,7 @@ function MapaGrade({
                                   : divergente
                                     ? 'ring-2 ring-red-500'
                                     : foraSap
-                                      ? 'ring-2 ring-sky-500'
+                                      ? 'ring-2 ring-black dark:ring-white'
                                       : suspeita
                                         ? 'ring-2 ring-amber-500'
                                         : ''
