@@ -642,8 +642,14 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
   no cadastro de químicos): **uma linha por produto POR CLASSE** (produto fungicida +
   inseticida sai nas duas seções, princípios da mesma classe juntam com " + ");
   **dosagem sempre por 100 kg de semente**; Biologico/Outros e o que estoura a seção vão
-  pra OUTROS PRODUTOS com a classe na coluna INFORMAÇÕES; BIOLÓGICOS: = SIM/NÃO; produto
-  sem princípio cadastrado sai em OUTROS sem informação e a tela avisa antes de imprimir.
+  pra OUTROS PRODUTOS com a classe na coluna INFORMAÇÕES; **BIOLÓGICOS: = SIM quando há
+  princípio de classe Biologico OU Inoculante** (decisão do Arion, 12/09/2026: só o
+  Rizoliq marca SIM e continua na seção INOCULANTE; nematicida biológico como Lumialza
+  fica Nematicida e não marca); produto sem princípio cadastrado sai em OUTROS sem
+  informação e a tela avisa antes de imprimir. Carga inicial dos princípios em
+  `supabase/seed-principios-ativos.sql` (planilha "Descrição" da Veneza + rótulos onde
+  ela falhava; Grafite, Pó secante, Kelmax e Disco Black ficam sem princípio de
+  propósito).
   Posições (`FICHA_QUIMICOS_LAYOUT`) começaram como estimativa pela foto — o item "Teste
   de alinhamento" imprime a grade suposta + régua de 10 mm numa ficha real e o desvio
   relatado vira ajuste SÓ nessa constante. Imprimir em 100%, sem margens.

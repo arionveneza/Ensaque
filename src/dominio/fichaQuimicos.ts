@@ -132,7 +132,11 @@ export function montarFichaQuimicos(receita: string, itens: ItemFicha[]): FichaQ
     for (const [classe, ps] of porClasse) {
       const principio = ps.map((p) => p.nome).join(' + ')
       const concentracao = concentracaoFicha(ps)
-      if (classe === 'Biologico') ficha.biologicos = 'SIM'
+      // Inoculante é biológico por natureza (Bradyrhizobium) e continua
+      // na seção INOCULANTE do papel — decisão do Arion (12/09/2026): só o
+      // Rizoliq marca SIM; nematicida biológico (Lumialza, Votivo) fica
+      // como Nematicida e NÃO marca.
+      if (classe === 'Biologico' || classe === 'Inoculante') ficha.biologicos = 'SIM'
 
       const secao = SECAO_DA_CLASSE[classe]
       if (secao && ficha.secoes[secao].length < CAPACIDADE_FICHA[secao]) {

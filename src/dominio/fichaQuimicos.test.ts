@@ -84,6 +84,22 @@ describe('montarFichaQuimicos', () => {
     expect(f.outros).toEqual([{ produto: 'RIZOLIQ', informacoes: 'Biológico · Bradyrhizobium', dosagem: '200 mL/100 kg' }])
   })
 
+  it('inoculante fica na seção INOCULANTE e marca BIOLÓGICOS: SIM (Rizoliq)', () => {
+    const f = montarFichaQuimicos('R', [
+      item('RIZOLIQ LLI', [p('Bradyrhizobium 7×10⁹ UFC/mL', 'Inoculante', null)], 250, 'ml/100kg'),
+    ])
+    expect(f.secoes.inoculante).toEqual([
+      { produto: 'RIZOLIQ LLI', principio: 'Bradyrhizobium 7×10⁹ UFC/mL', concentracao: '', dosagem: '250 mL/100 kg' },
+    ])
+    expect(f.biologicos).toBe('SIM')
+  })
+
+  it('nematicida biológico (Bacillus) NÃO marca SIM — só inoculante e classe Biologico', () => {
+    const f = montarFichaQuimicos('L', [item('LUMIALZA', [p('Bacillus amyloliquefaciens', 'Nematicida', 270)])])
+    expect(f.secoes.nematicida).toHaveLength(1)
+    expect(f.biologicos).toBe('NÃO')
+  })
+
   it('classe Outros vai pra OUTROS sem rótulo redundante', () => {
     const f = montarFichaQuimicos('X', [item('GRAFITE', [p('Grafite', 'Outros', null)], 100, 'g/100kg')])
     expect(f.outros[0].informacoes).toBe('Grafite')
