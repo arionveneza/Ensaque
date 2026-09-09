@@ -107,12 +107,12 @@ describe('montarFichaQuimicos', () => {
     expect(f.outros).toEqual([{ produto: 'MISTERIO', informacoes: '', dosagem: '200 mL/100 kg' }])
   })
 
-  it('OUTROS também tem limite: o que passa de 7 vira aviso, não some calado', () => {
-    const itens = Array.from({ length: CAPACIDADE_FICHA.outros + 2 }, (_, i) =>
-      item(`P${i}`, [p(`X${i}`, 'Outros', null)]),
-    )
+  it('OUTROS também tem limite (o papel tem 5 linhas): o que passa vira aviso, não some calado', () => {
+    const n = CAPACIDADE_FICHA.outros
+    const itens = Array.from({ length: n + 2 }, (_, i) => item(`P${i}`, [p(`X${i}`, 'Outros', null)]))
     const f = montarFichaQuimicos('X', itens)
-    expect(f.outros).toHaveLength(CAPACIDADE_FICHA.outros)
-    expect(f.naoCouberam).toEqual(['P7', 'P8'])
+    expect(n).toBe(5)
+    expect(f.outros).toHaveLength(n)
+    expect(f.naoCouberam).toEqual([`P${n}`, `P${n + 1}`])
   })
 })

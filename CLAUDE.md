@@ -636,7 +636,8 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
   `imprimirFichaQuimicos` em `exportar.ts`, `@page 212mm 320mm`, divs absolutas em mm;
   domínio puro em `src/dominio/fichaQuimicos.ts`). Células de 9 mm de altura × 48 mm
   (seções de 4 colunas) e 65 mm (OUTROS, 3 colunas); linhas no papel: Inseticida 2 ·
-  Fungicida 2 · Nematicida 1 · Inoculante 1 · Outros 7 (`CAPACIDADE_FICHA`). Dados vêm
+  Fungicida 2 · Nematicida 1 · Inoculante 1 · Outros 5 (`CAPACIDADE_FICHA`; a coluna
+  DOSAGEM fica 1 cm à direita da grade uniforme, `deslocDosagem`). Dados vêm
   da receita + `produto_principios` (princípio ativo, concentração, classe — já existiam
   no cadastro de químicos): **uma linha por produto POR CLASSE** (produto fungicida +
   inseticida sai nas duas seções, princípios da mesma classe juntam com " + ");

@@ -453,6 +453,12 @@ export const FICHA_QUIMICOS_LAYOUT = {
    */
   topCabecalho: 94,
   esquerdaCabecalho: 20,
+  /**
+   * A coluna DOSAGEM (última) fica 1 cm mais à direita do que a grade
+   * uniforme sugere — em TODAS as seções, OUTROS inclusive (medido pelo
+   * Arion, 12/09/2026).
+   */
+  deslocDosagem: 10,
   /** top da 1ª linha de DADOS de cada seção (logo abaixo do cabeçalho de colunas). */
   top: { inseticida: 119, fungicida: 151, nematicida: 180, inoculante: 212, outros: 237 },
 }
@@ -500,7 +506,7 @@ export function imprimirFichaQuimicos(
       const linha = f.secoes[secao][i]
       const valores = linha ? [linha.produto, linha.principio, linha.concentracao, linha.dosagem] : null
       COLUNAS.forEach((nome, c) => {
-        const left = L.esquerda + c * L.largura
+        const left = L.esquerda + c * L.largura + (c === COLUNAS.length - 1 ? L.deslocDosagem : 0)
         guias.push(guia(left, top, L.largura, `${secao.toUpperCase()} ${i + 1} · ${nome}`))
         if (valores?.[c]) partes.push(celula(left, top, L.largura, valores[c]))
       })
@@ -512,7 +518,8 @@ export function imprimirFichaQuimicos(
     const linha = f.outros[i]
     const valores = linha ? [linha.produto, linha.informacoes, linha.dosagem] : null
     COL_OUTROS.forEach((nome, c) => {
-      const left = L.esquerdaOutros + c * L.larguraOutros
+      const left =
+        L.esquerdaOutros + c * L.larguraOutros + (c === COL_OUTROS.length - 1 ? L.deslocDosagem : 0)
       guias.push(guia(left, top, L.larguraOutros, `OUTROS ${i + 1} · ${nome}`))
       if (valores?.[c]) partes.push(celula(left, top, L.larguraOutros, valores[c]))
     })

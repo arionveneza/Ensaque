@@ -43,13 +43,17 @@ export type SecaoFicha = 'inseticida' | 'fungicida' | 'nematicida' | 'inoculante
 
 export const SECOES_FICHA: SecaoFicha[] = ['inseticida', 'fungicida', 'nematicida', 'inoculante']
 
-/** Linhas de dados que o PAPEL tem em cada seção — quem estoura vai pra OUTROS. */
+/**
+ * Linhas de dados que o PAPEL tem em cada seção — quem estoura vai pra
+ * OUTROS. Contadas pelo Arion na ficha real (12/09/2026): OUTROS tem 5
+ * linhas, não as 7 que a foto sugeria.
+ */
 export const CAPACIDADE_FICHA: Record<SecaoFicha | 'outros', number> = {
   inseticida: 2,
   fungicida: 2,
   nematicida: 1,
   inoculante: 1,
-  outros: 7,
+  outros: 5,
 }
 
 export interface FichaQuimicos {
