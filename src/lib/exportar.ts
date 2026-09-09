@@ -434,8 +434,9 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
  * TEXTO dentro das células. Células de 9 mm de altura; 48 mm de largura
  * nas seções de 4 colunas e 65 mm em OUTROS PRODUTOS (3 colunas) — medidas
  * do Arion. Posições calibradas com o "Teste de alinhamento" numa ficha
- * real (1ª rodada 12/09/2026: cabeçalho +10 mm pra baixo e +10 pra
- * direita, seções +13 mm pra baixo). Se ainda desviar, mexer SÓ aqui.
+ * real, em 3 rodadas (12/09/2026) — cada seção acabou com o seu próprio
+ * top, e RECEITA/BIOLÓGICOS com posição própria. Se ainda desviar, mexer
+ * SÓ aqui.
  */
 export const FICHA_QUIMICOS_LAYOUT = {
   pagina: { largura: 212, altura: 320 },
@@ -447,12 +448,13 @@ export const FICHA_QUIMICOS_LAYOUT = {
   /** borda esquerda da grade de OUTROS (3 × 65 = 195 mm, centralizado). */
   esquerdaOutros: 8.5,
   /**
-   * linha RECEITA | valor | BIOLÓGICOS: | valor. Na ficha real ela fica
-   * 1 cm mais baixa e 1 cm mais à direita que a grade das seções (medido
-   * pelo Arion, 12/09/2026) — por isso tem esquerda própria.
+   * Células de RECEITA e BIOLÓGICOS no topo, medidas UMA A UMA na ficha
+   * real (Arion, 12/09/2026, 3 rodadas): não seguem a grade das seções —
+   * a receita fica 5 mm mais baixa e 1 cm mais à esquerda que a de
+   * BIOLÓGICOS. Posição = canto superior esquerdo da célula, em mm.
    */
-  topCabecalho: 94,
-  esquerdaCabecalho: 20,
+  receita: { left: 58, top: 99 },
+  biologicos: { left: 164, top: 94 },
   /**
    * A coluna DOSAGEM (última) fica 1 cm mais à direita do que a grade
    * uniforme sugere — em TODAS as seções, OUTROS inclusive (medido pelo
@@ -460,7 +462,7 @@ export const FICHA_QUIMICOS_LAYOUT = {
    */
   deslocDosagem: 10,
   /** top da 1ª linha de DADOS de cada seção (logo abaixo do cabeçalho de colunas). */
-  top: { inseticida: 119, fungicida: 151, nematicida: 180, inoculante: 212, outros: 237 },
+  top: { inseticida: 119, fungicida: 156, nematicida: 185, inoculante: 212, outros: 244 },
 }
 
 /**
@@ -494,10 +496,10 @@ export function imprimirFichaQuimicos(
   const guias: string[] = []
 
   // cabeçalho: RECEITA na 2ª coluna, BIOLÓGICOS na 4ª (os rótulos estão no papel)
-  partes.push(celula(L.esquerdaCabecalho + L.largura, L.topCabecalho, L.largura, f.receita))
-  partes.push(celula(L.esquerdaCabecalho + 3 * L.largura, L.topCabecalho, L.largura, f.biologicos))
-  guias.push(guia(L.esquerdaCabecalho + L.largura, L.topCabecalho, L.largura, 'RECEITA'))
-  guias.push(guia(L.esquerdaCabecalho + 3 * L.largura, L.topCabecalho, L.largura, 'BIOLÓGICOS'))
+  partes.push(celula(L.receita.left, L.receita.top, L.largura, f.receita))
+  partes.push(celula(L.biologicos.left, L.biologicos.top, L.largura, f.biologicos))
+  guias.push(guia(L.receita.left, L.receita.top, L.largura, 'RECEITA'))
+  guias.push(guia(L.biologicos.left, L.biologicos.top, L.largura, 'BIOLÓGICOS'))
 
   const COLUNAS = ['PRODUTO', 'PRINCÍPIO ATIVO', 'CONCENTRAÇÃO', 'DOSAGEM']
   for (const secao of SECOES_FICHA) {
