@@ -433,9 +433,9 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
  * logos, cabeçalhos verdes, grade e precauções impressos — o app só põe
  * TEXTO dentro das células. Células de 9 mm de altura; 48 mm de largura
  * nas seções de 4 colunas e 65 mm em OUTROS PRODUTOS (3 colunas) — medidas
- * do Arion. `esquerda*`, `topCabecalho` e `top` são ESTIMATIVA pela foto:
- * acertar com o "Teste de alinhamento" (imprime a grade e uma régua) e o
- * desvio que a impressão numa ficha real mostrar — mexer SÓ aqui.
+ * do Arion. Posições calibradas com o "Teste de alinhamento" numa ficha
+ * real (1ª rodada 12/09/2026: cabeçalho +10 mm pra baixo e +10 pra
+ * direita, seções +13 mm pra baixo). Se ainda desviar, mexer SÓ aqui.
  */
 export const FICHA_QUIMICOS_LAYOUT = {
   pagina: { largura: 212, altura: 320 },
@@ -446,10 +446,15 @@ export const FICHA_QUIMICOS_LAYOUT = {
   esquerda: 10,
   /** borda esquerda da grade de OUTROS (3 × 65 = 195 mm, centralizado). */
   esquerdaOutros: 8.5,
-  /** linha RECEITA | valor | BIOLÓGICOS: | valor — mesma grade de 4 colunas. */
-  topCabecalho: 84,
+  /**
+   * linha RECEITA | valor | BIOLÓGICOS: | valor. Na ficha real ela fica
+   * 1 cm mais baixa e 1 cm mais à direita que a grade das seções (medido
+   * pelo Arion, 12/09/2026) — por isso tem esquerda própria.
+   */
+  topCabecalho: 94,
+  esquerdaCabecalho: 20,
   /** top da 1ª linha de DADOS de cada seção (logo abaixo do cabeçalho de colunas). */
-  top: { inseticida: 106, fungicida: 138, nematicida: 167, inoculante: 199, outros: 224 },
+  top: { inseticida: 119, fungicida: 151, nematicida: 180, inoculante: 212, outros: 237 },
 }
 
 /**
@@ -470,8 +475,9 @@ export function imprimirFichaQuimicos(
   const mm = (v: number) => `${Math.round(v * 100) / 100}mm`
 
   // texto longo cai pra fonte menor e pode quebrar em 2 linhas dentro dos 9 mm
+  // (limites de caracteres pra 10,5 pt: ~22 cabem em 48 mm, ~30 em 65 mm)
   const celula = (left: number, top: number, largura: number, texto: string) => {
-    const limite = largura >= 60 ? 34 : 24
+    const limite = largura >= 60 ? 30 : 22
     const cls = texto.length > limite ? 'c quebra' : 'c nowrap'
     return `<div class="${cls}" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(L.altura)}">${esc(texto)}</div>`
   }
@@ -482,10 +488,10 @@ export function imprimirFichaQuimicos(
   const guias: string[] = []
 
   // cabeçalho: RECEITA na 2ª coluna, BIOLÓGICOS na 4ª (os rótulos estão no papel)
-  partes.push(celula(L.esquerda + L.largura, L.topCabecalho, L.largura, f.receita))
-  partes.push(celula(L.esquerda + 3 * L.largura, L.topCabecalho, L.largura, f.biologicos))
-  guias.push(guia(L.esquerda + L.largura, L.topCabecalho, L.largura, 'RECEITA'))
-  guias.push(guia(L.esquerda + 3 * L.largura, L.topCabecalho, L.largura, 'BIOLÓGICOS'))
+  partes.push(celula(L.esquerdaCabecalho + L.largura, L.topCabecalho, L.largura, f.receita))
+  partes.push(celula(L.esquerdaCabecalho + 3 * L.largura, L.topCabecalho, L.largura, f.biologicos))
+  guias.push(guia(L.esquerdaCabecalho + L.largura, L.topCabecalho, L.largura, 'RECEITA'))
+  guias.push(guia(L.esquerdaCabecalho + 3 * L.largura, L.topCabecalho, L.largura, 'BIOLÓGICOS'))
 
   const COLUNAS = ['PRODUTO', 'PRINCÍPIO ATIVO', 'CONCENTRAÇÃO', 'DOSAGEM']
   for (const secao of SECOES_FICHA) {
@@ -537,9 +543,9 @@ export function imprimirFichaQuimicos(
   body { position: relative; width: ${mm(L.pagina.largura)}; height: ${mm(L.pagina.altura)}; overflow: hidden;
          font-family: system-ui, sans-serif; color: #000; }
   .c { position: absolute; display: flex; align-items: center; padding: 0 1.5mm; overflow: hidden;
-       font-size: 9pt; line-height: 1.15; }
+       font-size: 10.5pt; line-height: 1.15; }
   .c.nowrap { white-space: nowrap; }
-  .c.quebra { font-size: 7pt; }
+  .c.quebra { font-size: 8pt; }
   .teste .c { outline: 0.25mm solid #c00; outline-offset: -0.15mm; }
   .g { position: absolute; outline: 0.2mm dashed #888; outline-offset: -0.1mm; }
   .g span { position: absolute; left: 1mm; bottom: 0.4mm; font-size: 4.5pt; color: #888; white-space: nowrap; }
