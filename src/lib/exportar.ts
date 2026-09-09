@@ -154,6 +154,49 @@ function abrirParaImpressao(html: string, aguardarImagens = false, janelaPronta?
 const esc = (v: Celula) =>
   String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+/**
+ * Aviso DENTRO da janela já aberta por abrirJanelaImpressao, com "Imprimir
+ * mesmo assim" / "Cancelar". Um confirm() no opener nesse momento aparece
+ * atrás do pop-up (que acabou de ganhar o foco) — o operador não vê o
+ * diálogo e a janela "abre e fecha" (relato do Arion, 12/09/2026).
+ */
+export function confirmarNaJanela(janela: Window, avisos: string[], aoConfirmar: () => void): void {
+  const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Antes de imprimir</title>
+<style>
+  body { font-family: system-ui, sans-serif; color: #222; padding: 24px; max-width: 760px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  li { margin: 8px 0; line-height: 1.4; }
+  button { font: inherit; padding: 8px 16px; margin-right: 8px; border-radius: 6px;
+           border: 1px solid #999; background: #fff; cursor: pointer; }
+  button.ok { background: #14532d; color: #fff; border-color: #14532d; }
+</style></head><body>
+<h1>Antes de imprimir</h1>
+<ul>${avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
+<p><button class="ok" id="ok">Imprimir mesmo assim</button><button id="cancelar">Cancelar</button></p>
+</body></html>`
+  janela.document.open()
+  janela.document.write(html)
+  janela.document.close()
+  janela.focus()
+  janela.document.getElementById('ok')?.addEventListener('click', aoConfirmar)
+  janela.document.getElementById('cancelar')?.addEventListener('click', () => janela.close())
+}
+
+/** Erro na janela já aberta — nunca fechar calado: o operador precisa ler o motivo. */
+export function mostrarErroNaJanela(janela: Window, mensagem: string): void {
+  janela.document.open()
+  janela.document.write(`<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Não foi possível imprimir</title></head>
+<body style="font-family:system-ui,sans-serif;padding:24px;color:#991b1b;max-width:760px">
+<h1 style="font-size:18px;margin:0 0 12px">Não foi possível montar a impressão</h1>
+<p style="white-space:pre-wrap">${esc(mensagem)}</p>
+<p style="color:#444">Feche esta janela e tente de novo. Se persistir, mande esta mensagem pro PCP.</p>
+</body></html>`)
+  janela.document.close()
+  janela.focus()
+}
+
 export interface OrdemImpressao {
   numero: string
   cultivar: string

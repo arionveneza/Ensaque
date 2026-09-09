@@ -22,7 +22,8 @@ import {
 import { jaIniciada, statusEfetivo } from '@/dominio/status'
 import { Aviso, dataHoraCurta, diaCurto, enderecoLote, inteiro, rotuloTanque } from '@/componentes/ui'
 import {
-  abrirJanelaImpressao, imprimirEtiquetaDm, imprimirFichaQuimicos, imprimirOrdemProducao,
+  abrirJanelaImpressao, confirmarNaJanela, imprimirEtiquetaDm, imprimirFichaQuimicos,
+  imprimirOrdemProducao, mostrarErroNaJanela,
 } from '@/lib/exportar'
 import { montarFichaQuimicos } from '@/dominio/fichaQuimicos'
 import { itensReceitaComPrincipios } from '@/dados/api-gestao'
@@ -257,14 +258,19 @@ export default function ModalOrdem({
       if (ficha.naoCouberam.length > 0) {
         avisos.push(`Não couberam na ficha (OUTROS PRODUTOS lotou): ${ficha.naoCouberam.join(', ')}.`)
       }
-      if (avisos.length > 0 && !confirm(`${avisos.join('\n\n')}\n\nImprimir mesmo assim?`)) {
-        janela.close()
+      if (avisos.length === 0) {
+        imprimirFichaQuimicos(ficha, { teste }, janela)
         return
       }
-      imprimirFichaQuimicos(ficha, { teste }, janela)
+      // o aviso vai DENTRO do pop-up: um confirm() aqui ficava atrás da
+      // janela recém-aberta e, dispensado sem ser visto, fechava tudo —
+      // "abre e já fecha" (relato do Arion, 12/09/2026)
+      confirmarNaJanela(janela, avisos, () => imprimirFichaQuimicos(ficha, { teste }, janela))
     } catch (e) {
-      janela.close()
-      setErro(e instanceof Error ? e.message : String(e))
+      // nunca fechar calado: o motivo fica na própria janela
+      const msg = e instanceof Error ? e.message : String(e)
+      mostrarErroNaJanela(janela, msg)
+      setErro(msg)
     }
   }
 
