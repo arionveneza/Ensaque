@@ -32,6 +32,21 @@ export const num = (v: unknown): number => {
   return Number.isNaN(n) ? 0 : n
 }
 
+/**
+ * PMS (peso de mil sementes) só — o `num()` genérico acima trata ponto
+ * com 3+ dígitos depois como separador de milhar, mas PMS de soja NUNCA
+ * chega a 1.000 g, então não existe milhar possível nesse campo: todo
+ * ponto (ou vírgula) é decimal, não importa quantas casas. Sem isto, um
+ * PMS do SAP com 3 casas ("150.150", a coluna é numeric(8,3)) virava
+ * 150150 pelo `num()` e estourava a coluna na importação — "numeric
+ * field overflow" (achado do Arion, 12/09/2026).
+ */
+export const numPms = (v: unknown): number => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  const n = parseFloat(txt(v).replace(',', '.'))
+  return Number.isNaN(n) ? 0 : n
+}
+
 /** De-para de embalagem: código da SimpleAgro → código do app. */
 export const EMBALAGEM_DEPARA: Record<string, { codigo: string; fator: number }> = {
   BB5M: { codigo: 'BG5M', fator: 5 },
@@ -369,7 +384,11 @@ export function converterSaldos(rows: Linha[]): ResultadoSaldos {
       resumo.cultivarCorrigidos[chaveCorr] = (resumo.cultivarCorrigidos[chaveCorr] ?? 0) + 1
     }
     const tratamento = txt(r[iTrat])
-    const pms = iPms >= 0 ? num(r[iPms]) : 0
+    let pms = iPms >= 0 ? numPms(r[iPms]) : 0
+    // PMS de soja nunca chega a 1.000 g/mil-sementes — fora disso é
+    // origem corrompida; tratado como ausente (ver mesma guarda em
+    // converterSaldoSap, sap.ts, achado do Arion, 12/09/2026)
+    if (pms <= 0 || pms >= 1000) pms = 0
 
     if (tratamento.toUpperCase() === 'SEM TSI') {
       const id = txt(r[iLote])

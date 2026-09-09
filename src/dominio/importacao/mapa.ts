@@ -20,7 +20,9 @@
  * dos demais campos.
  */
 
-import { EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, txt, type Linha } from './simpleagro'
+import {
+  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, numPms, txt, type Linha,
+} from './simpleagro'
 import { corrigeTratamentoSap } from './sap'
 
 export const DEPOSITO_MAPA = 'VEN_GER'
@@ -290,7 +292,11 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
       continue
     }
 
-    const pms = iPms >= 0 ? num(linha[iPms]) || null : null
+    // PMS de soja nunca chega a 1.000 g/mil-sementes — fora disso é
+    // origem corrompida; tratado como ausente (mesma guarda de
+    // converterSaldoSap, sap.ts, achado do Arion, 12/09/2026)
+    const pmsBruto = iPms >= 0 ? numPms(linha[iPms]) : 0
+    const pms = pmsBruto > 0 && pmsBruto < 1000 ? pmsBruto : null
     const pesoBruto = iPesoBruto >= 0 ? num(linha[iPesoBruto]) : 0
     const pesoBag = pesoBruto > 0 ? pesoBruto : pms != null ? pms * emb.fator : 0
 

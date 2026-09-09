@@ -136,6 +136,28 @@ describe('conversao de saldos do SAP', () => {
     expect(r.lotes[0].pesoBagKg).toBe(0)
   })
 
+  it('PMS com 3 casas decimais (texto do SAP) não vira milhar', () => {
+    // achado do Arion, 12/09/2026: "150.150" (a coluna do banco é
+    // numeric(8,3), o SAP às vezes manda 3 casas) virava 150150 pelo
+    // num() genérico e estourava a importação inteira
+    const r = converterSaldoSap([
+      CAB_SAP,
+      ['761 I2X', 'SV019', 'SEM TSI', 'BB5M', '150.150', '2026-02-10', 'SC', 20],
+    ])
+    expect(r.lotes[0].pms).toBeCloseTo(150.15)
+    expect(r.resumo.semPms).toBe(0)
+  })
+
+  it('PMS implausível (origem corrompida) é tratado como ausente, não estoura a importação', () => {
+    const r = converterSaldoSap([
+      CAB_SAP,
+      linha('761 I2X', 'SV020', 'SEM TSI', 'BB5M', 150150, '2026-02-10', 'SC', 20),
+    ])
+    expect(r.lotes[0].pms).toBe(0)
+    expect(r.lotes[0].pesoBagKg).toBe(0)
+    expect(r.resumo.semPms).toBe(1)
+  })
+
   it('registra as unidades vistas, pra alertar se misturar bag e kg', () => {
     const r = converterSaldoSap([
       CAB_SAP,

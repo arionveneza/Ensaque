@@ -7,7 +7,7 @@
  */
 
 import {
-  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, txt,
+  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, numPms, txt,
   type EstoquePaConvertido, type Linha, type LoteConvertido,
 } from './simpleagro'
 
@@ -152,7 +152,14 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
 
     const cultivar = normalizaCultivar(txt(r[iCult]))
     const tratamento = corrigeTratamentoSap(txt(r[iTrat]))
-    const pms = iPms >= 0 ? num(r[iPms]) : 0
+    let pms = iPms >= 0 ? numPms(r[iPms]) : 0
+    // PMS de soja nunca chega a 1.000 g/mil-sementes — valor fora disso é
+    // origem corrompida (célula errada, parsing), não semente de verdade.
+    // Tratado como ausente (mesmo efeito de sem PMS: peso do bag zero) —
+    // sem isso um valor assim tentava gravar na coluna numeric(8,3) e
+    // estourava a importação INTEIRA (achado do Arion, 12/09/2026:
+    // "numeric field overflow" ao importar 608 lotes).
+    if (pms <= 0 || pms >= 1000) pms = 0
 
     if (!tratamento || tratamento.toUpperCase() === 'SEM TSI') {
       const id = txt(r[iLote])

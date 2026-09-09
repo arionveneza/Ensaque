@@ -6,6 +6,7 @@ import {
   ehRelatorioSaldos,
   normalizaCultivar,
   num,
+  numPms,
   type Linha,
 } from './simpleagro'
 
@@ -255,6 +256,32 @@ describe('num: os tres formatos que as origens mandam', () => {
     expect(num('')).toBe(0)
     expect(num(null)).toBe(0)
     expect(num('abc')).toBe(0)
+  })
+})
+
+describe('numPms: PMS nunca tem milhar, todo ponto é decimal', () => {
+  // achado do Arion, 12/09/2026: um PMS do SAP com 3 casas ("150.150",
+  // a coluna é numeric(8,3)) virava 150150 pelo num() genérico — que
+  // trata 3+ dígitos depois do ponto como separador de milhar — e
+  // estourava a coluna na importação inteira ("numeric field overflow")
+  it('ponto com 3 casas é decimal, não milhar (o num() genérico erraria isso)', () => {
+    expect(numPms('150.150')).toBeCloseTo(150.15)
+    expect(num('150.150')).toBe(150150) // é assim que o bug acontecia
+  })
+
+  it('ponto com 1-2 casas e vírgula continuam funcionando', () => {
+    expect(numPms('161.0')).toBe(161)
+    expect(numPms('176,40')).toBe(176.4)
+  })
+
+  it('célula numérica de verdade passa direto', () => {
+    expect(numPms(176.4)).toBe(176.4)
+  })
+
+  it('vazio e lixo dao zero', () => {
+    expect(numPms('')).toBe(0)
+    expect(numPms(null)).toBe(0)
+    expect(numPms('abc')).toBe(0)
   })
 })
 
