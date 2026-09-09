@@ -24,13 +24,19 @@
 
 set search_path = tsi, public;
 
-update lotes_mapa
-   set cultivar = 'NEO700 I2X'
- where cultivar = 'O700 I2X';
+-- Bloco único de propósito: da vez passada só o segundo update rodou
+-- (o cursor/seleção pegou só uma parte) — dentro de um DO só existe UM
+-- statement pra selecionar, os dois updates são atômicos juntos.
+do $$
+begin
+  update lotes_mapa
+     set cultivar = 'NEO700 I2X'
+   where cultivar = 'O700 I2X';
 
-update lotes_semente
-   set cultivar = 'NEO700 I2X'
- where cultivar = 'O700 I2X';
+  update lotes_semente
+     set cultivar = 'NEO700 I2X'
+   where cultivar = 'O700 I2X';
+end $$;
 
 -- ============================================================
 -- Conferência
