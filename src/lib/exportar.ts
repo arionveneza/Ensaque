@@ -434,7 +434,7 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
  * TEXTO dentro das células. Células de 9 mm de altura; 48 mm de largura
  * nas seções de 4 colunas e 65 mm em OUTROS PRODUTOS (3 colunas) — medidas
  * do Arion. Posições calibradas com o "Teste de alinhamento" numa ficha
- * real, em 5 rodadas (12/09/2026) — cada seção acabou com o seu próprio
+ * real, em 6 rodadas (12/09/2026) — cada seção acabou com o seu próprio
  * top, e RECEITA/BIOLÓGICOS com posição própria. Se ainda desviar, mexer
  * SÓ aqui.
  */
@@ -453,8 +453,8 @@ export const FICHA_QUIMICOS_LAYOUT = {
    * a receita fica 5 mm mais baixa e 1 cm mais à esquerda que a de
    * BIOLÓGICOS. Posição = canto superior esquerdo da célula, em mm.
    */
-  receita: { left: 58, top: 104 },
-  biologicos: { left: 164, top: 99 },
+  receita: { left: 58, top: 99 },
+  biologicos: { left: 164, top: 96 },
   /**
    * A coluna DOSAGEM (última) fica 1 cm mais à direita do que a grade
    * uniforme sugere — em TODAS as seções, OUTROS inclusive (medido pelo
@@ -462,7 +462,7 @@ export const FICHA_QUIMICOS_LAYOUT = {
    */
   deslocDosagem: 10,
   /** top da 1ª linha de DADOS de cada seção (logo abaixo do cabeçalho de colunas). */
-  top: { inseticida: 127, fungicida: 162, nematicida: 190, inoculante: 217, outros: 251 },
+  top: { inseticida: 122, fungicida: 157, nematicida: 190, inoculante: 217, outros: 246 },
 }
 
 /**
