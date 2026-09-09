@@ -21,7 +21,11 @@ import {
 } from '@/dominio/calculos'
 import { jaIniciada, statusEfetivo } from '@/dominio/status'
 import { Aviso, dataHoraCurta, diaCurto, enderecoLote, inteiro, rotuloTanque } from '@/componentes/ui'
-import { imprimirEtiquetaDm, imprimirOrdemProducao } from '@/lib/exportar'
+import {
+  abrirJanelaImpressao, imprimirEtiquetaDm, imprimirFichaQuimicos, imprimirOrdemProducao,
+} from '@/lib/exportar'
+import { montarFichaQuimicos } from '@/dominio/fichaQuimicos'
+import { itensReceitaComPrincipios } from '@/dados/api-gestao'
 
 const num = (v: number | null | undefined, casas = 1) =>
   v == null || Number.isNaN(v)
@@ -67,6 +71,7 @@ export default function ModalOrdem({
   // obrigatória na finalização; em branco de propósito — nada de pré-preencher
   const [qtdProduzida, setQtdProduzida] = useState('')
   const [menuEtiqueta, setMenuEtiqueta] = useState(false)
+  const [menuFicha, setMenuFicha] = useState(false)
 
   const prods = useMemo(() => mapaProdutos(produtos), [produtos])
   const mots = useMemo(() => mapaMotivos(motivos), [motivos])
@@ -214,6 +219,55 @@ export default function ModalOrdem({
     })
   }
 
+  const receitaSemTsi = ordem.receitas.nome.trim().toUpperCase() === 'SEM TSI'
+
+  /**
+   * Ficha de químicos (11/09/2026): imprime SÓ o texto, sobre o formulário
+   * pré-impresso da Veneza (21,2 × 32 cm). A janela abre ainda no clique
+   * (senão o bloqueador de pop-up pega depois do await) e os princípios
+   * ativos da receita vêm do banco em seguida. `teste` desenha também a
+   * grade e uma régua, pra calibrar as posições numa ficha real.
+   */
+  async function imprimirFicha(teste: boolean) {
+    setMenuFicha(false)
+    const janela = abrirJanelaImpressao()
+    if (!janela) return
+    try {
+      const itens = await itensReceitaComPrincipios(ordem.receita_id)
+      const ficha = montarFichaQuimicos(
+        ordem.receitas.nome,
+        itens.map((i) => ({
+          produto: i.produtos_quimicos?.nome ?? prods.get(i.produto_id)?.nome ?? i.produto_id,
+          unidade: i.produtos_quimicos?.unidade ?? prods.get(i.produto_id)?.unidade ?? 'ml/kg',
+          dose: i.dose,
+          principios: (i.produtos_quimicos?.produto_principios ?? []).map((p) => ({
+            nome: p.nome,
+            concentracao: p.concentracao,
+            unidadeConc: p.unidade_conc,
+            classe: p.classe,
+          })),
+        })),
+      )
+      const avisos: string[] = []
+      if (ficha.semPrincipio.length > 0) {
+        avisos.push(
+          `Sem princípio ativo cadastrado — saem em OUTROS PRODUTOS sem informação: ${ficha.semPrincipio.join(', ')}. Cadastre em Cadastros ▸ Produtos químicos.`,
+        )
+      }
+      if (ficha.naoCouberam.length > 0) {
+        avisos.push(`Não couberam na ficha (OUTROS PRODUTOS lotou): ${ficha.naoCouberam.join(', ')}.`)
+      }
+      if (avisos.length > 0 && !confirm(`${avisos.join('\n\n')}\n\nImprimir mesmo assim?`)) {
+        janela.close()
+        return
+      }
+      imprimirFichaQuimicos(ficha, { teste }, janela)
+    } catch (e) {
+      janela.close()
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // ---- validações antes de confirmar (o banco também barra, via trigger) ----
   const semPesoInicial = ordem.ordem_tanques.filter((t) => t.peso_inicial == null)
   const semDestino = ordem.receitas.receita_itens.filter(
@@ -306,6 +360,40 @@ export default function ModalOrdem({
                   {embalagens.length === 0 && (
                     <p className="px-2 py-1.5 text-xs text-stone-400">cadastro de embalagens não carregado</p>
                   )}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setMenuFicha((v) => !v)}
+                disabled={receitaSemTsi}
+                title={
+                  receitaSemTsi
+                    ? 'Receita SEM TSI não tem químicos — a ficha não se aplica'
+                    : 'Ficha de químicos: imprime só o texto sobre o formulário pré-impresso (papel 21,2 × 32 cm). Cópias pelo diálogo de impressão.'
+                }
+                className="rounded-md border border-stone-300 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-stone-700"
+              >
+                Ficha de químicos ▾
+              </button>
+              {menuFicha && (
+                <div className="absolute right-0 z-10 mt-1 w-64 rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+                  <button
+                    onClick={() => void imprimirFicha(false)}
+                    className="flex w-full flex-col rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
+                  >
+                    <span className="font-medium">Imprimir ficha</span>
+                    <span className="text-xs text-stone-500">só o texto, nas células do formulário</span>
+                  </button>
+                  <button
+                    onClick={() => void imprimirFicha(true)}
+                    className="flex w-full flex-col rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
+                  >
+                    <span className="font-medium">Teste de alinhamento</span>
+                    <span className="text-xs text-stone-500">
+                      imprime também a grade e uma régua — numa ficha real, mostra o desvio
+                    </span>
+                  </button>
                 </div>
               )}
             </div>

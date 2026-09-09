@@ -1,5 +1,6 @@
 // o pacote não tem export raiz: no navegador é o subcaminho /browser
 import writeXlsxFile, { type SheetData } from 'write-excel-file/browser'
+import { CAPACIDADE_FICHA, SECOES_FICHA, type FichaQuimicos } from '@/dominio/fichaQuimicos'
 
 /**
  * Exportação para .xlsx de verdade (não CSV renomeado) e impressão.
@@ -378,6 +379,137 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
 </body></html>`
 
   abrirParaImpressao(html)
+}
+
+// ================================================================
+// Ficha de químicos — formulário PRÉ-IMPRESSO da Veneza (11/09/2026)
+// ================================================================
+
+/**
+ * Posições em mm sobre o papel de 212 × 320 mm. O formulário já vem com
+ * logos, cabeçalhos verdes, grade e precauções impressos — o app só põe
+ * TEXTO dentro das células. Células de 9 mm de altura; 48 mm de largura
+ * nas seções de 4 colunas e 65 mm em OUTROS PRODUTOS (3 colunas) — medidas
+ * do Arion. `esquerda*`, `topCabecalho` e `top` são ESTIMATIVA pela foto:
+ * acertar com o "Teste de alinhamento" (imprime a grade e uma régua) e o
+ * desvio que a impressão numa ficha real mostrar — mexer SÓ aqui.
+ */
+export const FICHA_QUIMICOS_LAYOUT = {
+  pagina: { largura: 212, altura: 320 },
+  altura: 9,
+  largura: 48,
+  larguraOutros: 65,
+  /** borda esquerda da grade de 4 colunas (4 × 48 = 192 mm, centralizado). */
+  esquerda: 10,
+  /** borda esquerda da grade de OUTROS (3 × 65 = 195 mm, centralizado). */
+  esquerdaOutros: 8.5,
+  /** linha RECEITA | valor | BIOLÓGICOS: | valor — mesma grade de 4 colunas. */
+  topCabecalho: 84,
+  /** top da 1ª linha de DADOS de cada seção (logo abaixo do cabeçalho de colunas). */
+  top: { inseticida: 106, fungicida: 138, nematicida: 167, inoculante: 199, outros: 224 },
+}
+
+/**
+ * Só o conteúdo variável, cada valor numa div absoluta em mm — nenhuma
+ * borda, cabeçalho ou logo (já estão no papel). Modo `teste` desenha
+ * também a grade que o app supõe (tracejado), o contorno de cada texto
+ * (vermelho) e uma régua a cada 10 mm nas bordas: imprime numa ficha real
+ * e o desvio vira ajuste em FICHA_QUIMICOS_LAYOUT. Recebe a janela já
+ * aberta no clique (os princípios vêm do banco depois — bloqueador).
+ */
+export function imprimirFichaQuimicos(
+  f: FichaQuimicos,
+  opcoes: { teste?: boolean } = {},
+  janelaPronta?: Window,
+): void {
+  const L = FICHA_QUIMICOS_LAYOUT
+  const teste = opcoes.teste === true
+  const mm = (v: number) => `${Math.round(v * 100) / 100}mm`
+
+  // texto longo cai pra fonte menor e pode quebrar em 2 linhas dentro dos 9 mm
+  const celula = (left: number, top: number, largura: number, texto: string) => {
+    const limite = largura >= 60 ? 34 : 24
+    const cls = texto.length > limite ? 'c quebra' : 'c nowrap'
+    return `<div class="${cls}" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(L.altura)}">${esc(texto)}</div>`
+  }
+  const guia = (left: number, top: number, largura: number, rotulo: string) =>
+    `<div class="g" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(L.altura)}"><span>${esc(rotulo)}</span></div>`
+
+  const partes: string[] = []
+  const guias: string[] = []
+
+  // cabeçalho: RECEITA na 2ª coluna, BIOLÓGICOS na 4ª (os rótulos estão no papel)
+  partes.push(celula(L.esquerda + L.largura, L.topCabecalho, L.largura, f.receita))
+  partes.push(celula(L.esquerda + 3 * L.largura, L.topCabecalho, L.largura, f.biologicos))
+  guias.push(guia(L.esquerda + L.largura, L.topCabecalho, L.largura, 'RECEITA'))
+  guias.push(guia(L.esquerda + 3 * L.largura, L.topCabecalho, L.largura, 'BIOLÓGICOS'))
+
+  const COLUNAS = ['PRODUTO', 'PRINCÍPIO ATIVO', 'CONCENTRAÇÃO', 'DOSAGEM']
+  for (const secao of SECOES_FICHA) {
+    for (let i = 0; i < CAPACIDADE_FICHA[secao]; i++) {
+      const top = L.top[secao] + i * L.altura
+      const linha = f.secoes[secao][i]
+      const valores = linha ? [linha.produto, linha.principio, linha.concentracao, linha.dosagem] : null
+      COLUNAS.forEach((nome, c) => {
+        const left = L.esquerda + c * L.largura
+        guias.push(guia(left, top, L.largura, `${secao.toUpperCase()} ${i + 1} · ${nome}`))
+        if (valores?.[c]) partes.push(celula(left, top, L.largura, valores[c]))
+      })
+    }
+  }
+  const COL_OUTROS = ['PRODUTO', 'INFORMAÇÕES', 'DOSAGEM']
+  for (let i = 0; i < CAPACIDADE_FICHA.outros; i++) {
+    const top = L.top.outros + i * L.altura
+    const linha = f.outros[i]
+    const valores = linha ? [linha.produto, linha.informacoes, linha.dosagem] : null
+    COL_OUTROS.forEach((nome, c) => {
+      const left = L.esquerdaOutros + c * L.larguraOutros
+      guias.push(guia(left, top, L.larguraOutros, `OUTROS ${i + 1} · ${nome}`))
+      if (valores?.[c]) partes.push(celula(left, top, L.larguraOutros, valores[c]))
+    })
+  }
+
+  // régua do modo teste: traço a cada 10 mm nas bordas de cima e da esquerda
+  const regua: string[] = []
+  if (teste) {
+    for (let x = 10; x < L.pagina.largura; x += 10) {
+      regua.push(`<div class="tick" style="left:${mm(x)};top:0;width:0.2mm;height:${x % 50 === 0 ? 4 : 2.5}mm"></div>`)
+      if (x % 50 === 0) regua.push(`<div class="tl" style="left:${mm(x + 0.6)};top:0.8mm">${x}</div>`)
+    }
+    for (let y = 10; y < L.pagina.altura; y += 10) {
+      regua.push(`<div class="tick" style="top:${mm(y)};left:0;height:0.2mm;width:${y % 50 === 0 ? 4 : 2.5}mm"></div>`)
+      if (y % 50 === 0) regua.push(`<div class="tl" style="top:${mm(y - 2.6)};left:0.8mm">${y}</div>`)
+    }
+    regua.push(
+      `<div class="nota">TESTE DE ALINHAMENTO da ficha de químicos — imprimir em 100% (sem "ajustar à página"), margens: nenhuma, papel encostado no canto superior esquerdo. Vermelho = texto; tracejado = onde o app supõe cada célula; régua a cada 10 mm. Se sair deslocado, informe quantos mm pra cima/baixo e esquerda/direita, por seção.</div>`,
+    )
+  }
+
+  const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Ficha de químicos ${esc(f.receita)}</title>
+<style>
+  @page { size: ${mm(L.pagina.largura)} ${mm(L.pagina.altura)}; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { position: relative; width: ${mm(L.pagina.largura)}; height: ${mm(L.pagina.altura)}; overflow: hidden;
+         font-family: system-ui, sans-serif; color: #000; }
+  .c { position: absolute; display: flex; align-items: center; padding: 0 1.5mm; overflow: hidden;
+       font-size: 9pt; line-height: 1.15; }
+  .c.nowrap { white-space: nowrap; }
+  .c.quebra { font-size: 7pt; }
+  .teste .c { outline: 0.25mm solid #c00; outline-offset: -0.15mm; }
+  .g { position: absolute; outline: 0.2mm dashed #888; outline-offset: -0.1mm; }
+  .g span { position: absolute; left: 1mm; bottom: 0.4mm; font-size: 4.5pt; color: #888; white-space: nowrap; }
+  .tick { position: absolute; background: #222; }
+  .tl { position: absolute; font-size: 5pt; color: #222; }
+  .nota { position: absolute; left: 10mm; top: 300mm; width: 192mm; font-size: 7pt; line-height: 1.3; color: #333; }
+</style></head><body class="${teste ? 'teste' : ''}">
+${teste ? guias.join('\n') : ''}
+${partes.join('\n')}
+${regua.join('\n')}
+</body></html>`
+
+  abrirParaImpressao(html, false, janelaPronta)
 }
 
 export interface ItemCarregamentoImpressao {

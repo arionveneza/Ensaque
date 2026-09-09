@@ -1,5 +1,5 @@
 ﻿import { supabase } from '@/lib/supabase'
-import type { TipoParada, UnidadeDose } from '@/dominio/tipos'
+import type { ClasseAgronomica, TipoParada, UnidadeDose } from '@/dominio/tipos'
 import type { PedidoConvertido, EstoquePaConvertido, LoteConvertido } from '@/dominio/importacao/simpleagro'
 
 /** Consultas e comandos das telas de Programação, Lotes, Ordens, Qualidade, Indicadores e Cadastros. */
@@ -1211,6 +1211,40 @@ export async function listarReceitas(): Promise<ReceitaCompleta[]> {
     .order('nome')
   erro('receitas', error)
   return (data ?? []) as unknown as ReceitaCompleta[]
+}
+
+/**
+ * Itens de UMA receita com os princípios ativos de cada produto — base da
+ * ficha de químicos impressa (11/09/2026). Consulta única, feita no clique
+ * de imprimir; `produto_principios` já existe desde principios-ativos-e-
+ * direcao.sql, não precisa de migração.
+ */
+export interface ItemReceitaComPrincipios {
+  produto_id: string
+  dose: number
+  produtos_quimicos: {
+    codigo: string
+    nome: string
+    unidade: UnidadeDose
+    densidade: number | null
+    produto_principios: {
+      nome: string
+      concentracao: number | null
+      unidade_conc: 'g/L' | 'g/kg' | '%'
+      classe: ClasseAgronomica
+    }[]
+  } | null
+}
+
+export async function itensReceitaComPrincipios(receitaId: string): Promise<ItemReceitaComPrincipios[]> {
+  const { data, error } = await supabase
+    .from('receita_itens')
+    .select(
+      'produto_id, dose, produtos_quimicos ( codigo, nome, unidade, densidade, produto_principios ( nome, concentracao, unidade_conc, classe ) )',
+    )
+    .eq('receita_id', receitaId)
+  erro('itens da receita (ficha de químicos)', error)
+  return (data ?? []) as unknown as ItemReceitaComPrincipios[]
 }
 
 export interface EmbalagemLinha {

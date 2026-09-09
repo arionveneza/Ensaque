@@ -630,6 +630,22 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
   embalagem do cadastro e **só o peso muda** entre eles (peso fixo do cadastro, ou PMS do
   lote × fator — ex.: PMS 210 → BAG 1.050 kg, MEIO BAG 525 kg, SC10 10 kg); os demais
   campos são sempre os da ordem. Formato por sementes desabilita sem PMS no lote.
+  **Ficha de químicos** (11/09/2026): formulário PRÉ-IMPRESSO da Veneza (papel 212 × 320
+  mm, com logos, cabeçalhos verdes, grade e precauções já no papel) — o app imprime **só o
+  texto** nas células (menu "Ficha de químicos ▾" no detalhe da ordem, `ModalOrdem.tsx`;
+  `imprimirFichaQuimicos` em `exportar.ts`, `@page 212mm 320mm`, divs absolutas em mm;
+  domínio puro em `src/dominio/fichaQuimicos.ts`). Células de 9 mm de altura × 48 mm
+  (seções de 4 colunas) e 65 mm (OUTROS, 3 colunas); linhas no papel: Inseticida 2 ·
+  Fungicida 2 · Nematicida 1 · Inoculante 1 · Outros 7 (`CAPACIDADE_FICHA`). Dados vêm
+  da receita + `produto_principios` (princípio ativo, concentração, classe — já existiam
+  no cadastro de químicos): **uma linha por produto POR CLASSE** (produto fungicida +
+  inseticida sai nas duas seções, princípios da mesma classe juntam com " + ");
+  **dosagem sempre por 100 kg de semente**; Biologico/Outros e o que estoura a seção vão
+  pra OUTROS PRODUTOS com a classe na coluna INFORMAÇÕES; BIOLÓGICOS: = SIM/NÃO; produto
+  sem princípio cadastrado sai em OUTROS sem informação e a tela avisa antes de imprimir.
+  Posições (`FICHA_QUIMICOS_LAYOUT`) começaram como estimativa pela foto — o item "Teste
+  de alinhamento" imprime a grade suposta + régua de 10 mm numa ficha real e o desvio
+  relatado vira ajuste SÓ nessa constante. Imprimir em 100%, sem margens.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,
