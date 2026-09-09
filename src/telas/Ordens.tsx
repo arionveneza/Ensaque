@@ -667,8 +667,12 @@ export default function Ordens() {
                   variante="primario"
                   onClick={() =>
                     comErro(async () => {
-                      const qtd = await g.importarLotes(previaSaldos.lotes)
-                      setMsg(`${qtd} lote(s) importados.`)
+                      const r = await g.importarLotes(previaSaldos.lotes)
+                      setMsg(
+                        `${r.importados} lote(s) importados` +
+                          (r.zerados > 0 ? ` · ${r.zerados} zerado(s) por ter saído da planilha` : '') +
+                          '.',
+                      )
                       setPreviaSaldos(null)
                     })
                   }
@@ -753,8 +757,12 @@ export default function Ordens() {
                   variante="primario"
                   onClick={() =>
                     comErro(async () => {
-                      const qtd = await g.importarLotes(previaSaldoSap.lotes)
-                      setMsg(`${qtd} lote(s) importados (via SAP).`)
+                      const r = await g.importarLotes(previaSaldoSap.lotes)
+                      setMsg(
+                        `${r.importados} lote(s) importados (via SAP)` +
+                          (r.zerados > 0 ? ` · ${r.zerados} zerado(s) por ter saído da planilha` : '') +
+                          '.',
+                      )
                       setPreviaSaldoSap(null)
                     })
                   }

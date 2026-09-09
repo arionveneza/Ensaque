@@ -464,7 +464,12 @@ export async function listarLotes(): Promise<LoteSementeLinha[]> {
   return (data ?? []) as LoteSementeLinha[]
 }
 
-/** Cadastro manual de lote — o caminho normal é o upload de Saldos. */
+/**
+ * Cadastro manual de lote — o caminho normal é o upload de Saldos.
+ * `origem_manual` marca o lote como fora do SAP/SimpleAgro: a próxima
+ * importação de Saldos zera quem sumiu da planilha, mas nunca mexe
+ * neste (migração lotes-semente-zerar-ausentes.sql, 11/09/2026).
+ */
 export async function criarLote(l: {
   id: string
   cultivar: string
@@ -475,7 +480,7 @@ export async function criarLote(l: {
 }): Promise<void> {
   const { error } = await supabase
     .from('lotes_semente')
-    .insert({ ...l, status: 'Em estoque' })
+    .insert({ ...l, status: 'Em estoque', origem_manual: true })
   if (error) {
     if (error.code === '23505') throw new Error(`O lote ${l.id} já está cadastrado.`)
     throw new Error(`criar lote: ${error.message}`)
@@ -782,8 +787,25 @@ export async function listarEstoqueQuimicos(): Promise<
   return { itens: (data ?? []) as EstoqueQuimicoLinha[], criadaEm: carga.criada_em }
 }
 
-/** Lotes vindos do relatório de Saldos. Mantém o status de quem já existe. */
-export async function importarLotes(linhas: LoteConvertido[]): Promise<number> {
+export interface ResumoImportacaoLotes {
+  importados: number
+  /**
+   * Lote que sumiu da planilha nova (saldo foi renumerado no SAP — o
+   * caso real: 262013 virou 262013-1 — ou zerou de verdade) teve o
+   * saldo mostrado zerado (a linha e o histórico continuam intactos).
+   */
+  zerados: number
+}
+
+/**
+ * Lotes vindos do relatório de Saldos: upsert de quem veio na planilha
+ * E zera o saldo de quem NÃO veio — substituição total do saldo
+ * mostrado, sem apagar linha (ordens/movimentos têm FK pro id do
+ * lote). RPC transacional; lote de origem manual (Cadastros ▸ criar
+ * lote) nunca é zerado (achado do Arion, 11/09/2026: saldo fantasma
+ * do lote que já tinha virado outro número no SAP).
+ */
+export async function importarLotes(linhas: LoteConvertido[]): Promise<ResumoImportacaoLotes> {
   const registros = linhas.map((l) => ({
     id: l.id,
     cultivar: l.cultivar,
@@ -793,27 +815,10 @@ export async function importarLotes(linhas: LoteConvertido[]): Promise<number> {
     bags_disp: l.bags,
     peneira: l.peneira,
     categoria: l.categoria,
-    atualizado_em: new Date().toISOString(),
   }))
-  // peneira/categoria nasceram depois (lote-peneira-categoria.sql): na
-  // janela entre publicar o front e rodar o SQL, importa sem elas em vez
-  // de travar a carga — mesmo padrão do cooperado em importarPedidos
-  let comPeneira = true
-  for (let i = 0; i < registros.length; i += 500) {
-    const fatia = registros.slice(i, i + 500)
-    const semPeneira = () => fatia.map(({ peneira: _p, categoria: _c, ...resto }) => resto)
-    let { error } = await supabase
-      .from('lotes_semente')
-      .upsert(comPeneira ? fatia : semPeneira(), { onConflict: 'id' })
-    if (error && comPeneira && (error.message.includes('peneira') || error.message.includes('categoria'))) {
-      comPeneira = false
-      ;({ error } = await supabase
-        .from('lotes_semente')
-        .upsert(semPeneira(), { onConflict: 'id' }))
-    }
-    erro('importar lotes', error)
-  }
-  return registros.length
+  const { data, error } = await supabase.rpc('importar_lotes_semente', { p_lotes: registros })
+  erro('importar lotes — a migração lotes-semente-zerar-ausentes.sql já rodou?', error)
+  return data as ResumoImportacaoLotes
 }
 
 // ================================================================
