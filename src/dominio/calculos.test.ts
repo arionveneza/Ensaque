@@ -18,6 +18,7 @@ import {
   pesoOrdemKg,
   pesoQuimicoTotalKg,
   rendimentoTh,
+  sobreposicaoNoDiaS,
   tempoPlanejadoS,
   temposOrdem,
   turnoDoInicio,
@@ -492,6 +493,39 @@ describe('parada de maquina (sem ordem)', () => {
   it('nunca devolve negativo', () => {
     const inicio = new Date(2026, 8, 10, 9, 0).getTime()
     expect(duracaoParadaMaquinaS({ motivoId: 'M', inicio, fim: null }, inicio - h)).toBe(0)
+  })
+})
+
+describe('sobreposicao com a janela do dia de producao', () => {
+  const h = 3600 * 1000
+
+  it('ordem inteira dentro do turno conta inteira', () => {
+    const ini = new Date(2026, 8, 10, 9, 0).getTime()
+    expect(sobreposicaoNoDiaS(ini, ini + 3 * h, '2026-09-10')).toBe(3 * 3600)
+  })
+
+  // a 141498 comecou 03/09 as 20:34 e terminou 04/09 as 16:47: as 20 h
+  // inteiras caiam no data_prog e davam 28 h de producao num turno de 10 h
+  it('ordem que atravessa a virada e repartida entre os dois dias', () => {
+    const ini = new Date(2026, 8, 3, 20, 0).getTime()
+    const fim = new Date(2026, 8, 4, 16, 0).getTime()
+    // dia 03: das 20:00 as 03:00 = 7 h
+    expect(sobreposicaoNoDiaS(ini, fim, '2026-09-03')).toBe(7 * 3600)
+    // dia 04: das 07:30 as 16:00 = 8,5 h (03:00-07:30 nao e turno de ninguem)
+    expect(sobreposicaoNoDiaS(ini, fim, '2026-09-04')).toBe(8.5 * 3600)
+  })
+
+  it('dia sem nenhuma sobreposicao da zero', () => {
+    const ini = new Date(2026, 8, 10, 9, 0).getTime()
+    expect(sobreposicaoNoDiaS(ini, ini + h, '2026-09-11')).toBe(0)
+    expect(sobreposicaoNoDiaS(ini, ini + h, '2026-09-09')).toBe(0)
+  })
+
+  it('o vao das 03:00 as 07:30 nao pertence a dia nenhum', () => {
+    const ini = new Date(2026, 8, 11, 4, 0).getTime()
+    const fim = new Date(2026, 8, 11, 6, 0).getTime()
+    expect(sobreposicaoNoDiaS(ini, fim, '2026-09-10')).toBe(0)
+    expect(sobreposicaoNoDiaS(ini, fim, '2026-09-11')).toBe(0)
   })
 })
 

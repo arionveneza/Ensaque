@@ -444,6 +444,29 @@ export function fimDoDiaDeProducaoMs(dia: string): number {
   return new Date(a, m - 1, d + 1, 3, 0, 0, 0).getTime()
 }
 
+/** Começo do dia de produção `dia`: 07:30 dele. */
+export function inicioDoDiaDeProducaoMs(dia: string): number {
+  const [a, m, d] = dia.split('-').map(Number)
+  return new Date(a, m - 1, d, 7, 30, 0, 0).getTime()
+}
+
+/**
+ * Quanto de um intervalo [ini, fim] cai DENTRO da janela do dia de produção
+ * `dia` (07:30 às 03:00), em segundos.
+ *
+ * A ordem não respeita a virada: a 141498 começou 03/09 às 20:34 e terminou
+ * 04/09 às 16:47, e `v_ordem_tempos` joga as 20 h inteiras no `data_prog`
+ * dela — o que dava 28 h de produção num turno de 10 h. Repartir pela janela
+ * de cada dia é o que torna o aproveitamento comparável com as horas do
+ * turno. O tempo entre 03:00 e 07:30 não pertence a dia nenhum e não é
+ * contado em lugar nenhum, de propósito: não há turno para compará-lo.
+ */
+export function sobreposicaoNoDiaS(iniMs: number, fimMs: number, dia: string): number {
+  const de = Math.max(iniMs, inicioDoDiaDeProducaoMs(dia))
+  const ate = Math.min(fimMs, fimDoDiaDeProducaoMs(dia))
+  return Math.max(0, ate - de) / 1000
+}
+
 /**
  * Duração de uma parada de MÁQUINA (a que não tem ordem), em segundos.
  *

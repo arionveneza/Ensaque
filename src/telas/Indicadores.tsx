@@ -8,6 +8,7 @@ import type {
 } from '@/dados/api-gestao'
 import {
   aproveitamentoMaquina, calculaOee, checkFinalAprovado, diaDeProducao, formataHms,
+  sobreposicaoNoDiaS,
 } from '@/dominio/calculos'
 import { HORAS_TURNOS, horasDoDia } from '@/dominio/programacao'
 import { exportarXlsx } from '@/lib/exportar'
@@ -268,11 +269,25 @@ export default function Indicadores() {
     const chaves = new Map<string, { maquina: string; dia: string }>()
     const bruto = new Map<string, number>()
     const parado = new Map<string, number>()
+    const agora = Date.now()
     for (const t of tempos) {
-      if (!t.data_prog || !t.maquina_id) continue
-      const k = `${t.maquina_id}|${t.data_prog}`
-      chaves.set(k, { maquina: t.maquina_id, dia: t.data_prog })
-      bruto.set(k, (bruto.get(k) ?? 0) + Number(t.bruto_s))
+      if (!t.maquina_id || !t.ini) continue
+      const iniMs = new Date(t.ini).getTime()
+      const fimMs = t.fim ? new Date(t.fim).getTime() : agora
+      // a ordem não respeita a virada do dia: a que começa às 20h e termina
+      // no dia seguinte precisa entrar em cada janela de turno que cruzou,
+      // senão `bruto_s` inteiro cai no data_prog e dá 28 h num turno de 10
+      let d = diaDeProducao(new Date(iniMs))
+      const ultimo = diaDeProducao(new Date(fimMs))
+      for (let volta = 0; volta < 40 && d <= ultimo; volta++) {
+        const s = d >= de && d <= hoje ? sobreposicaoNoDiaS(iniMs, fimMs, d) : 0
+        if (s > 0) {
+          const k = `${t.maquina_id}|${d}`
+          chaves.set(k, { maquina: t.maquina_id, dia: d })
+          bruto.set(k, (bruto.get(k) ?? 0) + s)
+        }
+        d = somaDias(d, 1)
+      }
     }
     for (const p of paradasMaq) {
       const k = `${p.maquina_id}|${p.dia}`
@@ -290,7 +305,7 @@ export default function Indicadores() {
         ),
       }))
       .sort((a, b) => a.dia.localeCompare(b.dia) || a.maquina.localeCompare(b.maquina))
-  }, [tempos, paradasMaq, calendario])
+  }, [tempos, paradasMaq, calendario, de, hoje])
 
   /**
    * A lista de paradas do período mostra os dois eixos juntos, em ordem de
@@ -716,8 +731,9 @@ export default function Indicadores() {
                   inteiro sem produzir sai com 100%. Aqui o denominador são as{' '}
                   <b>horas do turno</b>, então o tempo em que a máquina não rodou aparece:{' '}
                   <b>parado sem ordem</b> quando alguém registrou o motivo na Execução, e{' '}
-                  <b>ocioso</b> quando ninguém registrou. Só entram dias com produção ou com
-                  parada registrada.
+                  <b>ocioso</b> quando ninguém registrou. Ordem que atravessa a virada entra
+                  em cada dia com as horas que rodou nele, não inteira no dia programado. Só
+                  entram dias com produção ou com parada registrada.
                 </p>
               </>
             )}
