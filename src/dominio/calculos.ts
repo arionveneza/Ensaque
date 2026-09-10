@@ -490,7 +490,12 @@ export interface AproveitamentoMaquina {
   paradoSemOrdemS: number
   /** O que sobrou: ocioso sem ninguém ter dito por quê. */
   ociosoS: number
-  /** produzindo ÷ disponível; nulo em dia sem turno. */
+  /**
+   * produzindo ÷ disponível; nulo em dia sem turno. **Passa de 1** quando a
+   * produção rodou além dos turnos cadastrados no calendário — não é erro de
+   * conta, é hora extra ou calendário desatualizado, e esconder isso num
+   * teto de 100% apagava o aviso.
+   */
   aproveitamento: number | null
 }
 
@@ -518,9 +523,9 @@ export function aproveitamentoMaquina(
     disponivelS: disponivel,
     produzindoS: produzindo,
     paradoSemOrdemS: parado,
-    // a ordem pode furar o turno (produção que varou a madrugada): sem o
-    // piso em zero o ocioso viraria negativo e o total do dia não fecharia
+    // a produção pode furar o turno cadastrado: sem o piso em zero o ocioso
+    // viraria negativo e o total do dia não fecharia
     ociosoS: Math.max(0, disponivel - produzindo - parado),
-    aproveitamento: disponivel > 0 ? Math.min(1, produzindo / disponivel) : null,
+    aproveitamento: disponivel > 0 ? produzindo / disponivel : null,
   }
 }

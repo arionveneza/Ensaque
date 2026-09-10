@@ -712,11 +712,13 @@ export default function Indicadores() {
                         ) : (
                           <Tag
                             cor={
-                              a.aproveitamento >= 0.7
-                                ? 'ok'
-                                : a.aproveitamento >= 0.4
-                                  ? 'alerta'
-                                  : 'perigo'
+                              a.aproveitamento > 1
+                                ? 'info'
+                                : a.aproveitamento >= 0.7
+                                  ? 'ok'
+                                  : a.aproveitamento >= 0.4
+                                    ? 'alerta'
+                                    : 'perigo'
                             }
                           >
                             {n(a.aproveitamento * 100, 0)}%
@@ -732,8 +734,11 @@ export default function Indicadores() {
                   <b>horas do turno</b>, então o tempo em que a máquina não rodou aparece:{' '}
                   <b>parado sem ordem</b> quando alguém registrou o motivo na Execução, e{' '}
                   <b>ocioso</b> quando ninguém registrou. Ordem que atravessa a virada entra
-                  em cada dia com as horas que rodou nele, não inteira no dia programado. Só
-                  entram dias com produção ou com parada registrada.
+                  em cada dia com as horas que rodou nele, não inteira no dia programado.
+                  Acima de 100% (azul) a produção rodou <b>além dos turnos cadastrados</b>:
+                  ou foi hora extra, ou o calendário daquele dia está desatualizado — a linha
+                  Turnos do plano semanal é onde se corrige. Só entram dias com produção ou
+                  com parada registrada.
                 </p>
               </>
             )}

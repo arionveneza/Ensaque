@@ -540,10 +540,13 @@ describe('aproveitamento da maquina', () => {
     expect(a.aproveitamento).toBeCloseTo(10 / 19.5, 6)
   })
 
-  it('ocioso nunca fica negativo quando a producao fura o turno', () => {
+  // rodar alem do turno cadastrado e hora extra ou calendario desatualizado:
+  // o teto de 100% apagava justamente esse aviso (achado com dado real de
+  // 03/09/2026, dia marcado como turno 1 so, com producao ate a madrugada)
+  it('passa de 100% quando a producao fura o turno cadastrado, e o ocioso zera', () => {
     const a = aproveitamentoMaquina(10 * H, 12 * H, 1 * H)
     expect(a.ociosoS).toBe(0)
-    expect(a.aproveitamento).toBe(1)
+    expect(a.aproveitamento).toBeCloseTo(1.2, 6)
   })
 
   it('dia sem turno nao tem aproveitamento', () => {
