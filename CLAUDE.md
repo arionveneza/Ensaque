@@ -343,6 +343,28 @@ Colunas: C cultivar · F lote · G lote tratamento · H PMS · K saldo (bags) ·
 - Saldo negativo → ignorar e **reportar** (o arquivo de referência tem 4 casos, −27 bags).
 - **Resultado esperado**: 753 lotes · 16.865 bags · 0 estoque PA tratado.
 
+**A coluna PMS do export do SAP não é confiável — "Peso Bruto" é a rede** (12/09/2026).
+O `SAP.xlsx` (o "Saldo do SAP" da aba Ordens, e o mesmo arquivo do Mapa e do Inventário)
+manda a coluna `PMS (g)` em **formatos misturados na mesma planilha**: texto ("205.0"),
+número, **célula formatada como DATA** e vazia. O leitor de xlsx devolve a data como
+`Date`, e `parseFloat` disso era `NaN` → PMS 0 → **peso do bag zero**, e com ele tempo
+planejado, ocupação, químico e ensaque da ordem (achado do Arion: 6 lotes com saldo sem
+peso na carga de 10/09, ordens P73 e P77 com 0 t). Duas defesas, ambas em cima do próprio
+arquivo: (1) `numPms` desfaz a conversão de data — o serial do Excel **é** o PMS
+(19/07/1900 = dia 201 = PMS 201,0, conferido contra o lote-base em texto no mesmo
+arquivo); data de verdade daria serial de 5 dígitos e cai na trava dos 1.000 g. (2)
+`converterSaldoSap` (e `converterMapaSap`) caem em **`Peso Bruto` ÷ fator da embalagem**
+quando o PMS continua ilegível — inclui o número fora de escala (1208880 com Peso Bruto
+604,44 = PMS 120,888), que a trava zera de propósito. **PMS legível sempre manda**; a
+coluna Peso Bruto bate com PMS × fator em 100% das 1.137 linhas do export de 10/09 que
+têm as duas. O resumo ganhou `pmsRecuperado` e a prévia da importação diz quantos lotes
+vieram por essa rede (vale pedir o acerto da coluna no SAP) — o aviso vermelho de
+`semPms` agora só sobra pra quem não tem **nem** PMS **nem** Peso Bruto. Correção dos 6
+lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
+**Sub-lote sem saldo não entra**: o SAP desdobra o lote em `-1`, `-2`, `-3`, e o
+importador pula linha com Qtd em Estoque 0 — é por isso que só o sufixo com bags existe
+em `lotes_semente` (o `-1` "sumido" não é bug).
+
 ### SAP Business One — Service Layer: **laboratório no app, integração de produção pendente** 🟡
 A integração de produção (job que alimenta o app) **ainda não existe** — os dados seguem
 vindo do upload das planilhas da SimpleAgro. O que existe desde 09/08/2026 é a aba

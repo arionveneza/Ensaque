@@ -32,6 +32,9 @@ export const num = (v: unknown): number => {
   return Number.isNaN(n) ? 0 : n
 }
 
+/** Dia 0 da contagem de datas do Excel, o mesmo que o leitor de xlsx usa. */
+const EPOCA_EXCEL = Date.UTC(1899, 11, 30)
+
 /**
  * PMS (peso de mil sementes) só — o `num()` genérico acima trata ponto
  * com 3+ dígitos depois como separador de milhar, mas PMS de soja NUNCA
@@ -40,9 +43,24 @@ export const num = (v: unknown): number => {
  * PMS do SAP com 3 casas ("150.150", a coluna é numeric(8,3)) virava
  * 150150 pelo `num()` e estourava a coluna na importação — "numeric
  * field overflow" (achado do Arion, 12/09/2026).
+ *
+ * **Célula formatada como DATA é o próprio PMS** (12/09/2026): o export do
+ * SAP manda a coluna PMS em formatos misturados e, quando a célula sai
+ * como data, o leitor de xlsx devolve um `Date` montado a partir do número
+ * de série do Excel — 19/07/1900 é o dia 201 dessa contagem, e o PMS do
+ * lote é 201,0 (conferido contra o lote-base do mesmo número no export de
+ * 10/09/2026, que traz "201.0" em texto). Desfazer a conversão recupera o
+ * valor; data de verdade daria serial de 5 dígitos e cai na trava dos
+ * 1.000 g de quem chama. Sem isto, `parseFloat("Thu Jul 19 1900…")` era
+ * NaN → 0 → peso do bag zero (lotes SV0012036762011-2, SV0022036062020-1
+ * e SV0072036762036-3 entraram sem peso na carga de 10/09/2026).
  */
 export const numPms = (v: unknown): number => {
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  if (v instanceof Date) {
+    const serial = (v.getTime() - EPOCA_EXCEL) / 86_400_000
+    return Number.isFinite(serial) && serial > 0 ? serial : 0
+  }
   const n = parseFloat(txt(v).replace(',', '.'))
   return Number.isNaN(n) ? 0 : n
 }

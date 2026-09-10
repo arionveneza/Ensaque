@@ -735,8 +735,18 @@ export default function Ordens() {
               {previaSaldoSap.resumo.semPms > 0 && (
                 <div className="mt-3">
                   <Aviso gravidade="bloqueio">
-                    {previaSaldoSap.resumo.semPms} lote(s) sem PMS — o peso do bag fica zero.
-                    Corrigir na origem antes de produzir.
+                    {previaSaldoSap.resumo.semPms} lote(s) sem PMS <b>e sem Peso Bruto</b> — o
+                    peso do bag fica zero. Corrigir na origem antes de produzir.
+                  </Aviso>
+                </div>
+              )}
+              {previaSaldoSap.resumo.pmsRecuperado > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    {previaSaldoSap.resumo.pmsRecuperado} lote(s) com a coluna <b>PMS ilegível</b>{' '}
+                    no export (célula em formato de data, ou número fora de escala) — o PMS foi
+                    recuperado do <b>Peso Bruto</b> da mesma linha, então o peso do bag está
+                    certo. Vale pedir o acerto da coluna no SAP.
                   </Aviso>
                 </div>
               )}

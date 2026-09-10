@@ -283,6 +283,26 @@ describe('numPms: PMS nunca tem milhar, todo ponto é decimal', () => {
     expect(numPms(null)).toBe(0)
     expect(numPms('abc')).toBe(0)
   })
+
+  // achado do Arion, 12/09/2026: a coluna PMS do export do SAP vem com
+  // formatos misturados e, quando a célula sai como data, o leitor de xlsx
+  // devolve um Date montado do número de série do Excel. Os três seriais
+  // abaixo são os dos lotes SV0012036762011-2, SV0022036062020-1 e
+  // SV0072036762036-3, e batem com o PMS em texto do lote-base de cada um
+  // no mesmo arquivo (201.0, 169.0, 204.0).
+  it('célula formatada como data é o próprio PMS (serial do Excel)', () => {
+    expect(numPms(new Date('1900-07-19T00:00:00Z'))).toBe(201)
+    expect(numPms(new Date('1900-06-17T00:00:00Z'))).toBe(169)
+    expect(numPms(new Date('1900-07-22T00:00:00Z'))).toBe(204)
+  })
+
+  it('data de verdade vira serial de 5 dígitos — a trava dos 1.000 g de quem chama descarta', () => {
+    expect(numPms(new Date('2026-09-08T00:00:00Z'))).toBeGreaterThan(1000)
+  })
+
+  it('data inválida não vira número', () => {
+    expect(numPms(new Date('coisa nenhuma'))).toBe(0)
+  })
 })
 
 describe('normalizaCultivar', () => {

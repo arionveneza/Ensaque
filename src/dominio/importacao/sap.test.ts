@@ -9,11 +9,26 @@ const CAB_SAP = [
 
 const CAB_SAP_COMPLETO = [...CAB_SAP, 'Peneira', 'Categoria do Lote']
 
+/** Export real: a coluna "Peso Bruto" (peso do bag em kg) vem logo depois do PMS. */
+const CAB_SAP_PB = [
+  'Cultivar', 'Nº do Lote', 'Tratamento (TSI)', 'Embalagem', 'PMS (g)', 'Peso Bruto',
+  'Data de Entrada', 'UM Estoque', 'Qtd em Estoque',
+]
+
 /** Embalagem crua igual à origem: BB5M/BMB — o de-para converte pra BG5M/MEIOBAG (mesmo código da SimpleAgro, confirmado pelo Arion). */
 const linha = (
   cultivar: string, lote: string, tratamento: string, embalagem: string,
-  pms: number, dataEntrada: string, um: string, qtd: number,
-): Linha => [cultivar, lote, tratamento, embalagem, pms, dataEntrada, um, qtd]
+  pms: unknown, dataEntrada: string, um: string, qtd: number,
+): Linha => [cultivar, lote, tratamento, embalagem, pms, dataEntrada, um, qtd] as Linha
+
+/** Mesma linha, com a coluna "Peso Bruto" preenchida. */
+const linhaPb = (
+  lote: string, embalagem: string, pms: unknown, pesoBruto: unknown, qtd: number,
+): Linha =>
+  ['761 I2X', lote, 'SEM TSI', embalagem, pms, pesoBruto, '2026-02-10', 'SC', qtd] as Linha
+
+/** Como o leitor de xlsx entrega uma célula formatada como data (UTC). */
+const celulaData = (iso: string) => new Date(`${iso}T00:00:00Z`)
 
 describe('deteccao do relatorio de saldos do SAP', () => {
   it('reconhece pelo cabecalho', () => {
@@ -156,6 +171,64 @@ describe('conversao de saldos do SAP', () => {
     expect(r.lotes[0].pms).toBe(0)
     expect(r.lotes[0].pesoBagKg).toBe(0)
     expect(r.resumo.semPms).toBe(1)
+  })
+
+  // 12/09/2026 — o export do SAP manda a coluna PMS em formatos misturados
+  // (texto, número, data, vazio) e 6 lotes com saldo entraram sem peso. O
+  // peso do bag também vem pronto em "Peso Bruto", que bateu com PMS × fator
+  // em 100% das 1.137 linhas do export de 10/09/2026.
+  describe('PMS ilegível na coluna própria', () => {
+    it('célula em formato de data vira PMS pelo serial do Excel', () => {
+      const r = converterSaldoSap([
+        CAB_SAP,
+        linha('761 I2X', 'SV021', 'SEM TSI', 'BB5M', celulaData('1900-07-19'), '2026-02-10', 'SC', 21),
+      ])
+      expect(r.lotes[0].pms).toBe(201)
+      expect(r.lotes[0].pesoBagKg).toBe(1005)
+      expect(r.resumo.semPms).toBe(0)
+      expect(r.resumo.pmsRecuperado).toBe(0)
+    })
+
+    it('número fora de escala cai no Peso Bruto e é contado como recuperado', () => {
+      // A267672319-2: célula 1208880, Peso Bruto 604,44 -> PMS 120,888
+      const r = converterSaldoSap([CAB_SAP_PB, linhaPb('SV022', 'BB5M', 1208880, 604.44, 7)])
+      expect(r.lotes[0].pms).toBeCloseTo(120.888)
+      expect(r.lotes[0].pesoBagKg).toBe(604)
+      expect(r.resumo.semPms).toBe(0)
+      expect(r.resumo.pmsRecuperado).toBe(1)
+    })
+
+    it('célula vazia também cai no Peso Bruto', () => {
+      const r = converterSaldoSap([CAB_SAP_PB, linhaPb('SV023', 'BB5M', null, 1013, 5)])
+      expect(r.lotes[0].pms).toBeCloseTo(202.6)
+      expect(r.resumo.pmsRecuperado).toBe(1)
+    })
+
+    it('Peso Bruto vale em MEIOBAG, com o fator 2,5', () => {
+      const r = converterSaldoSap([CAB_SAP_PB, linhaPb('SV024', 'BMB', '', 512.5, 4)])
+      expect(r.lotes[0].pms).toBeCloseTo(205)
+      expect(r.lotes[0].pesoBagKg).toBe(513)
+    })
+
+    it('PMS legível manda: o Peso Bruto é só a rede', () => {
+      const r = converterSaldoSap([CAB_SAP_PB, linhaPb('SV025', 'BB5M', '171', 855, 3)])
+      expect(r.lotes[0].pms).toBe(171)
+      expect(r.resumo.pmsRecuperado).toBe(0)
+    })
+
+    it('Peso Bruto que daria PMS implausível não é usado', () => {
+      const r = converterSaldoSap([CAB_SAP_PB, linhaPb('SV026', 'BB5M', 0, 9_000_000, 3)])
+      expect(r.lotes[0].pms).toBe(0)
+      expect(r.lotes[0].pesoBagKg).toBe(0)
+      expect(r.resumo.semPms).toBe(1)
+    })
+
+    it('sem PMS e sem Peso Bruto continua sendo lote sem peso', () => {
+      const r = converterSaldoSap([CAB_SAP_PB, linhaPb('SV027', 'BB5M', '', '', 3)])
+      expect(r.lotes[0].pesoBagKg).toBe(0)
+      expect(r.resumo.semPms).toBe(1)
+      expect(r.resumo.pmsRecuperado).toBe(0)
+    })
   })
 
   it('registra as unidades vistas, pra alertar se misturar bag e kg', () => {

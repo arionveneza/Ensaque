@@ -65,6 +65,12 @@ export interface ResumoSaldoSap {
   /** Saldo negativo na origem: ignorado, mas reportado. */
   negativos: { lote: string; bags: number }[]
   semPms: number
+  /**
+   * PMS ilegível na coluna própria e recuperado da coluna "Peso Bruto"
+   * (÷ fator da embalagem) — o lote entra com peso, mas a origem precisa
+   * ser arrumada.
+   */
+  pmsRecuperado: number
   /** "UM Estoque" vista em cada linha aproveitada — mais de uma chave aqui é sinal de unidade misturada (ex.: bag e kg juntos). */
   unidades: Record<string, number>
 }
@@ -108,6 +114,8 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
   const iData = h.findIndex((x) => x.includes('ENTRADA'))
   const iUm = ix('UM ESTOQUE')
   const iPms = h.findIndex((x) => x.includes('PMS'))
+  // rede de segurança do PMS: o peso do bag também vem pronto nesta coluna
+  const iPesoBruto = h.findIndex((x) => x.includes('PESO BRUTO'))
   // pra etiqueta DM (25/08/2026) — por "inclui", tolerante a variação
   const iPeneira = h.findIndex((x) => x.includes('PENEIRA'))
   const iCategoria = h.findIndex((x) => x.includes('CATEGORIA'))
@@ -122,6 +130,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
     saldoZeroOuNegativo: 0,
     negativos: [],
     semPms: 0,
+    pmsRecuperado: 0,
     unidades: {},
   }
 
@@ -161,10 +170,26 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
     // "numeric field overflow" ao importar 608 lotes).
     if (pms <= 0 || pms >= 1000) pms = 0
 
+    // Coluna PMS ilegível (vazia, ou inflada como 1208880 — que a trava acima
+    // zera): o MESMO arquivo traz o peso do bag pronto em "Peso Bruto", e
+    // PMS = Peso Bruto ÷ fator da embalagem. No export de 10/09/2026 os dois
+    // batem em 100% das 1.137 linhas que têm ambos, então dá pra confiar
+    // (achado do Arion, 12/09/2026: lotes A267672319-2 e A267672323-1 sem
+    // peso). O PMS legível continua mandando; isto é só a rede.
+    let doPesoBruto = false
+    if (!pms && iPesoBruto >= 0) {
+      const derivado = num(r[iPesoBruto]) / emb.fator
+      if (derivado > 0 && derivado < 1000) {
+        pms = derivado
+        doPesoBruto = true
+      }
+    }
+
     if (!tratamento || tratamento.toUpperCase() === 'SEM TSI') {
       const id = txt(r[iLote])
       if (!id) continue
       if (!pms) resumo.semPms++
+      else if (doPesoBruto) resumo.pmsRecuperado++
       const atual = lotes.get(id)
       if (atual) atual.bags += bags
       else

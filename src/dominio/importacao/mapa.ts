@@ -294,10 +294,18 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
 
     // PMS de soja nunca chega a 1.000 g/mil-sementes — fora disso é
     // origem corrompida; tratado como ausente (mesma guarda de
-    // converterSaldoSap, sap.ts, achado do Arion, 12/09/2026)
+    // converterSaldoSap, sap.ts, achado do Arion, 12/09/2026). Ilegível
+    // aqui também cai no "Peso Bruto" ÷ fator, como em converterSaldoSap:
+    // o peso do bag já vinha dessa coluna, mas o PMS ficava nulo à toa.
     const pmsBruto = iPms >= 0 ? numPms(linha[iPms]) : 0
-    const pms = pmsBruto > 0 && pmsBruto < 1000 ? pmsBruto : null
     const pesoBruto = iPesoBruto >= 0 ? num(linha[iPesoBruto]) : 0
+    const derivado = pesoBruto > 0 ? pesoBruto / emb.fator : 0
+    const pms =
+      pmsBruto > 0 && pmsBruto < 1000
+        ? pmsBruto
+        : derivado > 0 && derivado < 1000
+          ? derivado
+          : null
     const pesoBag = pesoBruto > 0 ? pesoBruto : pms != null ? pms * emb.fator : 0
 
     // branca também entra pelo número BASE: o SAP sufixa branca em
