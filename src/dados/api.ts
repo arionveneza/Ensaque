@@ -279,6 +279,57 @@ export async function registrarParada(ordemId: string, motivoId: string): Promis
   erro('registrar parada', error)
 }
 
+// ----------------------------------------------------------------
+// Parada de MÁQUINA — a que não tem ordem (12/09/2026)
+// ----------------------------------------------------------------
+
+/** Uma parada de máquina ociosa. `fim` nulo = ainda correndo. */
+export interface LinhaParadaMaquina {
+  id: string
+  maquina_id: string
+  motivo_id: string
+  inicio: string
+  fim: string | null
+  observacao: string | null
+}
+
+/**
+ * Máquina parada sem ordem nenhuma rodando — tipicamente aguardando semente.
+ * Esse tempo não cabia em `ordem_paradas` (que exige ordem) e por isso não
+ * era medido em lugar nenhum (pedido do Arion, 12/09/2026).
+ */
+export async function abrirParadaMaquina(
+  maquinaId: string,
+  motivoId: string,
+  observacao?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('abrir_parada_maquina', {
+    p_maquina: maquinaId,
+    p_motivo: motivoId,
+    p_obs: observacao ?? null,
+  })
+  erro('registrar parada da máquina', error)
+}
+
+export async function encerrarParadaMaquina(maquinaId: string): Promise<void> {
+  const { error } = await supabase.rpc('encerrar_parada_maquina', { p_maquina: maquinaId })
+  erro('encerrar parada da máquina', error)
+}
+
+/**
+ * Paradas de máquina que interessam ao dia mostrado: as que começaram nele e
+ * as que continuam abertas (podem ter começado antes, e a tela avisa).
+ */
+export async function carregarParadasMaquina(dia: string): Promise<LinhaParadaMaquina[]> {
+  const { data, error } = await supabase
+    .from('maquina_paradas')
+    .select('id, maquina_id, motivo_id, inicio, fim, observacao')
+    .or(`fim.is.null,inicio.gte.${dia}T00:00:00`)
+    .order('inicio', { ascending: false })
+  erro('paradas de máquina', error)
+  return (data ?? []) as LinhaParadaMaquina[]
+}
+
 export async function retomar(ordemId: string): Promise<void> {
   const { error } = await supabase.rpc('retomar_producao', { p_ordem: ordemId })
   erro('retomar produção', error)

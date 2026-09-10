@@ -1,5 +1,6 @@
 ﻿import { supabase } from '@/lib/supabase'
 import type { ClasseAgronomica, TipoParada, UnidadeDose } from '@/dominio/tipos'
+import { diaDeProducao, duracaoParadaMaquinaS } from '@/dominio/calculos'
 import type { PedidoConvertido, EstoquePaConvertido, LoteConvertido } from '@/dominio/importacao/simpleagro'
 
 /** Consultas e comandos das telas de Programação, Lotes, Ordens, Qualidade, Indicadores e Cadastros. */
@@ -1199,23 +1200,114 @@ export async function listarParadasPeriodo(de: string, ate: string): Promise<Par
   }))
 }
 
+/**
+ * Parada de MÁQUINA — a que acontece sem ordem nenhuma rodando (12/09/2026).
+ * O dia é o DIA DE PRODUÇÃO em que ela começou, não a data do carimbo: uma
+ * parada das 23h pertence ao dia que começou às 07:30.
+ */
+export interface ParadaMaquinaLinha {
+  inicio: string
+  fim: string | null
+  segundos: number
+  motivo: string
+  tipo: TipoParada
+  maquina_id: string
+  dia: string
+  observacao: string | null
+}
+
+/** Dia ISO deslocado em `k` dias — só para folgar a janela da consulta. */
+const maisDias = (iso: string, k: number): string => {
+  const [a, m, d] = iso.split('-').map(Number)
+  const x = new Date(a, m - 1, d + k)
+  return [
+    x.getFullYear(),
+    String(x.getMonth() + 1).padStart(2, '0'),
+    String(x.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+export async function listarParadasMaquina(
+  de: string,
+  ate: string,
+): Promise<ParadaMaquinaLinha[]> {
+  // busca com folga de um dia em cada ponta e recorta pelo dia de produção
+  // depois: a parada da madrugada do dia seguinte ainda é do dia anterior
+  const { data, error } = await supabase
+    .from('maquina_paradas')
+    .select('inicio, fim, observacao, maquina_id, motivos_parada ( descricao, tipo )')
+    .gte('inicio', `${maisDias(de, -1)}T00:00:00`)
+    .lte('inicio', `${maisDias(ate, 1)}T23:59:59`)
+    .order('inicio')
+  erro('paradas de máquina', error)
+
+  const agora = Date.now()
+  return ((data ?? []) as unknown as {
+    inicio: string
+    fim: string | null
+    observacao: string | null
+    maquina_id: string
+    motivos_parada: { descricao: string; tipo: TipoParada } | null
+  }[])
+    .map((p) => {
+      const inicioMs = new Date(p.inicio).getTime()
+      return {
+        inicio: p.inicio,
+        fim: p.fim,
+        segundos: duracaoParadaMaquinaS(
+          { motivoId: '', inicio: inicioMs, fim: p.fim ? new Date(p.fim).getTime() : null },
+          agora,
+        ),
+        motivo: p.motivos_parada?.descricao ?? '?',
+        tipo: p.motivos_parada?.tipo ?? 'Nao planejada',
+        maquina_id: p.maquina_id,
+        dia: diaDeProducao(new Date(p.inicio)),
+        observacao: p.observacao,
+      }
+    })
+    .filter((p) => p.dia >= de && p.dia <= ate)
+}
+
 export interface ParadaDetalhe {
   motivo: string
   tipo: TipoParada
   ocorrencias: number
   segundos: number
+  /** Parada de máquina ociosa: não pertence a nenhuma ordem. */
+  semOrdem: boolean
 }
 
-/** Pareto de paradas no período, separando planejada de não planejada. */
+/**
+ * Pareto de paradas no período, separando planejada de não planejada.
+ *
+ * Junta os dois eixos: as paradas DA ORDEM e as paradas de MÁQUINA (sem
+ * ordem, 12/09/2026). A chave inclui `semOrdem` de propósito — um mesmo
+ * motivo pode acontecer nos dois contextos e somá-los apagaria a diferença
+ * entre "faltou lote no meio da ordem" e "a máquina nunca chegou a começar".
+ */
 export async function paretoParadas(de: string, ate: string): Promise<ParadaDetalhe[]> {
-  const { data, error } = await supabase
-    .from('ordem_paradas')
-    .select('inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( data_prog )')
-    .gte('ordens.data_prog', de)
-    .lte('ordens.data_prog', ate)
+  const [{ data, error }, maquina] = await Promise.all([
+    supabase
+      .from('ordem_paradas')
+      .select('inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( data_prog )')
+      .gte('ordens.data_prog', de)
+      .lte('ordens.data_prog', ate),
+    listarParadasMaquina(de, ate),
+  ])
   erro('paradas do período', error)
 
   const acc = new Map<string, ParadaDetalhe>()
+  const soma = (motivo: string, tipo: TipoParada, segundos: number, semOrdem: boolean) => {
+    const chave = `${motivo}|${semOrdem}`
+    const atual = acc.get(chave)
+    if (atual) {
+      atual.ocorrencias++
+      atual.segundos += segundos
+    } else {
+      acc.set(chave, { motivo, tipo, ocorrencias: 1, segundos, semOrdem })
+    }
+  }
+
   for (const p of (data ?? []) as unknown as {
     inicio: string
     fim: string | null
@@ -1225,19 +1317,10 @@ export async function paretoParadas(de: string, ate: string): Promise<ParadaDeta
     if (!m) continue
     const dur =
       ((p.fim ? new Date(p.fim).getTime() : Date.now()) - new Date(p.inicio).getTime()) / 1000
-    const atual = acc.get(m.descricao)
-    if (atual) {
-      atual.ocorrencias++
-      atual.segundos += dur
-    } else {
-      acc.set(m.descricao, {
-        motivo: m.descricao,
-        tipo: m.tipo,
-        ocorrencias: 1,
-        segundos: dur,
-      })
-    }
+    soma(m.descricao, m.tipo, dur, false)
   }
+  for (const p of maquina) soma(p.motivo, p.tipo, p.segundos, true)
+
   return [...acc.values()].sort((a, b) => b.segundos - a.segundos)
 }
 

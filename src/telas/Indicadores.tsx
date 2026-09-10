@@ -3,8 +3,13 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import * as g from '@/dados/api-gestao'
-import type { OrdemVisao, ParadaDetalhe, ParadaLinha, TempoOrdem } from '@/dados/api-gestao'
-import { calculaOee, checkFinalAprovado, diaDeProducao, formataHms } from '@/dominio/calculos'
+import type {
+  OrdemVisao, ParadaDetalhe, ParadaLinha, ParadaMaquinaLinha, TempoOrdem,
+} from '@/dados/api-gestao'
+import {
+  aproveitamentoMaquina, calculaOee, checkFinalAprovado, diaDeProducao, formataHms,
+} from '@/dominio/calculos'
+import { HORAS_TURNOS, horasDoDia } from '@/dominio/programacao'
 import { exportarXlsx } from '@/lib/exportar'
 import {
   Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, diaCurto, exportarCsv,
@@ -28,6 +33,10 @@ export default function Indicadores() {
   const [tempos, setTempos] = useState<TempoOrdem[]>([])
   const [paradas, setParadas] = useState<ParadaDetalhe[]>([])
   const [paradasDet, setParadasDet] = useState<ParadaLinha[]>([])
+  // paradas de MÁQUINA (sem ordem) — 12/09/2026. Não entram em v_ordem_tempos
+  // nem no OEE de propósito: são outro eixo, máquina × dia.
+  const [paradasMaq, setParadasMaq] = useState<ParadaMaquinaLinha[]>([])
+  const [calendario, setCalendario] = useState<g.DiaProducao[]>([])
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [checks, setChecks] = useState<g.ChecklistQualidade[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -49,14 +58,17 @@ export default function Indicadores() {
     Promise.all([
       g.listarTempos(de, hoje), g.paretoParadas(de, hoje),
       g.listarParadasPeriodo(de, hoje), g.listarOrdens(), g.listarChecksQualidade(),
+      g.listarParadasMaquina(de, hoje), g.listarDiasProducao(de, hoje),
     ])
-      .then(([t, p, pd, o, c]) => {
+      .then(([t, p, pd, o, c, pm, cal]) => {
         if (!vivo) return
         setTempos(t)
         setParadas(p)
         setParadasDet(pd)
         setOrdens(o)
         setChecks(c)
+        setParadasMaq(pm)
+        setCalendario(cal)
       })
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
@@ -201,11 +213,13 @@ export default function Indicadores() {
       string,
       {
         dia: string; ordens: number; programado: number; finalizado: number
-        pesoT: number; parPlan: number; parNplan: number
+        pesoT: number; parPlan: number; parNplan: number; parSemOrdem: number
       }
     >()
-    const vazio = (dia: string) =>
-      ({ dia, ordens: 0, programado: 0, finalizado: 0, pesoT: 0, parPlan: 0, parNplan: 0 })
+    const vazio = (dia: string) => ({
+      dia, ordens: 0, programado: 0, finalizado: 0, pesoT: 0,
+      parPlan: 0, parNplan: 0, parSemOrdem: 0,
+    })
     for (const t of tempos) {
       const chave = t.data_prog ?? 'sem-dia'
       const atual = mapa.get(chave) ?? vazio(chave)
@@ -222,8 +236,99 @@ export default function Indicadores() {
       if (STATUS_FINALIZADO.has(o.status_efetivo)) atual.finalizado += o.bags_produzidos ?? o.bags
       mapa.set(o.data_prog, atual)
     }
+    // coluna própria, fora de planejada/não planejada: essas duas somam as
+    // paradas DAS ORDENS do dia, e misturar a de máquina faria o total do dia
+    // deixar de bater com a soma das ordens
+    for (const p of paradasMaq) {
+      const atual = mapa.get(p.dia) ?? vazio(p.dia)
+      atual.parSemOrdem += p.segundos
+      mapa.set(p.dia, atual)
+    }
     return [...mapa.values()].sort((a, b) => a.dia.localeCompare(b.dia))
-  }, [tempos, ordens, de, hoje])
+  }, [tempos, ordens, paradasMaq, de, hoje])
+
+  /**
+   * Aproveitamento da máquina — horas do turno × horas realmente produzindo
+   * (12/09/2026, pedido do Arion).
+   *
+   * A disponibilidade e o OEE medem a ORDEM, entre o início e o fim dela: um
+   * dia inteiro sem produzir saía com 100% de disponibilidade, porque não
+   * havia ordem para descontar. Aqui o denominador são as horas do turno, e o
+   * tempo em que a máquina não rodou aparece — nomeado quando alguém
+   * registrou a parada, e como "ocioso" quando ninguém registrou.
+   *
+   * Só entram dias com produção OU com parada registrada: varrer o calendário
+   * inteiro encheria a tabela de domingos na janela "geral".
+   */
+  const aproveitamento = useMemo(() => {
+    const turnos = (dia: string) => {
+      const c = calendario.find((x) => x.data === dia)
+      return c ? { t1: c.turno1, t2: c.turno2 } : { t1: true, t2: true }
+    }
+    const chaves = new Map<string, { maquina: string; dia: string }>()
+    const bruto = new Map<string, number>()
+    const parado = new Map<string, number>()
+    for (const t of tempos) {
+      if (!t.data_prog || !t.maquina_id) continue
+      const k = `${t.maquina_id}|${t.data_prog}`
+      chaves.set(k, { maquina: t.maquina_id, dia: t.data_prog })
+      bruto.set(k, (bruto.get(k) ?? 0) + Number(t.bruto_s))
+    }
+    for (const p of paradasMaq) {
+      const k = `${p.maquina_id}|${p.dia}`
+      chaves.set(k, { maquina: p.maquina_id, dia: p.dia })
+      parado.set(k, (parado.get(k) ?? 0) + p.segundos)
+    }
+    return [...chaves.entries()]
+      .map(([k, { maquina, dia }]) => ({
+        maquina,
+        dia,
+        ...aproveitamentoMaquina(
+          horasDoDia(turnos(dia), HORAS_TURNOS) * 3600,
+          bruto.get(k) ?? 0,
+          parado.get(k) ?? 0,
+        ),
+      }))
+      .sort((a, b) => a.dia.localeCompare(b.dia) || a.maquina.localeCompare(b.maquina))
+  }, [tempos, paradasMaq, calendario])
+
+  /**
+   * A lista de paradas do período mostra os dois eixos juntos, em ordem de
+   * início: quem confere o dia quer ver a sequência real do que travou a
+   * máquina, não uma lista por origem do registro. A de máquina vem sem
+   * número de ordem e sem turno, porque não tem.
+   */
+  const paradasTodas = useMemo(
+    () =>
+      [
+        ...paradasDet.map((p) => ({ ...p, semOrdem: false })),
+        ...paradasMaq.map((p) => ({
+          inicio: p.inicio,
+          fim: p.fim,
+          segundos: p.segundos,
+          motivo: p.motivo,
+          tipo: p.tipo,
+          ordem_numero: '',
+          maquina_id: p.maquina_id,
+          data_prog: p.dia,
+          turno_id: null as number | null,
+          semOrdem: true,
+        })),
+      ].sort((a, b) => a.inicio.localeCompare(b.inicio)),
+    [paradasDet, paradasMaq],
+  )
+
+  const aproveitamentoTotal = useMemo(() => {
+    const t = aproveitamento.reduce(
+      (a, x) => ({
+        disponivelS: a.disponivelS + x.disponivelS,
+        produzindoS: a.produzindoS + x.produzindoS,
+        paradoSemOrdemS: a.paradoSemOrdemS + x.paradoSemOrdemS,
+      }),
+      { disponivelS: 0, produzindoS: 0, paradoSemOrdemS: 0 },
+    )
+    return aproveitamentoMaquina(t.disponivelS, t.produzindoS, t.paradoSemOrdemS)
+  }, [aproveitamento])
 
   /**
    * Planejado (antes de reprogramar) × executado por dia.
@@ -447,7 +552,7 @@ export default function Indicadores() {
             <Cartao titulo="Programado × finalizado por dia">
               <Tabela
                 cabecalho={['Dia', '#Programado', '#Finalizado', '%', '#Peso',
-                  '#Par. planej.', '#Par. não planej.']}
+                  '#Par. planej.', '#Par. não planej.', '#Parado sem ordem']}
               >
                 {porDia.map((d) => {
                   const pct = d.programado > 0 ? (d.finalizado / d.programado) * 100 : null
@@ -474,6 +579,9 @@ export default function Indicadores() {
                       <td className="num-tabular px-2 py-1.5 text-right font-medium text-red-600 dark:text-red-400">
                         {d.parNplan > 0 ? formataHms(d.parNplan) : '—'}
                       </td>
+                      <td className="num-tabular px-2 py-1.5 text-right font-medium text-amber-700 dark:text-amber-400">
+                        {d.parSemOrdem > 0 ? formataHms(d.parSemOrdem) : '—'}
+                      </td>
                     </tr>
                   )
                 })}
@@ -482,7 +590,9 @@ export default function Indicadores() {
                 <b>Programado</b>: soma de bags de todas as ordens com esse dia programado,
                 iniciadas ou não. <b>Finalizado</b>: das que a produção já terminou
                 (Finalizada, Qualidade apontada ou Apontada), a quantidade declarada — ou o
-                planejado, para as sem quantidade declarada.
+                planejado, para as sem quantidade declarada. <b>Parado sem ordem</b>: máquina
+                parada com nenhuma ordem rodando (aguardando semente e afins) — fica em coluna
+                própria porque não pertence a ordem nenhuma.
               </p>
             </Cartao>
           </div>
@@ -522,14 +632,109 @@ export default function Indicadores() {
           </Cartao>
 
           <Cartao
+            titulo="Aproveitamento da máquina"
+            acoes={
+              <Botao
+                disabled={aproveitamento.length === 0}
+                onClick={() =>
+                  exportarCsv('aproveitamento-maquina', [
+                    ['Dia', 'Máquina', 'Horas do turno', 'Produzindo', 'Parado sem ordem',
+                      'Ocioso', 'Aproveitamento (%)'],
+                    ...aproveitamento.map((a) => [
+                      a.dia, a.maquina, a.disponivelS / 3600, a.produzindoS / 3600,
+                      a.paradoSemOrdemS / 3600, a.ociosoS / 3600,
+                      a.aproveitamento == null ? '' : a.aproveitamento * 100,
+                    ]),
+                  ])
+                }
+              >
+                Exportar
+              </Botao>
+            }
+            className="mb-5"
+          >
+            {aproveitamento.length === 0 ? (
+              <Vazio>Nenhuma produção nem parada de máquina no período.</Vazio>
+            ) : (
+              <>
+                <p className="mb-3 text-sm text-stone-500">
+                  No período: {formataHms(aproveitamentoTotal.disponivelS)} de turno ·{' '}
+                  <b>{formataHms(aproveitamentoTotal.produzindoS)} produzindo</b> ·{' '}
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {formataHms(aproveitamentoTotal.paradoSemOrdemS)} parado sem ordem
+                  </span>{' '}
+                  · {formataHms(aproveitamentoTotal.ociosoS)} ocioso ·{' '}
+                  {aproveitamentoTotal.aproveitamento == null
+                    ? '—'
+                    : `${n(aproveitamentoTotal.aproveitamento * 100, 0)}%`}
+                </p>
+                <Tabela
+                  cabecalho={['Dia', 'Máquina', '#Turno', '#Produzindo', '#Parado sem ordem',
+                    '#Ocioso', '#Aproveit.']}
+                >
+                  {aproveitamento.map((a) => (
+                    <tr
+                      key={`${a.maquina}|${a.dia}`}
+                      className="border-t border-stone-100 dark:border-stone-800/60"
+                    >
+                      <td className="px-2 py-1.5 font-medium">{diaCurto(a.dia)}</td>
+                      <td className="px-2 py-1.5">{a.maquina}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {formataHms(a.disponivelS)}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                        {formataHms(a.produzindoS)}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-amber-700 dark:text-amber-400">
+                        {a.paradoSemOrdemS > 0 ? formataHms(a.paradoSemOrdemS) : '—'}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-stone-500">
+                        {a.ociosoS > 0 ? formataHms(a.ociosoS) : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {a.aproveitamento == null ? (
+                          '—'
+                        ) : (
+                          <Tag
+                            cor={
+                              a.aproveitamento >= 0.7
+                                ? 'ok'
+                                : a.aproveitamento >= 0.4
+                                  ? 'alerta'
+                                  : 'perigo'
+                            }
+                          >
+                            {n(a.aproveitamento * 100, 0)}%
+                          </Tag>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </Tabela>
+                <p className="mt-2 text-xs text-stone-500">
+                  A disponibilidade e o OEE medem a ORDEM, entre o início e o fim dela — um dia
+                  inteiro sem produzir sai com 100%. Aqui o denominador são as{' '}
+                  <b>horas do turno</b>, então o tempo em que a máquina não rodou aparece:{' '}
+                  <b>parado sem ordem</b> quando alguém registrou o motivo na Execução, e{' '}
+                  <b>ocioso</b> quando ninguém registrou. Só entram dias com produção ou com
+                  parada registrada.
+                </p>
+              </>
+            )}
+          </Cartao>
+
+          <Cartao
             titulo="Pareto de paradas"
             acoes={
               <Botao
                 disabled={paradas.length === 0}
                 onClick={() =>
                   exportarCsv('paradas', [
-                    ['Motivo', 'Tipo', 'Ocorrências', 'Tempo (h)'],
-                    ...paradas.map((p) => [p.motivo, p.tipo, p.ocorrencias, p.segundos / 3600]),
+                    ['Motivo', 'Contexto', 'Tipo', 'Ocorrências', 'Tempo (h)'],
+                    ...paradas.map((p) => [
+                      p.motivo, p.semOrdem ? 'Sem ordem' : 'Na ordem', p.tipo,
+                      p.ocorrencias, p.segundos / 3600,
+                    ]),
                   ])
                 }
               >
@@ -550,7 +755,13 @@ export default function Indicadores() {
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                      data={paradas.map((p) => ({ ...p, horas: p.segundos / 3600 }))}
+                      data={paradas.map((p) => ({
+                        ...p,
+                        // o mesmo motivo pode existir nos dois contextos: sem
+                        // rótulo distinto as duas barras colidiriam no eixo
+                        rotulo: p.semOrdem ? `${p.motivo} (sem ordem)` : p.motivo,
+                        horas: p.segundos / 3600,
+                      }))}
                       layout="vertical"
                       margin={{ left: 8 }}
                     >
@@ -558,14 +769,19 @@ export default function Indicadores() {
                       <XAxis type="number" fontSize={12} unit=" h" />
                       {/* 150px de rótulo no celular (~295px úteis) deixava as
                           barras espremidas em ~145px — 96px é o meio-termo */}
-                      <YAxis type="category" dataKey="motivo" fontSize={10} width={96} />
+                      <YAxis type="category" dataKey="rotulo" fontSize={10} width={96} />
                       <Tooltip
                         formatter={(v) => `${n(Number(v), 2)} h`}
                         contentStyle={{ fontSize: 12 }}
                       />
                       <Bar dataKey="horas" radius={[0, 3, 3, 0]}>
                         {paradas.map((p, i) => (
-                          <Cell key={i} fill={p.tipo === 'Planejada' ? '#0ea5e9' : '#ef4444'} />
+                          <Cell
+                            key={i}
+                            fill={
+                              p.semOrdem ? '#f59e0b' : p.tipo === 'Planejada' ? '#0ea5e9' : '#ef4444'
+                            }
+                          />
                         ))}
                       </Bar>
                     </BarChart>
@@ -573,26 +789,29 @@ export default function Indicadores() {
                 </div>
                 <p className="mt-2 text-xs text-stone-500">
                   Azul: parada planejada, descontada da disponibilidade operacional. Vermelho:
-                  não planejada, perda real.
+                  não planejada, perda real. Âmbar: máquina parada <b>sem ordem nenhuma</b>{' '}
+                  (aguardando semente e afins) — não pertence a ordem alguma, então não entra
+                  em disponibilidade nem em OEE; o lugar dela é o aproveitamento da máquina.
                 </p>
               </>
             )}
           </Cartao>
 
           <Cartao
-            titulo={`Paradas no período (${paradasDet.length})`}
+            titulo={`Paradas no período (${paradasTodas.length})`}
             acoes={
               <Botao
-                disabled={paradasDet.length === 0}
+                disabled={paradasTodas.length === 0}
                 onClick={() =>
                   exportarCsv('paradas-detalhadas', [
                     ['Dia', 'Ordem', 'Máquina', 'Turno', 'Início', 'Fim', 'Duração (min)',
-                      'Motivo', 'Tipo'],
-                    ...paradasDet.map((p) => [
+                      'Motivo', 'Tipo', 'Contexto'],
+                    ...paradasTodas.map((p) => [
                       p.data_prog ?? '', p.ordem_numero, p.maquina_id, p.turno_id ?? '',
                       new Date(p.inicio).toLocaleString('pt-BR'),
                       p.fim ? new Date(p.fim).toLocaleString('pt-BR') : 'em aberto',
                       Math.round(p.segundos / 60), p.motivo, p.tipo,
+                      p.semOrdem ? 'Sem ordem' : 'Na ordem',
                     ]),
                   ])
                 }
@@ -602,7 +821,7 @@ export default function Indicadores() {
             }
             className="mb-5"
           >
-            {paradasDet.length === 0 ? (
+            {paradasTodas.length === 0 ? (
               <Vazio>Nenhuma parada registrada no período.</Vazio>
             ) : (
               <Tabela cabecalho={[
@@ -612,11 +831,17 @@ export default function Indicadores() {
                 { texto: 'Motivo', className: 'min-w-28 lg:min-w-0' },
                 'Tipo', '#Duração',
               ]}>
-                {paradasDet.map((p, i) => (
+                {paradasTodas.map((p, i) => (
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{diaCurto(p.data_prog)}</td>
                     <td className="px-2 py-1.5 font-medium">
-                      {p.ordem_numero}
+                      {p.semOrdem ? (
+                        <span className="text-xs font-normal text-amber-700 dark:text-amber-400">
+                          sem ordem
+                        </span>
+                      ) : (
+                        p.ordem_numero
+                      )}
                       <p className="text-xs font-normal text-stone-500 lg:hidden">
                         {p.maquina_id} · T{p.turno_id ?? '—'}
                       </p>

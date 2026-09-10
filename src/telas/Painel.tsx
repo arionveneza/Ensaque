@@ -4,7 +4,7 @@ import type { LinhaMaquina, LinhaOrdem } from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import { mapaMotivos, paraOrdemDominio, pesoBagOrdemKg, pesoOrdemKg } from '@/dados/adaptadores'
 import {
-  calculaOee, checkFinalAprovado, diaDeProducao, formataHms,
+  calculaOee, checkFinalAprovado, diaDeProducao, duracaoParadaMaquinaS, formataHms,
   tempoPlanejadoS, temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
@@ -25,13 +25,21 @@ export default function Painel({ onSair }: { onSair: () => void }) {
   const [checks, setChecks] = useState<g.ChecklistQualidade[]>([])
   const [agora, setAgora] = useState(() => Date.now())
   const [erro, setErro] = useState<string | null>(null)
+  // parada de MÁQUINA (sem ordem): a espera por semente também precisa
+  // aparecer na TV — antes o cartão só dizia "Máquina livre" (12/09/2026)
+  const [paradasMaquina, setParadasMaquina] = useState<api.LinhaParadaMaquina[]>([])
 
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const [o, c] = await Promise.all([api.carregarOrdens(dia), g.listarChecksQualidade()])
+      const [o, c, pm] = await Promise.all([
+        api.carregarOrdens(dia),
+        g.listarChecksQualidade(),
+        api.carregarParadasMaquina(dia),
+      ])
       setOrdens(o)
       setChecks(c)
+      setParadasMaquina(pm)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -54,7 +62,11 @@ export default function Painel({ onSair }: { onSair: () => void }) {
     void recarregar()
   }, [carregarCad, recarregar])
 
-  useRealtime(['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques', 'qualidade_checks'], recarregar)
+  useRealtime(
+    ['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques', 'qualidade_checks',
+      'maquina_paradas'],
+    recarregar,
+  )
 
   // relógio: o cronômetro corre; à meia-noite o dia de produção vira sozinho
   useEffect(() => {
@@ -196,6 +208,7 @@ export default function Painel({ onSair }: { onSair: () => void }) {
             motivos={motivos}
             motivosLista={cadastros?.motivos ?? []}
             agora={agora}
+            paradaMaquina={paradasMaquina.find((p) => p.maquina_id === m.id && !p.fim) ?? null}
           />
         ))}
         {(cadastros?.maquinas.length ?? 0) === 0 && (
@@ -221,18 +234,31 @@ export default function Painel({ onSair }: { onSair: () => void }) {
 }
 
 function PainelMaquina({
-  maquina, ordens, motivos, motivosLista, agora,
+  maquina, ordens, motivos, motivosLista, agora, paradaMaquina,
 }: {
   maquina: LinhaMaquina
   ordens: LinhaOrdem[]
   motivos: ReturnType<typeof mapaMotivos>
   motivosLista: api.LinhaMotivo[]
   agora: number
+  /** Parada de máquina em curso — só existe com a máquina livre. */
+  paradaMaquina: api.LinhaParadaMaquina | null
 }) {
   const atual = ordens.find((o) => o.status === 'Em producao' || o.status === 'Parada')
   const emParada = atual?.status === 'Parada'
   const parada = atual?.ordem_paradas.find((p) => !p.fim)
   const motivoAtual = parada ? motivosLista.find((mm) => mm.id === parada.motivo_id) : null
+
+  const paradaMaq = !atual ? paradaMaquina : null
+  const motivoMaq = paradaMaq
+    ? (motivosLista.find((mm) => mm.id === paradaMaq.motivo_id)?.descricao ?? 'Parada')
+    : null
+  const paradaMaqS = paradaMaq
+    ? duracaoParadaMaquinaS(
+        { motivoId: '', inicio: new Date(paradaMaq.inicio).getTime(), fim: null },
+        agora,
+      )
+    : 0
 
   const tempos = atual ? temposOrdem(paraOrdemDominio(atual), motivos, agora) : null
   const planejado = atual ? tempoPlanejadoS(pesoOrdemKg(atual) / 1000, maquina.capacidade_th) : null
@@ -240,7 +266,9 @@ function PainelMaquina({
   const estourou = tempos != null && planejado != null && tempos.brutoS > planejado
 
   const borda = !atual
-    ? 'border-stone-800'
+    ? paradaMaq
+      ? 'border-amber-500'
+      : 'border-stone-800'
     : emParada
       ? 'border-red-600'
       : 'border-green-600'
@@ -258,6 +286,11 @@ function PainelMaquina({
             <span className={`h-2 w-2 rounded-full bg-white ${emParada ? 'animate-pulse' : ''}`} />
             {emParada ? 'PARADA' : 'EM PRODUÇÃO'}
           </span>
+        ) : paradaMaq ? (
+          <span className="flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1 text-sm font-bold">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+            PARADA · SEM ORDEM
+          </span>
         ) : (
           <span className="rounded-full bg-stone-800 px-3 py-1 text-sm font-medium text-stone-400">
             LIVRE
@@ -266,8 +299,24 @@ function PainelMaquina({
       </div>
 
       {!atual ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-xl text-stone-600">Máquina livre</p>
+        <div className="flex flex-1 flex-col items-center justify-center">
+          {paradaMaq ? (
+            <>
+              <p className="text-2xl font-semibold text-amber-400">{motivoMaq}</p>
+              <p className="num-tabular mt-2 text-6xl font-bold tracking-tight text-amber-400">
+                {formataHms(paradaMaqS)}
+              </p>
+              <p className="mt-2 text-sm text-stone-500">
+                desde{' '}
+                {new Date(paradaMaq.inicio).toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            </>
+          ) : (
+            <p className="text-xl text-stone-600">Máquina livre</p>
+          )}
         </div>
       ) : (
         <>

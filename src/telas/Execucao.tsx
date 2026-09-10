@@ -8,13 +8,27 @@ import {
   paraOrdemDominio,
   pesoOrdemKg,
 } from '@/dados/adaptadores'
-import { diaDeProducao, formataHms, tempoPlanejadoS, temposOrdem } from '@/dominio/calculos'
+import {
+  diaDeProducao,
+  duracaoParadaMaquinaS,
+  formataHms,
+  tempoPlanejadoS,
+  temposOrdem,
+} from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
+import { ModalMotivoParada } from '@/componentes/ModalMotivoParada'
 import ModalOrdem from './ModalOrdem'
 import CalculadoraCalda from './CalculadoraCalda'
+
+/**
+ * O motivo do botão de um clique. Vive no cadastro como qualquer outro
+ * (migração `parada-de-maquina.sql`) — a constante é só para achá-lo; se
+ * alguém renomear, o botão some e o "outro motivo" continua servindo.
+ */
+const MOTIVO_AGUARDANDO_SEMENTE = 'Aguardando semente'
 
 const num = (v: number, casas = 1) =>
   v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })
@@ -46,14 +60,22 @@ export default function Execucao() {
   const [aberta, setAberta] = useState<string | null>(null)
   const [caldaAberta, setCaldaAberta] = useState(false)
   const [agora, setAgora] = useState(() => Date.now())
+  // parada de MÁQUINA: a que acontece sem ordem nenhuma rodando, tipicamente
+  // aguardando semente. Não cabia em ordem_paradas, que exige ordem, e por
+  // isso esse tempo não era medido (pedido do Arion, 12/09/2026).
+  const [paradasMaquina, setParadasMaquina] = useState<api.LinhaParadaMaquina[]>([])
 
   const podeApontar = permitido('execucao', 'apontar')
 
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const linhas = await api.carregarOrdens(dia)
+      const [linhas, paradas] = await Promise.all([
+        api.carregarOrdens(dia),
+        api.carregarParadasMaquina(dia),
+      ])
       setOrdens(linhas)
+      setParadasMaquina(paradas)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -64,13 +86,15 @@ export default function Execucao() {
     setCarregando(true)
     Promise.all([
       api.carregarCadastros(), api.carregarOrdens(dia), g.listarConferencias(), g.listarEmbalagens(),
+      api.carregarParadasMaquina(dia),
     ])
-      .then(([c, o, cf, e]) => {
+      .then(([c, o, cf, e, pm]) => {
         if (!vivo) return
         setCadastros(c)
         setOrdens(o)
         setConferencias(cf)
         setEmbalagens(e)
+        setParadasMaquina(pm)
       })
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
@@ -80,10 +104,16 @@ export default function Execucao() {
   }, [dia])
 
   // o PCP e a produção olham a mesma ordem ao mesmo tempo: sem isto, uma tela mente
-  useRealtime(['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques'], recarregar)
+  useRealtime(
+    ['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques', 'maquina_paradas'],
+    recarregar,
+  )
 
-  // relógio dos cronômetros: só corre quando há ordem em andamento
-  const temAndamento = ordens.some((o) => o.status === 'Em producao' || o.status === 'Parada')
+  // relógio dos cronômetros: corre com ordem em andamento OU com máquina
+  // parada sem ordem — senão o cronômetro da espera ficava congelado
+  const temAndamento =
+    ordens.some((o) => o.status === 'Em producao' || o.status === 'Parada') ||
+    paradasMaquina.some((p) => !p.fim)
   useEffect(() => {
     if (!temAndamento) return
     const t = setInterval(() => setAgora(Date.now()), 1000)
@@ -112,6 +142,37 @@ export default function Execucao() {
   }, [recarregar])
 
   const motivos = useMemo(() => mapaMotivos(cadastros?.motivos ?? []), [cadastros])
+
+  const motivoSemente = useMemo(
+    () => (cadastros?.motivos ?? []).find((m) => m.descricao === MOTIVO_AGUARDANDO_SEMENTE) ?? null,
+    [cadastros],
+  )
+
+  const abrirParada = useCallback(
+    async (maquinaId: string, motivoId: string) => {
+      try {
+        setErro(null)
+        await api.abrirParadaMaquina(maquinaId, motivoId)
+        await recarregar()
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [recarregar],
+  )
+
+  const encerrarParada = useCallback(
+    async (maquinaId: string) => {
+      try {
+        setErro(null)
+        await api.encerrarParadaMaquina(maquinaId)
+        await recarregar()
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [recarregar],
+  )
 
   // mesma ordem do quadro da Programação: a sequência manda, e só ela — o
   // operador precisa ver a fila exatamente como o PCP a deixou
@@ -186,6 +247,11 @@ export default function Execucao() {
             motivosLista={cadastros?.motivos ?? []}
             agora={agora}
             onAbrir={setAberta}
+            podeApontar={podeApontar}
+            paradaMaquina={paradasMaquina.find((p) => p.maquina_id === m.id && !p.fim) ?? null}
+            motivoSemente={motivoSemente}
+            onAbrirParada={abrirParada}
+            onEncerrarParada={encerrarParada}
           />
         ))}
       </div>
@@ -382,6 +448,11 @@ function CardMaquina({
   motivosLista,
   agora,
   onAbrir,
+  podeApontar,
+  paradaMaquina,
+  motivoSemente,
+  onAbrirParada,
+  onEncerrarParada,
 }: {
   maquina: LinhaMaquina
   ordens: LinhaOrdem[]
@@ -389,7 +460,14 @@ function CardMaquina({
   motivosLista: api.LinhaMotivo[]
   agora: number
   onAbrir: (id: string) => void
+  podeApontar: boolean
+  /** Parada de máquina em curso — só existe com a máquina livre. */
+  paradaMaquina: api.LinhaParadaMaquina | null
+  motivoSemente: api.LinhaMotivo | null
+  onAbrirParada: (maquinaId: string, motivoId: string) => void
+  onEncerrarParada: (maquinaId: string) => void
 }) {
+  const [escolhendoMotivo, setEscolhendoMotivo] = useState(false)
   const atual = ordens.find((o) => o.status === 'Em producao' || o.status === 'Parada')
   const parada = atual?.ordem_paradas.find((p) => !p.fim)
   const motivoAtual = parada ? motivosLista.find((m) => m.id === parada.motivo_id) : null
@@ -409,11 +487,31 @@ function CardMaquina({
     ? ordens.filter((o) => statusEfetivo(paraOrdemDominio(o)) === 'Pronto para produzir').length
     : 0
 
+  // parada de máquina só existe com a máquina livre; se uma ordem começou, o
+  // banco já a encerrou no confirmar_inicio
+  const paradaMaq = !atual ? paradaMaquina : null
+  const motivoMaq = paradaMaq
+    ? (motivosLista.find((m) => m.id === paradaMaq.motivo_id)?.descricao ?? 'Parada')
+    : null
+  const paradaMaqS = paradaMaq
+    ? duracaoParadaMaquinaS(
+        { motivoId: '', inicio: new Date(paradaMaq.inicio).getTime(), fim: null },
+        agora,
+      )
+    : 0
+  // aberta num dia de produção anterior: a contagem já foi cortada às 03:00,
+  // então o número na tela para de subir e ninguém entende — melhor avisar
+  const paradaMaqDeOntem =
+    paradaMaq != null &&
+    diaDeProducao(new Date(paradaMaq.inicio)) !== diaDeProducao(new Date(agora))
+
   return (
     <div
       className={`overflow-hidden rounded-xl border shadow-sm ${
         !atual
-          ? 'border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900'
+          ? paradaMaq
+            ? 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30'
+            : 'border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900'
           : emParada
             ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/30'
             : 'border-green-300 bg-green-50/60 dark:border-green-900 dark:bg-green-950/30'
@@ -443,6 +541,11 @@ function CardMaquina({
                 />
                 {emParada ? 'PARADA' : 'EM PRODUÇÃO'}
               </span>
+            ) : paradaMaq ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-semibold text-white">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+                PARADA · SEM ORDEM
+              </span>
             ) : (
               <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-500 dark:bg-stone-800 dark:text-stone-400">
                 LIVRE
@@ -457,11 +560,63 @@ function CardMaquina({
 
       {!atual ? (
         <div className="px-4 pt-4 pb-5">
-          <p className="py-2 text-sm text-stone-500 dark:text-stone-400">
-            {prontas > 0
-              ? `${prontas} ${prontas === 1 ? 'ordem pronta' : 'ordens prontas'} para produzir — escolha na lista abaixo e toque em Iniciar.`
-              : 'Nenhuma ordem em andamento nem pronta na fila.'}
-          </p>
+          {paradaMaq ? (
+            <>
+              <p className="text-sm text-amber-900 dark:text-amber-200">
+                <b>{motivoMaq}</b> desde{' '}
+                {new Date(paradaMaq.inicio).toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+              <p className="num-tabular mt-1 text-4xl font-bold tabular-nums text-amber-900 dark:text-amber-200">
+                {formataHms(paradaMaqS)}
+              </p>
+              {paradaMaqDeOntem && (
+                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                  Aberta num dia de produção anterior — a contagem parou às 03:00. Encerre.
+                </p>
+              )}
+              {podeApontar && (
+                <button
+                  onClick={() => onEncerrarParada(maquina.id)}
+                  className="mt-3 rounded-md border border-amber-400 px-4 py-2.5 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                >
+                  Encerrar parada
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="py-2 text-sm text-stone-500 dark:text-stone-400">
+                {prontas > 0
+                  ? `${prontas} ${prontas === 1 ? 'ordem pronta' : 'ordens prontas'} para produzir — escolha na lista abaixo e toque em Iniciar.`
+                  : 'Nenhuma ordem em andamento nem pronta na fila.'}
+              </p>
+              {/* Máquina livre e nada pronto para entrar: essa hora é perda e
+                  não tinha onde ser registrada, porque toda parada pertencia a
+                  uma ordem. Com ordem pronta na fila o botão não aparece — aí
+                  a semente está no galpão e o caminho é Iniciar. */}
+              {prontas === 0 && podeApontar && (
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  {motivoSemente && (
+                    <button
+                      onClick={() => onAbrirParada(maquina.id, motivoSemente.id)}
+                      className="rounded-md bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
+                    >
+                      Aguardando semente
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setEscolhendoMotivo(true)}
+                    className="text-sm text-stone-500 underline underline-offset-2 dark:text-stone-400"
+                  >
+                    outro motivo
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -532,6 +687,19 @@ function CardMaquina({
             </div>
           )}
         </>
+      )}
+
+      {escolhendoMotivo && (
+        <ModalMotivoParada
+          titulo={`Máquina ${maquina.nome} parada — motivo`}
+          descricao="A máquina está livre e nenhuma ordem está pronta para entrar. O tempo daqui até o próximo início fica registrado neste motivo."
+          motivos={motivosLista}
+          onEscolher={(m) => {
+            setEscolhendoMotivo(false)
+            onAbrirParada(maquina.id, m.id)
+          }}
+          onCancelar={() => setEscolhendoMotivo(false)}
+        />
       )}
     </div>
   )

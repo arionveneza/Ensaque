@@ -255,6 +255,47 @@ refeição e manutenção preventiva são planejadas; quebra, falta de lote/quí
 entupimento e queda de energia são não planejadas. Sem essa classificação o setup penalizaria a
 disponibilidade como se fosse falha.
 
+### Parada de MÁQUINA — o tempo que não pertence a ordem nenhuma
+(12/09/2026, pedido do Arion: "não conseguimos mensurar o tempo que a máquina para por
+aguardar semente".) Toda parada era de ordem — `ordem_paradas.ordem_id` é `not null` e
+`registrar_parada` exige ordem `Em producao` —, então máquina ociosa não tinha onde
+registrar nada e a hora perdida não existia. Tabela própria `maquina_paradas`
+(migração `parada-de-maquina.sql`), **nunca** `ordem_paradas` afrouxada: afrouxar
+contaminaria `v_ordem_tempos`, disponibilidade e OEE, todos ancorados na ordem por
+`!inner`. **Parada de máquina não entra em `temposOrdem`, disponibilidade nem OEE** — é
+outro eixo, máquina × dia, então não há dupla contagem.
+- **Na Execução**, com a máquina livre e **nenhuma ordem `Pronto para produzir`**: botão
+  **Aguardando semente** (um clique, motivo próprio semeado pela migração) e um
+  **"outro motivo"** que abre o `ModalMotivoParada` — o mesmo seletor do detalhe da ordem,
+  extraído para `src/componentes/ModalMotivoParada.tsx`. Com ordem pronta na fila o botão
+  some: aí a semente está no galpão e o caminho é Iniciar. O cartão fica âmbar com o
+  cronômetro, e o Painel TV mostra o mesmo.
+- **Motivo separado do "Falta de lote de semente"** que já existia: aquele é parada NO MEIO
+  da ordem (a semente acabou), este é ANTES dela (a semente não chegou).
+- **Fecha sozinha** no `confirmar_inicio` da primeira ordem daquela máquina — exigir um
+  "Encerrar" antes seria mais um toque para esquecer, e a parada esquecida correria por
+  cima da produção. O botão Encerrar continua existindo.
+- **Uma aberta por máquina**, por índice único parcial no banco, não por regra de tela.
+- **Duração cortada no fim do dia de produção** (`duracaoParadaMaquinaS`): parada esquecida
+  aberta no fim do expediente renderia a madrugada inteira e inflaria justamente o motivo
+  que se quer medir. A tela avisa quando a parada é de um dia anterior.
+- **Onde aparece**: coluna própria "Parado sem ordem" no relatório por dia (fora de
+  planejada/não planejada, senão o total do dia deixa de bater com a soma das ordens);
+  barra âmbar no Pareto, com a chave incluindo o contexto porque o mesmo motivo pode
+  existir nos dois; e o cartão **Aproveitamento da máquina** (`aproveitamentoMaquina`),
+  que é o indicador que faltava — a disponibilidade e o OEE medem a ORDEM, e um dia inteiro
+  sem produzir saía com 100%. Aqui o denominador são as horas do turno
+  (`horasDoDia` × `HORAS_TURNOS`, que saiu de `Programacao.tsx` para o domínio), e o resto
+  do dia aparece como *parado sem ordem* (alguém nomeou) ou *ocioso* (ninguém nomeou).
+
+**Realtime estava morto na Execução** (achado junto, 12/09/2026): a tela assina `ordens`,
+`ordem_eventos`, `ordem_paradas` e `ordem_tanques`, e **nenhuma das quatro** estava na
+publicação `supabase_realtime` (`lotes_semente` também não) — e, como o próprio
+`realtime-completo.sql` documenta, uma tabela inválida derruba o canal INTEIRO, em
+silêncio: Execução, Painel TV e Expedição só atualizavam ao voltar o foco da aba. A
+migração `parada-de-maquina.sql` acrescenta as cinco mais a tabela nova. **Tabela nova que
+alguma tela assine precisa entrar na publicação na mesma migração.**
+
 ### Ocupação
 ```
 horas_do_dia           = Σ das horas dos turnos que o dia roda (2 → 19,5 · 1 → 10 · 0 → 0)

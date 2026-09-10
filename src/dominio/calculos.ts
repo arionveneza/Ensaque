@@ -12,6 +12,7 @@ import type {
   ItemReceita,
   MotivoParada,
   Ordem,
+  Parada,
   ProdutoQuimico,
   Receita,
   TanqueOrdem,
@@ -412,7 +413,7 @@ export function diaDeProducao(momento: Date): string {
 // ----------------------------------------------------------------
 
 /** Capacidade do dia por máquina: capacidade_th × horas dos dois turnos. */
-export function capacidadeDiaT(capacidadeTh: number, horasTurnos: number[]): number {
+export function capacidadeDiaT(capacidadeTh: number, horasTurnos: readonly number[]): number {
   return capacidadeTh * horasTurnos.reduce((a, h) => a + h, 0)
 }
 
@@ -428,4 +429,75 @@ export function ocupacao(programadoT: number, capacidadeT: number): Ocupacao {
   const pct = capacidadeT > 0 ? (programadoT / capacidadeT) * 100 : 0
   const alerta = pct > 100 ? 'vermelho' : pct > 85 ? 'ambar' : 'ok'
   return { programadoT, capacidadeT, pct, alerta }
+}
+
+// ----------------------------------------------------------------
+// Parada de MÁQUINA (sem ordem) e aproveitamento
+// ----------------------------------------------------------------
+
+/**
+ * Fim do dia de produção que começou em `dia` (AAAA-MM-DD): 03:00 do dia
+ * seguinte. `new Date` normaliza a virada de mês e de ano sozinho.
+ */
+export function fimDoDiaDeProducaoMs(dia: string): number {
+  const [a, m, d] = dia.split('-').map(Number)
+  return new Date(a, m - 1, d + 1, 3, 0, 0, 0).getTime()
+}
+
+/**
+ * Duração de uma parada de MÁQUINA (a que não tem ordem), em segundos.
+ *
+ * Cortada no fim do dia de produção em que começou: a parada esquecida
+ * aberta no fim do expediente renderia a madrugada inteira e inflaria o
+ * indicador justamente do motivo que se quer medir. A parada da ORDEM não
+ * precisa disso — ela é fechada pelo retomar e pelo confirmar_fim.
+ */
+export function duracaoParadaMaquinaS(parada: Parada, agora: number): number {
+  const limite = fimDoDiaDeProducaoMs(diaDeProducao(new Date(parada.inicio)))
+  const fim = Math.min(parada.fim ?? agora, limite)
+  return Math.max(0, (fim - parada.inicio) / 1000)
+}
+
+export interface AproveitamentoMaquina {
+  /** Horas do(s) turno(s) que o dia roda, em segundos. */
+  disponivelS: number
+  /** Soma do tempo bruto das ordens da máquina no dia. */
+  produzindoS: number
+  /** Soma das paradas de máquina (sem ordem) do dia. */
+  paradoSemOrdemS: number
+  /** O que sobrou: ocioso sem ninguém ter dito por quê. */
+  ociosoS: number
+  /** produzindo ÷ disponível; nulo em dia sem turno. */
+  aproveitamento: number | null
+}
+
+/**
+ * Aproveitamento de uma máquina num dia — o indicador que faltava.
+ *
+ * A disponibilidade e o OEE medem a ORDEM: entre o início e o fim dela. Um
+ * dia inteiro sem produzir saía com 100% de disponibilidade, porque não
+ * havia ordem nenhuma para descontar. Aqui o denominador são as horas do
+ * turno, então o tempo em que a máquina não rodou aparece — nomeado quando
+ * alguém registrou a parada, e como "ocioso" quando ninguém registrou.
+ *
+ * Parada de máquina NÃO entra em `temposOrdem`: os dois eixos não se
+ * cruzam, então não há dupla contagem.
+ */
+export function aproveitamentoMaquina(
+  disponivelS: number,
+  produzindoS: number,
+  paradoSemOrdemS: number,
+): AproveitamentoMaquina {
+  const disponivel = Math.max(0, disponivelS)
+  const produzindo = Math.max(0, produzindoS)
+  const parado = Math.max(0, paradoSemOrdemS)
+  return {
+    disponivelS: disponivel,
+    produzindoS: produzindo,
+    paradoSemOrdemS: parado,
+    // a ordem pode furar o turno (produção que varou a madrugada): sem o
+    // piso em zero o ocioso viraria negativo e o total do dia não fecharia
+    ociosoS: Math.max(0, disponivel - produzindo - parado),
+    aproveitamento: disponivel > 0 ? Math.min(1, produzindo / disponivel) : null,
+  }
 }

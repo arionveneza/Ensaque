@@ -1,8 +1,11 @@
 ﻿import { describe, expect, it } from 'vitest'
 import {
+  aproveitamentoMaquina,
   calculaOee,
   capacidadeDiaT,
   checkFinalAprovado,
+  duracaoParadaMaquinaS,
+  fimDoDiaDeProducaoMs,
   consumoPorTanque,
   diaDeProducao,
   ensaquePorBagKg,
@@ -444,6 +447,81 @@ describe('ocupacao', () => {
 
   it('dentro do limite fica ok', () => {
     expect(ocupacao(100, 234).alerta).toBe('ok')
+  })
+})
+
+describe('parada de maquina (sem ordem)', () => {
+  const h = 3600 * 1000
+
+  it('fim do dia de producao e as 03:00 do dia seguinte', () => {
+    expect(fimDoDiaDeProducaoMs('2026-09-10')).toBe(new Date(2026, 8, 11, 3, 0, 0, 0).getTime())
+  })
+
+  it('vira o mes sem ajuda', () => {
+    expect(fimDoDiaDeProducaoMs('2026-09-30')).toBe(new Date(2026, 9, 1, 3, 0, 0, 0).getTime())
+  })
+
+  it('parada fechada conta do inicio ao fim', () => {
+    const inicio = new Date(2026, 8, 10, 9, 0).getTime()
+    const p = { motivoId: 'M', inicio, fim: inicio + 2 * h }
+    expect(duracaoParadaMaquinaS(p, inicio + 5 * h)).toBe(7200)
+  })
+
+  it('parada aberta conta ate agora', () => {
+    const inicio = new Date(2026, 8, 10, 9, 0).getTime()
+    const p = { motivoId: 'M', inicio, fim: null }
+    expect(duracaoParadaMaquinaS(p, inicio + 1.5 * h)).toBe(5400)
+  })
+
+  // esquecida aberta no fim do expediente, a parada renderia a madrugada
+  // inteira e inflaria justamente o motivo que se quer medir
+  it('parada esquecida aberta e cortada no fim do dia de producao', () => {
+    const inicio = new Date(2026, 8, 10, 22, 0).getTime() // 5 h ate as 03:00
+    const p = { motivoId: 'M', inicio, fim: null }
+    const doisDiasDepois = new Date(2026, 8, 12, 10, 0).getTime()
+    expect(duracaoParadaMaquinaS(p, doisDiasDepois)).toBe(5 * 3600)
+  })
+
+  it('parada que comecou de madrugada pertence ao dia anterior e e cortada nele', () => {
+    // 02:00 do dia 11 ainda e o dia de producao do dia 10, que fecha as 03:00
+    const inicio = new Date(2026, 8, 11, 2, 0).getTime()
+    const p = { motivoId: 'M', inicio, fim: null }
+    expect(duracaoParadaMaquinaS(p, inicio + 10 * h)).toBe(3600)
+  })
+
+  it('nunca devolve negativo', () => {
+    const inicio = new Date(2026, 8, 10, 9, 0).getTime()
+    expect(duracaoParadaMaquinaS({ motivoId: 'M', inicio, fim: null }, inicio - h)).toBe(0)
+  })
+})
+
+describe('aproveitamento da maquina', () => {
+  const H = 3600
+
+  it('reparte o dia em produzindo, parado sem ordem e ocioso', () => {
+    const a = aproveitamentoMaquina(19.5 * H, 10 * H, 4 * H)
+    expect(a.produzindoS).toBe(10 * H)
+    expect(a.paradoSemOrdemS).toBe(4 * H)
+    expect(a.ociosoS).toBe(5.5 * H)
+    expect(a.aproveitamento).toBeCloseTo(10 / 19.5, 6)
+  })
+
+  it('ocioso nunca fica negativo quando a producao fura o turno', () => {
+    const a = aproveitamentoMaquina(10 * H, 12 * H, 1 * H)
+    expect(a.ociosoS).toBe(0)
+    expect(a.aproveitamento).toBe(1)
+  })
+
+  it('dia sem turno nao tem aproveitamento', () => {
+    const a = aproveitamentoMaquina(0, 0, 0)
+    expect(a.aproveitamento).toBeNull()
+    expect(a.ociosoS).toBe(0)
+  })
+
+  it('dia inteiro parado aguardando semente da aproveitamento zero', () => {
+    const a = aproveitamentoMaquina(19.5 * H, 0, 19.5 * H)
+    expect(a.aproveitamento).toBe(0)
+    expect(a.ociosoS).toBe(0)
   })
 })
 

@@ -5,6 +5,7 @@ import type { OrdemVisao } from '@/dados/api-gestao'
 import { capacidadeDiaT, diaDeProducao } from '@/dominio/calculos'
 import {
   autoProgramar,
+  HORAS_TURNOS,
   checklistDoDia,
   horasDoDia,
   melhorSlot,
@@ -25,7 +26,6 @@ import {
   corDoStatus, diaCurto, diaSemana, n, somaDias,
 } from '@/componentes/ui'
 
-const HORAS_TURNOS = [10, 9.5]
 /** Até onde a cascata pode empurrar. */
 const DIAS_CASCATA = 30
 

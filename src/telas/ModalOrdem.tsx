@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from '@/dados/api'
 import * as api from '@/dados/api'
+import { ModalMotivoParada } from '@/componentes/ModalMotivoParada'
 import type { ConferenciaLinha, EmbalagemLinha } from '@/dados/api-gestao'
 import {
   mapaMotivos,
@@ -965,47 +966,15 @@ export default function ModalOrdem({
         </footer>
 
         {escolhendoParada && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4">
-            {/* max-h + overflow: lista de motivos é cadastro, pode crescer;
-                sem isto o botão Cancelar podia ficar cortado, sem rolagem */}
-            <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
-              <h3 className="text-base font-semibold">Motivo da parada</h3>
-              <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-                A classificação separa tempo normal de processo (setup, limpeza) de perda
-                real no indicador de disponibilidade.
-              </p>
-              {(['Planejada', 'Nao planejada'] as const).map((tipo) => (
-                <div key={tipo} className="mt-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
-                    {tipo === 'Planejada' ? 'Planejada' : 'Não planejada'}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    {motivos
-                      .filter((m) => m.tipo === tipo)
-                      .map((m) => (
-                        <button
-                          key={m.id}
-                          disabled={ocupado}
-                          onClick={() => {
-                            setEscolhendoParada(false)
-                            acao(() => api.registrarParada(ordem.id, m.id))
-                          }}
-                          className="rounded-md border border-stone-300 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-stone-700"
-                        >
-                          {m.descricao}
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              ))}
-              <button
-                onClick={() => setEscolhendoParada(false)}
-                className="mt-5 text-sm text-stone-500 underline"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
+          <ModalMotivoParada
+            motivos={motivos}
+            ocupado={ocupado}
+            onEscolher={(m) => {
+              setEscolhendoParada(false)
+              acao(() => api.registrarParada(ordem.id, m.id))
+            }}
+            onCancelar={() => setEscolhendoParada(false)}
+          />
         )}
       </div>
     </div>

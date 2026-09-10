@@ -52,6 +52,13 @@ export interface TurnosDoDia {
 
 export const DIA_CHEIO: TurnosDoDia = { t1: true, t2: true }
 
+/**
+ * Horas de cada turno: 1º das 07:30 às 17:30, 2º das 17:30 às 03:00. Mora
+ * aqui, e não na tela de Programação, porque os Indicadores também precisam
+ * dela para comparar as horas do turno com as horas realmente produzidas.
+ */
+export const HORAS_TURNOS: readonly number[] = [10, 9.5]
+
 /** Horas de operação de um dia, somando só os turnos que ele roda. */
 export function horasDoDia(turnos: TurnosDoDia, horasPorTurno: readonly number[]): number {
   return (turnos.t1 ? (horasPorTurno[0] ?? 0) : 0) + (turnos.t2 ? (horasPorTurno[1] ?? 0) : 0)
