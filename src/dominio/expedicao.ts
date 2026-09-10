@@ -1,18 +1,23 @@
 /**
- * Expedição: carregamentos agendados × o que existe para carregar.
+ * Expedição: o que está agendado × o que existe para carregar.
  *
- * A planilha "montagem de carga" da SimpleAgro traz os caminhões agendados —
- * cliente, produto, quantidade e data. A pergunta que ela não responde
- * sozinha é a que importa: **o estoque atende o que está agendado?**
+ * Desde 12/09/2026 a fonte é o relatório "pedidos agendados" da SimpleAgro
+ * (`converterAgendados`): cada linha é um item de pedido com QTD AGENDADA,
+ * DATA AGENDADA e TIPO VENDA. O conversor da "montagem de carga"
+ * (`converterMontagemCarga`) continua aqui porque a tabela `carregamentos`
+ * ficou como histórico. A pergunta que nenhum dos dois relatórios responde
+ * sozinho é a que importa: **o estoque atende o que está agendado?**
  *
- * O cruzamento tem uma sutileza de negócio: carregamento `SEM TSI` é semente
- * branca, que sai do estoque de LOTES; carregamento com tratamento real sai
+ * O cruzamento tem uma sutileza de negócio: agendamento `SEM TSI` é semente
+ * branca, que sai do estoque de LOTES; agendamento com tratamento real sai
  * do estoque de PRODUTO ACABADO, e pode ainda contar com a produção
  * programada até a data. São dois estoques diferentes — somar tudo num
  * número só esconderia exatamente a falta que se quer enxergar.
  */
 
-import { EMBALAGEM_DEPARA, normalizaCultivar, type Linha } from './importacao/simpleagro'
+import {
+  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, type Linha,
+} from './importacao/simpleagro'
 
 const txt = (v: unknown): string => (v == null ? '' : String(v).trim())
 
@@ -176,6 +181,178 @@ export function converterMontagemCarga(rows: Linha[]): {
 }
 
 // ================================================================
+// Pedidos agendados (12/09/2026) — substituiu a montagem de carga na tela
+// ================================================================
+
+/**
+ * Código do tratamento como a receita grava: caixa alta, sem acento, um
+ * espaço de cada lado do "+" — `FTZ60+VIC`, `ftz60 + vic` e `FTZ60 + VIC`
+ * são o mesmo tratamento.
+ */
+export const normalizaTratamento = (s: string): string =>
+  normaliza(s).replace(/\s*\+\s*/g, ' + ').replace(/\s+/g, ' ').trim()
+
+/** IDENTIFICADOR e TIPO VENDA não existem na montagem de carga — sem ambiguidade. */
+export const ehRelatorioAgendados = (rows: Linha[]): boolean => {
+  const h = (rows[0] ?? []).map((c) => normaliza(txt(c)))
+  return ['IDENTIFICADOR', 'TIPO VENDA', 'QTD AGENDADA', 'DATA AGENDADA'].every((n) => h.includes(n))
+}
+
+export interface AgendamentoConvertido {
+  /** Coluna A — único no relatório, mas não é chave no banco. */
+  identificador: string
+  /** NUMERO do pedido — repete por item. */
+  pedido: string
+  tipoVenda: string
+  /** `tipoVenda` contém COOPERADO — mesma regra do import de pedidos. */
+  cooperado: boolean
+  cliente: string
+  cidade: string | null
+  estado: string | null
+  cultivar: string
+  categoria: string | null
+  /** `SEM TSI` = semente branca; código real = produto tratado. */
+  tratamento: string
+  embalagem: string
+  qtdPedido: number
+  /** QTD AGENDADA — a que vale (pode ser menor que o pedido). */
+  bags: number
+  statusEntrega: string
+  carga: string | null
+  statusCarga: string | null
+  data: string | null
+  observacao: string | null
+}
+
+export interface ResumoAgendados {
+  totalLinhas: number
+  aproveitadas: number
+  semQuantidade: number
+  semData: number
+  /** Embalagens sem de-para → bags (a linha entra mesmo assim, com o código cru). */
+  embalagemDesconhecida: Record<string, number>
+  porTipoVenda: Record<string, number>
+  porStatusEntrega: Record<string, number>
+  porStatusCarga: Record<string, number>
+  bagsCooperado: number
+  bagsOutras: number
+  identificadorRepetido: number
+}
+
+/**
+ * Converte o relatório de pedidos agendados. Colunas pelo NOME do
+ * cabeçalho (normalizado: caixa/acento não importam) — a letra varia entre
+ * exports, o nome não. A DATA AGENDADA vem como Date COM HORA: o
+ * read-excel-file monta a Date em UTC a partir do serial do Excel, então o
+ * dia certo sai dos componentes UTC (`dia()`), nunca de `getDate()` local.
+ *
+ * Toda linha com quantidade agendada entra — inclusive "Aguardando
+ * Estoque", que é exatamente a demanda que precisa de estoque. Sem
+ * quantidade não vira agendamento; sem data entra marcada.
+ */
+export function converterAgendados(rows: Linha[]): {
+  linhas: AgendamentoConvertido[]
+  resumo: ResumoAgendados
+} {
+  const cab = (rows[0] ?? []).map((c) => normaliza(txt(c)))
+  const ix = (nome: string) => cab.indexOf(normaliza(nome))
+  const iId = ix('IDENTIFICADOR')
+  const iPedido = ix('NUMERO')
+  const iTipo = ix('TIPO VENDA')
+  const iCliente = ix('CLIENTE')
+  const iCidade = ix('CIDADE')
+  const iEstado = ix('ESTADO')
+  const iProduto = ix('PRODUTO')
+  const iCategoria = ix('CATEGORIA')
+  const iTrat = ix('TRATAMENTO')
+  const iEmb = ix('EMBALAGEM')
+  const iQtdPedido = ix('QTD PEDIDO')
+  const iStatusEntrega = ix('STATUS ENTREGA')
+  const iCarga = ix('CARGA')
+  const iStatusCarga = ix('STATUS CARGA')
+  const iData = ix('DATA AGENDADA')
+  const iQtd = ix('QTD AGENDADA')
+  const iObs = ix('OBSERVACAO')
+
+  if (iId < 0 || iProduto < 0 || iQtd < 0 || iData < 0) {
+    throw new Error(
+      'A planilha não parece o relatório de pedidos agendados: faltam as colunas IDENTIFICADOR, PRODUTO, QTD AGENDADA ou DATA AGENDADA.',
+    )
+  }
+
+  const linhas: AgendamentoConvertido[] = []
+  const resumo: ResumoAgendados = {
+    totalLinhas: Math.max(0, rows.length - 1),
+    aproveitadas: 0,
+    semQuantidade: 0,
+    semData: 0,
+    embalagemDesconhecida: {},
+    porTipoVenda: {},
+    porStatusEntrega: {},
+    porStatusCarga: {},
+    bagsCooperado: 0,
+    bagsOutras: 0,
+    identificadorRepetido: 0,
+  }
+  const vistos = new Set<string>()
+  const opcional = (i: number, r: Linha) => (i >= 0 ? txt(r[i]) || null : null)
+
+  for (const r of rows.slice(1)) {
+    const bags = num(r[iQtd])
+    if (bags <= 0) {
+      resumo.semQuantidade++
+      continue
+    }
+    const embCru = normaliza(txt(r[iEmb]))
+    const emb = EMBALAGEM_DEPARA[embCru]?.codigo ?? embCru
+    if (embCru && !EMBALAGEM_DEPARA[embCru]) {
+      resumo.embalagemDesconhecida[embCru] = (resumo.embalagemDesconhecida[embCru] ?? 0) + bags
+    }
+    const data = dia(r[iData])
+    if (!data) resumo.semData++
+
+    const tipoVenda = txt(r[iTipo])
+    const cooperado = normaliza(tipoVenda).includes('COOPERADO')
+    resumo.porTipoVenda[tipoVenda || '(vazio)'] = (resumo.porTipoVenda[tipoVenda || '(vazio)'] ?? 0) + 1
+    if (cooperado) resumo.bagsCooperado += bags
+    else resumo.bagsOutras += bags
+
+    const statusEntrega = txt(r[iStatusEntrega]) || 'Sem status'
+    resumo.porStatusEntrega[statusEntrega] = (resumo.porStatusEntrega[statusEntrega] ?? 0) + 1
+    const statusCarga = opcional(iStatusCarga, r)
+    if (statusCarga) resumo.porStatusCarga[statusCarga] = (resumo.porStatusCarga[statusCarga] ?? 0) + 1
+
+    const identificador = txt(r[iId])
+    if (vistos.has(identificador)) resumo.identificadorRepetido++
+    vistos.add(identificador)
+
+    linhas.push({
+      identificador,
+      pedido: txt(r[iPedido]),
+      tipoVenda,
+      cooperado,
+      cliente: txt(r[iCliente]),
+      cidade: opcional(iCidade, r),
+      estado: opcional(iEstado, r),
+      cultivar: normalizaCultivar(txt(r[iProduto])),
+      categoria: opcional(iCategoria, r),
+      tratamento: normalizaTratamento(txt(r[iTrat])) || SEM_TSI,
+      embalagem: emb,
+      qtdPedido: num(r[iQtdPedido]),
+      bags,
+      statusEntrega,
+      carga: opcional(iCarga, r),
+      statusCarga,
+      data,
+      observacao: opcional(iObs, r),
+    })
+    resumo.aproveitadas++
+  }
+
+  return { linhas, resumo }
+}
+
+// ================================================================
 // Saldo dinâmico: o estoque atende o que está agendado até a data?
 // ================================================================
 
@@ -227,7 +404,21 @@ export interface ProducaoPrevista {
  */
 const arred2 = (x: number) => Math.round(x * 100) / 100 + 0
 
-export interface SaldoExpedicao {
+/**
+ * Um caminhão/agendamento dentro da fila do produto (12/09/2026): quanto
+ * dele o estoque + produção garantida até a SUA data cobre, descontados os
+ * caminhões que vêm antes. É a base da visão por tipo de venda — a fila é
+ * uma só, cada bag de estoque é dado a um caminhão só.
+ */
+export interface AlocacaoCaminhao<T> {
+  caminhao: T
+  data: string | null
+  bags: number
+  coberto: number
+  descoberto: number
+}
+
+export interface SaldoExpedicao<T extends CarregamentoLinha = CarregamentoLinha> {
   cultivar: string
   tratamento: string
   /** SEM TSI agrega o cultivar inteiro: aqui vão as embalagens agendadas. */
@@ -248,6 +439,39 @@ export interface SaldoExpedicao {
   /** estoque + produção − agendado. Negativo = falta mesmo adiantando. */
   saldo: number
   semTsi: boolean
+  /**
+   * A fila em ordem de data com a cobertura de cada caminhão. Σ descoberto
+   * ≥ deficitPrazo — igual quando o buraco não encolhe entre caminhões
+   * (produção toda depois deles, ou um caminhão só); maior quando uma ordem
+   * cai entre dois caminhões e só o `deficitPrazo` (mínimo a adiantar)
+   * resolveria os dois. SEM TSI: Σ descoberto = max(0, −saldo).
+   */
+  caminhoes: AlocacaoCaminhao<T>[]
+}
+
+/**
+ * A fila do produto, caminhão a caminhão: `garantida` = estoque + o que a
+ * produção garante até a data daquele caminhão; o que sobra dela depois dos
+ * anteriores cobre este. `pior` é o maior buraco (base do deficitPrazo).
+ * Caminhão sem data entra primeiro e só vê estoque + ordens já iniciadas.
+ */
+function alocarFila<T extends CarregamentoLinha>(
+  fila: T[],
+  estoque: number,
+  garantidaAte: (dia: string | null) => number,
+): { pior: number; caminhoes: AlocacaoCaminhao<T>[] } {
+  const ordenada = [...fila].sort((a, b) => (a.data ?? '').localeCompare(b.data ?? ''))
+  const caminhoes: AlocacaoCaminhao<T>[] = []
+  let demanda = 0
+  let pior = 0
+  for (const c of ordenada) {
+    const garantida = estoque + garantidaAte(c.data)
+    const coberto = arred2(Math.min(c.bags, Math.max(0, garantida - demanda)))
+    demanda += c.bags
+    pior = Math.max(pior, demanda - garantida)
+    caminhoes.push({ caminhao: c, data: c.data, bags: c.bags, coberto, descoberto: arred2(c.bags - coberto) })
+  }
+  return { pior, caminhoes }
 }
 
 /**
@@ -269,20 +493,20 @@ export interface SaldoExpedicao {
  * Caminhão sem data entra primeiro na fila: prazo desconhecido se trata
  * como "para já", nunca como "para nunca".
  */
-export function saldosExpedicao(
-  carregamentos: CarregamentoLinha[],
+export function saldosExpedicao<T extends CarregamentoLinha>(
+  carregamentos: T[],
   lotes: LoteDisponivel[],
   estoquePa: EstoqueTratado[],
   producao: ProducaoPrevista[],
   hoje?: string | null,
-): SaldoExpedicao[] {
+): SaldoExpedicao<T>[] {
   // SEM TSI agrega por cultivar (o estoque é um pool só); tratado, pela tripla
   const chave = (c: { cultivar: string; tratamento: string; embalagem: string }) =>
     c.tratamento === SEM_TSI ? `${c.cultivar}|${SEM_TSI}` : `${c.cultivar}|${c.tratamento}|${c.embalagem}`
 
-  const linhas = new Map<string, SaldoExpedicao>()
+  const linhas = new Map<string, SaldoExpedicao<T>>()
   const embalagens = new Map<string, Set<string>>()
-  const fila = new Map<string, CarregamentoLinha[]>()
+  const fila = new Map<string, T[]>()
   for (const c of carregamentos) {
     const k = chave(c)
     const atual =
@@ -297,7 +521,8 @@ export function saldosExpedicao(
         deficitPrazo: 0,
         saldo: 0,
         semTsi: c.tratamento === SEM_TSI,
-      } satisfies SaldoExpedicao)
+        caminhoes: [],
+      } satisfies SaldoExpedicao<T>)
     atual.agendado += c.bags
     linhas.set(k, atual)
     embalagens.set(k, (embalagens.get(k) ?? new Set()).add(c.embalagem))
@@ -316,12 +541,19 @@ export function saldosExpedicao(
 
     if (s.semTsi) {
       s.estoque = lotesPorCultivar.get(s.cultivar) ?? 0
+      // branca não passa pela produção: a fila só vê o estoque (deficitPrazo
+      // continua 0 — `saldo` já diz a falta), mas cada caminhão ganha a sua
+      // cobertura pra visão por tipo de venda
+      s.caminhoes = alocarFila(fila.get(k) ?? [], s.estoque, () => 0).caminhoes
     } else {
+      // tratamento normalizado nos dois lados: `FTZ60+VIC` na receita e
+      // `FTZ60 + VIC` no relatório são o mesmo produto (12/09/2026)
+      const trat = normalizaTratamento(s.tratamento)
       s.estoque = estoquePa
         .filter(
           (e) =>
             normalizaCultivar(e.cultivar) === s.cultivar &&
-            e.tratamento.toUpperCase() === s.tratamento &&
+            normalizaTratamento(e.tratamento) === trat &&
             e.embalagem === s.embalagem,
         )
         .reduce((a, e) => a + e.bags, 0)
@@ -329,7 +561,7 @@ export function saldosExpedicao(
       const daCombinacao = producao.filter(
         (p) =>
           normalizaCultivar(p.cultivar) === s.cultivar &&
-          p.tratamento.toUpperCase() === s.tratamento &&
+          normalizaTratamento(p.tratamento) === trat &&
           p.embalagem === s.embalagem,
       )
       s.producaoPrevista = daCombinacao.reduce((a, p) => a + p.bags, 0)
@@ -350,19 +582,9 @@ export function saldosExpedicao(
           )
           .reduce((a, p) => a + p.bags, 0)
 
-      const ordenada = [...(fila.get(k) ?? [])].sort((a, b) =>
-        (a.data ?? '').localeCompare(b.data ?? ''),
-      )
-      let demanda = 0
-      let pior = 0
-      for (const c of ordenada) {
-        demanda += c.bags
-        const garantida = c.data == null
-          ? garantidaAte(null) // sem data: só estoque e o que já está na máquina
-          : garantidaAte(c.data)
-        pior = Math.max(pior, demanda - (s.estoque + garantida))
-      }
+      const { pior, caminhoes } = alocarFila(fila.get(k) ?? [], s.estoque, garantidaAte)
       s.deficitPrazo = arred2(Math.max(0, pior))
+      s.caminhoes = caminhoes
     }
     s.saldo = arred2(s.estoque + s.producaoPrevista - s.agendado)
     s.agendado = arred2(s.agendado)
@@ -382,9 +604,64 @@ export type SituacaoSaldo = 'falta' | 'adiantar' | 'aguardando-producao' | 'aten
  * tudo no prazo — bag programado não é bag no galpão, e a tela dizia
  * "atende" para material que ainda nem existia (pedido do PCP, 07/08/2026).
  */
-export function situacaoSaldo(s: SaldoExpedicao): SituacaoSaldo {
+export function situacaoSaldo(s: SaldoExpedicao<CarregamentoLinha>): SituacaoSaldo {
   if (s.saldo < 0) return 'falta'
   if (s.deficitPrazo > 0) return 'adiantar'
   if (!s.semTsi && s.estoque < s.agendado) return 'aguardando-producao'
   return 'atende'
+}
+
+// ================================================================
+// Por tipo de venda: VENDA COOPERADO × OUTRAS (12/09/2026)
+// ================================================================
+
+export interface LadoTipoVenda {
+  agendado: number
+  coberto: number
+  descoberto: number
+  /** Quantos agendamentos (caminhões) do grupo. */
+  caminhoes: number
+  /** Produtos em que ESTE grupo ficou descoberto, do pior pro menor. */
+  produtosEmFalta: { cultivar: string; tratamento: string; embalagem: string; descoberto: number }[]
+}
+
+/**
+ * A visão consolidada manda; os lados só detalham (decisão do Arion,
+ * 12/09/2026): a fila única de cada produto já decidiu, caminhão a
+ * caminhão, o que é coberto — aqui só se soma por grupo. Nenhum bag de
+ * estoque é contado duas vezes, e cooperado no fim da fila absorve o
+ * descoberto exatamente como a data manda.
+ */
+export function resumoPorTipoVenda<T extends CarregamentoLinha>(
+  saldos: SaldoExpedicao<T>[],
+  ehCooperado: (c: T) => boolean,
+): { cooperado: LadoTipoVenda; outras: LadoTipoVenda } {
+  const novo = (): LadoTipoVenda => ({ agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [] })
+  const r = { cooperado: novo(), outras: novo() }
+  for (const s of saldos) {
+    const faltaDoLado = { cooperado: 0, outras: 0 }
+    for (const c of s.caminhoes) {
+      const lado = ehCooperado(c.caminhao) ? 'cooperado' : 'outras'
+      r[lado].agendado += c.bags
+      r[lado].coberto += c.coberto
+      r[lado].descoberto += c.descoberto
+      r[lado].caminhoes++
+      faltaDoLado[lado] += c.descoberto
+    }
+    for (const lado of ['cooperado', 'outras'] as const) {
+      if (faltaDoLado[lado] > 0) {
+        r[lado].produtosEmFalta.push({
+          cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem,
+          descoberto: arred2(faltaDoLado[lado]),
+        })
+      }
+    }
+  }
+  for (const lado of [r.cooperado, r.outras]) {
+    lado.agendado = arred2(lado.agendado)
+    lado.coberto = arred2(lado.coberto)
+    lado.descoberto = arred2(lado.descoberto)
+    lado.produtosEmFalta.sort((a, b) => b.descoberto - a.descoberto)
+  }
+  return r
 }

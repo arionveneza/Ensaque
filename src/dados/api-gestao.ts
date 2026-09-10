@@ -604,6 +604,65 @@ export async function substituirCarregamentos(
 }
 
 // ================================================================
+// Expedição: pedidos agendados (substituiu a montagem de carga, 12/09/2026)
+// ================================================================
+
+/** Espelho de tsi.agendamentos — um item de pedido agendado (migração agendamentos.sql). */
+export interface AgendamentoBanco {
+  id: string
+  identificador: string
+  pedido: string | null
+  tipo_venda: string
+  cooperado: boolean
+  cliente: string | null
+  cidade: string | null
+  estado: string | null
+  cultivar: string
+  categoria: string | null
+  /** 'SEM TSI' = semente branca. */
+  tratamento: string
+  embalagem: string
+  qtd_pedido: number
+  /** QTD AGENDADA — a que vale. */
+  bags: number
+  status_entrega: string
+  carga: string | null
+  status_carga: string | null
+  data: string | null
+  observacao: string | null
+  importado_em: string
+}
+
+/** Vazio se a tabela ainda não existir: o front vai ao ar antes do SQL. */
+export async function listarAgendamentos(): Promise<AgendamentoBanco[]> {
+  const { data, error } = await supabase
+    .from('agendamentos')
+    .select('*')
+    .order('data', { ascending: true, nullsFirst: true })
+  if (error) {
+    if (error.code === '42P01' || error.message.includes('agendamentos')) return []
+    erro('agendamentos', error)
+  }
+  return (data ?? []) as AgendamentoBanco[]
+}
+
+/** Substituição total: o relatório é a foto do dia; misturar duas fotos duplica. */
+export async function substituirAgendamentos(
+  linhas: Omit<AgendamentoBanco, 'id' | 'importado_em'>[],
+  usuarioId: string,
+): Promise<void> {
+  // o PostgREST exige um filtro no delete — este casa com todas as linhas
+  const del = await supabase.from('agendamentos').delete().not('id', 'is', null)
+  erro('limpar agendamentos anteriores — a migração agendamentos.sql já rodou?', del.error)
+  for (let i = 0; i < linhas.length; i += 500) {
+    const { error } = await supabase
+      .from('agendamentos')
+      .insert(linhas.slice(i, i + 500).map((l) => ({ ...l, importado_por: usuarioId })))
+    erro('gravar agendamentos', error)
+  }
+}
+
+// ================================================================
 // Demanda: pedidos e estoque de produto acabado
 // ================================================================
 

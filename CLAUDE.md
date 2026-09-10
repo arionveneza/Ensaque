@@ -443,26 +443,36 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    na primeira vez que a ordem ganha um dia e nunca muda — para as duas pontas (planejado e
    executado): mostra quanto do que foi combinado para aquele dia saiu, não importa quando saiu de
    fato. Divergência entre os dois é reprogramação mascarando atraso.
-6b. **Expedição** (07/08/2026) — upload do relatório **montagem de carga** da SimpleAgro
-   (substituição total; colunas achadas pelo nome). Carregamentos agendados com filtros por
-   período/status/cultivar/tratamento/embalagem e busca por cliente; **saldo dinâmico** por
-   combinação contra o período filtrado: `SEM TSI` cruza com os **lotes** por cultivar (semente
-   branca; o cultivar vira **uma linha só** somando as embalagens — o pool de lotes é um, e
-   duas linhas o contariam duas vezes), tratamento real cruza com **estoque PA + TODAS as
-   ordens abertas** — a data programada **não corta a conta**, porque produção se adianta
-   (decisão do PCP, 07/08/2026). O aviso vem da **linha do tempo**: caminhão a caminhão, em
-   ordem de data, a demanda acumulada é comparada com o garantido até aquele dia — estoque,
-   ordens **já iniciadas** (inclusive a adiantada com data futura) e ordens programadas até a
-   data; promessa vencida (`data_prog` no passado sem iniciar) e ordem sem dia não garantem.
-   O pior buraco vira o âmbar **"adiantar ≥ X bg"** — o gancho para marcar a ordem urgente.
-   Vermelho "faltam X" é falta mesmo adiantando. **"Atende" é reservado a estoque físico**:
-   coberta só por produção futura, a linha fica em **"aguardando produção"** (azul) — bag
-   programado não é bag no galpão (pedido do PCP, 07/08/2026). Embalagem sem de-para não vira
-   falta falsa: ganha etiqueta própria. "Finalizado" começa fora do filtro — o caminhão
-   já saiu e o upload seguinte de saldos já desconta; contar de novo dobraria a falta. Também
-   lista os **pedidos de venda** (agregados por combinação — cliente não é guardado no upload)
-   com filtro de liberação financeira. Recurso `expedicao` (ver/importar): PCP e Logística
-   importam, Direção vê.
+6b. **Expedição** (07/08/2026; refeita em 12/09/2026) — upload do relatório **pedidos
+   agendados** da SimpleAgro (`converterAgendados`, substituiu a "montagem de carga";
+   substituição total na tabela `agendamentos`, migração `agendamentos.sql`; a tabela
+   `carregamentos` ficou como histórico). Colunas pelo **nome normalizado** (a letra varia):
+   `QTD AGENDADA` é a quantidade que vale (pode ser menor que `QTD PEDIDO` — agendamento
+   parcial), `DATA AGENDADA` vem como Date **com hora** e o dia sai dos componentes UTC que o
+   `read-excel-file` produz (`dia()` — `getDate()` local erraria), `TIPO VENDA` define
+   `cooperado` pela mesma regra do import de pedidos (`normaliza(...).includes('COOPERADO')`),
+   `TRATAMENTO` é código composto (`FTZ60 + VIC`) normalizado por `normalizaTratamento` (caixa,
+   acento, espaço em volta do `+`) nos dois lados do cruzamento. **Toda linha com quantidade
+   entra, inclusive "Aguardando Estoque"** — é a demanda que precisa de estoque (status visível
+   e filtrável). **Base de estoque = o upload do SAP da aba Ordens**: `SEM TSI` cruza com os
+   **lotes de semente** por cultivar (o cultivar vira **uma linha só** somando as embalagens —
+   o pool de lotes é um), tratamento real cruza com **estoque PA + TODAS as ordens abertas** —
+   a data programada **não corta a conta**, porque produção se adianta (decisão do PCP,
+   07/08/2026). O aviso vem da **fila em ordem de data**: caminhão a caminhão, a demanda
+   acumulada é comparada com o garantido até aquele dia — estoque, ordens **já iniciadas**
+   (inclusive a adiantada com data futura) e ordens programadas até a data; promessa vencida
+   e ordem sem dia não garantem; caminhão sem data entra primeiro e só vê estoque + iniciadas.
+   O pior buraco vira o âmbar **"adiantar ≥ X bg"**; vermelho "faltam X" é falta mesmo
+   adiantando; **"Atende" é reservado a estoque físico** — coberta só por produção futura fica
+   em **"aguardando produção"** (azul). **A mesma fila aloca cada caminhão**
+   (`SaldoExpedicao.caminhoes`, `coberto`/`descoberto`; `Σ descoberto ≥ deficitPrazo`, igual
+   quando o buraco não encolhe entre caminhões; SEM TSI: `Σ descoberto = max(0, −saldo)`) — e a
+   visão **por tipo de venda** (VENDA COOPERADO × OUTRAS, `resumoPorTipoVenda`) **só detalha: a
+   consolidada manda**, nenhum bag é contado duas vezes, cooperado no fim da fila absorve o
+   descoberto como a data manda (decisão do Arion, 12/09/2026). Embalagem sem de-para não vira
+   falta falsa: ganha etiqueta própria. O cartão de pedidos de venda saiu da Expedição (o
+   painel Demanda × Estoque da aba Ordens já cobre). Recurso `expedicao` (ver/importar): PCP
+   e Logística importam, Direção vê.
 6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
    tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`) SEPARADA de
    `lotes_semente` de propósito: a base de produção assume semente branca. **A unidade é

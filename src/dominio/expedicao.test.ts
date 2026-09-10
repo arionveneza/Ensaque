@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  converterAgendados,
   converterMontagemCarga,
+  ehRelatorioAgendados,
   ehRelatorioMontagemCarga,
   normalizaLinhasXlsx,
+  normalizaTratamento,
+  resumoPorTipoVenda,
   saldosExpedicao,
   situacaoSaldo,
   type CarregamentoLinha,
@@ -307,7 +311,10 @@ describe('saldo dinamico da expedicao', () => {
   })
 
   it('a hierarquia: falta > adiantar > aguardando', () => {
-    const base = { cultivar: 'X', tratamento: 'T', embalagem: 'BG5M', producaoPrevista: 0, semTsi: false }
+    const base = {
+      cultivar: 'X', tratamento: 'T', embalagem: 'BG5M', producaoPrevista: 0, semTsi: false,
+      caminhoes: [],
+    }
     expect(situacaoSaldo({ ...base, agendado: 10, estoque: 0, deficitPrazo: 10, saldo: -5 })).toBe('falta')
     expect(situacaoSaldo({ ...base, agendado: 10, estoque: 0, deficitPrazo: 10, saldo: 0 })).toBe('adiantar')
     expect(situacaoSaldo({ ...base, agendado: 10, estoque: 12, deficitPrazo: 0, saldo: 2 })).toBe('atende')
@@ -353,5 +360,296 @@ describe('saldo dinamico da expedicao', () => {
       [], [],
     )
     expect(r[0].estoque).toBe(10)
+  })
+
+  it('tratamento com grafia diferente no estoque ainda casa (FTZ60+VIC = FTZ60 + VIC)', () => {
+    const r = saldosExpedicao(
+      [carreg({ tratamento: 'FTZ60 + VIC', bags: 5 })],
+      [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'ftz60+vic', embalagem: 'BG5M', bags: 8 }],
+      [],
+    )
+    expect(r[0].estoque).toBe(8)
+  })
+})
+
+// ================================================================
+// Pedidos agendados (12/09/2026)
+// ================================================================
+
+// os 43 nomes reais do relatório, na ordem A→AQ
+const CAB_AGEND: LinhaXlsx = [
+  'IDENTIFICADOR', 'NUMERO', 'SAFRA', 'FILIAL', 'USO SEMENTE', 'VENDEDOR', 'TIPO VENDA',
+  'TIPO FRETE', 'CLIENTE', 'CPF CNPJ', 'PROPRIEDADE', 'IE', 'CIDADE', 'ESTADO', 'DISTANCIA',
+  'PRODUTO', 'CATEGORIA', 'PRODUTO TERCEIRO', 'PENEIRA', 'TRATAMENTO', 'EMBALAGEM',
+  'QTD PEDIDO', 'QTD PEDIDO SC', 'PESO EMBALAGEM', 'PESO TOTAL', 'UNITARIO R$',
+  'TOTAL PROGRAMACAO R$', 'STATUS ENTREGA', 'DATA EMISSAO', 'CARGA', 'STATUS CARGA',
+  'NOTA FISCAL', 'DATA ENTREGA INICIO', 'DATA AGENDADA', 'QTD AGENDADA', 'UM AGENDADA',
+  'SALDO AGENDADO', 'UM SALDO AGENDADO', 'CIDADE ENTREGA', 'LATITUDE ENTREGA',
+  'LONGITUDE ENTREGA', 'ROTEIRO', 'OBSERVACAO',
+]
+
+const linhaAg = (over: Partial<Record<string, Celula>> = {}): LinhaXlsx => {
+  const base: Record<string, Celula> = {
+    IDENTIFICADOR: 'ID-1', NUMERO: '26070035', SAFRA: 'SAFRA 2026', 'TIPO VENDA': 'VENDA PRODUCAO',
+    CLIENTE: 'RODRIGO JOSE', CIDADE: 'BURITI ALEGRE', ESTADO: 'GO', PRODUTO: 'NEO700 I2X',
+    TRATAMENTO: 'SEM TSI', EMBALAGEM: 'BB5M', 'QTD PEDIDO': 39, 'STATUS ENTREGA': 'Aprovado',
+    CARGA: null, 'STATUS CARGA': null, 'DATA AGENDADA': new Date('2026-09-14T11:59:31.999Z'),
+    'QTD AGENDADA': 34, 'UM AGENDADA': 'BB5M', OBSERVACAO: null,
+    ...over,
+  }
+  return CAB_AGEND.map((c) => base[String(c)] ?? null)
+}
+
+describe('reconhecimento do relatorio de agendados', () => {
+  it('aceita o cabecalho real e rejeita a montagem de carga', () => {
+    expect(ehRelatorioAgendados([CAB_AGEND])).toBe(true)
+    expect(ehRelatorioAgendados([CAB])).toBe(false)
+    expect(ehRelatorioMontagemCarga([CAB_AGEND])).toBe(false)
+  })
+})
+
+describe('normalizaTratamento', () => {
+  it('caixa, espaco em volta do + e acento nao importam', () => {
+    expect(normalizaTratamento('ftz60+vic')).toBe('FTZ60 + VIC')
+    expect(normalizaTratamento('  FTZ60  +  VIC ')).toBe('FTZ60 + VIC')
+    expect(normalizaTratamento('DER + LMT')).toBe('DER + LMT')
+  })
+})
+
+describe('conversao dos pedidos agendados', () => {
+  it('converte a linha completa', () => {
+    const { linhas, resumo } = converterAgendados([CAB_AGEND, linhaAg()])
+    expect(linhas).toHaveLength(1)
+    expect(resumo.aproveitadas).toBe(1)
+    const a = linhas[0]
+    expect(a.identificador).toBe('ID-1')
+    expect(a.pedido).toBe('26070035')
+    expect(a.tipoVenda).toBe('VENDA PRODUCAO')
+    expect(a.cooperado).toBe(false)
+    expect(a.cliente).toBe('RODRIGO JOSE')
+    expect(a.cidade).toBe('BURITI ALEGRE')
+    expect(a.estado).toBe('GO')
+    expect(a.cultivar).toBe('NEO700 I2X')
+    expect(a.tratamento).toBe('SEM TSI')
+    expect(a.embalagem).toBe('BG5M')
+    expect(a.statusEntrega).toBe('Aprovado')
+    expect(a.carga).toBeNull()
+    expect(a.data).toBe('2026-09-14')
+  })
+
+  it('QTD AGENDADA e a que vale, nao QTD PEDIDO (agendamento parcial)', () => {
+    const { linhas } = converterAgendados([CAB_AGEND, linhaAg({ 'QTD PEDIDO': 80, 'QTD AGENDADA': 50 })])
+    expect(linhas[0].bags).toBe(50)
+    expect(linhas[0].qtdPedido).toBe(80)
+  })
+
+  it('sem quantidade agendada nao vira agendamento', () => {
+    const { linhas, resumo } = converterAgendados([CAB_AGEND, linhaAg({ 'QTD AGENDADA': 0 })])
+    expect(linhas).toHaveLength(0)
+    expect(resumo.semQuantidade).toBe(1)
+  })
+
+  it('Aguardando Estoque ENTRA na demanda e e contado no resumo', () => {
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND, linhaAg(), linhaAg({ IDENTIFICADOR: 'ID-2', 'STATUS ENTREGA': 'Aguardando Estoque' }),
+    ])
+    expect(linhas).toHaveLength(2)
+    expect(resumo.porStatusEntrega).toEqual({ Aprovado: 1, 'Aguardando Estoque': 1 })
+  })
+
+  it('cooperado so em VENDA COOPERADO — caixa e acento nao importam; os outros tipos nao', () => {
+    const tipos = ['VENDA PRODUCAO', 'VENDA DISTRIBUIDOR', 'VENDA BONIFICAÇÃO', 'venda cooperado', 'VENDA COOPERADO']
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND,
+      ...tipos.map((t, i) => linhaAg({ IDENTIFICADOR: `ID-${i}`, 'TIPO VENDA': t, 'QTD AGENDADA': 10 })),
+    ])
+    expect(linhas.map((l) => l.cooperado)).toEqual([false, false, false, true, true])
+    expect(resumo.bagsCooperado).toBe(20)
+    expect(resumo.bagsOutras).toBe(30)
+    expect(resumo.porTipoVenda['VENDA BONIFICAÇÃO']).toBe(1)
+  })
+
+  it('Date com hora vira o dia pelos componentes UTC do xlsx (nunca getDate local)', () => {
+    const { linhas } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', 'DATA AGENDADA': new Date('2026-09-14T11:59:31.999Z') }),
+      linhaAg({ IDENTIFICADOR: 'b', 'DATA AGENDADA': new Date('2026-09-14T01:30:00Z') }),
+      linhaAg({ IDENTIFICADOR: 'c', 'DATA AGENDADA': '07/08/2026' }),
+    ])
+    expect(linhas.map((l) => l.data)).toEqual(['2026-09-14', '2026-09-14', '2026-08-07'])
+  })
+
+  it('sem data entra marcada, nao some', () => {
+    const { linhas, resumo } = converterAgendados([CAB_AGEND, linhaAg({ 'DATA AGENDADA': null })])
+    expect(linhas).toHaveLength(1)
+    expect(linhas[0].data).toBeNull()
+    expect(resumo.semData).toBe(1)
+  })
+
+  it('tratamento vazio vira SEM TSI; composto e normalizado', () => {
+    const { linhas } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', TRATAMENTO: null }),
+      linhaAg({ IDENTIFICADOR: 'b', TRATAMENTO: 'ftz60+vic' }),
+    ])
+    expect(linhas[0].tratamento).toBe('SEM TSI')
+    expect(linhas[1].tratamento).toBe('FTZ60 + VIC')
+  })
+
+  it('embalagem: BB5M→BG5M, BMB→MEIOBAG, desconhecida entra crua e vai pro resumo', () => {
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', EMBALAGEM: 'BB5M' }),
+      linhaAg({ IDENTIFICADOR: 'b', EMBALAGEM: 'BMB' }),
+      linhaAg({ IDENTIFICADOR: 'c', EMBALAGEM: 'BIGBAG', 'QTD AGENDADA': 7 }),
+    ])
+    expect(linhas.map((l) => l.embalagem)).toEqual(['BG5M', 'MEIOBAG', 'BIGBAG'])
+    expect(resumo.embalagemDesconhecida.BIGBAG).toBe(7)
+  })
+
+  it('CARGA vazia e null; numerica vira texto', () => {
+    const { linhas } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', CARGA: null }),
+      linhaAg({ IDENTIFICADOR: 'b', CARGA: 781, 'STATUS CARGA': 'Aguardando Aprovação' }),
+    ])
+    expect(linhas[0].carga).toBeNull()
+    expect(linhas[1].carga).toBe('781')
+    expect(linhas[1].statusCarga).toBe('Aguardando Aprovação')
+  })
+
+  it('mesmo NUMERO em duas linhas sao dois agendamentos; identificador repetido so avisa', () => {
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', NUMERO: '1' }),
+      linhaAg({ IDENTIFICADOR: 'b', NUMERO: '1' }),
+      linhaAg({ IDENTIFICADOR: 'b', NUMERO: '2' }),
+    ])
+    expect(linhas).toHaveLength(3)
+    expect(resumo.identificadorRepetido).toBe(1)
+  })
+
+  it('sem as colunas obrigatorias, erro claro', () => {
+    expect(() => converterAgendados([['CULTIVAR', 'LOTE']])).toThrow(/pedidos agendados/)
+  })
+})
+
+describe('alocacao por caminhao e visao por tipo de venda', () => {
+  type Ag = CarregamentoLinha & { id: string; cooperado: boolean }
+  const ag = (over: Partial<Ag> = {}): Ag => ({
+    id: 'x', cooperado: false, cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M',
+    bags: 10, data: '2026-09-10', ...over,
+  })
+
+  it('um caminhao dentro do estoque: todo coberto', () => {
+    const r = saldosExpedicao([ag({ bags: 5 })], [{ cultivar: 'NEO700 I2X', bags: 10 }], [], [])
+    expect(r[0].caminhoes).toHaveLength(1)
+    expect(r[0].caminhoes[0]).toMatchObject({ bags: 5, coberto: 5, descoberto: 0 })
+  })
+
+  it('dois caminhoes e estoque 12: o segundo fica descoberto; soma descoberto = -saldo', () => {
+    const r = saldosExpedicao(
+      [ag({ id: 'a', data: '2026-09-10' }), ag({ id: 'b', data: '2026-09-12' })],
+      [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
+    )
+    expect(r[0].caminhoes.map((c) => [c.caminhao.id, c.coberto, c.descoberto])).toEqual([['a', 10, 0], ['b', 2, 8]])
+    expect(r[0].caminhoes.reduce((t, c) => t + c.descoberto, 0)).toBe(-r[0].saldo)
+    expect(r[0].deficitPrazo).toBe(0) // SEM TSI nao tem linha do tempo de producao
+  })
+
+  it('caminhao sem data entra primeiro e so estoque + ordem iniciada o cobrem', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 'com-data', tratamento: 'FTZ60', data: '2026-09-10' }),
+        ag({ id: 'sem-data', tratamento: 'FTZ60', data: null }),
+      ],
+      [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 5 }],
+      [
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-09-20', iniciada: true },
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-09-09' },
+      ],
+      '2026-09-07',
+    )
+    expect(r[0].caminhoes.map((c) => c.caminhao.id)).toEqual(['sem-data', 'com-data'])
+    // sem data: 5 estoque + 10 iniciada = 15 → cobre os 10
+    expect(r[0].caminhoes[0]).toMatchObject({ coberto: 10, descoberto: 0 })
+    // com data 10/09: + a ordem de 09/09 → 25 − 10 ja consumidos cobre os 10
+    expect(r[0].caminhoes[1]).toMatchObject({ coberto: 10, descoberto: 0 })
+    expect(r[0].deficitPrazo).toBe(0)
+  })
+
+  it('tratado: producao toda depois dos caminhoes → soma descoberto = deficitPrazo', () => {
+    const r = saldosExpedicao(
+      [ag({ tratamento: 'FTZ60', bags: 20, data: '2026-09-08' })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, dataProg: '2026-09-15' }],
+      '2026-09-07',
+    )
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].deficitPrazo).toBe(20)
+    expect(r[0].caminhoes[0].descoberto).toBe(20)
+  })
+
+  it('ordem entre dois caminhoes: soma descoberto > deficitPrazo (adiantar 10 resolveria tudo)', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 't1', tratamento: 'FTZ60', data: '2026-09-08' }),
+        ag({ id: 't2', tratamento: 'FTZ60', data: '2026-09-10' }),
+        ag({ id: 't3', tratamento: 'FTZ60', data: '2026-09-12' }),
+      ],
+      [], [],
+      [
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-09-09' },
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10, dataProg: '2026-09-11' },
+      ],
+      '2026-09-07',
+    )
+    expect(r[0].deficitPrazo).toBe(10)
+    expect(r[0].caminhoes.map((c) => c.descoberto)).toEqual([10, 10, 10])
+  })
+
+  it('SEM TSI em duas embalagens: linha unica, cada caminhao alocado, deficitPrazo 0', () => {
+    const r = saldosExpedicao(
+      [ag({ id: 'bag', embalagem: 'BG5M' }), ag({ id: 'meio', embalagem: 'MEIOBAG', data: '2026-09-12' })],
+      [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
+    )
+    expect(r).toHaveLength(1)
+    expect(r[0].caminhoes.map((c) => [c.caminhao.id, c.descoberto])).toEqual([['bag', 0], ['meio', 8]])
+    expect(r[0].deficitPrazo).toBe(0)
+  })
+
+  it('por tipo de venda: a fila consolidada manda, os lados so somam', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 'outras', cooperado: false, data: '2026-09-10' }),
+        ag({ id: 'coop', cooperado: true, data: '2026-09-12' }),
+      ],
+      [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
+    )
+    const t = resumoPorTipoVenda(r, (c) => c.cooperado)
+    expect(t.outras).toMatchObject({ agendado: 10, coberto: 10, descoberto: 0, caminhoes: 1 })
+    expect(t.outras.produtosEmFalta).toEqual([])
+    expect(t.cooperado).toMatchObject({ agendado: 10, coberto: 2, descoberto: 8, caminhoes: 1 })
+    expect(t.cooperado.produtosEmFalta).toEqual([
+      { cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M', descoberto: 8 },
+    ])
+    // soma dos lados = consolidado
+    expect(t.cooperado.agendado + t.outras.agendado).toBe(r[0].agendado)
+    expect(t.cooperado.descoberto + t.outras.descoberto).toBe(-r[0].saldo)
+  })
+
+  it('cooperado que vem ANTES na fila leva o estoque — a data manda, nao o tipo', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 'coop', cooperado: true, data: '2026-09-08' }),
+        ag({ id: 'outras', cooperado: false, data: '2026-09-12' }),
+      ],
+      [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
+    )
+    const t = resumoPorTipoVenda(r, (c) => c.cooperado)
+    expect(t.cooperado.descoberto).toBe(0)
+    expect(t.outras.descoberto).toBe(8)
   })
 })

@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import {
+  useCallback, useEffect, useMemo, useState,
+  type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction,
+} from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as g from '@/dados/api-gestao'
-import type { BalancoLinha, CarregamentoBanco } from '@/dados/api-gestao'
+import type { AgendamentoBanco } from '@/dados/api-gestao'
 import {
-  converterMontagemCarga,
-  ehRelatorioMontagemCarga,
+  converterAgendados,
+  ehRelatorioAgendados,
   normalizaLinhasXlsx,
+  resumoPorTipoVenda,
   saldosExpedicao,
   situacaoSaldo,
   SEM_TSI,
+  type AlocacaoCaminhao,
+  type LadoTipoVenda,
 } from '@/dominio/expedicao'
 import { EMBALAGEM_DEPARA } from '@/dominio/importacao/simpleagro'
 import { jaIniciada } from '@/dominio/status'
@@ -30,44 +36,44 @@ const ABERTAS = ['Nao programada', 'Programada', 'Aguardando lote', 'Pronto para
 /** Embalagens que o app conhece — fora disso o estoque nunca casa. */
 const EMBALAGENS_APP = new Set(Object.values(EMBALAGEM_DEPARA).map((e) => e.codigo))
 
+/**
+ * Expedição (12/09/2026): o relatório de PEDIDOS AGENDADOS da SimpleAgro
+ * cruzado com o estoque do SAP (lotes de semente pra branca, estoque PA pro
+ * tratado — o upload da aba Ordens) e com a produção aberta, caminhão a
+ * caminhão. A fila consolidada por produto decide o que é coberto; a visão
+ * por tipo de venda (VENDA COOPERADO × OUTRAS) só detalha — nunca conta
+ * estoque duas vezes.
+ */
 export default function Expedicao() {
   const { usuario, permitido } = useAuth()
   const podeImportar = permitido('expedicao', 'importar')
 
-  const [carregamentos, setCarregamentos] = useState<CarregamentoBanco[]>([])
+  const [agendamentos, setAgendamentos] = useState<AgendamentoBanco[]>([])
   const [lotes, setLotes] = useState<g.LoteSementeLinha[]>([])
   const [estoquePa, setEstoquePa] = useState<g.EstoquePaLinha[]>([])
   const [ordens, setOrdens] = useState<g.OrdemVisao[]>([])
-  const [balanco, setBalanco] = useState<BalancoLinha[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
-  // ---- filtros dos carregamentos ----
+  // ---- filtros ----
   const [de, setDe] = useState('')
   const [ate, setAte] = useState('')
+  const [tipoSel, setTipoSel] = useState<Set<string>>(new Set())
   const [statusSel, setStatusSel] = useState<Set<string>>(new Set())
   const [fCultivar, setFCultivar] = useState('')
   const [fTratamento, setFTratamento] = useState('')
   const [fEmbalagem, setFEmbalagem] = useState('')
   const [busca, setBusca] = useState('')
 
-  // ---- filtros dos pedidos ----
-  const [pCultivar, setPCultivar] = useState('')
-  const [pTratamento, setPTratamento] = useState('')
-  const [pEmbalagem, setPEmbalagem] = useState('')
-  const [pLiberacao, setPLiberacao] = useState<'todos' | 'aprovado' | 'pendente'>('todos')
-
   const recarregar = useCallback(async () => {
-    const [c, l, e, o, b] = await Promise.all([
-      g.listarCarregamentos(), g.listarLotes(), g.listarEstoquePa(),
-      g.listarOrdens(), g.listarBalanco(),
+    const [a, l, e, o] = await Promise.all([
+      g.listarAgendamentos(), g.listarLotes(), g.listarEstoquePa(), g.listarOrdens(),
     ])
-    setCarregamentos(c)
+    setAgendamentos(a)
     setLotes(l)
     setEstoquePa(e)
     setOrdens(o)
-    setBalanco(b)
   }, [])
 
   useEffect(() => {
@@ -77,41 +83,44 @@ export default function Expedicao() {
       .finally(() => setCarregando(false))
   }, [recarregar])
 
-  useRealtime(['carregamentos', 'ordens', 'lotes_semente'], recarregar)
+  useRealtime(['agendamentos', 'ordens', 'lotes_semente'], recarregar)
 
-  /**
-   * "Finalizado" começa desmarcado: o caminhão já saiu, e contá-lo de novo
-   * descontaria do estoque um bag que o upload seguinte de saldos já
-   * desconta — a falta apareceria dobrada.
-   */
-  const statusExistentes = useMemo(
-    () => [...new Set(carregamentos.map((c) => c.status))].sort(),
-    [carregamentos],
+  // chips começam todos ligados; um upload novo pode trazer valores novos, então
+  // o padrão é refeito depois de importar
+  const tiposExistentes = useMemo(
+    () => [...new Set(agendamentos.map((a) => a.tipo_venda || '(sem tipo)'))].sort(),
+    [agendamentos],
   )
-  const [statusIniciado, setStatusIniciado] = useState(false)
+  const statusExistentes = useMemo(
+    () => [...new Set(agendamentos.map((a) => a.status_entrega))].sort(),
+    [agendamentos],
+  )
+  const [chipsIniciados, setChipsIniciados] = useState(false)
   useEffect(() => {
-    if (statusIniciado || statusExistentes.length === 0) return
-    setStatusSel(new Set(statusExistentes.filter((s) => s !== 'Finalizado')))
-    setStatusIniciado(true)
-  }, [statusExistentes, statusIniciado])
+    if (chipsIniciados || agendamentos.length === 0) return
+    setTipoSel(new Set(tiposExistentes))
+    setStatusSel(new Set(statusExistentes))
+    setChipsIniciados(true)
+  }, [agendamentos.length, tiposExistentes, statusExistentes, chipsIniciados])
 
   const filtrados = useMemo(
     () =>
-      carregamentos.filter((c) => {
-        if (de && (c.data == null || c.data < de)) return false
-        if (ate && (c.data == null || c.data > ate)) return false
-        if (statusSel.size > 0 && !statusSel.has(c.status)) return false
-        if (fCultivar && c.cultivar !== fCultivar) return false
-        if (fTratamento && c.tratamento !== fTratamento) return false
-        if (fEmbalagem && c.embalagem !== fEmbalagem) return false
+      agendamentos.filter((a) => {
+        if (de && (a.data == null || a.data < de)) return false
+        if (ate && (a.data == null || a.data > ate)) return false
+        if (tipoSel.size > 0 && !tipoSel.has(a.tipo_venda || '(sem tipo)')) return false
+        if (statusSel.size > 0 && !statusSel.has(a.status_entrega)) return false
+        if (fCultivar && a.cultivar !== fCultivar) return false
+        if (fTratamento && a.tratamento !== fTratamento) return false
+        if (fEmbalagem && a.embalagem !== fEmbalagem) return false
         if (busca.trim()) {
           const q = busca.trim().toLowerCase()
-          const alvo = `${c.cliente ?? ''} ${c.pedido ?? ''} ${c.carga} ${c.transportadora ?? ''} ${c.motorista ?? ''} ${c.placa ?? ''}`.toLowerCase()
+          const alvo = `${a.cliente ?? ''} ${a.pedido ?? ''} ${a.carga ?? ''} ${a.identificador} ${a.cidade ?? ''} ${a.estado ?? ''}`.toLowerCase()
           if (!alvo.includes(q)) return false
         }
         return true
       }),
-    [carregamentos, de, ate, statusSel, fCultivar, fTratamento, fEmbalagem, busca],
+    [agendamentos, de, ate, tipoSel, statusSel, fCultivar, fTratamento, fEmbalagem, busca],
   )
 
   /** O cruzamento usa SÓ o que passou pelos filtros: o período é a pergunta. */
@@ -142,22 +151,33 @@ export default function Expedicao() {
     [filtrados, lotes, estoquePa, ordens],
   )
 
+  const porTipo = useMemo(() => resumoPorTipoVenda(saldos, (a) => a.cooperado), [saldos])
+  /** Cobertura de cada agendamento, pela fila consolidada do produto dele. */
+  const alocacao = useMemo(
+    () =>
+      new Map<string, AlocacaoCaminhao<AgendamentoBanco>>(
+        saldos.flatMap((s) => s.caminhoes.map((c) => [c.caminhao.id, c] as const)),
+      ),
+    [saldos],
+  )
+
   const faltas = saldos.filter((s) => situacaoSaldo(s) === 'falta')
   const precisamAdiantar = saldos.filter((s) => situacaoSaldo(s) === 'adiantar')
   const aguardando = saldos.filter((s) => situacaoSaldo(s) === 'aguardando-producao')
 
   const opcoes = useMemo(
     () => ({
-      cultivares: [...new Set(carregamentos.map((c) => c.cultivar))].sort(),
-      tratamentos: [...new Set(carregamentos.map((c) => c.tratamento))].sort(),
-      embalagens: [...new Set(carregamentos.map((c) => c.embalagem))].sort(),
+      cultivares: [...new Set(agendamentos.map((a) => a.cultivar))].sort(),
+      tratamentos: [...new Set(agendamentos.map((a) => a.tratamento))].sort(),
+      embalagens: [...new Set(agendamentos.map((a) => a.embalagem))].sort(),
     }),
-    [carregamentos],
+    [agendamentos],
   )
 
   const temFiltro =
     !!(de || ate || fCultivar || fTratamento || fEmbalagem || busca.trim()) ||
-    statusSel.size !== statusExistentes.filter((s) => s !== 'Finalizado').length
+    tipoSel.size !== tiposExistentes.length ||
+    statusSel.size !== statusExistentes.length
 
   function limparFiltros() {
     setDe('')
@@ -166,8 +186,17 @@ export default function Expedicao() {
     setFTratamento('')
     setFEmbalagem('')
     setBusca('')
-    setStatusSel(new Set(statusExistentes.filter((s) => s !== 'Finalizado')))
+    setTipoSel(new Set(tiposExistentes))
+    setStatusSel(new Set(statusExistentes))
   }
+
+  const alternar = (setter: Dispatch<SetStateAction<Set<string>>>, valor: string) =>
+    setter((sel) => {
+      const novo = new Set(sel)
+      if (novo.has(valor)) novo.delete(valor)
+      else novo.add(valor)
+      return novo
+    })
 
   // ---- upload ----
   async function importar(ev: ChangeEvent<HTMLInputElement>) {
@@ -178,71 +207,54 @@ export default function Expedicao() {
     setMsg(null)
     try {
       // aba nomeada faz o leitor devolver [{sheet, data}] em vez das linhas
-      const rows = normalizaLinhasXlsx(await readXlsxFile(arquivo))
-      if (!ehRelatorioMontagemCarga(rows)) {
+      const rows = normalizaLinhasXlsx(await readXlsxFile(arquivo), ehRelatorioAgendados)
+      if (!ehRelatorioAgendados(rows)) {
         throw new Error(
-          'Este arquivo não parece o relatório de montagem de carga (faltam as colunas Carga / Status Carga / Qtd Agendada).',
+          'Este arquivo não parece o relatório de pedidos agendados (faltam as colunas IDENTIFICADOR / TIPO VENDA / QTD AGENDADA / DATA AGENDADA).',
         )
       }
-      const { linhas, resumo } = converterMontagemCarga(rows)
-      await g.substituirCarregamentos(
+      const { linhas, resumo } = converterAgendados(rows)
+      await g.substituirAgendamentos(
         linhas.map((l) => ({
-          carga: l.carga, status: l.status, data: l.data, pedido: l.pedido || null,
-          cliente: l.cliente || null, cultivar: l.cultivar, tratamento: l.tratamento,
-          embalagem: l.embalagem, bags: l.bags, transportadora: l.transportadora,
-          motorista: l.motorista, placa: l.placa,
+          identificador: l.identificador, pedido: l.pedido || null, tipo_venda: l.tipoVenda,
+          cooperado: l.cooperado, cliente: l.cliente || null, cidade: l.cidade, estado: l.estado,
+          cultivar: l.cultivar, categoria: l.categoria, tratamento: l.tratamento,
+          embalagem: l.embalagem, qtd_pedido: l.qtdPedido, bags: l.bags,
+          status_entrega: l.statusEntrega, carga: l.carga, status_carga: l.statusCarga,
+          data: l.data, observacao: l.observacao,
         })),
         usuario!.id,
       )
+      const status = Object.entries(resumo.porStatusEntrega).map(([s, n]) => `${s} ${n}`).join(', ')
       const avisos: string[] = []
       if (resumo.semData > 0) avisos.push(`${resumo.semData} sem data`)
+      if (resumo.semQuantidade > 0) avisos.push(`${resumo.semQuantidade} sem quantidade (ignorados)`)
+      if (resumo.identificadorRepetido > 0) avisos.push(`${resumo.identificadorRepetido} identificador(es) repetido(s)`)
       const embDesc = Object.keys(resumo.embalagemDesconhecida)
       if (embDesc.length > 0) avisos.push(`embalagem sem de-para: ${embDesc.join(', ')}`)
       setMsg(
-        `${resumo.aproveitadas} carregamento(s) importados (substituição total).` +
-          (avisos.length ? ` Atenção: ${avisos.join(' · ')}.` : ''),
+        `${resumo.aproveitadas} agendamento(s) importados (substituição total): ` +
+          `${inteiro(resumo.bagsCooperado)} bg cooperado · ${inteiro(resumo.bagsOutras)} bg outras` +
+          (status ? ` · status: ${status}` : '') +
+          (avisos.length ? `. Atenção: ${avisos.join(' · ')}.` : '.'),
       )
-      setStatusIniciado(false) // os status podem ter mudado; refaz o padrão
+      setChipsIniciados(false) // tipos/status podem ter mudado; refaz o padrão
       await recarregar()
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
   }
 
-  // ---- pedidos filtrados ----
-  const pedidos = useMemo(
-    () =>
-      balanco.filter((b) => {
-        if (b.pedido_aprovado <= 0 && b.pedido_pendente <= 0) return false
-        if (pCultivar && b.cultivar !== pCultivar) return false
-        if (pTratamento && b.tratamento !== pTratamento) return false
-        if (pEmbalagem && b.embalagem !== pEmbalagem) return false
-        if (pLiberacao === 'aprovado' && b.pedido_aprovado <= 0) return false
-        if (pLiberacao === 'pendente' && b.pedido_pendente <= 0) return false
-        return true
-      }),
-    [balanco, pCultivar, pTratamento, pEmbalagem, pLiberacao],
-  )
-
-  const opcoesPedidos = useMemo(() => {
-    const comPedido = balanco.filter((b) => b.pedido_aprovado > 0 || b.pedido_pendente > 0)
-    return {
-      cultivares: [...new Set(comPedido.map((b) => b.cultivar))].sort(),
-      tratamentos: [...new Set(comPedido.map((b) => b.tratamento))].sort(),
-      embalagens: [...new Set(comPedido.map((b) => b.embalagem))].sort(),
-    }
-  }, [balanco])
-
   if (carregando) return <p className="p-8 text-sm text-stone-500">Carregando expedição…</p>
 
   return (
     <Pagina
       titulo="Expedição"
-      descricao="Carregamentos agendados cruzados com o estoque e a produção programada: o que está vendido atende, o que falta aparece primeiro."
+      descricao="Pedidos agendados cruzados com o saldo do SAP e a produção programada: o que atende, o que falta e em que data — no total e por tipo de venda."
       acoes={
         podeImportar ? (
           <label className="cursor-pointer rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300">
-            Importar montagem de carga (.xlsx)
+            Importar pedidos agendados (.xlsx)
             <input type="file" accept=".xlsx" className="hidden" onChange={importar} />
           </label>
         ) : undefined
@@ -251,13 +263,13 @@ export default function Expedicao() {
       {erro && <Erro>{erro}</Erro>}
       {msg && <div className="mb-4"><Aviso gravidade="ok">{msg}</Aviso></div>}
 
-      {carregamentos.length === 0 ? (
-        <Cartao titulo="Carregamentos" className="mb-5">
+      {agendamentos.length === 0 ? (
+        <Cartao titulo="Agendamentos" className="mb-5">
           <Vazio>
-            Nenhum carregamento importado.
+            Nenhum pedido agendado importado.
             {podeImportar
-              ? ' Exporte o relatório de montagem de carga na SimpleAgro e importe aqui.'
-              : ' Peça ao PCP ou à logística para importar o relatório de montagem de carga.'}
+              ? ' Exporte o relatório de pedidos agendados na SimpleAgro e importe aqui.'
+              : ' Peça ao PCP ou à logística para importar o relatório de pedidos agendados.'}
           </Vazio>
         </Cartao>
       ) : (
@@ -295,38 +307,24 @@ export default function Expedicao() {
                 </select>
               </label>
               <label className="min-w-44 flex-1 text-xs text-stone-500">
-                Cliente, pedido, carga, motorista…
+                Cliente, pedido, carga, cidade…
                 <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="buscar" className={`${CAMPO} mt-1 block w-full`} />
               </label>
               {temFiltro && <Botao onClick={limparFiltros}>Limpar filtros</Botao>}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs uppercase tracking-wide text-stone-500">Status:</span>
-              {statusExistentes.map((s) => {
-                const ativo = statusSel.has(s)
-                return (
-                  <button
-                    key={s}
-                    onClick={() =>
-                      setStatusSel((sel) => {
-                        const novo = new Set(sel)
-                        if (novo.has(s)) novo.delete(s)
-                        else novo.add(s)
-                        return novo
-                      })
-                    }
-                    className={`rounded-full border px-2.5 py-1.5 text-xs sm:py-0.5 ${
-                      ativo
-                        ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                        : 'border-stone-300 text-stone-500 dark:border-stone-700'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                )
-              })}
+              <span className="text-xs uppercase tracking-wide text-stone-500">Tipo de venda:</span>
+              {tiposExistentes.map((t) => (
+                <Chip key={t} ativo={tipoSel.has(t)} onClick={() => alternar(setTipoSel, t)}>{t}</Chip>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-stone-500">Status entrega:</span>
+              {statusExistentes.map((s) => (
+                <Chip key={s} ativo={statusSel.has(s)} onClick={() => alternar(setStatusSel, s)}>{s}</Chip>
+              ))}
               <span className="ml-1 text-xs text-stone-400">
-                (Finalizado começa fora: o caminhão já saiu e o estoque já desconta)
+                ("Aguardando Estoque" entra: é exatamente a demanda que precisa de estoque)
               </span>
             </div>
           </Cartao>
@@ -336,7 +334,7 @@ export default function Expedicao() {
             <div className="mb-5">
               <Aviso gravidade="bloqueio">
                 <b>
-                  {faltas.length} combinação(ões) não atendem os carregamentos
+                  {faltas.length} produto(s) não atendem o agendado
                   {ate && ` até ${diaCurto(ate)}`}:
                 </b>{' '}
                 faltam {inteiro(faltas.reduce((a, s) => a + -s.saldo, 0))} bags no total —
@@ -347,7 +345,7 @@ export default function Expedicao() {
           {precisamAdiantar.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="alerta">
-                <b>{precisamAdiantar.length} combinação(ões) só atendem adiantando a produção:</b>{' '}
+                <b>{precisamAdiantar.length} produto(s) só atendem adiantando a produção:</b>{' '}
                 {precisamAdiantar
                   .map((s) => `${s.cultivar} · ${s.tratamento} (adiantar ≥ ${inteiro(s.deficitPrazo)} bg)`)
                   .join(' — ')}.
@@ -358,7 +356,7 @@ export default function Expedicao() {
           {aguardando.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="alerta">
-                <b>{aguardando.length} combinação(ões) sem estoque pronto</b> — dependem de
+                <b>{aguardando.length} produto(s) sem estoque pronto</b> — dependem de
                 produção programada (no prazo):{' '}
                 {aguardando
                   .map((s) => `${s.cultivar} · ${s.tratamento} (${inteiro(s.agendado - s.estoque)} bg a produzir)`)
@@ -371,18 +369,18 @@ export default function Expedicao() {
             filtrados.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="ok">
-                O estoque físico {ate ? `atende os carregamentos até ${diaCurto(ate)}` : 'atende tudo que está agendado'}.
+                O estoque físico {ate ? `atende os agendamentos até ${diaCurto(ate)}` : 'atende tudo que está agendado'}.
               </Aviso>
             </div>
           )}
 
-          {/* ---------------- saldo por combinação ---------------- */}
+          {/* ---------------- saldo por produto (consolidado) ---------------- */}
           <Cartao
-            titulo={`Estoque × agendado (${saldos.length} combinações)`}
+            titulo={`Estoque × agendado (${saldos.length} produtos)`}
             className="mb-5"
           >
             {saldos.length === 0 ? (
-              <Vazio>Nenhum carregamento passa pelos filtros.</Vazio>
+              <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
             ) : (
               <>
                 <Tabela cabecalho={[
@@ -390,10 +388,13 @@ export default function Expedicao() {
                   { texto: 'Emb.', className: 'hidden lg:table-cell' },
                   '#Agendado', '#Estoque',
                   { texto: '#Prod. prevista', className: 'hidden lg:table-cell' },
-                  '#Saldo', '',
+                  '#Saldo',
+                  { texto: '#Descoberto', className: 'hidden lg:table-cell' },
+                  '',
                 ]}>
                   {saldos.map((s) => {
                     const situacao = situacaoSaldo(s)
+                    const descoberto = s.caminhoes.reduce((t, c) => t + c.descoberto, 0)
                     // embalagem que o app não conhece nunca casa com o estoque:
                     // a "falta" seria artefato do de-para, não falta real
                     const embDesconhecida = !s.semTsi && !EMBALAGENS_APP.has(s.embalagem)
@@ -433,6 +434,9 @@ export default function Expedicao() {
                         }`}>
                           {s.saldo > 0 ? '+' : ''}{inteiro(s.saldo)}
                         </td>
+                        <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell" title="Bags que ficam fora dos caminhões se nada for adiantado — soma da fila em ordem de data">
+                          {descoberto > 0 ? <span className="text-red-700 dark:text-red-400">{inteiro(descoberto)}</span> : '—'}
+                        </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           {embDesconhecida ? (
                             <Tag cor="alerta">embalagem sem de-para</Tag>
@@ -453,180 +457,181 @@ export default function Expedicao() {
                   })}
                 </Tabela>
                 <p className="mt-3 text-xs text-stone-500">
-                  <b>SEM TSI</b> compara com os lotes de semente em estoque — o cultivar vira
-                  uma linha só, somando as embalagens, porque o pool de lotes é um.
-                  Tratamento real compara com o estoque de produto acabado mais{' '}
-                  <b>todas as ordens abertas</b> — a data programada não corta a conta, porque
-                  produção se adianta. <b>Adiantar ≥ X</b> vem da linha do tempo: caminhão a
+                  O estoque é o do <b>upload do SAP na aba Ordens</b>: <b>SEM TSI</b> compara com
+                  os lotes de semente — o cultivar vira uma linha só, somando as embalagens,
+                  porque o pool de lotes é um; tratamento real compara com o estoque de produto
+                  acabado mais <b>todas as ordens abertas</b> (produção se adianta, a data não
+                  corta a conta). <b>Adiantar ≥ X</b> vem da fila em ordem de data: caminhão a
                   caminhão, conta como garantido o estoque, as ordens já iniciadas e as
-                  programadas até a data de cada um; X é o pior buraco — o mínimo a puxar
-                  para frente (candidata a urgência na Programação). <b>Atende</b> é
-                  reservado a estoque físico: coberta só por produção futura, a linha fica em{' '}
-                  <b>aguardando produção</b> — bag programado não é bag no galpão.
+                  programadas até a data de cada um; X é o pior buraco. <b>Descoberto</b> é o que
+                  fica fora dos caminhões se nada for adiantado. <b>Atende</b> é reservado a
+                  estoque físico — coberta só por produção futura, a linha fica em{' '}
+                  <b>aguardando produção</b>.
                 </p>
               </>
             )}
           </Cartao>
 
-          {/* ---------------- carregamentos ---------------- */}
-          <Cartao titulo={`Carregamentos (${filtrados.length} de ${carregamentos.length})`} className="mb-5">
+          {/* ---------------- por tipo de venda ---------------- */}
+          <Cartao titulo="Por tipo de venda" className="mb-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <PainelLado titulo="VENDA COOPERADO" lado={porTipo.cooperado} cor="roxo" />
+              <PainelLado titulo="OUTRAS VENDAS" lado={porTipo.outras} cor="neutro" />
+            </div>
+            <p className="mt-3 text-xs text-stone-500">
+              A fila é <b>uma só</b>: o estoque de cada produto é dado aos caminhões em ordem de
+              data, sem olhar o tipo de venda — cada lado só soma o que coube e o que ficou
+              descoberto nos seus caminhões. Nenhum bag é contado duas vezes.
+            </p>
+          </Cartao>
+
+          {/* ---------------- agendamentos ---------------- */}
+          <Cartao titulo={`Agendamentos (${filtrados.length} de ${agendamentos.length})`} className="mb-5">
             {filtrados.length === 0 ? (
-              <Vazio>Nenhum carregamento passa pelos filtros.</Vazio>
+              <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
             ) : (
               <Tabela cabecalho={[
                 'Data',
-                { texto: 'Carga', className: 'hidden lg:table-cell' },
+                { texto: 'Pedido', className: 'hidden lg:table-cell' },
+                { texto: 'Tipo venda', className: 'hidden lg:table-cell' },
                 'Status', 'Cliente', 'Cultivar',
                 { texto: 'Tratamento', className: 'hidden lg:table-cell' },
                 { texto: 'Emb.', className: 'hidden lg:table-cell' },
-                '#Bags',
-                { texto: 'Transporte', className: 'hidden lg:table-cell' },
+                '#Agendado',
+                { texto: 'Carga', className: 'hidden lg:table-cell' },
+                '',
               ]}>
-                {filtrados.map((c) => (
-                  <tr key={c.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {c.data ? diaCurto(c.data) : (
-                        <span className="text-amber-600 dark:text-amber-400">sem data</span>
-                      )}
-                    </td>
-                    <td className="hidden num-tabular px-2 py-1.5 lg:table-cell">{c.carga}</td>
-                    <td className="px-2 py-1.5"><Tag cor={corStatusCarga(c.status)}>{c.status}</Tag></td>
-                    {/* break-words em vez de truncate: em toque não há hover
-                        para abrir o title, e o nome ficava inacessível pra
-                        sempre — agora quebra em mais linhas em vez de cortar */}
-                    <td className="max-w-56 break-words px-2 py-1.5">
-                      {c.cliente ?? '—'}
-                    </td>
-                    <td className="px-2 py-1.5 font-medium">
-                      {c.cultivar}
-                      <p className="text-xs font-normal text-stone-500 lg:hidden">
-                        {c.tratamento === SEM_TSI ? 'SEM TSI' : c.tratamento} · {c.embalagem}
-                      </p>
-                      {/* no celular as colunas Carga e Transporte somem; sem
-                          esta sub-linha a logística ficava sem a placa e o
-                          motorista justamente onde mais consulta: no pátio */}
-                      {(c.carga || c.transportadora || c.motorista || c.placa) && (
-                        <p className="text-xs font-normal text-stone-500 lg:hidden">
-                          {[c.carga && `carga ${c.carga}`, c.transportadora, c.motorista, c.placa]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
-                      )}
-                    </td>
-                    <td className="hidden px-2 py-1.5 lg:table-cell">
-                      {c.tratamento === SEM_TSI ? <Tag cor="neutro">SEM TSI</Tag> : c.tratamento}
-                    </td>
-                    <td className="hidden px-2 py-1.5 lg:table-cell">{c.embalagem}</td>
-                    <td className="num-tabular px-2 py-1.5 text-right">{inteiro(c.bags)}</td>
-                    <td className="hidden max-w-44 break-words px-2 py-1.5 text-xs text-stone-500 lg:table-cell">
-                      {[c.transportadora, c.motorista, c.placa].filter(Boolean).join(' · ') || '—'}
-                    </td>
-                  </tr>
-                ))}
+                {[...filtrados]
+                  .sort((a, b) => (a.data ?? '').localeCompare(b.data ?? '') || (a.cliente ?? '').localeCompare(b.cliente ?? ''))
+                  .map((a) => {
+                    const al = alocacao.get(a.id)
+                    return (
+                      <tr key={a.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                        <td className="px-2 py-1.5 whitespace-nowrap">
+                          {a.data ? diaCurto(a.data) : (
+                            <span className="text-amber-600 dark:text-amber-400">sem data</span>
+                          )}
+                        </td>
+                        <td className="hidden num-tabular px-2 py-1.5 lg:table-cell">{a.pedido ?? '—'}</td>
+                        <td className="hidden px-2 py-1.5 lg:table-cell">
+                          {a.cooperado ? <Tag cor="roxo">{a.tipo_venda}</Tag> : <span className="text-stone-600 dark:text-stone-300">{a.tipo_venda || '—'}</span>}
+                        </td>
+                        <td className="px-2 py-1.5"><Tag cor={corStatusEntrega(a.status_entrega)}>{a.status_entrega}</Tag></td>
+                        {/* break-words em vez de truncate: em toque não há hover pro title */}
+                        <td className="max-w-56 break-words px-2 py-1.5">
+                          {a.cliente ?? '—'}
+                          {(a.cidade || a.estado) && (
+                            <p className="text-xs text-stone-500">{[a.cidade, a.estado].filter(Boolean).join('/')}</p>
+                          )}
+                          <p className="text-xs text-stone-500 lg:hidden">
+                            {[a.pedido && `pedido ${a.pedido}`, a.cooperado ? 'COOPERADO' : null, a.carga && `carga ${a.carga}`]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        </td>
+                        <td className="px-2 py-1.5 font-medium">
+                          {a.cultivar}
+                          <p className="text-xs font-normal text-stone-500 lg:hidden">
+                            {a.tratamento === SEM_TSI ? 'SEM TSI' : a.tratamento} · {a.embalagem}
+                          </p>
+                        </td>
+                        <td className="hidden px-2 py-1.5 lg:table-cell">
+                          {a.tratamento === SEM_TSI ? <Tag cor="neutro">SEM TSI</Tag> : a.tratamento}
+                        </td>
+                        <td className="hidden px-2 py-1.5 lg:table-cell">{a.embalagem}</td>
+                        <td
+                          className="num-tabular px-2 py-1.5 text-right"
+                          title={a.qtd_pedido !== a.bags ? `Pedido de ${inteiro(a.qtd_pedido)} bags — agendados ${inteiro(a.bags)}` : undefined}
+                        >
+                          {inteiro(a.bags)}
+                          {a.qtd_pedido > a.bags && <span className="text-xs text-stone-400"> / {inteiro(a.qtd_pedido)}</span>}
+                        </td>
+                        <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">
+                          {a.carga ? `${a.carga}${a.status_carga ? ` · ${a.status_carga}` : ''}` : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">
+                          {al == null ? null : al.descoberto <= 0 ? (
+                            <Tag cor="ok">coberto</Tag>
+                          ) : al.coberto <= 0 ? (
+                            <Tag cor="perigo">descoberto {inteiro(al.descoberto)}</Tag>
+                          ) : (
+                            <Tag cor="alerta">parcial {inteiro(al.coberto)} de {inteiro(al.bags)}</Tag>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
               </Tabela>
             )}
           </Cartao>
         </>
       )}
-
-      {/* ---------------- pedidos de venda ---------------- */}
-      <Cartao titulo={`Pedidos de venda (${pedidos.length} combinações)`}>
-        <p className="mb-3 text-xs text-stone-500">
-          O upload da SimpleAgro agrega os pedidos por cultivar + tratamento + embalagem — o
-          detalhe por cliente não é guardado. <b>Aprovado</b> entra no balanço;{' '}
-          <b>aguardando</b> é pedido integrado sem liberação financeira.
-        </p>
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <label className="text-xs text-stone-500">
-            Cultivar
-            <select value={pCultivar} onChange={(e) => setPCultivar(e.target.value)} className={`${CAMPO} mt-1 block`}>
-              <option value="">todos</option>
-              {opcoesPedidos.cultivares.map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-stone-500">
-            Tratamento
-            <select value={pTratamento} onChange={(e) => setPTratamento(e.target.value)} className={`${CAMPO} mt-1 block`}>
-              <option value="">todos</option>
-              {opcoesPedidos.tratamentos.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-stone-500">
-            Embalagem
-            <select value={pEmbalagem} onChange={(e) => setPEmbalagem(e.target.value)} className={`${CAMPO} mt-1 block`}>
-              <option value="">todas</option>
-              {opcoesPedidos.embalagens.map((e2) => <option key={e2}>{e2}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-stone-500">
-            Liberação financeira
-            <select
-              value={pLiberacao}
-              onChange={(e) => setPLiberacao(e.target.value as typeof pLiberacao)}
-              className={`${CAMPO} mt-1 block`}
-            >
-              <option value="todos">todas</option>
-              <option value="aprovado">aprovado</option>
-              <option value="pendente">aguardando aprovação</option>
-            </select>
-          </label>
-          {(pCultivar || pTratamento || pEmbalagem || pLiberacao !== 'todos') && (
-            <Botao onClick={() => { setPCultivar(''); setPTratamento(''); setPEmbalagem(''); setPLiberacao('todos') }}>
-              Limpar filtros
-            </Botao>
-          )}
-        </div>
-        {pedidos.length === 0 ? (
-          <Vazio>Nenhum pedido passa pelos filtros — ou nenhum upload de pedidos foi feito ainda (tela Ordens).</Vazio>
-        ) : (
-          <Tabela cabecalho={[
-            'Cultivar',
-            { texto: 'Tratamento', className: 'hidden lg:table-cell' },
-            { texto: 'Emb.', className: 'hidden lg:table-cell' },
-            '#Aprovado',
-            { texto: '#Aguardando', className: 'hidden lg:table-cell' },
-            { texto: '#Estoque PA', className: 'hidden lg:table-cell' },
-            { texto: '#Em ordens', className: 'hidden lg:table-cell' },
-            '#Falta produzir', '',
-          ]}>
-            {pedidos.map((b) => (
-              <tr key={`${b.cultivar}|${b.tratamento}|${b.embalagem}`}
-                  className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 font-medium">
-                  {b.cultivar}
-                  <p className="text-xs font-normal text-stone-500 lg:hidden">
-                    {b.tratamento} · {b.embalagem}
-                  </p>
-                </td>
-                <td className="hidden px-2 py-1.5 lg:table-cell">{b.tratamento}</td>
-                <td className="hidden px-2 py-1.5 lg:table-cell">{b.embalagem}</td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(b.pedido_aprovado)}</td>
-                <td className="hidden num-tabular px-2 py-1.5 text-right text-stone-500 lg:table-cell">
-                  {b.pedido_pendente > 0 ? inteiro(b.pedido_pendente) : '—'}
-                </td>
-                <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">{inteiro(b.estoque_pa)}</td>
-                <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">{inteiro(b.ordens_abertas)}</td>
-                <td className={`num-tabular px-2 py-1.5 text-right font-semibold ${
-                  b.saldo > 0 ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'
-                }`}>
-                  {b.saldo > 0 ? inteiro(b.saldo) : '—'}
-                </td>
-                <td className="px-2 py-1.5">
-                  {!b.receita_cadastrada && <Tag cor="alerta">receita não cadastrada</Tag>}
-                </td>
-              </tr>
-            ))}
-          </Tabela>
-        )}
-      </Cartao>
     </Pagina>
   )
 }
 
-function corStatusCarga(s: string): Parameters<typeof Tag>[0]['cor'] {
-  if (/finalizado/i.test(s)) return 'roxo'
-  if (/faturado/i.test(s)) return 'info'
-  if (/agendado/i.test(s)) return 'ok'
+function Chip({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-2.5 py-1.5 text-xs sm:py-0.5 ${
+        ativo
+          ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
+          : 'border-stone-300 text-stone-500 dark:border-stone-700'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PainelLado({ titulo, lado, cor }: { titulo: string; lado: LadoTipoVenda; cor: Parameters<typeof Tag>[0]['cor'] }) {
+  return (
+    <div className="rounded-lg border border-stone-200 p-4 dark:border-stone-800">
+      <div className="flex items-baseline justify-between gap-2">
+        <Tag cor={cor}>{titulo}</Tag>
+        <span className="text-xs text-stone-500">{lado.caminhoes} agendamento(s)</span>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div>
+          <dt className="text-xs text-stone-500">Agendado</dt>
+          <dd className="num-tabular text-lg font-semibold">{inteiro(lado.agendado)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-stone-500">Coberto</dt>
+          <dd className="num-tabular text-lg font-semibold text-green-700 dark:text-green-400">{inteiro(lado.coberto)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-stone-500">Descoberto</dt>
+          <dd className={`num-tabular text-lg font-semibold ${lado.descoberto > 0 ? 'text-red-700 dark:text-red-400' : 'text-stone-400'}`}>
+            {inteiro(lado.descoberto)}
+          </dd>
+        </div>
+      </dl>
+      {lado.produtosEmFalta.length > 0 ? (
+        <ul className="mt-3 space-y-1 text-sm">
+          {lado.produtosEmFalta.map((p) => (
+            <li key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="flex items-baseline justify-between gap-2">
+              <span>
+                <b>{p.cultivar}</b> · {p.tratamento === SEM_TSI ? 'SEM TSI' : p.tratamento}
+                <span className="text-xs text-stone-500"> · {p.embalagem}</span>
+              </span>
+              <Tag cor="perigo">faltam {inteiro(p.descoberto)}</Tag>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-xs text-green-700 dark:text-green-400">
+          {lado.caminhoes === 0 ? 'Nenhum agendamento deste tipo nos filtros.' : 'Tudo coberto na data.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function corStatusEntrega(s: string): Parameters<typeof Tag>[0]['cor'] {
+  if (/aprovado/i.test(s)) return 'ok'
   if (/aguardando/i.test(s)) return 'alerta'
+  if (/cancel/i.test(s)) return 'perigo'
   return 'neutro'
 }
