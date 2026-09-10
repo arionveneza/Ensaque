@@ -287,6 +287,16 @@ outro eixo, máquina × dia, então não há dupla contagem.
   sem produzir saía com 100%. Aqui o denominador são as horas do turno
   (`horasDoDia` × `HORAS_TURNOS`, que saiu de `Programacao.tsx` para o domínio), e o resto
   do dia aparece como *parado sem ordem* (alguém nomeou) ou *ocioso* (ninguém nomeou).
+- **Duas armadilhas do aproveitamento, achadas com dado real na conferência:** (1) a ordem
+  não respeita a virada — a 141498 começou 03/09 às 20:34 e terminou 04/09 às 16:47, e a
+  `v_ordem_tempos` joga as 20 h inteiras no `data_prog`, o que dava 28 h de produção num
+  turno de 10 h; `sobreposicaoNoDiaS` reparte o intervalo pelas janelas de 07:30–03:00 que
+  ele cruza, e o cartão soma a partir daí, não pelo dia programado (o vão das 03:00 às
+  07:30 não pertence a dia nenhum e não é contado em lugar algum, de propósito). (2) O
+  percentual **passa de 100% e isso é informação, não erro**: 03/09 sai com 153% e 175%
+  porque o calendário marca só o 1º turno e a máquina rodou até a madrugada — ou é hora
+  extra, ou a linha Turnos do plano semanal está desatualizada. Prender no teto de 100%
+  apagava exatamente esse aviso. O ocioso continua com piso em zero, senão o dia não fecha.
 
 **Realtime estava morto na Execução** (achado junto, 12/09/2026): a tela assina `ordens`,
 `ordem_eventos`, `ordem_paradas` e `ordem_tanques`, e **nenhuma das quatro** estava na
