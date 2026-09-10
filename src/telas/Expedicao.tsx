@@ -6,6 +6,7 @@ import readXlsxFile from 'read-excel-file/browser'
 import * as g from '@/dados/api-gestao'
 import type { AgendamentoBanco } from '@/dados/api-gestao'
 import {
+  agendadoPorTipo,
   converterAgendados,
   ehRelatorioAgendados,
   normalizaLinhasXlsx,
@@ -229,6 +230,7 @@ export default function Expedicao() {
       const avisos: string[] = []
       if (resumo.semData > 0) avisos.push(`${resumo.semData} sem data`)
       if (resumo.semQuantidade > 0) avisos.push(`${resumo.semQuantidade} sem quantidade (ignorados)`)
+      if (resumo.finalizados > 0) avisos.push(`${resumo.finalizados} finalizado(s) ignorado(s) — caminhão já saiu`)
       if (resumo.identificadorRepetido > 0) avisos.push(`${resumo.identificadorRepetido} identificador(es) repetido(s)`)
       const embDesc = Object.keys(resumo.embalagemDesconhecida)
       if (embDesc.length > 0) avisos.push(`embalagem sem de-para: ${embDesc.join(', ')}`)
@@ -386,7 +388,10 @@ export default function Expedicao() {
                 <Tabela cabecalho={[
                   'Cultivar', 'Tratamento',
                   { texto: 'Emb.', className: 'hidden lg:table-cell' },
-                  '#Agendado', '#Estoque',
+                  '#Agendado',
+                  { texto: 'COOPERADO', className: 'hidden lg:table-cell' },
+                  { texto: 'OUTRAS VENDAS', className: 'hidden lg:table-cell' },
+                  '#Estoque',
                   { texto: '#Prod. prevista', className: 'hidden lg:table-cell' },
                   '#Saldo',
                   { texto: '#Descoberto', className: 'hidden lg:table-cell' },
@@ -395,6 +400,7 @@ export default function Expedicao() {
                   {saldos.map((s) => {
                     const situacao = situacaoSaldo(s)
                     const descoberto = s.caminhoes.reduce((t, c) => t + c.descoberto, 0)
+                    const porTipoLinha = agendadoPorTipo(s, (a) => a.cooperado)
                     // embalagem que o app não conhece nunca casa com o estoque:
                     // a "falta" seria artefato do de-para, não falta real
                     const embDesconhecida = !s.semTsi && !EMBALAGENS_APP.has(s.embalagem)
@@ -423,6 +429,12 @@ export default function Expedicao() {
                         </td>
                         <td className="hidden px-2 py-1.5 lg:table-cell">{s.embalagem}</td>
                         <td className="num-tabular px-2 py-1.5 text-right">{inteiro(s.agendado)}</td>
+                        <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell" title="Bags agendados em VENDA COOPERADO neste produto">
+                          {porTipoLinha.cooperado > 0 ? inteiro(porTipoLinha.cooperado) : <span className="text-stone-400">—</span>}
+                        </td>
+                        <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell" title="Bags agendados nos demais tipos de venda neste produto">
+                          {porTipoLinha.outras > 0 ? inteiro(porTipoLinha.outras) : <span className="text-stone-400">—</span>}
+                        </td>
                         <td className="num-tabular px-2 py-1.5 text-right" title={s.semTsi ? 'Lotes de semente em estoque deste cultivar, todas as embalagens' : 'Estoque de produto acabado tratado'}>
                           {inteiro(s.estoque)}
                         </td>

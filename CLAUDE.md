@@ -454,7 +454,11 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    `TRATAMENTO` é código composto (`FTZ60 + VIC`) normalizado por `normalizaTratamento` (caixa,
    acento, espaço em volta do `+`) nos dois lados do cruzamento. **Toda linha com quantidade
    entra, inclusive "Aguardando Estoque"** — é a demanda que precisa de estoque (status visível
-   e filtrável). **Base de estoque = o upload do SAP da aba Ordens**: `SEM TSI` cruza com os
+   e filtrável) — **exceto STATUS ENTREGA = FINALIZADO/Finalizada**, que fica fora na
+   importação (caminhão já saiu; o upload seguinte de saldos já desconta — contar de novo
+   dobraria a falta; `resumo.finalizados`, pedido do Arion 12/09/2026). A tabela consolidada
+   mostra o `#Agendado` de cada produto repartido em **COOPERADO × OUTRAS VENDAS**
+   (`agendadoPorTipo`). **Base de estoque = o upload do SAP da aba Ordens**: `SEM TSI` cruza com os
    **lotes de semente** por cultivar (o cultivar vira **uma linha só** somando as embalagens —
    o pool de lotes é um), tratamento real cruza com **estoque PA + TODAS as ordens abertas** —
    a data programada **não corta a conta**, porque produção se adianta (decisão do PCP,

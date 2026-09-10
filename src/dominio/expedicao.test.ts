@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agendadoPorTipo,
   converterAgendados,
   converterMontagemCarga,
   ehRelatorioAgendados,
@@ -450,6 +451,22 @@ describe('conversao dos pedidos agendados', () => {
     expect(resumo.semQuantidade).toBe(1)
   })
 
+  it('FINALIZADO / Finalizada (coluna STATUS ENTREGA) fica FORA: o caminhao ja saiu', () => {
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', 'STATUS ENTREGA': 'FINALIZADO', 'QTD AGENDADA': 7 }),
+      linhaAg({ IDENTIFICADOR: 'b', 'STATUS ENTREGA': 'Finalizada', 'QTD AGENDADA': 8 }),
+      linhaAg({ IDENTIFICADOR: 'c', 'STATUS ENTREGA': 'finalizado', 'QTD AGENDADA': 9 }),
+      linhaAg({ IDENTIFICADOR: 'd', 'STATUS ENTREGA': 'Aprovado', 'QTD AGENDADA': 10 }),
+    ])
+    expect(linhas.map((l) => l.identificador)).toEqual(['d'])
+    expect(resumo.finalizados).toBe(3)
+    // o finalizado nao infla nenhum outro contador
+    expect(resumo.bagsOutras).toBe(10)
+    expect(resumo.porStatusEntrega).toEqual({ Aprovado: 1 })
+    expect(resumo.aproveitadas).toBe(1)
+  })
+
   it('Aguardando Estoque ENTRA na demanda e e contado no resumo', () => {
     const { linhas, resumo } = converterAgendados([
       CAB_AGEND, linhaAg(), linhaAg({ IDENTIFICADOR: 'ID-2', 'STATUS ENTREGA': 'Aguardando Estoque' }),
@@ -638,6 +655,25 @@ describe('alocacao por caminhao e visao por tipo de venda', () => {
     // soma dos lados = consolidado
     expect(t.cooperado.agendado + t.outras.agendado).toBe(r[0].agendado)
     expect(t.cooperado.descoberto + t.outras.descoberto).toBe(-r[0].saldo)
+  })
+
+  it('agendadoPorTipo: reparte o agendado do produto e soma o total', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 'a', cooperado: true, bags: 12 }),
+        ag({ id: 'b', cooperado: false, bags: 5 }),
+        ag({ id: 'c', cooperado: false, bags: 3 }),
+      ],
+      [{ cultivar: 'NEO700 I2X', bags: 100 }], [], [],
+    )
+    const t = agendadoPorTipo(r[0], (c) => c.cooperado)
+    expect(t).toEqual({ cooperado: 12, outras: 8 })
+    expect(t.cooperado + t.outras).toBe(r[0].agendado)
+  })
+
+  it('agendadoPorTipo: produto so de um grupo da zero no outro', () => {
+    const r = saldosExpedicao([ag({ cooperado: false, bags: 4 })], [], [], [])
+    expect(agendadoPorTipo(r[0], (c) => c.cooperado)).toEqual({ cooperado: 0, outras: 4 })
   })
 
   it('cooperado que vem ANTES na fila leva o estoque — a data manda, nao o tipo', () => {

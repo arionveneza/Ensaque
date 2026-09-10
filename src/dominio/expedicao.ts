@@ -237,6 +237,12 @@ export interface ResumoAgendados {
   bagsCooperado: number
   bagsOutras: number
   identificadorRepetido: number
+  /**
+   * STATUS ENTREGA = FINALIZADO/Finalizada: o caminhão já saiu e o upload
+   * seguinte de saldos já desconta — contar de novo dobraria a falta. Fica
+   * fora, contado (pedido do Arion, 12/09/2026).
+   */
+  finalizados: number
 }
 
 /**
@@ -293,6 +299,7 @@ export function converterAgendados(rows: Linha[]): {
     bagsCooperado: 0,
     bagsOutras: 0,
     identificadorRepetido: 0,
+    finalizados: 0,
   }
   const vistos = new Set<string>()
   const opcional = (i: number, r: Linha) => (i >= 0 ? txt(r[i]) || null : null)
@@ -301,6 +308,12 @@ export function converterAgendados(rows: Linha[]): {
     const bags = num(r[iQtd])
     if (bags <= 0) {
       resumo.semQuantidade++
+      continue
+    }
+    // antes de qualquer contador: finalizado não é demanda, é caminhão que já saiu
+    const statusEntrega = txt(r[iStatusEntrega]) || 'Sem status'
+    if (normaliza(statusEntrega).startsWith('FINALIZAD')) {
+      resumo.finalizados++
       continue
     }
     const embCru = normaliza(txt(r[iEmb]))
@@ -317,7 +330,6 @@ export function converterAgendados(rows: Linha[]): {
     if (cooperado) resumo.bagsCooperado += bags
     else resumo.bagsOutras += bags
 
-    const statusEntrega = txt(r[iStatusEntrega]) || 'Sem status'
     resumo.porStatusEntrega[statusEntrega] = (resumo.porStatusEntrega[statusEntrega] ?? 0) + 1
     const statusCarga = opcional(iStatusCarga, r)
     if (statusCarga) resumo.porStatusCarga[statusCarga] = (resumo.porStatusCarga[statusCarga] ?? 0) + 1
@@ -664,4 +676,18 @@ export function resumoPorTipoVenda<T extends CarregamentoLinha>(
     lado.produtosEmFalta.sort((a, b) => b.descoberto - a.descoberto)
   }
   return r
+}
+
+/** O agendado de UM produto repartido por grupo — colunas COOPERADO / OUTRAS da tabela consolidada. */
+export function agendadoPorTipo<T extends CarregamentoLinha>(
+  s: SaldoExpedicao<T>,
+  ehCooperado: (c: T) => boolean,
+): { cooperado: number; outras: number } {
+  let cooperado = 0
+  let outras = 0
+  for (const c of s.caminhoes) {
+    if (ehCooperado(c.caminhao)) cooperado += c.bags
+    else outras += c.bags
+  }
+  return { cooperado: arred2(cooperado), outras: arred2(outras) }
 }
