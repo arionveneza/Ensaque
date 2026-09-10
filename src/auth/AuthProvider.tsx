@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -46,6 +47,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [carregando, setCarregando] = useState(true)
   const [semCadastro, setSemCadastro] = useState(false)
   const [definindoSenha, setDefinindoSenha] = useState(false)
+  // Id do usuário cujo perfil JÁ está carregado. O supabase-js renova o token
+  // sozinho (~1 h e ao voltar o foco na aba) e emite um `session` NOVO pro
+  // MESMO usuário — até 12/09/2026 isso acionava `setCarregando(true)` e o App
+  // trocava tudo por "Carregando…", desmontando a tela e o estado dela
+  // (filtros, modal aberto, inventário em contagem). Agora só a troca de
+  // usuário mostra o carregando; o mesmo usuário reatualiza em silêncio.
+  const usuarioCarregado = useRef<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -57,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // link de recuperação de senha abriu o app: pedir a senha nova
       if (evento === 'PASSWORD_RECOVERY') setDefinindoSenha(true)
       if (!s) {
+        usuarioCarregado.current = null
         setUsuario(null)
         setSemCadastro(false)
         setDefinindoSenha(false)
@@ -69,7 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) return
     let cancelado = false
-    setCarregando(true)
+    const silencioso = usuarioCarregado.current === session.user.id
+    if (!silencioso) setCarregando(true)
     supabase
       .from('usuarios')
       .select('id, nome, perfil')
@@ -78,24 +88,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(async ({ data, error }) => {
         if (cancelado) return
         if (error) console.error('perfil do usuário:', error.message)
+        // leitura silenciosa que falhou (rede, token no meio da troca): fica
+        // tudo como estava — cair pra `null` aqui mostraria "sem perfil" pra
+        // quem estava trabalhando normalmente
+        if (error && silencioso) return
         const u = (data as UsuarioTsi) ?? null
 
         // só o que o gestor MEXEU na matriz; o resto cai no padrão do perfil.
-        // Erro aqui não derruba o login: fica só o padrão.
-        let exp: PermissaoExplicita[] = []
+        // Erro aqui não derruba o login: no primeiro carregamento fica só o
+        // padrão; na leitura silenciosa mantém a matriz anterior (virar `[]`
+        // tirava tela do menu e o App trocava de tela sozinho)
+        let exp: PermissaoExplicita[] | null = []
         if (u) {
           const p = await supabase
             .from('perfil_permissoes')
             .select('recurso, acao, permitido')
             .eq('perfil', u.perfil)
-          if (p.error) console.error('matriz de permissões:', p.error.message)
-          exp = (p.data ?? []) as PermissaoExplicita[]
+          if (p.error) {
+            console.error('matriz de permissões:', p.error.message)
+            exp = null
+          } else {
+            exp = (p.data ?? []) as PermissaoExplicita[]
+          }
         }
         if (cancelado) return
 
         setUsuario(u)
-        setExplicitas(exp)
+        if (exp !== null) setExplicitas(exp)
+        else if (!silencioso) setExplicitas([])
         setSemCadastro(!u)
+        usuarioCarregado.current = session.user.id
         setCarregando(false)
       })
     return () => {

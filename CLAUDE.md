@@ -622,6 +622,20 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 
+**Navegação sobrevive à recarga** (12/09/2026 — "as telas ficam atualizando e abrem em
+outra página"): a vista ativa vai pro **hash da URL** (`#expedicao`, `#painel`, `#chamada`)
+e pro `localStorage` `tsi.tela` (`src/lib/telaAtiva.ts`) — F5 e aba descartada pelo tablet
+voltam pela URL; o atalho da tela inicial (URL limpa) volta pelo storage; sem nada, Execução.
+Só a AÇÃO do usuário grava (clique no menu, abrir/fechar painel), nunca a montagem, porque o
+supabase-js usa o mesmo hash no link de recuperação de senha e o limpa na inicialização; só
+id de vista conhecido é aceito. **Renovar o token não remonta o app**: `AuthProvider` guarda
+o id do usuário carregado e, no mesmo usuário (TOKEN_REFRESHED, foco), reatualiza perfil e
+matriz em silêncio — antes cada renovação passava pelo "Carregando…" e desmontava a tela
+inteira (filtros, modal, inventário em contagem). Leitura silenciosa que falha mantém o que
+já tinha (matriz virando `[]` tirava tela do menu e o App trocava de tela sozinho). **Chunk
+velho depois de deploy** (`vite:preloadError` em `main.tsx`) recarrega sozinho, na mesma
+tela, no máximo 1× a cada 30 s.
+
 ---
 
 ## 7. Pendências de especificação (decidir com o cliente)

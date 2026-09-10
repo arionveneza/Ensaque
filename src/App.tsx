@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthProvider'
 import { USUARIOS_SAP_TESTE } from '@/lib/sapTeste'
 import * as g from '@/dados/api-gestao'
 import { useRealtime } from '@/dados/useRealtime'
+import { gravarVista, lerVistaInicial, vistaDoHash } from '@/lib/telaAtiva'
 import Login from '@/telas/Login'
 import Execucao from '@/telas/Execucao'
 
@@ -54,16 +55,56 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'sap', nome: 'SAP (teste)' },
 ]
 
+const ehTela = (v: string): v is TelaId => TELAS.some((t) => t.id === v)
+// o que pode estar no hash da URL / no `tsi.tela`: as telas e os dois modos de
+// tela cheia — a TV do chão de fábrica que recarrega volta pro Painel, não pra
+// Execução
+const VISTAS_VALIDAS: readonly string[] = [...TELAS.map((t) => t.id), 'painel', 'chamada']
+
 function Shell() {
   const {
     session, usuario, carregando, semCadastro, permitido,
     definindoSenha, senhaDefinida, sair,
   } = useAuth()
-  const [tela, setTela] = useState<TelaId>('execucao')
+  // vista com que o app abriu: hash da URL, senão a última salva neste
+  // navegador, senão Execução (src/lib/telaAtiva.ts — antes toda recarga
+  // voltava pra Execução, "abre em outra página")
+  const [vistaInicial] = useState(() => lerVistaInicial(VISTAS_VALIDAS) ?? 'execucao')
+  const [tela, setTela] = useState<TelaId>(ehTela(vistaInicial) ? vistaInicial : 'execucao')
   // modo TV: tela cheia, fora do shell. Quem enxerga Execução pode abrir.
-  const [painel, setPainel] = useState(false)
+  const [painel, setPainel] = useState(vistaInicial === 'painel')
   // idem, para o painel de chamada de motorista no pátio.
-  const [painelChamada, setPainelChamada] = useState(false)
+  const [painelChamada, setPainelChamada] = useState(vistaInicial === 'chamada')
+
+  // só a AÇÃO do usuário grava a vista — nunca a montagem, pra não disputar o
+  // hash com o supabase-js, que lê e limpa o fragmento do link de recuperação
+  // de senha na inicialização
+  const irPara = (id: TelaId) => {
+    setTela(id)
+    gravarVista(id)
+  }
+  const mostrarPainel = (aberto: boolean) => {
+    setPainel(aberto)
+    gravarVista(aberto ? 'painel' : tela)
+  }
+  const mostrarPainelChamada = (aberto: boolean) => {
+    setPainelChamada(aberto)
+    gravarVista(aberto ? 'chamada' : tela)
+  }
+  // hash digitado na barra ou Voltar/Avançar: aplica se for vista conhecida;
+  // vazio/desconhecido é ignorado (supabase-js limpando o fragmento de auth).
+  // `replaceState` do gravarVista NÃO dispara hashchange — só o usuário chega aqui.
+  useEffect(() => {
+    const aoMudarHash = () => {
+      const v = vistaDoHash(window.location.hash)
+      if (!VISTAS_VALIDAS.includes(v)) return
+      setPainel(v === 'painel')
+      setPainelChamada(v === 'chamada')
+      if (ehTela(v)) setTela(v)
+    }
+    window.addEventListener('hashchange', aoMudarHash)
+    return () => window.removeEventListener('hashchange', aoMudarHash)
+  }, [])
   // menu lateral em telas estreitas (tablet/celular) — a lateral fixa só
   // aparece em lg:, abaixo disso vira gaveta por cima do conteúdo
   const [navAberta, setNavAberta] = useState(false)
@@ -150,7 +191,7 @@ function Shell() {
   if (painel && podePainel) {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-stone-950" />}>
-        <Painel onSair={() => setPainel(false)} />
+        <Painel onSair={() => mostrarPainel(false)} />
       </Suspense>
     )
   }
@@ -158,7 +199,7 @@ function Shell() {
   if (painelChamada && podePainelChamada) {
     return (
       <Suspense fallback={<div className="fixed inset-0 bg-stone-950" />}>
-        <PainelChamada onSair={() => setPainelChamada(false)} />
+        <PainelChamada onSair={() => mostrarPainelChamada(false)} />
       </Suspense>
     )
   }
@@ -202,7 +243,7 @@ function Shell() {
             <button
               ref={atual === t.id ? abaAtivaRef : undefined}
               onClick={() => {
-                setTela(t.id)
+                irPara(t.id)
                 fechar?.()
               }}
               className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-sm whitespace-nowrap transition-colors sm:py-2 ${
@@ -239,7 +280,7 @@ function Shell() {
           {podePainel && (
             <button
               onClick={() => {
-                setPainel(true)
+                mostrarPainel(true)
                 fechar?.()
               }}
               title="Painel de produção em tela cheia, para a TV do chão de fábrica"
@@ -251,7 +292,7 @@ function Shell() {
           {podePainelChamada && (
             <button
               onClick={() => {
-                setPainelChamada(true)
+                mostrarPainelChamada(true)
                 fechar?.()
               }}
               title="Painel de chamada de motorista em tela cheia, para a TV do pátio"
