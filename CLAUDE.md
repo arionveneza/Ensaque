@@ -653,6 +653,17 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
   Posições (`FICHA_QUIMICOS_LAYOUT`) começaram como estimativa pela foto — o item "Teste
   de alinhamento" imprime a grade suposta + régua de 10 mm numa ficha real e o desvio
   relatado vira ajuste SÓ nessa constante. Imprimir em 100%, sem margens.
+  **Ajuste fino por impressora** (12/09/2026, depois de 9 rodadas de "sobe 3 / desce 5"
+  com deploy no meio): o menu da ficha tem o painel "Ajuste fino desta impressora" — ▲▼
+  de 1 mm por seção (Receita, Biológicos, Inseticida, Fungicida, Nematicida, Inoculante,
+  Outros) e um horizontal geral, limite ±30 mm, salvo em `localStorage`
+  (`tsi.ficha.ajuste`, `src/lib/ajusteFicha.ts`) — é da impressora ligada àquele
+  computador, não do sistema; cada posto tem o seu e "Voltar ao padrão" zera.
+  `aplicarAjusteFicha` (domínio, testada) soma o ajuste ao layout padrão na hora de
+  imprimir; o teste de alinhamento imprime também quais ajustes estão ativos. Quem está
+  na frente da impressora acerta sozinho, sem publicar nada. Se o desvio variar de folha
+  pra folha com o mesmo ajuste, é papel/bandeja — a saída definitiva é o app imprimir a
+  ficha inteira em papel branco (proposto, não decidido).
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

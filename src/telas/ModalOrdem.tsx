@@ -25,8 +25,10 @@ import {
   abrirJanelaImpressao, confirmarNaJanela, imprimirEtiquetaDm, imprimirFichaQuimicos,
   imprimirOrdemProducao, mostrarErroNaJanela,
 } from '@/lib/exportar'
-import { montarFichaQuimicos } from '@/dominio/fichaQuimicos'
+import { montarFichaQuimicos, type AjusteFicha } from '@/dominio/fichaQuimicos'
 import { itensReceitaComPrincipios } from '@/dados/api-gestao'
+import { carregarAjusteFicha, salvarAjusteFicha } from '@/lib/ajusteFicha'
+import { PainelAjusteFicha } from '@/componentes/AjusteFicha'
 
 const num = (v: number | null | undefined, casas = 1) =>
   v == null || Number.isNaN(v)
@@ -73,6 +75,13 @@ export default function ModalOrdem({
   const [qtdProduzida, setQtdProduzida] = useState('')
   const [menuEtiqueta, setMenuEtiqueta] = useState(false)
   const [menuFicha, setMenuFicha] = useState(false)
+  const [ajustandoFicha, setAjustandoFicha] = useState(false)
+  // ajuste fino da impressora DESTE computador (12/09/2026) — localStorage
+  const [ajusteFicha, setAjusteFicha] = useState<AjusteFicha>(() => carregarAjusteFicha())
+  const mudarAjusteFicha = (v: AjusteFicha) => {
+    setAjusteFicha(v)
+    salvarAjusteFicha(v)
+  }
 
   const prods = useMemo(() => mapaProdutos(produtos), [produtos])
   const mots = useMemo(() => mapaMotivos(motivos), [motivos])
@@ -229,8 +238,9 @@ export default function ModalOrdem({
    * ativos da receita vêm do banco em seguida. `teste` desenha também a
    * grade e uma régua, pra calibrar as posições numa ficha real.
    */
-  async function imprimirFicha(teste: boolean) {
-    setMenuFicha(false)
+  async function imprimirFicha(teste: boolean, manterMenu = false) {
+    // do painel de ajuste o menu fica aberto: imprime, olha, ajusta, imprime
+    if (!manterMenu) setMenuFicha(false)
     const janela = abrirJanelaImpressao()
     if (!janela) return
     try {
@@ -258,14 +268,15 @@ export default function ModalOrdem({
       if (ficha.naoCouberam.length > 0) {
         avisos.push(`Não couberam na ficha (OUTROS PRODUTOS lotou): ${ficha.naoCouberam.join(', ')}.`)
       }
+      const opcoes = { teste, ajuste: ajusteFicha }
       if (avisos.length === 0) {
-        imprimirFichaQuimicos(ficha, { teste }, janela)
+        imprimirFichaQuimicos(ficha, opcoes, janela)
         return
       }
       // o aviso vai DENTRO do pop-up: um confirm() aqui ficava atrás da
       // janela recém-aberta e, dispensado sem ser visto, fechava tudo —
       // "abre e já fecha" (relato do Arion, 12/09/2026)
-      confirmarNaJanela(janela, avisos, () => imprimirFichaQuimicos(ficha, { teste }, janela))
+      confirmarNaJanela(janela, avisos, () => imprimirFichaQuimicos(ficha, opcoes, janela))
     } catch (e) {
       // nunca fechar calado: o motivo fica na própria janela
       const msg = e instanceof Error ? e.message : String(e)
@@ -383,7 +394,11 @@ export default function ModalOrdem({
                 Ficha de químicos ▾
               </button>
               {menuFicha && (
-                <div className="absolute right-0 z-10 mt-1 w-64 rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900">
+                <div
+                  className={`absolute right-0 z-10 mt-1 rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900 ${
+                    ajustandoFicha ? 'w-80' : 'w-64'
+                  }`}
+                >
                   <button
                     onClick={() => void imprimirFicha(false)}
                     className="flex w-full flex-col rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
@@ -400,6 +415,23 @@ export default function ModalOrdem({
                       imprime também a grade e uma régua — numa ficha real, mostra o desvio
                     </span>
                   </button>
+                  <button
+                    onClick={() => setAjustandoFicha((v) => !v)}
+                    className="flex w-full items-baseline justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
+                  >
+                    <span className="font-medium">Ajuste fino desta impressora {ajustandoFicha ? '▴' : '▾'}</span>
+                    {!ajustandoFicha && Object.values(ajusteFicha).some((v) => v !== 0) && (
+                      <span className="text-xs text-amber-600 dark:text-amber-400">ajustado</span>
+                    )}
+                  </button>
+                  {ajustandoFicha && (
+                    <PainelAjusteFicha
+                      valor={ajusteFicha}
+                      onMudar={mudarAjusteFicha}
+                      onImprimirTeste={() => void imprimirFicha(true, true)}
+                      onImprimirFicha={() => void imprimirFicha(false, true)}
+                    />
+                  )}
                 </div>
               )}
             </div>

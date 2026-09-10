@@ -1,6 +1,9 @@
 // o pacote não tem export raiz: no navegador é o subcaminho /browser
 import writeXlsxFile, { type SheetData } from 'write-excel-file/browser'
-import { CAPACIDADE_FICHA, SECOES_FICHA, type FichaQuimicos } from '@/dominio/fichaQuimicos'
+import {
+  AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LINHAS_AJUSTE_FICHA, SECOES_FICHA, aplicarAjusteFicha,
+  type AjusteFicha, type FichaQuimicos,
+} from '@/dominio/fichaQuimicos'
 
 /**
  * Exportação para .xlsx de verdade (não CSV renomeado) e impressão.
@@ -475,10 +478,12 @@ export const FICHA_QUIMICOS_LAYOUT = {
  */
 export function imprimirFichaQuimicos(
   f: FichaQuimicos,
-  opcoes: { teste?: boolean } = {},
+  opcoes: { teste?: boolean; ajuste?: AjusteFicha } = {},
   janelaPronta?: Window,
 ): void {
-  const L = FICHA_QUIMICOS_LAYOUT
+  // padrão + ajuste fino da impressora deste computador (12/09/2026)
+  const ajuste = opcoes.ajuste ?? AJUSTE_FICHA_ZERO
+  const L = aplicarAjusteFicha(FICHA_QUIMICOS_LAYOUT, ajuste)
   const teste = opcoes.teste === true
   const mm = (v: number) => `${Math.round(v * 100) / 100}mm`
 
@@ -538,8 +543,13 @@ export function imprimirFichaQuimicos(
       regua.push(`<div class="tick" style="top:${mm(y)};left:0;height:0.2mm;width:${y % 50 === 0 ? 4 : 2.5}mm"></div>`)
       if (y % 50 === 0) regua.push(`<div class="tl" style="top:${mm(y - 2.6)};left:0.8mm">${y}</div>`)
     }
+    const ajustes = LINHAS_AJUSTE_FICHA
+      .filter(({ chave }) => ajuste[chave] !== 0)
+      .map(({ chave, rotulo }) => `${rotulo} ${ajuste[chave] > 0 ? '+' : ''}${ajuste[chave]} mm`)
     regua.push(
-      `<div class="nota">TESTE DE ALINHAMENTO da ficha de químicos — imprimir em 100% (sem "ajustar à página"), margens: nenhuma, papel encostado no canto superior esquerdo. Vermelho = texto; tracejado = onde o app supõe cada célula; régua a cada 10 mm. Se sair deslocado, informe quantos mm pra cima/baixo e esquerda/direita, por seção.</div>`,
+      `<div class="nota">TESTE DE ALINHAMENTO da ficha de químicos — imprimir em 100% (sem "ajustar à página"), margens: nenhuma, papel encostado no canto superior esquerdo. Vermelho = texto; tracejado = onde o app supõe cada célula; régua a cada 10 mm. Se sair deslocado, use o Ajuste fino no menu da ficha (▲▼ por seção). Ajuste desta impressora: ${
+        ajustes.length > 0 ? esc(ajustes.join(' · ')) : 'nenhum (padrão)'
+      }.</div>`,
     )
   }
 

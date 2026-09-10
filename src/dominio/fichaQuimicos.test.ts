@@ -1,8 +1,51 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CAPACIDADE_FICHA, concentracaoFicha, doseFicha, montarFichaQuimicos, type ItemFicha,
-  type PrincipioFicha,
+  AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LIMITE_AJUSTE_MM, aplicarAjusteFicha, concentracaoFicha,
+  doseFicha, montarFichaQuimicos, normalizarAjusteFicha, type ItemFicha, type PrincipioFicha,
 } from './fichaQuimicos'
+
+const LAYOUT = {
+  esquerda: 10,
+  esquerdaOutros: 8.5,
+  receita: { left: 58, top: 90 },
+  biologicos: { left: 164, top: 90 },
+  top: { inseticida: 116, fungicida: 151, nematicida: 184, inoculante: 211, outros: 240 },
+  outraCoisa: 'preservada',
+}
+
+describe('aplicarAjusteFicha: ajuste por impressora somado ao padrão', () => {
+  it('ajuste zero devolve o layout igual', () => {
+    expect(aplicarAjusteFicha(LAYOUT, AJUSTE_FICHA_ZERO)).toEqual(LAYOUT)
+  })
+
+  it('cada seção desloca só a sua linha; x desloca todas as esquerdas', () => {
+    const a = aplicarAjusteFicha(LAYOUT, { ...AJUSTE_FICHA_ZERO, fungicida: -2, outros: 3, receita: 1, x: -1 })
+    expect(a.top).toEqual({ inseticida: 116, fungicida: 149, nematicida: 184, inoculante: 211, outros: 243 })
+    expect(a.receita).toEqual({ left: 57, top: 91 })
+    expect(a.biologicos).toEqual({ left: 163, top: 90 })
+    expect(a.esquerda).toBe(9)
+    expect(a.esquerdaOutros).toBe(7.5)
+    expect(a.outraCoisa).toBe('preservada')
+    // pura: o padrão não muda
+    expect(LAYOUT.top.fungicida).toBe(151)
+  })
+})
+
+describe('normalizarAjusteFicha: o que vem do navegador', () => {
+  it('campo faltando, lixo e nulo viram 0; número em texto é aceito', () => {
+    expect(normalizarAjusteFicha({ fungicida: '2', outros: 'abc', x: null })).toEqual({
+      ...AJUSTE_FICHA_ZERO, fungicida: 2,
+    })
+    expect(normalizarAjusteFicha(null)).toEqual(AJUSTE_FICHA_ZERO)
+  })
+
+  it('limita ao intervalo e arredonda pra mm inteiro', () => {
+    const a = normalizarAjusteFicha({ inseticida: 999, receita: -999, outros: 1.6 })
+    expect(a.inseticida).toBe(LIMITE_AJUSTE_MM)
+    expect(a.receita).toBe(-LIMITE_AJUSTE_MM)
+    expect(a.outros).toBe(2)
+  })
+})
 
 const p = (
   nome: string,

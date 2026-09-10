@@ -56,6 +56,85 @@ export const CAPACIDADE_FICHA: Record<SecaoFicha | 'outros', number> = {
   outros: 5,
 }
 
+/**
+ * Ajuste fino POR IMPRESSORA (12/09/2026): deslocamentos em mm somados às
+ * posições padrão da ficha — vertical por seção (positivo = mais pra
+ * baixo) e um horizontal geral (positivo = mais pra direita). Fica salvo
+ * no navegador de cada computador, então cada impressora tem o seu, e o
+ * operador acerta sozinho, sem publicar nada.
+ */
+export interface AjusteFicha {
+  x: number
+  receita: number
+  biologicos: number
+  inseticida: number
+  fungicida: number
+  nematicida: number
+  inoculante: number
+  outros: number
+}
+
+export const AJUSTE_FICHA_ZERO: AjusteFicha = {
+  x: 0, receita: 0, biologicos: 0, inseticida: 0, fungicida: 0, nematicida: 0, inoculante: 0, outros: 0,
+}
+
+/** Ordem e rótulo das linhas do painel de ajuste. */
+export const LINHAS_AJUSTE_FICHA: { chave: keyof AjusteFicha; rotulo: string }[] = [
+  { chave: 'receita', rotulo: 'Receita (nome do tratamento)' },
+  { chave: 'biologicos', rotulo: 'Biológicos (SIM/NÃO)' },
+  { chave: 'inseticida', rotulo: 'Inseticida' },
+  { chave: 'fungicida', rotulo: 'Fungicida' },
+  { chave: 'nematicida', rotulo: 'Nematicida' },
+  { chave: 'inoculante', rotulo: 'Inoculante' },
+  { chave: 'outros', rotulo: 'Outros produtos' },
+  { chave: 'x', rotulo: 'Tudo na horizontal' },
+]
+
+/** Mais que isso é erro de digitação, não calibração. */
+export const LIMITE_AJUSTE_MM = 30
+
+const limita = (v: unknown): number => {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(-LIMITE_AJUSTE_MM, Math.min(LIMITE_AJUSTE_MM, Math.round(n)))
+}
+
+/** Valida o que veio do armazenamento: campo faltando ou lixo vira 0, excesso é limitado. */
+export function normalizarAjusteFicha(bruto: unknown): AjusteFicha {
+  const o = (bruto && typeof bruto === 'object' ? bruto : {}) as Record<string, unknown>
+  const saida = { ...AJUSTE_FICHA_ZERO }
+  for (const chave of Object.keys(AJUSTE_FICHA_ZERO) as (keyof AjusteFicha)[]) {
+    saida[chave] = limita(o[chave])
+  }
+  return saida
+}
+
+interface LayoutAjustavel {
+  esquerda: number
+  esquerdaOutros: number
+  receita: { left: number; top: number }
+  biologicos: { left: number; top: number }
+  top: Record<SecaoFicha | 'outros', number>
+}
+
+/** Soma o ajuste às posições padrão — pura, não muda o layout de entrada. */
+export function aplicarAjusteFicha<L extends LayoutAjustavel>(layout: L, ajuste: AjusteFicha): L {
+  return {
+    ...layout,
+    esquerda: layout.esquerda + ajuste.x,
+    esquerdaOutros: layout.esquerdaOutros + ajuste.x,
+    receita: { left: layout.receita.left + ajuste.x, top: layout.receita.top + ajuste.receita },
+    biologicos: { left: layout.biologicos.left + ajuste.x, top: layout.biologicos.top + ajuste.biologicos },
+    top: {
+      inseticida: layout.top.inseticida + ajuste.inseticida,
+      fungicida: layout.top.fungicida + ajuste.fungicida,
+      nematicida: layout.top.nematicida + ajuste.nematicida,
+      inoculante: layout.top.inoculante + ajuste.inoculante,
+      outros: layout.top.outros + ajuste.outros,
+    },
+  }
+}
+
 export interface FichaQuimicos {
   receita: string
   /** SIM quando algum princípio da receita é de classe Biologico. */
