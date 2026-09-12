@@ -2090,15 +2090,17 @@ function ModalProgramarDemanda({
     () => lotes.filter((l) => l.cultivar === cultivar),
     [lotes, cultivar],
   )
+  /** Uma linha = uma ordem: lote, bags e, se quiser, destinação só dela. */
+  type LinhaLote = { loteId: string; bags: string; destinacao?: string }
   const rascunho = useRascunho<{
-    linhas: { loteId: string; bags: string }[]
+    linhas: LinhaLote[]
     destinacao: string
     urgente: boolean
     dataExpedicao: string
     maquinaId: string
     dataProg: string
   }>(chaveProgramar(id), {
-    linhas: [{ loteId: '', bags: '' }],
+    linhas: [{ loteId: '', bags: '', destinacao: '' }],
     destinacao: '', urgente: false, dataExpedicao: '', maquinaId: '', dataProg: '',
   })
   const { linhas, destinacao, urgente, dataExpedicao, maquinaId, dataProg } = rascunho.valor
@@ -2108,22 +2110,25 @@ function ModalProgramarDemanda({
 
   const total = linhas.reduce((a, l) => a + (Number(l.bags) || 0), 0)
   const validas = linhas.filter((l) => l.loteId && Number(l.bags) > 0)
+  // destinação lote a lote OU uma geral pra todos (pedido do Arion,
+  // 12/09/2026): a da linha vence; em branco, herda a geral. Obrigatória
+  // como no formulário — cada ordem que vai sair precisa ter uma.
+  const destinacaoDe = (l: LinhaLote) => (l.destinacao ?? '').trim() || destinacao.trim()
+  const semDestinacao = validas.filter((l) => !destinacaoDe(l))
 
-  const setLinhas = (novas: { loteId: string; bags: string }[]) =>
-    rascunho.definir({ linhas: novas })
-  const atualizarLinha = (i: number, campo: 'loteId' | 'bags', valor: string) =>
+  const setLinhas = (novas: LinhaLote[]) => rascunho.definir({ linhas: novas })
+  const atualizarLinha = (i: number, campo: 'loteId' | 'bags' | 'destinacao', valor: string) =>
     setLinhas(linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
-  const adicionarLinha = () => setLinhas([...linhas, { loteId: '', bags: '' }])
+  const adicionarLinha = () => setLinhas([...linhas, { loteId: '', bags: '', destinacao: '' }])
   const removerLinha = (i: number) => setLinhas(linhas.filter((_, idx) => idx !== i))
 
   async function confirmar() {
-    if (!receita || validas.length === 0 || !destinacao.trim()) return
+    if (!receita || validas.length === 0 || semDestinacao.length > 0) return
     setEnviando(true)
     setErro(null)
     try {
       const numeros = await g.proximosNumerosProvisorios(validas.length)
       const comuns: Partial<g.NovaOrdem> = {
-        destinacao: destinacao.trim(),
         data_expedicao: dataExpedicao || null,
         maquina_id: maquinaId || null,
         data_prog: dataProg || null,
@@ -2142,6 +2147,7 @@ function ModalProgramarDemanda({
         embalagem,
         bags: Number(l.bags),
         lote_id: l.loteId,
+        destinacao: destinacaoDe(l),
         ...comuns,
       }))
       const r = await g.criarOrdensEmLote(lista)
@@ -2159,7 +2165,7 @@ function ModalProgramarDemanda({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
         <h3 className="flex flex-wrap items-center gap-2 text-base font-semibold">
           Programar — {cultivar} · {tratamento} · {embalagem}
           {cooperado && <Tag cor="alerta">cooperado</Tag>}
@@ -2223,6 +2229,18 @@ function ModalProgramarDemanda({
                       placeholder="bags"
                       className="w-24 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
                     />
+                    {/* destinação SÓ desta ordem — em branco herda a geral abaixo */}
+                    <input
+                      value={l.destinacao ?? ''}
+                      onChange={(e) => atualizarLinha(i, 'destinacao', e.target.value)}
+                      placeholder={destinacao.trim() ? `= ${destinacao.trim()}` : 'destinação'}
+                      title="Destinação desta ordem. Em branco, usa a destinação geral da leva."
+                      className={`w-40 rounded-lg border px-3 py-2 text-sm dark:bg-stone-800 ${
+                        l.loteId && Number(l.bags) > 0 && !destinacaoDe(l)
+                          ? 'border-red-400 dark:border-red-700'
+                          : 'border-stone-300 dark:border-stone-700'
+                      }`}
+                    />
                     {linhas.length > 1 && (
                       <button
                         type="button"
@@ -2264,12 +2282,13 @@ function ModalProgramarDemanda({
                 Para todas as ordens desta leva
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Campo rotulo="Destinação *">
+                <Campo rotulo="Destinação geral">
                   <input
                     value={destinacao}
                     onChange={(e) => rascunho.definir({ destinacao: e.target.value })}
                     placeholder="ex.: COMIGO, Multiplicação, Venda"
-                    className={`${INPUT} ${!destinacao.trim() ? 'border-red-400 dark:border-red-700' : ''}`}
+                    title="Vale para as ordens que não tiverem destinação própria na linha do lote"
+                    className={`${INPUT} ${semDestinacao.length > 0 ? 'border-red-400 dark:border-red-700' : ''}`}
                   />
                 </Campo>
                 <Campo rotulo="Expedição prevista (opcional)">
@@ -2301,8 +2320,10 @@ function ModalProgramarDemanda({
                   </div>
                 </Campo>
                 <Campo rotulo="Prioridade">
+                  {/* mesma altura dos inputs ao lado (py-2 + borda): a caixa
+                      ficava "flutuando" acima da linha da data */}
                   {podePriorizar ? (
-                    <label className="flex items-center gap-2 py-1.5 text-sm normal-case">
+                    <label className="flex items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm normal-case dark:border-stone-700">
                       <input
                         type="checkbox"
                         checked={urgente}
@@ -2311,13 +2332,17 @@ function ModalProgramarDemanda({
                       Urgente
                     </label>
                   ) : (
-                    <p className="py-1.5 text-sm text-stone-500">Normal</p>
+                    <p className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-500 dark:border-stone-800">
+                      Normal
+                    </p>
                   )}
                 </Campo>
               </div>
-              {!destinacao.trim() && (
+              {semDestinacao.length > 0 && (
                 <p className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
-                  Falta a destinação — é obrigatória na ordem.
+                  {semDestinacao.length === validas.length
+                    ? 'Falta a destinação — informe a geral, ou uma em cada linha de lote.'
+                    : `${semDestinacao.length} ordem(ns) sem destinação — preencha na linha do lote ou a geral.`}
                 </p>
               )}
             </div>
@@ -2332,7 +2357,7 @@ function ModalProgramarDemanda({
               <Botao onClick={onFechar}>Cancelar</Botao>
               <Botao
                 variante="primario"
-                disabled={enviando || !receita || validas.length === 0 || !destinacao.trim()}
+                disabled={enviando || !receita || validas.length === 0 || semDestinacao.length > 0}
                 onClick={confirmar}
               >
                 {enviando ? 'criando…' : `Criar ${validas.length || ''} ordem(ns)`}
