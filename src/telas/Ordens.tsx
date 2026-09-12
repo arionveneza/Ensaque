@@ -73,6 +73,8 @@ const LAYOUT_ORDENS: { coluna: string; obrigatoria: boolean; obs: string }[] = [
   { coluna: 'Quadra', obrigatoria: false, obs: 'Ex.: QD04. Aceita QD.' },
   { coluna: 'Maquina', obrigatoria: false, obs: 'TSI1 ou TSI2. Em branco, a ordem cai no pool para programar depois.' },
   { coluna: 'Dia', obrigatoria: false, obs: 'Data da programação, em 28/07/2026 ou 2026-07-28.' },
+  { coluna: 'Expedição', obrigatoria: false, obs: 'Data prevista do caminhão, mesmo formato do Dia. Só informativa.' },
+  { coluna: 'Urgente', obrigatoria: false, obs: 'SIM ou X marca a ordem como urgente. Em branco, normal.' },
 ]
 
 /**
@@ -101,11 +103,11 @@ async function baixarModeloOrdens(
       casas: 0,
     })),
     [
-      // programada, com endereço completo
+      // programada, com endereço completo, caminhão marcado e urgente
       ['79500-1', lote, receita, emb, 45, 'CLIENTE EXEMPLO', '',
-        'ARMAZEM C', 'BL01', 'QD04', maquina, hoje],
+        'ARMAZEM C', 'BL01', 'QD04', maquina, hoje, hoje, 'SIM'],
       // no pool e sem endereço: a logística preenche na separação
-      ['79500-2', outroLote, receita, emb, 30, '', 'SEM GRAFITE', '', '', '', '', ''],
+      ['79500-2', outroLote, receita, emb, 30, '', 'SEM GRAFITE', '', '', '', '', '', '', ''],
     ],
   )
 }
@@ -858,6 +860,16 @@ export default function Ordens() {
                           quadra: o.quadra,
                           maquina_id: o.maquinaId,
                           data_prog: o.dataProg,
+                          data_expedicao: o.dataExpedicao,
+                          // urgente pela planilha segue a mesma ação da caixa do
+                          // formulário: sem Priorizar, a coluna é ignorada
+                          ...(o.urgente && podePriorizar
+                            ? {
+                                prioridade: 'Urgente' as const,
+                                prioridade_por: usuario?.id ?? null,
+                                prioridade_em: new Date().toISOString(),
+                              }
+                            : {}),
                         }
                       })
                       const r = await g.criarOrdensEmLote(novas)
@@ -997,7 +1009,7 @@ export default function Ordens() {
               { texto: 'Endereço', className: 'hidden lg:table-cell' },
               '#Bags',
               { texto: '#Peso', onClick: () => alternarOrdenacao('peso'), ordem: setaOrdem('peso') },
-              { texto: 'Urgente', className: 'hidden lg:table-cell' },
+              { texto: 'Destaque', className: 'hidden lg:table-cell' },
               { texto: 'Status', onClick: () => alternarOrdenacao('status'), ordem: setaOrdem('status') },
               '',
             ]}
@@ -2764,7 +2776,27 @@ function FragmentoDia({
                         destaque na tela dela). */}
                     <p className="text-xs font-normal text-stone-500 lg:hidden">
                       {o.embalagem} · lote {o.lote_id}
-                      {o.data_expedicao && ` · exp. ${diaCurto(o.data_expedicao)}`}
+                      {/* mesma marca vermelha da coluna grande: no tablet esta
+                          sub-linha é o único lugar em que a expedição aparece */}
+                      {o.data_expedicao && (
+                        <>
+                          {' · '}
+                          <span
+                            className={
+                              o.data_prog && o.data_prog > o.data_expedicao
+                                ? 'font-semibold text-red-600 dark:text-red-400'
+                                : ''
+                            }
+                            title={
+                              o.data_prog && o.data_prog > o.data_expedicao
+                                ? 'Programada para DEPOIS da data do caminhão'
+                                : 'Expedição prevista'
+                            }
+                          >
+                            exp. {diaCurto(o.data_expedicao)}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </td>
                   <td className="px-2 py-1.5">{o.cultivar}</td>
@@ -2785,10 +2817,23 @@ function FragmentoDia({
                     {/* expedição prevista (12/09/2026) mora aqui, ao lado da
                         urgência: é o outro dado que diz "esta ordem tem
                         pressa", e a coluna já era a do destaque */}
-                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    {/* max-w-full: sem isso o inline-flex cresce até o texto
+                        inteiro do cliente e o truncate do filho nunca elipsa */}
+                    <span className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap">
                       {o.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
                       {o.data_expedicao && (
-                        <span className="text-xs" title="Expedição prevista">
+                        <span
+                          className={`text-xs ${
+                            o.data_prog && o.data_prog > o.data_expedicao
+                              ? 'font-semibold text-red-600 dark:text-red-400'
+                              : ''
+                          }`}
+                          title={
+                            o.data_prog && o.data_prog > o.data_expedicao
+                              ? 'Programada para DEPOIS da data do caminhão'
+                              : 'Expedição prevista'
+                          }
+                        >
                           exp. {diaCurto(o.data_expedicao)}
                         </span>
                       )}
@@ -3385,9 +3430,13 @@ function NovaOrdemForm({
               // prioridade só vai no payload quando muda (ou quando a ordem
               // nasce urgente): no UPDATE o gatilho exige a ação Priorizar
               // pra essas colunas, e mandá-las iguais já contaria como toque
+              // e só com a ação: um rascunho velho (salvo antes de alguém
+              // marcar urgente pelo botão da lista) mandaria prioridade sem o
+              // editor ter tocado nela — sem Priorizar o gatilho recusava a
+              // gravação inteira; com Priorizar desfazia a urgência em silêncio
               const eraUrgente = editando?.prioridade === 'Urgente'
               const prioridadeCampos =
-                (editando ? urgente !== eraUrgente : urgente)
+                podePriorizar && (editando ? urgente !== eraUrgente : urgente)
                   ? {
                       prioridade: (urgente ? 'Urgente' : 'Normal') as 'Normal' | 'Urgente',
                       prioridade_por: usuario?.id ?? null,

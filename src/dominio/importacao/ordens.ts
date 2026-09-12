@@ -22,6 +22,10 @@ export interface OrdemImportada {
   quadra: string | null
   maquinaId: string | null
   dataProg: string | null
+  /** Data prevista do caminhão (12/09/2026) — informativa, não é a programação. */
+  dataExpedicao: string | null
+  /** Coluna "Urgente": sim/x/1 marca a ordem como urgente já na criação. */
+  urgente: boolean
 }
 
 export interface ProblemaImportacao {
@@ -65,6 +69,14 @@ const SINONIMOS: Record<keyof OrdemImportada, string[]> = {
   quadra: ['quadra', 'qd'],
   maquinaId: ['maquina', 'maquinaid', 'tsi'],
   dataProg: ['dia', 'data', 'dataprog', 'dataprogramacao'],
+  dataExpedicao: ['expedicao', 'dataexpedicao', 'dataexp', 'expedicaoprevista', 'caminhao'],
+  urgente: ['urgente', 'prioridade', 'urgencia'],
+}
+
+/** "sim", "s", "x", "1", "true" e "urgente" marcam; vazio, "não", "0" e "normal" não. */
+const ehSim = (v: unknown): boolean => {
+  const s = normaliza(v)
+  return ['sim', 's', 'x', '1', 'true', 'urgente', 'ok'].includes(s)
 }
 
 function acharColunas(cabecalho: Linha): Partial<Record<keyof OrdemImportada, number>> {
@@ -87,15 +99,18 @@ export function ehPlanilhaDeOrdens(rows: Linha[]): boolean {
 
 const texto = (v: unknown) => String(v ?? '').trim()
 
-/** Aceita 2026-07-28, 28/07/2026 e a Date que o leitor de xlsx devolve. */
+/**
+ * Aceita 2026-07-28, 28/07/2026 e a Date que o leitor de xlsx devolve.
+ *
+ * A Date vem em UTC 00:00 (é assim que o read-excel-file converte o serial
+ * do Excel), então o dia sai dos componentes UTC — `getDate()` local, em
+ * UTC-3, devolvia o dia ANTERIOR: célula 30/09 gravava 29/09 (achado da
+ * revisão de 12/09/2026; mesma regra do `dia()` da Expedição).
+ */
 function dataIso(v: unknown): string | null {
   if (v == null || v === '') return null
   if (v instanceof Date) {
-    return [
-      v.getFullYear(),
-      String(v.getMonth() + 1).padStart(2, '0'),
-      String(v.getDate()).padStart(2, '0'),
-    ].join('-')
+    return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10)
   }
   const s = texto(v)
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
@@ -155,6 +170,13 @@ export function converterOrdens(rows: Linha[], ctx: ContextoImportacao): Resulta
     const dataProg = dataIso(diaTexto)
     if (diaTexto && !dataProg) erros.push(`data "${texto(diaTexto)}" não reconhecida`)
 
+    const expTexto = cols.dataExpedicao != null ? r[cols.dataExpedicao] : null
+    const dataExpedicao = dataIso(expTexto)
+    if (expTexto && !dataExpedicao) {
+      erros.push(`expedição "${texto(expTexto)}" não reconhecida`)
+    }
+    const urgente = cols.urgente != null ? ehSim(r[cols.urgente]) : false
+
     if (erros.length > 0) {
       problemas.push({ linha: numeroLinha, motivo: erros.join(' · ') })
       return
@@ -185,6 +207,8 @@ export function converterOrdens(rows: Linha[], ctx: ContextoImportacao): Resulta
       quadra: opcional(cols.quadra),
       maquinaId,
       dataProg,
+      dataExpedicao,
+      urgente,
     })
   })
 

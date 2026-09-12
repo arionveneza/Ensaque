@@ -52,6 +52,54 @@ describe('conversao de ordens', () => {
       quadra: null,
       maquinaId: 'TSI1',
       dataProg: '2026-07-28',
+      dataExpedicao: null,
+      urgente: false,
+    })
+  })
+
+  // 12/09/2026: as duas colunas novas do formulário também entram pela planilha
+  describe('expedição prevista e urgente', () => {
+    const CAB_EXP = [...CAB, 'Expedição', 'Urgente']
+    const base = ['1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', '', ''] as const
+
+    it('le a data de expedicao nos mesmos formatos do Dia', () => {
+      const r = converterOrdens(
+        [CAB_EXP,
+          linha(...base, '30/09/2026', ''),
+          linha('2', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', '', '', '2026-10-01', ''),
+          linha('3', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', '', '', new Date(Date.UTC(2026, 9, 2)), '')],
+        CTX,
+      )
+      expect(r.problemas).toHaveLength(0)
+      expect(r.ordens.map((o) => o.dataExpedicao)).toEqual(['2026-09-30', '2026-10-01', '2026-10-02'])
+    })
+
+    it('expedicao ilegivel e erro da linha, nao silencio', () => {
+      const r = converterOrdens([CAB_EXP, linha(...base, 'semana que vem', '')], CTX)
+      expect(r.ordens).toHaveLength(0)
+      expect(r.problemas[0].motivo).toMatch(/expedição/)
+    })
+
+    it('SIM, X, 1 e URGENTE marcam urgente; vazio, NAO e NORMAL nao', () => {
+      const marca = ['SIM', 'x', 1, 'Urgente', 'sim ']
+      const naoMarca = ['', 'NÃO', 'nao', 0, 'Normal', null]
+      for (const v of marca) {
+        expect(converterOrdens([CAB_EXP, linha(...base, '', v)], CTX).ordens[0].urgente).toBe(true)
+      }
+      for (const v of naoMarca) {
+        expect(converterOrdens([CAB_EXP, linha(...base, '', v)], CTX).ordens[0].urgente).toBe(false)
+      }
+    })
+
+    it('sem as colunas, a ordem entra normal e sem expedicao', () => {
+      const r = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10)], CTX)
+      expect(r.ordens[0]).toMatchObject({ dataExpedicao: null, urgente: false })
+    })
+
+    it('aceita os nomes Data Exp e Prioridade no cabecalho', () => {
+      const cab = [...CAB, 'Data Exp', 'Prioridade']
+      const r = converterOrdens([cab, linha(...base, '2026-10-05', 'urgente')], CTX)
+      expect(r.ordens[0]).toMatchObject({ dataExpedicao: '2026-10-05', urgente: true })
     })
   })
 
@@ -65,10 +113,20 @@ describe('conversao de ordens', () => {
 
   it('aceita Date vinda do leitor de xlsx', () => {
     const r = converterOrdens(
-      [CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', '', new Date(2026, 6, 28))],
+      // como o leitor devolve: meia-noite UTC, não local
+      [CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', '', new Date(Date.UTC(2026, 6, 28)))],
       CTX,
     )
     expect(r.ordens[0].dataProg).toBe('2026-07-28')
+  })
+
+  // em UTC-3 o getDate() local de 2026-09-30T00:00Z era 29 — o dia ANTERIOR
+  it('Date em UTC nao cai um dia para tras no fuso do Brasil', () => {
+    const r = converterOrdens(
+      [CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', '', new Date('2026-09-30T00:00:00Z'))],
+      CTX,
+    )
+    expect(r.ordens[0].dataProg).toBe('2026-09-30')
   })
 
   it('rejeita lote que nao existe, em vez de criar ordem orfa', () => {

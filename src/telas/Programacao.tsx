@@ -893,6 +893,20 @@ export default function Programacao() {
                               pelo Arion, 13/08/2026) */}
                           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
                             {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
+                            {/* expedição prevista (12/09/2026): é aqui que o PCP
+                                escolhe o dia, então o caminhão precisa estar à
+                                vista — e programar DEPOIS dele é o erro que a
+                                etiqueta vermelha denuncia */}
+                            {ord.data_expedicao && (
+                              <span className="text-xs text-stone-500" title="Expedição prevista">
+                                exp. {diaCurto(ord.data_expedicao)}
+                              </span>
+                            )}
+                            {ord.data_expedicao && ord.data_prog && ord.data_prog > ord.data_expedicao && (
+                              <span title="A máquina está programada para depois da data do caminhão">
+                                <Tag cor="perigo">após a expedição</Tag>
+                              </span>
+                            )}
                             <Tag cor={corDoStatus(ord.status_efetivo)} className="min-w-36 text-center">
                               {ord.status_efetivo}
                             </Tag>

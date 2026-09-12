@@ -12,9 +12,17 @@
 --
 -- Data de expedição é coluna nova, opcional. Fica FORA da lista `ignorar`
 -- do fn_ordens_por_acao de propósito: mudar exige ordens/editar, igual a
--- cliente/observação. E fica FORA do fn_ordem_imutavel também de propósito:
--- a data do caminhão pode mudar depois que a ordem já rodou, e corrigi-la
--- não distorce conta nenhuma (mesma lógica do renumerar).
+-- cliente/observação. E fica FORA do fn_ordem_imutavel porque não entra em
+-- cálculo nenhum — hoje, porém, só é editável pelo formulário, enquanto a
+-- ordem não foi iniciada (MATRIZ_STATUS.editar); um caminho para corrigir a
+-- data do caminhão em ordem já rodada ficou como próximo passo.
+--
+-- ATENÇÃO ao recriar v_ordens: `create or replace view` ZERA as reloptions,
+-- e a view volta a rodar como o dono (postgres, bypassrls) — o RLS de
+-- `ordens` some e a chave anon lê a produção inteira pela view. A primeira
+-- versão desta migração esqueceu o `alter view ... security_invoker` e ficou
+-- assim por cerca de uma hora em 12/09/2026 (pego na revisão, contido no
+-- banco na hora). Toda recriação repete o alter e confere no fim.
 -- ============================================================
 
 set search_path = tsi, public;
@@ -88,8 +96,14 @@ select o.id,
   join embalagens e on e.codigo = o.embalagem
   join receitas r on r.id = o.receita_id;
 
+-- a view respeita o RLS de quem consulta, não o do dono (ver cabeçalho)
+alter view v_ordens set (security_invoker = true);
+
 -- conferência
 select
+  (select position('security_invoker=true' in array_to_string(c.reloptions, ',')) > 0
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'tsi' and c.relname = 'v_ordens') as security_invoker,
   (select count(*) from information_schema.columns
     where table_schema = 'tsi' and table_name = 'ordens' and column_name = 'data_expedicao') as coluna,
   (select count(*) from information_schema.columns

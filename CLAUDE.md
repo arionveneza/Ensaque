@@ -194,11 +194,25 @@ colunas de prioridade só entram no payload quando mudam, porque o gatilho
 `ordens.data_expedicao` (migração `ordem-data-expedicao.sql`) é a **data prevista do
 caminhão**, opcional e informativa — NÃO é `data_prog` (quando a máquina roda). Fica fora
 da lista `ignorar` do `fn_ordens_por_acao` (mudar exige `ordens/editar`, como cliente) e
-fora do `fn_ordem_imutavel` (a data do caminhão pode mudar depois que a ordem rodou, e
-corrigi-la não distorce conta nenhuma). Aparece na lista (coluna do destaque, junto da
-etiqueta urgente), no detalhe, na folha impressa, no .xlsx e na folha do quadro. A
+fora do `fn_ordem_imutavel` porque não entra em cálculo nenhum — mas hoje só é editável
+pelo formulário, enquanto a ordem não foi iniciada (`MATRIZ_STATUS.editar`); corrigir a
+data do caminhão em ordem já rodada ficou como próximo passo (item no menu de ações, ao
+lado do renumerar). Aparece na lista (coluna **Destaque**, junto da etiqueta urgente, e na
+sub-linha do tablet), no detalhe, na folha impressa, no .xlsx e na folha do quadro. A
 `v_ordens` enumera colunas: coluna nova entra **no fim** do `select` (é a única forma que
-`create or replace view` aceita). A importação por planilha ainda não traz a coluna.
+`create or replace view` aceita). **Recriar view = repetir `alter view … set
+(security_invoker = true)` e conferir no fim**: `create or replace view` zera as
+reloptions, a view volta a rodar como `postgres` (bypassrls) e a chave anon lê a produção
+inteira por ela — aconteceu com a primeira versão de `ordem-data-expedicao.sql` por cerca
+de uma hora em 12/09/2026, pego pela revisão adversarial e contido no banco na hora.
+**Datas de célula do Excel saem em UTC**: `dataIso` da importação de ordens usa
+`toISOString().slice(0,10)`, nunca `getDate()` local (em UTC-3 gravava o dia anterior). A planilha de ordens ganhou as colunas opcionais
+**Expedição** (mesmos formatos do Dia; ilegível é erro da linha) e **Urgente** (SIM/X/1/
+URGENTE marcam; vazio/NÃO/NORMAL não) — a urgência pela planilha obedece à mesma ação
+Priorizar da caixa do formulário: sem ela, a coluna é ignorada. **Programada depois do
+caminhão** (`data_prog > data_expedicao`) ganha marca vermelha na lista de Ordens e a
+etiqueta "após a expedição" no cartão da Programação — é o erro que a data existe para
+evitar, e a Programação é onde o PCP escolhe o dia.
 
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
 1. **Iniciar** apenas *abre* a ordem para preparação. **Não** inicia o cronômetro.
