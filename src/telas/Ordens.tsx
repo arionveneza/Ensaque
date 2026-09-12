@@ -1721,20 +1721,31 @@ function PainelDemanda({
                           (ml-auto), em toda linha — antes o botão vinha logo
                           depois do "+N aguardando" e ficava numa posição
                           diferente a cada linha (pedido do Arion, 12/09/2026) */}
+                      {/* quatro VAGAS de largura fixa, sempre presentes (vazias
+                          quando não há o que mostrar): situação · aguardando ·
+                          na fila · Programar. Sem vaga, cada caixa caía numa
+                          coluna diferente conforme a linha tinha ou não as
+                          anteriores (pedido do Arion, 12/09/2026). */}
                       <div className="flex w-full items-center gap-1.5">
                         <Tag cor={COR_SITUACAO[s]} className="min-w-32 text-center">
                           {ROTULO_SITUACAO[s]}
                         </Tag>
-                        {!b.receita_cadastrada && (
-                          <Tag cor="alerta" className="min-w-32 text-center">sem receita</Tag>
-                        )}
-                        {aguardando > 0 && (
-                          <span title="Pedido aguardando liberação financeira que estoque e ordens ainda não cobrem — programar é adiantar essa venda">
-                            <Tag cor="alerta" className="min-w-32 text-center">
-                              +{inteiro(aguardando)} aguardando
+                        <span className="inline-flex w-32 shrink-0 justify-center">
+                          {aguardando > 0 && (
+                            <span title="Pedido aguardando liberação financeira que estoque e ordens ainda não cobrem — programar é adiantar essa venda">
+                              <Tag cor="alerta" className="min-w-32 text-center">
+                                +{inteiro(aguardando)} aguardando
+                              </Tag>
+                            </span>
+                          )}
+                        </span>
+                        <span className="inline-flex w-32 shrink-0 justify-center">
+                          {b.receita_cadastrada && naFilaTotal > 0 && (
+                            <Tag cor="info" className="min-w-32 text-center">
+                              na fila: {inteiro(naFilaTotal)} bg
                             </Tag>
-                          </span>
-                        )}
+                          )}
+                        </span>
                         {/* programa o que falta de verdade E o que aguarda
                             aprovação (pedido do Arion, 12/09/2026 — antes só a
                             falta), sempre com receita cadastrada (mesma trava de
@@ -1742,21 +1753,21 @@ function PainelDemanda({
                             trata os lotes) — pedido do Arion, 26/08/2026. Pode
                             programar em partes (ex.: cooperado e não-cooperado
                             separados), por isso o botão continua ativo enquanto
-                            sobrar algo pra fila. */}
-                        {b.receita_cadastrada && naFilaTotal > 0 && (
-                          <Tag cor="info" className="min-w-32 text-center">
-                            na fila: {inteiro(naFilaTotal)} bg
-                          </Tag>
-                        )}
-                        {b.receita_cadastrada && restanteProgramar > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setPopover(b)}
-                            className="ml-auto w-28 shrink-0 rounded-md border border-stone-300 px-2 py-0.5 text-center text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
-                          >
-                            Programar
-                          </button>
-                        )}
+                            sobrar algo pra fila. Sem receita, a vaga do botão
+                            recebe o aviso — é o motivo de não haver botão. */}
+                        <span className="ml-auto inline-flex w-32 shrink-0 justify-end">
+                          {!b.receita_cadastrada ? (
+                            <Tag cor="alerta" className="min-w-32 text-center">sem receita</Tag>
+                          ) : restanteProgramar > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setPopover(b)}
+                              className="w-28 rounded-md border border-stone-300 px-2 py-0.5 text-center text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                            >
+                              Programar
+                            </button>
+                          ) : null}
+                        </span>
                       </div>
                     </td>
                   </tr>
