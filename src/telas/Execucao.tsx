@@ -20,6 +20,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import { ModalMotivoParada } from '@/componentes/ModalMotivoParada'
+import { diaCurto } from '@/componentes/ui'
 import ModalOrdem from './ModalOrdem'
 import CalculadoraCalda from './CalculadoraCalda'
 
@@ -392,6 +393,27 @@ function FragmentoMaquina({
                 {o.prioridade === 'Urgente' && (
                   <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:bg-red-950 dark:text-red-300">
                     urgente
+                  </span>
+                )}
+              </span>
+              {/* expedição prevista (12/09/2026): segunda vaga fixa, depois
+                  da urgência e antes do número — vermelha quando a máquina
+                  está programada para depois do caminhão */}
+              <span className="mr-1.5 inline-block w-16 align-middle text-xs font-normal">
+                {o.data_expedicao && (
+                  <span
+                    className={
+                      o.data_prog && o.data_prog > o.data_expedicao
+                        ? 'font-semibold text-red-600 dark:text-red-400'
+                        : 'text-stone-500 dark:text-stone-400'
+                    }
+                    title={
+                      o.data_prog && o.data_prog > o.data_expedicao
+                        ? 'Programada para DEPOIS da data do caminhão'
+                        : 'Expedição prevista'
+                    }
+                  >
+                    exp. {diaCurto(o.data_expedicao)}
                   </span>
                 )}
               </span>
