@@ -42,6 +42,7 @@ import { SEM_TSI } from '@/dominio/importacao/mapa'
 import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
+import { Destinacao } from '@/componentes/Destinacao'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
   corDoStatus, diaCurto, enderecoLote, inteiro, n,
@@ -157,7 +158,12 @@ export default function Ordens() {
   }
 
   const [busca, setBusca] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState<string[]>([])
+  // padrão: tudo marcado MENOS Apontada — a lançada no AGROTIS é registro,
+  // e abrir a tela com centenas delas escondia o trabalho do dia (pedido do
+  // Arion, 12/09/2026). Vazio continua valendo como "todas".
+  const [filtroStatus, setFiltroStatus] = useState<string[]>(() =>
+    ORDEM_STATUS.filter((s) => s !== 'Apontada'),
+  )
   const [filtroMaquina, setFiltroMaquina] = useState('')
 
   // dias abertos na lista — por padrão só o dia de produção atual (07:30 a
@@ -412,7 +418,9 @@ export default function Ordens() {
               imprimirTabela(
                 'Ordens de tratamento',
                 `${filtradas.length} ordem(ns)` +
-                  (filtroStatus.length > 0 ? ` · status ${filtroStatus.join(', ')}` : '') +
+                  (filtroStatus.length > 0 && !ehFiltroStatusPadrao(filtroStatus)
+                    ? ` · status ${filtroStatus.join(', ')}`
+                    : '') +
                   (filtroMaquina ? ` · ${filtroMaquina}` : '') +
                   (busca.trim() ? ` · busca "${busca.trim()}"` : ''),
                 ['Dia', 'Máq.', 'Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.',
@@ -938,6 +946,7 @@ export default function Ordens() {
         )}
         lotes={lotes}
         receitas={receitas}
+        maquinas={maquinas}
         onProgramado={recarregar}
       />
 
@@ -1373,6 +1382,7 @@ function PainelDemanda({
   foraDoBalanco,
   lotes,
   receitas,
+  maquinas,
   onProgramado,
 }: {
   balanco: BalancoLinha[]
@@ -1380,6 +1390,7 @@ function PainelDemanda({
   foraDoBalanco: Set<string>
   lotes: LoteSementeLinha[]
   receitas: ReceitaCompleta[]
+  maquinas: api.LinhaMaquina[]
   onProgramado: () => void
 }) {
   /** Item da fila sendo programado agora — abre o modal de divisão por lote. */
@@ -1825,6 +1836,7 @@ function PainelDemanda({
           cooperado={programando.cooperado}
           lotes={lotes}
           receitas={receitas}
+          maquinas={maquinas}
           onFechar={() => setProgramando(null)}
           // só atualiza a lista por trás — o modal continua aberto mostrando
           // o resultado (nºs provisórios, o que não pôde ser criado) até a
@@ -2046,7 +2058,7 @@ function PainelFilaProgramacao({
  * aqui (pedido do Arion, 25/08/2026).
  */
 function ModalProgramarDemanda({
-  id, cultivar, tratamento, embalagem, alvo, cooperado, lotes, receitas, onFechar, onCriado,
+  id, cultivar, tratamento, embalagem, alvo, cooperado, lotes, receitas, maquinas, onFechar, onCriado,
 }: {
   id: string
   cultivar: string
@@ -2056,10 +2068,17 @@ function ModalProgramarDemanda({
   cooperado: boolean
   lotes: LoteSementeLinha[]
   receitas: ReceitaCompleta[]
+  maquinas: api.LinhaMaquina[]
   onFechar: () => void
   onCriado: () => void
 }) {
   const receita = receitas.find((r) => r.nome === tratamento)
+  // os mesmos campos do formulário de ordem, valendo pra TODAS as ordens
+  // desta leva (12/09/2026, pedido do Arion: "senão preciso programar e
+  // depois abrir ordem por ordem pra ajustar"). Urgente segue a ação
+  // Priorizar, como no formulário.
+  const { usuario, permitido } = useAuth()
+  const podePriorizar = permitido('ordens', 'priorizar')
   // SEM filtrar por status: `lotes_semente.status` (Em estoque/Baixado) serve
   // só à Expedição (saldo de semente branca) — não decide se uma ordem pode
   // produzir (CLAUDE.md §1, Lotes de semente). Um lote já Baixado por causa
@@ -2071,11 +2090,18 @@ function ModalProgramarDemanda({
     () => lotes.filter((l) => l.cultivar === cultivar),
     [lotes, cultivar],
   )
-  const rascunho = useRascunho<{ linhas: { loteId: string; bags: string }[] }>(
-    chaveProgramar(id),
-    { linhas: [{ loteId: '', bags: '' }] },
-  )
-  const linhas = rascunho.valor.linhas
+  const rascunho = useRascunho<{
+    linhas: { loteId: string; bags: string }[]
+    destinacao: string
+    urgente: boolean
+    dataExpedicao: string
+    maquinaId: string
+    dataProg: string
+  }>(chaveProgramar(id), {
+    linhas: [{ loteId: '', bags: '' }],
+    destinacao: '', urgente: false, dataExpedicao: '', maquinaId: '', dataProg: '',
+  })
+  const { linhas, destinacao, urgente, dataExpedicao, maquinaId, dataProg } = rascunho.valor
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<g.ResultadoLote | null>(null)
@@ -2083,17 +2109,32 @@ function ModalProgramarDemanda({
   const total = linhas.reduce((a, l) => a + (Number(l.bags) || 0), 0)
   const validas = linhas.filter((l) => l.loteId && Number(l.bags) > 0)
 
+  const setLinhas = (novas: { loteId: string; bags: string }[]) =>
+    rascunho.definir({ linhas: novas })
   const atualizarLinha = (i: number, campo: 'loteId' | 'bags', valor: string) =>
-    rascunho.substituir({ linhas: linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)) })
-  const adicionarLinha = () => rascunho.substituir({ linhas: [...linhas, { loteId: '', bags: '' }] })
-  const removerLinha = (i: number) => rascunho.substituir({ linhas: linhas.filter((_, idx) => idx !== i) })
+    setLinhas(linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
+  const adicionarLinha = () => setLinhas([...linhas, { loteId: '', bags: '' }])
+  const removerLinha = (i: number) => setLinhas(linhas.filter((_, idx) => idx !== i))
 
   async function confirmar() {
-    if (!receita || validas.length === 0) return
+    if (!receita || validas.length === 0 || !destinacao.trim()) return
     setEnviando(true)
     setErro(null)
     try {
       const numeros = await g.proximosNumerosProvisorios(validas.length)
+      const comuns: Partial<g.NovaOrdem> = {
+        destinacao: destinacao.trim(),
+        data_expedicao: dataExpedicao || null,
+        maquina_id: maquinaId || null,
+        data_prog: dataProg || null,
+        ...(urgente && podePriorizar
+          ? {
+              prioridade: 'Urgente' as const,
+              prioridade_por: usuario?.id ?? null,
+              prioridade_em: new Date().toISOString(),
+            }
+          : {}),
+      }
       const lista: g.NovaOrdem[] = validas.map((l, i) => ({
         numero: numeros[i],
         cultivar,
@@ -2101,6 +2142,7 @@ function ModalProgramarDemanda({
         embalagem,
         bags: Number(l.bags),
         lote_id: l.loteId,
+        ...comuns,
       }))
       const r = await g.criarOrdensEmLote(lista)
       setResultado(r)
@@ -2136,8 +2178,11 @@ function ModalProgramarDemanda({
         {resultado ? (
           <div className="mt-4">
             <Aviso gravidade={resultado.jaExistiam.length === 0 ? 'ok' : 'alerta'}>
-              {resultado.criadas} ordem(ns) criada(s) no pool, com número provisório (P…) —
-              ajuste o número e programe máquina/dia na tela de Programação.
+              {resultado.criadas} ordem(ns) criada(s) com número provisório (P…)
+              {maquinaId && dataProg
+                ? `, programada(s) em ${maquinaId} para ${diaCurto(dataProg)}`
+                : ' no pool — programe máquina/dia na tela de Programação'}
+              . Ajuste o número quando tiver o definitivo.
               {resultado.jaExistiam.length > 0 &&
                 ` ${resultado.jaExistiam.length} não criada(s), ver abaixo.`}
             </Aviso>
@@ -2212,6 +2257,71 @@ function ModalProgramarDemanda({
               {total > 0 && total < alvo && ' — o restante fica de fora, sem problema'}
             </p>
 
+            {/* o que vale pra TODAS as ordens desta leva — os mesmos campos do
+                formulário, pra não ter que abrir ordem por ordem depois */}
+            <div className="mt-4 rounded-md border border-stone-200 p-3 dark:border-stone-700">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-stone-500">
+                Para todas as ordens desta leva
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Campo rotulo="Destinação *">
+                  <input
+                    value={destinacao}
+                    onChange={(e) => rascunho.definir({ destinacao: e.target.value })}
+                    placeholder="ex.: COMIGO, Multiplicação, Venda"
+                    className={`${INPUT} ${!destinacao.trim() ? 'border-red-400 dark:border-red-700' : ''}`}
+                  />
+                </Campo>
+                <Campo rotulo="Expedição prevista (opcional)">
+                  <input
+                    type="date"
+                    value={dataExpedicao}
+                    onChange={(e) => rascunho.definir({ dataExpedicao: e.target.value })}
+                    className={INPUT}
+                  />
+                </Campo>
+                <Campo rotulo="Máquina e dia (opcional)">
+                  <div className="flex gap-2">
+                    <select
+                      value={maquinaId}
+                      onChange={(e) => rascunho.definir({ maquinaId: e.target.value })}
+                      className={`${INPUT} min-w-[5.5rem]`}
+                    >
+                      <option value="">pool</option>
+                      {maquinas.map((m) => (
+                        <option key={m.id} value={m.id}>{m.nome}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      value={dataProg}
+                      onChange={(e) => rascunho.definir({ dataProg: e.target.value })}
+                      className={INPUT}
+                    />
+                  </div>
+                </Campo>
+                <Campo rotulo="Prioridade">
+                  {podePriorizar ? (
+                    <label className="flex items-center gap-2 py-1.5 text-sm normal-case">
+                      <input
+                        type="checkbox"
+                        checked={urgente}
+                        onChange={(e) => rascunho.definir({ urgente: e.target.checked })}
+                      />
+                      Urgente
+                    </label>
+                  ) : (
+                    <p className="py-1.5 text-sm text-stone-500">Normal</p>
+                  )}
+                </Campo>
+              </div>
+              {!destinacao.trim() && (
+                <p className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
+                  Falta a destinação — é obrigatória na ordem.
+                </p>
+              )}
+            </div>
+
             {erro && (
               <div className="mt-2">
                 <Erro>{erro}</Erro>
@@ -2222,7 +2332,7 @@ function ModalProgramarDemanda({
               <Botao onClick={onFechar}>Cancelar</Botao>
               <Botao
                 variante="primario"
-                disabled={enviando || !receita || validas.length === 0}
+                disabled={enviando || !receita || validas.length === 0 || !destinacao.trim()}
                 onClick={confirmar}
               >
                 {enviando ? 'criando…' : `Criar ${validas.length || ''} ordem(ns)`}
@@ -2240,6 +2350,11 @@ const ORDEM_STATUS = [
   'Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
   'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada', 'Apontada',
 ]
+
+/** O filtro de status como nasce (tudo menos Apontada) — não vale a pena listar no título da impressão. */
+function ehFiltroStatusPadrao(sel: string[]): boolean {
+  return sel.length === ORDEM_STATUS.length - 1 && !sel.includes('Apontada')
+}
 
 /**
  * Quantos bags de cada lote estão em cada etapa (programado, em produção,
@@ -2468,24 +2583,27 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                           : saldo
                             ? 'SAP: 0'
                             : '—'
+                      // todas as caixas de veredito com a MESMA largura (w-80): a
+                      // maior ("sem saldo · N bg abaixo") define o tamanho das outras
+                      const CAIXA = 'w-80 justify-center text-center'
                       const veredito = conf?.erro ? (
-                        <Tag cor="perigo" className="min-w-56 text-center">{conf.erro}</Tag>
+                        <Tag cor="perigo" className={CAIXA}>{conf.erro}</Tag>
                       ) : !saldo ? null : saldo.encontrados === 0 ? (
                         totalBagsLote > 0 ? (
-                          <Tag cor="perigo" className="min-w-56 text-center">
+                          <Tag cor="perigo" className={CAIXA}>
                             sem saldo no SAP · {n(totalBagsLote, 1)} bg abaixo do planejado
                           </Tag>
                         ) : (
-                          <Tag cor="alerta" className="min-w-56 text-center">sem saldo no SAP</Tag>
+                          <Tag cor="alerta" className={CAIXA}>sem saldo no SAP</Tag>
                         )
                       ) : dif === 0 ? (
-                        <Tag cor="ok" className="min-w-56 text-center">bate com o planejado</Tag>
+                        <Tag cor="ok" className={CAIXA}>bate com o planejado</Tag>
                       ) : dif < 0 ? (
-                        <Tag cor="perigo" className="min-w-56 text-center">
+                        <Tag cor="perigo" className={CAIXA}>
                           saldo {inteiro(-dif)} bg abaixo do planejado
                         </Tag>
                       ) : (
-                        <Tag cor="alerta" className="min-w-56 text-center">
+                        <Tag cor="alerta" className={CAIXA}>
                           saldo {inteiro(dif)} bg acima do planejado
                         </Tag>
                       )
@@ -2508,8 +2626,8 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                             >
                               {numero}
                             </span>
-                            <span className="inline-flex min-w-56 shrink-0 justify-center">{veredito}</span>
-                            <span className="ml-auto inline-flex w-32 shrink-0 justify-end">{acao}</span>
+                            <span className="inline-flex w-80 shrink-0 justify-center">{veredito}</span>
+                            <span className="ml-auto inline-flex w-36 shrink-0 justify-end whitespace-nowrap">{acao}</span>
                           </div>
                           {saldo && saldo.encontrados > 0 && (
                             <p className="text-xs text-stone-500 dark:text-stone-400">
@@ -2914,9 +3032,13 @@ function FragmentoDia({
                         ~130px) — todas as caixas de status ficam do mesmo
                         tamanho, em vez de cada uma no tamanho do próprio texto
                         (pedido do Arion, 25/08/2026) */}
-                    <Tag cor={corDoStatus(st)} className="min-w-36 text-center">
-                      {st}
-                    </Tag>
+                    <div className="flex flex-col items-start gap-1">
+                      <Tag cor={corDoStatus(st)} className="min-w-36 text-center">
+                        {st}
+                      </Tag>
+                      {/* destinação embaixo do status, mesma largura (Arion, 12/09/2026) */}
+                      <Destinacao valor={o.destinacao} />
+                    </div>
                   </td>
                   {/* um botão só por linha (pedido do Arion, 25/08/2026):
                       o varal de até 7 botões virou o menu "ações ▾" — as

@@ -6,6 +6,7 @@ import {
 } from '@/dominio/etapas'
 import { useRealtime } from '@/dados/useRealtime'
 import { Cartao, Erro, Pagina, Tabela, Tag, Vazio, corDoStatus, diaCurto } from '@/componentes/ui'
+import { Destinacao } from '@/componentes/Destinacao'
 
 /**
  * Visão geral: cada ordem com a régua de etapas —
@@ -118,9 +119,13 @@ export default function Etapas() {
                   </td>
                 ))}
                 <td className="px-2 py-1.5">
-                  <Tag cor={corDoStatus(o.status_efetivo)} className="min-w-36 text-center">
-                    {o.status_efetivo}
-                  </Tag>
+                  <div className="flex flex-col items-start gap-1">
+                    <Tag cor={corDoStatus(o.status_efetivo)} className="min-w-36 text-center">
+                      {o.status_efetivo}
+                    </Tag>
+                    {/* destinação embaixo do status, mesma largura (Arion, 12/09/2026) */}
+                    <Destinacao valor={o.destinacao} />
+                  </div>
                 </td>
               </tr>
             ))}

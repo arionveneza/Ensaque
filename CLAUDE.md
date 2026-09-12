@@ -214,6 +214,19 @@ caminhão** (`data_prog > data_expedicao`) ganha marca vermelha na lista de Orde
 etiqueta "após a expedição" no cartão da Programação — é o erro que a data existe para
 evitar, e a Programação é onde o PCP escolhe o dia.
 
+**Programar em lote pela demanda leva os mesmos campos do formulário** (12/09/2026):
+o `ModalProgramarDemanda` (Programar → fila → lotes) ganhou um bloco "para todas as ordens
+desta leva" — destinação (obrigatória, como no formulário), expedição prevista, máquina e
+dia, e urgente (só com Priorizar) — aplicado a cada ordem criada; antes tudo nascia no pool
+e o PCP abria ordem por ordem pra ajustar. **Destinação aparece embaixo do status** na
+lista de Ordens e na tela Etapas, sempre pelo componente `Destinacao`
+(`src/componentes/Destinacao.tsx`: pastilha neutra da largura da etiqueta de status,
+traço apagado quando vazia). **Filtro de status nasce com tudo marcado menos Apontada**
+(`ehFiltroStatusPadrao` evita listar isso no título da impressão). No cartão Bags por lote
+a coluna SAP tem três vagas fixas (número · veredito `w-80` · ação); no painel de demanda,
+quatro (situação · aguardando · na fila · Programar) — caixa de tamanho fixo em toda linha
+é o padrão visual que o Arion pediu, e vale para os próximos cartões.
+
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
 1. **Iniciar** apenas *abre* a ordem para preparação. **Não** inicia o cronômetro.
 2. Operador escolhe o **tanque de cada produto** (T1–T5 ou Transferidor) e informa o **peso
