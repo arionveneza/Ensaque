@@ -381,6 +381,17 @@ saldo = pedidos_APROVADOS − estoque_PA − ordens_abertas
   exatamente esse comportamento (migração `ordem-fora-do-estoque.sql`).
 - Avisos **fortes, nunca bloqueantes** (decisão do PCP): sem pedido de venda · estoque já cobre ·
   já planejado · excede o saldo · **estoque parado** (mesmo cultivar+tratamento em embalagem sem pedido).
+- **Pedido aguardando aprovação é programável** (12/09/2026, pedido do Arion: "só consigo
+  programar o que tem FALTA; o saldo com pedido aguardando não tem botão"). O pendente
+  continua **fora do `saldo`** (não vira falta nem alarme), mas o alvo do botão Programar é
+  `bagsProgramaveis = max(0, saldo + pendente)` — o firme que falta mais o pendente que
+  estoque e ordens não cobrem (uma sobra do firme abate o pendente antes). A parcela
+  pendente aparece como "+N aguardando" ao lado da situação, no popover ("faltam X do
+  aprovado e mais N aguardando"), no placar "Aguardando aprovação" e no chip de filtro (por
+  valor, não por situação: linha com falta firme E pendente também entra). Situação nova
+  **`aguardando`** só quando não há pedido firme, estoque nem ordem — antes essa linha saía
+  "coberto", em verde, o que era falso. Cooperado pendente entra no atalho do popover
+  quando o alvo inclui pendente.
 - Pedido de venda com código de tratamento **sem receita cadastrada** entra no balanço (a demanda
   existe), mas **não permite criar ordem** — a combinação é marcada "receita não cadastrada".
 

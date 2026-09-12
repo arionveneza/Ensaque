@@ -123,7 +123,11 @@ export function analisaDemanda(
     if (b.pedidoAprovado === 0) {
       avisos.push({
         tipo: 'sem-pedido',
-        mensagem: `Sem pedido de venda aprovado para ${chave.cultivar} + ${chave.tratamento} + ${chave.embalagem}.`,
+        mensagem:
+          `Sem pedido de venda aprovado para ${chave.cultivar} + ${chave.tratamento} + ${chave.embalagem}.` +
+          (b.pedidoPendente > 0
+            ? ` Há ${b.pedidoPendente} bg aguardando liberação financeira — a ordem adianta essa venda.`
+            : ''),
         bloqueia: false,
       })
     } else if (b.estoquePa >= b.pedidoAprovado) {
@@ -186,7 +190,13 @@ export function podeCriarOrdem(analise: AnaliseDemanda): boolean {
  * estoque sem comprador. São situações opostas e a segunda é a que ninguém
  * quer descobrir depois de tratar.
  */
-export type SituacaoDemanda = 'descoberto' | 'coberto' | 'sobra' | 'sem-pedido'
+/**
+ * `aguardando` (12/09/2026): não há pedido APROVADO, mas há pedido aguardando
+ * liberação financeira e nada em estoque nem programado. Antes caía em
+ * `coberto` — verde, e sem botão Programar — e o PCP não conseguia adiantar
+ * a produção do que o comercial já vendeu (pedido do Arion).
+ */
+export type SituacaoDemanda = 'descoberto' | 'coberto' | 'sobra' | 'sem-pedido' | 'aguardando'
 
 /**
  * O recorte do balanço que classifica a situação — vem da v_balanco_demanda.
@@ -200,10 +210,14 @@ export type SituacaoDemanda = 'descoberto' | 'coberto' | 'sobra' | 'sem-pedido'
  */
 export interface LinhaBalanco {
   pedido_aprovado: number
+  /** Aguardando liberação financeira: fora do `saldo`, mas programável (12/09/2026). */
+  pedido_pendente?: number
   estoque_pa: number
   ordens_abertas: number
   saldo: number
 }
+
+const pendente = (l: LinhaBalanco): number => Math.max(0, l.pedido_pendente ?? 0)
 
 /**
  * `sem-pedido` é separado de `sobra` de propósito: sobra é excesso sobre um
@@ -211,8 +225,10 @@ export interface LinhaBalanco {
  * ninguém comprou — 100% de excesso, e o caso mais grave.
  */
 export function situacaoDemanda(l: LinhaBalanco): SituacaoDemanda {
-  if (l.pedido_aprovado <= 0)
-    return l.estoque_pa + l.ordens_abertas > 0 ? 'sem-pedido' : 'coberto'
+  if (l.pedido_aprovado <= 0) {
+    if (l.estoque_pa + l.ordens_abertas > 0) return 'sem-pedido'
+    return pendente(l) > 0 ? 'aguardando' : 'coberto'
+  }
   if (l.saldo > 0) return 'descoberto'
   if (l.saldo < 0) return 'sobra'
   return 'coberto'
@@ -224,6 +240,23 @@ export const bagsFaltando = (l: LinhaBalanco): number => Math.max(0, l.saldo)
 /** Bags que passam do pedido aprovado: estoque + programado que vai sobrar. */
 export const bagsSobrando = (l: LinhaBalanco): number => Math.max(0, -l.saldo)
 
+/**
+ * Tudo que dá pra programar nesta combinação: o que falta pro pedido firme
+ * MAIS o pedido aguardando aprovação que estoque e ordens ainda não cobrem.
+ * O saldo já desconta estoque e ordens do aprovado, então somar o pendente a
+ * ele é o mesmo que refazer a conta com o pedido total — e uma sobra do
+ * firme abate o pendente antes de pedir produção nova.
+ */
+export const bagsProgramaveis = (l: LinhaBalanco): number =>
+  Math.max(0, l.saldo + pendente(l))
+
+/**
+ * A parcela do programável que depende do financeiro liberar: é o aviso ao
+ * lado do botão ("+N aguardando"), pro PCP saber que está adiantando.
+ */
+export const bagsAguardandoDescoberto = (l: LinhaBalanco): number =>
+  Math.max(0, bagsProgramaveis(l) - bagsFaltando(l))
+
 export interface ResumoBalanco {
   /** Combinações e bags que faltam produzir. */
   faltando: number
@@ -234,6 +267,9 @@ export interface ResumoBalanco {
   /** Subconjunto do que sobra: sem nenhum pedido aprovado. */
   semPedido: number
   combosSemPedido: number
+  /** Pedido aguardando aprovação que estoque e ordens ainda não cobrem (12/09/2026). */
+  aguardando: number
+  combosAguardando: number
 }
 
 /**
@@ -246,12 +282,15 @@ export function resumoBalanco(linhas: LinhaBalanco[]): ResumoBalanco {
     faltando: 0, combosFaltando: 0,
     sobrando: 0, combosSobrando: 0,
     semPedido: 0, combosSemPedido: 0,
+    aguardando: 0, combosAguardando: 0,
   }
   for (const l of linhas) {
     const falta = bagsFaltando(l)
     const sobra = bagsSobrando(l)
+    const aguardando = bagsAguardandoDescoberto(l)
     if (falta > 0) { r.faltando += falta; r.combosFaltando++ }
     if (sobra > 0) { r.sobrando += sobra; r.combosSobrando++ }
+    if (aguardando > 0) { r.aguardando += aguardando; r.combosAguardando++ }
     if (situacaoDemanda(l) === 'sem-pedido') {
       r.semPedido += l.estoque_pa + l.ordens_abertas
       r.combosSemPedido++

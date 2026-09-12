@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   analisaDemanda, bagsFaltando, bagsSobrando, balanco, podeCriarOrdem,
+  bagsAguardandoDescoberto, bagsProgramaveis,
   resumoBalanco, situacaoDemanda, type LinhaBalanco,
 } from './balanco'
 import type { LinhaDemanda, PedidoVenda } from './tipos'
@@ -166,6 +167,56 @@ describe('situacao da linha de balanco', () => {
   })
 })
 
+// 12/09/2026, pedido do Arion: "só consigo programar ordens que possuem
+// FALTA; para os saldos com pedido aguardando não tem o botão". O pendente
+// segue fora do saldo, mas vira alvo programável.
+describe('pedido aguardando aprovacao financeira', () => {
+  const comPendente = (pedido: number, pendente: number, estoque: number, abertas: number): LinhaBalanco =>
+    ({ ...bal(pedido, estoque, abertas), pedido_pendente: pendente })
+
+  it('so pendente, sem nada coberto: situacao aguardando, nao coberto', () => {
+    const l = comPendente(0, 11, 0, 0)
+    expect(situacaoDemanda(l)).toBe('aguardando')
+    expect(bagsFaltando(l)).toBe(0)
+    expect(bagsProgramaveis(l)).toBe(11)
+    expect(bagsAguardandoDescoberto(l)).toBe(11)
+  })
+
+  it('firme e pendente somam no programavel, e o aviso e so a parte pendente', () => {
+    const l = comPendente(10, 7, 0, 8) // falta 2 do firme + 7 pendente
+    expect(situacaoDemanda(l)).toBe('descoberto')
+    expect(bagsFaltando(l)).toBe(2)
+    expect(bagsProgramaveis(l)).toBe(9)
+    expect(bagsAguardandoDescoberto(l)).toBe(7)
+  })
+
+  it('sobra do firme abate o pendente antes de pedir producao nova', () => {
+    const l = comPendente(10, 7, 15, 0) // sobra 5; dos 7 pendentes, só 2 descobertos
+    expect(situacaoDemanda(l)).toBe('sobra')
+    expect(bagsProgramaveis(l)).toBe(2)
+    expect(bagsAguardandoDescoberto(l)).toBe(2)
+  })
+
+  it('pendente ja coberto por estoque nao pede nada', () => {
+    const l = comPendente(0, 5, 20, 0)
+    expect(situacaoDemanda(l)).toBe('sem-pedido') // estoque sem pedido firme continua alarme
+    expect(bagsProgramaveis(l)).toBe(0)
+  })
+
+  it('linha sem o campo (view antiga) se comporta como antes', () => {
+    expect(situacaoDemanda(bal(0, 0, 0))).toBe('coberto')
+    expect(bagsProgramaveis(bal(150, 20, 45))).toBe(85)
+  })
+
+  it('resumo conta o aguardando descoberto separado do que falta', () => {
+    const r = resumoBalanco([comPendente(0, 11, 0, 0), comPendente(10, 7, 0, 8), bal(100, 40, 60)])
+    expect(r.faltando).toBe(2)
+    expect(r.combosFaltando).toBe(1)
+    expect(r.aguardando).toBe(18)
+    expect(r.combosAguardando).toBe(2)
+  })
+})
+
 describe('resumo do balanco', () => {
   it('separa o total a produzir do total que vai sobrar', () => {
     const r = resumoBalanco([bal(150, 20, 45), bal(100, 40, 90), bal(80, 80, 0)])
@@ -186,6 +237,7 @@ describe('resumo do balanco', () => {
   it('painel sem carga nenhuma da tudo zero', () => {
     expect(resumoBalanco([])).toEqual({
       faltando: 0, combosFaltando: 0,
+      aguardando: 0, combosAguardando: 0,
       sobrando: 0, combosSobrando: 0,
       semPedido: 0, combosSemPedido: 0,
     })

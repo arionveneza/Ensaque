@@ -30,7 +30,8 @@ import {
 import { useRealtime } from '@/dados/useRealtime'
 import {
   analisaDemanda, bagsFaltando, bagsSobrando, ehSemTsi, podeCriarOrdem, resumoBalanco,
-  situacaoDemanda, type ChaveDemanda, type SituacaoDemanda,
+  situacaoDemanda, bagsProgramaveis, bagsAguardandoDescoberto,
+  type ChaveDemanda, type SituacaoDemanda,
 } from '@/dominio/balanco'
 import { diaDeProducao, pesoBagDaOrdemKg } from '@/dominio/calculos'
 import {
@@ -1481,7 +1482,12 @@ function PainelDemanda({
         ? balanco
         : filtro === 'sem-receita'
           ? balanco.filter((b) => !b.receita_cadastrada)
-          : balanco.filter((b) => situacaoDemanda(b) === filtro)
+          : filtro === 'aguardando'
+            // pelo valor, não pela situação: a linha com pedido firme E mais
+            // pendente descoberto também é "aguardando", mesmo marcada como
+            // falta produzir
+            ? balanco.filter((b) => bagsAguardandoDescoberto(b) > 0)
+            : balanco.filter((b) => situacaoDemanda(b) === filtro)
     if (cultivarSel.length > 0) lista = lista.filter((b) => cultivarSel.includes(b.cultivar))
     if (tratamentoSel.length > 0) lista = lista.filter((b) => tratamentoSel.includes(b.tratamento))
     return lista
@@ -1508,6 +1514,7 @@ function PainelDemanda({
     { id: 'descoberto', texto: `Falta produzir (${resumo.combosFaltando})`, ativo: resumo.combosFaltando > 0 },
     { id: 'sobra', texto: `Vai sobrar (${resumo.combosSobrando})`, ativo: resumo.combosSobrando > 0 },
     { id: 'sem-pedido', texto: `Sem pedido (${resumo.combosSemPedido})`, ativo: resumo.combosSemPedido > 0 },
+    { id: 'aguardando', texto: `Aguardando aprovação (${resumo.combosAguardando})`, ativo: resumo.combosAguardando > 0 },
     { id: 'sem-receita', texto: `Sem receita (${semReceita})`, ativo: semReceita > 0 },
   ]
 
@@ -1558,11 +1565,21 @@ function PainelDemanda({
       ) : (
         <>
           {/* totais: falta produzir vs vai sobrar */}
-          <div className="mb-3 grid gap-2 sm:grid-cols-3">
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Placar
               rotulo="Falta produzir"
               valor={resumo.faltando}
               detalhe={`${resumo.combosFaltando} combinação(ões) sem cobertura`}
+              cor="neutro"
+            />
+            <Placar
+              rotulo="Aguardando aprovação"
+              valor={resumo.aguardando}
+              detalhe={
+                resumo.aguardando > 0
+                  ? `${resumo.combosAguardando} combinação(ões) que dá pra adiantar`
+                  : 'nada travado no financeiro'
+              }
               cor="neutro"
             />
             <Placar
@@ -1653,9 +1670,13 @@ function PainelDemanda({
                 const s = situacaoDemanda(b)
                 const falta = bagsFaltando(b)
                 const sobra = bagsSobrando(b)
+                // o alvo do Programar é o firme que falta MAIS o pendente
+                // descoberto: antes só a falta contava, e a linha com pedido
+                // só aguardando aprovação ficava sem botão (Arion, 12/09/2026)
+                const aguardando = bagsAguardandoDescoberto(b)
                 const itensDaCombinacao = fila.filter((f) => mesmaCombinacao(f, b))
                 const naFilaTotal = itensDaCombinacao.reduce((a, it) => a + it.alvo, 0)
-                const restanteProgramar = Math.max(0, falta - naFilaTotal)
+                const restanteProgramar = Math.max(0, bagsProgramaveis(b) - naFilaTotal)
                 return (
                   <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
                     <td className="px-2 py-1.5">{b.cultivar}</td>
@@ -1703,14 +1724,23 @@ function PainelDemanda({
                         {!b.receita_cadastrada && (
                           <Tag cor="alerta" className="min-w-32 text-center">sem receita</Tag>
                         )}
-                        {/* só faz sentido programar quando falta de verdade, e só
-                            dá pra criar ordem com receita cadastrada (mesma trava
-                            de sempre) — pedido do Arion, 25/08/2026. Clicar só
-                            pergunta a quantidade (painel abaixo trata os lotes) —
-                            pedido do Arion, 26/08/2026. Pode programar em partes
-                            (ex.: cooperado e não-cooperado separados), por isso o
-                            botão continua ativo enquanto sobrar algo pra fila. */}
-                        {s === 'descoberto' && b.receita_cadastrada && (
+                        {aguardando > 0 && (
+                          <span
+                            className="whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400"
+                            title="Pedido aguardando liberação financeira que estoque e ordens ainda não cobrem — programar é adiantar essa venda"
+                          >
+                            +{inteiro(aguardando)} aguardando
+                          </span>
+                        )}
+                        {/* programa o que falta de verdade E o que aguarda
+                            aprovação (pedido do Arion, 12/09/2026 — antes só a
+                            falta), sempre com receita cadastrada (mesma trava de
+                            sempre). Clicar só pergunta a quantidade (painel abaixo
+                            trata os lotes) — pedido do Arion, 26/08/2026. Pode
+                            programar em partes (ex.: cooperado e não-cooperado
+                            separados), por isso o botão continua ativo enquanto
+                            sobrar algo pra fila. */}
+                        {b.receita_cadastrada && (naFilaTotal > 0 || restanteProgramar > 0) && (
                           <>
                             {naFilaTotal > 0 && (
                               <Tag cor="info" className="min-w-32 text-center">
@@ -1818,16 +1848,23 @@ function PopoverProgramar({
   onFechar: () => void
   onConfirmar: (bags: number, cooperado: boolean) => void
 }) {
-  const falta = bagsFaltando(linha)
+  const faltaFirme = bagsFaltando(linha)
+  // o alvo inclui o pedido aguardando aprovação que nada cobre (12/09/2026)
+  const aguardando = bagsAguardandoDescoberto(linha)
+  const falta = bagsProgramaveis(linha)
   const jaNaFila = itensDaCombinacao.reduce((a, it) => a + it.alvo, 0)
   const restante = Math.max(0, falta - jaNaFila)
 
   // quanto do que falta é cooperado vs. normal, descontando o que já foi
   // pra fila marcado com cada rótulo — assim o atalho não oferece de novo
-  // uma parcela que a pessoa já separou
+  // uma parcela que a pessoa já separou. O cooperado pendente entra junto,
+  // porque o alvo agora inclui o pendente.
   const jaCooperado = itensDaCombinacao.filter((it) => it.cooperado).reduce((a, it) => a + it.alvo, 0)
   const jaNaoCooperado = itensDaCombinacao.filter((it) => !it.cooperado).reduce((a, it) => a + it.alvo, 0)
-  const cooperadoTotal = Math.min(falta, linha.pedido_cooperado ?? 0)
+  const cooperadoTotal = Math.min(
+    falta,
+    (linha.pedido_cooperado ?? 0) + (aguardando > 0 ? (linha.pedido_cooperado_pendente ?? 0) : 0),
+  )
   const cooperadoRestante = Math.max(0, cooperadoTotal - jaCooperado)
   const naoCooperadoRestante = Math.max(0, falta - cooperadoTotal - jaNaoCooperado)
 
@@ -1847,7 +1884,15 @@ function PopoverProgramar({
           Programar — {linha.cultivar} · {linha.tratamento} · {linha.embalagem}
         </h3>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-          Faltam {inteiro(falta)} bags no total. Quantos você quer programar agora?
+          {aguardando > 0 ? (
+            <>
+              Faltam <b>{inteiro(faltaFirme)}</b> bags do pedido aprovado e mais{' '}
+              <b className="text-amber-700 dark:text-amber-400">{inteiro(aguardando)}</b>{' '}
+              aguardando liberação financeira. Quantos você quer programar agora?
+            </>
+          ) : (
+            <>Faltam {inteiro(falta)} bags no total. Quantos você quer programar agora?</>
+          )}
         </p>
 
         {cooperadoTotal > 0 && (cooperadoRestante > 0 || naoCooperadoRestante > 0) && (
@@ -2511,6 +2556,7 @@ const ROTULO_SITUACAO: Record<SituacaoDemanda, string> = {
   coberto: 'coberto',
   sobra: 'vai sobrar',
   'sem-pedido': 'sem pedido',
+  aguardando: 'aguardando aprovação',
 }
 
 const COR_SITUACAO: Record<SituacaoDemanda, 'neutro' | 'ok' | 'alerta' | 'perigo' | 'info'> = {
@@ -2518,6 +2564,7 @@ const COR_SITUACAO: Record<SituacaoDemanda, 'neutro' | 'ok' | 'alerta' | 'perigo
   coberto: 'ok',
   sobra: 'alerta',
   'sem-pedido': 'perigo',
+  aguardando: 'neutro',
 }
 
 function Placar({
