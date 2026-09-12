@@ -2955,7 +2955,14 @@ function FragmentoDia({
             {linhas.map((o) => {
               const st = o.status_efetivo as StatusEfetivo
               return (
-                <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                // respiro entre ordens (~2 mm, pedido do Arion, 12/09/2026): com
+                // a destinação embaixo do status a linha cresceu e as células
+                // de py-1.5 ficaram coladas — a variante [&>td] sobe o padding
+                // vertical de TODAS as células da linha sem tocar em cada uma
+                <tr
+                  key={o.id}
+                  className="border-t border-stone-100 [&>td]:py-3 [&>td]:align-middle dark:border-stone-800/60"
+                >
                   <td className="hidden px-2 py-1.5 text-stone-400 lg:table-cell">{o.seq ?? '—'}</td>
                   {/*
                     min-w: achado testando no celular (08/08/2026) — table-layout
