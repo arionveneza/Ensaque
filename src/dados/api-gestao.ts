@@ -33,6 +33,8 @@ export interface OrdemVisao {
   prioridade: 'Normal' | 'Urgente'
   maquina_id: string | null
   data_prog: string | null
+  /** Data prevista do caminhão (12/09/2026) — informativa. */
+  data_expedicao: string | null
   seq: number | null
   turno_id: number | null
   status: string
@@ -175,11 +177,23 @@ export interface NovaOrdem {
   bloco?: string | null
   quadra?: string | null
   prioridade?: 'Normal' | 'Urgente'
+  /**
+   * Quem marcou/desmarcou urgente e quando — o formulário grava junto com
+   * a prioridade (12/09/2026), igual ao botão "marcar urgente" da lista.
+   */
+  prioridade_por?: string | null
+  prioridade_em?: string | null
   maquina_id?: string | null
   data_prog?: string | null
   seq?: number | null
   /** Produção que não vira estoque (sacaria): fora do balanço de demanda. */
   fora_balanco?: boolean
+  /**
+   * Data prevista do caminhão desta produção (12/09/2026). Opcional e
+   * informativa: aparece na lista, no detalhe, na folha impressa e no .xlsx.
+   * Não é a data programada (`data_prog`, que é quando a máquina roda).
+   */
+  data_expedicao?: string | null
 }
 
 /**

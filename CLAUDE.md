@@ -186,6 +186,20 @@ digitados sem confirmação **não** bloqueiam (preparação é descartável); a
 
 **Chave anti-duplicidade da ordem:** `nº ordem + cultivar + tratamento + embalagem`.
 
+**Urgente e expedição prevista no formulário da ordem** (12/09/2026, pedido do Arion).
+Urgente já existia (`prioridade`, ação `ordens/priorizar`), mas era um clique à parte
+depois de criar; agora é caixa no formulário — só aparece com a ação, e no UPDATE as
+colunas de prioridade só entram no payload quando mudam, porque o gatilho
+`fn_ordens_por_acao` cobra Priorizar por elas (mandá-las iguais já contaria como toque).
+`ordens.data_expedicao` (migração `ordem-data-expedicao.sql`) é a **data prevista do
+caminhão**, opcional e informativa — NÃO é `data_prog` (quando a máquina roda). Fica fora
+da lista `ignorar` do `fn_ordens_por_acao` (mudar exige `ordens/editar`, como cliente) e
+fora do `fn_ordem_imutavel` (a data do caminhão pode mudar depois que a ordem rodou, e
+corrigi-la não distorce conta nenhuma). Aparece na lista (coluna do destaque, junto da
+etiqueta urgente), no detalhe, na folha impressa, no .xlsx e na folha do quadro. A
+`v_ordens` enumera colunas: coluna nova entra **no fim** do `select` (é a única forma que
+`create or replace view` aceita). A importação por planilha ainda não traz a coluna.
+
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
 1. **Iniciar** apenas *abre* a ordem para preparação. **Não** inicia o cronômetro.
 2. Operador escolhe o **tanque de cada produto** (T1–T5 ou Transferidor) e informa o **peso

@@ -218,6 +218,7 @@ export default function ModalOrdem({
       observacao: ordem.observacao,
       maquina: ordem.maquina_id,
       dia: ordem.data_prog ? diaCurto(ordem.data_prog) : null,
+      expedicao: ordem.data_expedicao ? diaCurto(ordem.data_expedicao) : null,
       urgente: ordem.prioridade === 'Urgente',
       pesoSementeT: num(kg / 1000, 2),
       quimicoTotalKg: quimicoTotal == null ? '—' : num(quimicoTotal),
@@ -467,6 +468,9 @@ export default function ModalOrdem({
 
           <dl className="mb-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <Info rotulo="Status" valor={status} destaque />
+            {ordem.data_expedicao && (
+              <Info rotulo="Expedição prevista" valor={diaCurto(ordem.data_expedicao)} />
+            )}
             <Info rotulo="Peso de semente" valor={`${num(kg / 1000, 2)} t`} />
             <Info
               rotulo="Químico total"

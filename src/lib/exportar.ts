@@ -213,6 +213,8 @@ export interface OrdemImpressao {
   observacao: string | null
   maquina: string | null
   dia: string | null
+  /** Data prevista do caminhão, já formatada (12/09/2026). */
+  expedicao?: string | null
   urgente: boolean
   pesoSementeT: string
   quimicoTotalKg: string
@@ -290,6 +292,7 @@ export function imprimirOrdemProducao(o: OrdemImpressao): void {
   ${campo('Endereço do lote', o.endereco)}
   ${campo('Máquina', o.maquina)}
   ${campo('Dia programado', o.dia)}
+  ${o.expedicao ? campo('Expedição prevista', o.expedicao) : ''}
   ${campo('Peso de semente', `${o.pesoSementeT} t`)}
   ${campo('Químico total', `${o.quimicoTotalKg} kg`)}
   ${campo('Peso do bag', `${o.pesoBagKg} kg`)}

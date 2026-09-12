@@ -384,7 +384,8 @@ export default function Ordens() {
                   { titulo: 'Quadra', largura: 10 },
                   { titulo: 'Bags', largura: 8, tipo: 'numero', casas: 0 },
                   { titulo: 'Peso (t)', largura: 10, tipo: 'numero', casas: 2 },
-                  { titulo: 'Cliente', largura: 28 }, { titulo: 'Status', largura: 20 },
+                  { titulo: 'Cliente', largura: 28 }, { titulo: 'Expedição', largura: 12 },
+                  { titulo: 'Urgente', largura: 9 }, { titulo: 'Status', largura: 20 },
                 ],
                 filtradas.map((o) => [
                   o.data_prog ?? '',
@@ -393,7 +394,8 @@ export default function Ordens() {
                   o.maquina_id ?? '', o.seq, o.numero, o.cultivar,
                   o.receita_nome, o.embalagem, o.lote_id,
                   o.armazem ?? '', o.bloco ?? '', o.quadra ?? '',
-                  o.bags, o.peso_t, o.cliente ?? '', o.status_efetivo,
+                  o.bags, o.peso_t, o.cliente ?? '', o.data_expedicao ?? '',
+                  o.prioridade === 'Urgente' ? 'sim' : '', o.status_efetivo,
                 ]),
               ).catch((e) => setErro(`exportar: ${e instanceof Error ? e.message : String(e)}`))
             }
@@ -411,11 +413,13 @@ export default function Ordens() {
                   (filtroMaquina ? ` · ${filtroMaquina}` : '') +
                   (busca.trim() ? ` · busca "${busca.trim()}"` : ''),
                 ['Dia', 'Máq.', 'Seq', 'Ordem', 'Cultivar', 'Tratamento', 'Emb.',
-                  'Lote', 'Endereço', 'Bags', 'Peso (t)', 'Status'],
+                  'Lote', 'Endereço', 'Bags', 'Peso (t)', 'Exp.', 'Status'],
                 filtradas.map((o) => [
-                  diaCurto(o.data_prog), o.maquina_id ?? '—', o.seq ?? '—', o.numero,
+                  diaCurto(o.data_prog), o.maquina_id ?? '—', o.seq ?? '—',
+                  o.prioridade === 'Urgente' ? `${o.numero} (URGENTE)` : o.numero,
                   o.cultivar, o.receita_nome, o.embalagem, o.lote_id,
-                  enderecoLote(o), o.bags, n(o.peso_t, 1), o.status_efetivo,
+                  enderecoLote(o), o.bags, n(o.peso_t, 1),
+                  o.data_expedicao ? diaCurto(o.data_expedicao) : '—', o.status_efetivo,
                 ]),
               )
             }
@@ -2760,6 +2764,7 @@ function FragmentoDia({
                         destaque na tela dela). */}
                     <p className="text-xs font-normal text-stone-500 lg:hidden">
                       {o.embalagem} · lote {o.lote_id}
+                      {o.data_expedicao && ` · exp. ${diaCurto(o.data_expedicao)}`}
                     </p>
                   </td>
                   <td className="px-2 py-1.5">{o.cultivar}</td>
@@ -2776,8 +2781,21 @@ function FragmentoDia({
                       conforme a linha tinha ou não a marcação). Cliente
                       continua existindo no formulário/exportação — só saiu
                       desta lista. */}
-                  <td className="hidden max-w-32 truncate px-2 py-1.5 text-stone-500 lg:table-cell">
-                    {o.prioridade === 'Urgente' ? <Tag cor="perigo">urgente</Tag> : (o.cliente ?? '—')}
+                  <td className="hidden max-w-40 px-2 py-1.5 text-stone-500 lg:table-cell">
+                    {/* expedição prevista (12/09/2026) mora aqui, ao lado da
+                        urgência: é o outro dado que diz "esta ordem tem
+                        pressa", e a coluna já era a do destaque */}
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      {o.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
+                      {o.data_expedicao && (
+                        <span className="text-xs" title="Expedição prevista">
+                          exp. {diaCurto(o.data_expedicao)}
+                        </span>
+                      )}
+                      {o.prioridade !== 'Urgente' && !o.data_expedicao && (
+                        <span className="truncate">{o.cliente ?? '—'}</span>
+                      )}
+                    </span>
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
                     {/* min-w = largura do maior rótulo ("Pronto para produzir",
@@ -2930,6 +2948,10 @@ function NovaOrdemForm({
   onCriada: (msg: string) => void
 }) {
   const editando = ordem ?? null
+  // urgente no formulário (12/09/2026): mesma ação Priorizar do botão da
+  // lista — sem ela a caixa não aparece, e o gatilho do banco recusaria
+  const { usuario, permitido } = useAuth()
+  const podePriorizar = permitido('ordens', 'priorizar')
 
   // O que foi digitado sobrevive a sair da tela: a navegação desmonta o
   // componente e o React descartaria tudo. Chave por ordem na edição, para
@@ -2950,6 +2972,8 @@ function NovaOrdemForm({
       maquinaId: editando?.maquina_id ?? '',
       dataProg: editando?.data_prog ?? '',
       foraBalanco: editando?.fora_balanco ?? false,
+      urgente: editando?.prioridade === 'Urgente',
+      dataExpedicao: editando?.data_expedicao ?? '',
     }),
     [editando, embalagens],
   )
@@ -2957,7 +2981,7 @@ function NovaOrdemForm({
   const { valor: f, definir, limpar, recuperado } = useRascunho(chaveRascunho, inicial)
   const {
     numero, loteId, receitaId, embalagem, bags, cliente, observacao, destinacao,
-    armazem, bloco, quadra, maquinaId, dataProg, foraBalanco,
+    armazem, bloco, quadra, maquinaId, dataProg, foraBalanco, urgente, dataExpedicao,
   } = f
 
   // rascunho com nº digitado reabre o formulário sozinho — senão o trabalho
@@ -3255,6 +3279,34 @@ function NovaOrdemForm({
             />
           </div>
         </Campo>
+        <Campo rotulo="Expedição prevista (opcional)">
+          <input
+            type="date"
+            value={dataExpedicao}
+            onChange={(e) => definir({ dataExpedicao: e.target.value })}
+            title="Data prevista do caminhão desta produção — informativa; não é a data programada da máquina"
+            className={INPUT}
+          />
+        </Campo>
+        <Campo rotulo="Prioridade">
+          {podePriorizar ? (
+            <label
+              className="flex items-center gap-2 py-1.5 text-sm normal-case"
+              title="Urgência é etiqueta: destaca a ordem em todas as telas e na folha impressa, mas não reordena a fila sozinha"
+            >
+              <input
+                type="checkbox"
+                checked={urgente}
+                onChange={(e) => definir({ urgente: e.target.checked })}
+              />
+              Urgente
+            </label>
+          ) : (
+            <p className="py-1.5 text-sm">
+              {urgente ? <Tag cor="perigo">urgente</Tag> : 'Normal'}
+            </p>
+          )}
+        </Campo>
         <Campo rotulo="Endereço do lote (opcional)">
           {/* sem sub-rótulo em cima de cada input: eles empurravam os campos
               pra baixo da linha dos vizinhos (achado do Arion, 25/08/2026) —
@@ -3330,6 +3382,18 @@ function NovaOrdemForm({
           onClick={async () => {
             try {
               setErro(null)
+              // prioridade só vai no payload quando muda (ou quando a ordem
+              // nasce urgente): no UPDATE o gatilho exige a ação Priorizar
+              // pra essas colunas, e mandá-las iguais já contaria como toque
+              const eraUrgente = editando?.prioridade === 'Urgente'
+              const prioridadeCampos =
+                (editando ? urgente !== eraUrgente : urgente)
+                  ? {
+                      prioridade: (urgente ? 'Urgente' : 'Normal') as 'Normal' | 'Urgente',
+                      prioridade_por: usuario?.id ?? null,
+                      prioridade_em: new Date().toISOString(),
+                    }
+                  : {}
               const dados = {
                 numero: numero.trim(),
                 cultivar: lote!.cultivar,
@@ -3345,7 +3409,9 @@ function NovaOrdemForm({
                 quadra: quadra.trim() || null,
                 maquina_id: maquinaId || null,
                 data_prog: dataProg || null,
+                data_expedicao: dataExpedicao || null,
                 fora_balanco: foraBalanco,
+                ...prioridadeCampos,
               }
               if (editando) {
                 await g.atualizarOrdem(editando.id, dados)
@@ -3356,7 +3422,10 @@ function NovaOrdemForm({
                 await g.criarOrdem(dados)
                 // limpa só o que é da ordem; endereço, lote e receita costumam
                 // repetir na próxima e ficam preenchidos
-                definir({ numero: '', bags: 0, cliente: '', observacao: '', destinacao: '' })
+                definir({
+                  numero: '', bags: 0, cliente: '', observacao: '', destinacao: '',
+                  urgente: false, dataExpedicao: '',
+                })
                 onCriada(`Ordem criada.`)
               }
             } catch (e) {
