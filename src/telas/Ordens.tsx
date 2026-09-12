@@ -2441,21 +2441,7 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                 </td>
                 {podeConferirSap && (
                   <td className="px-2 py-1.5">
-                    {!conf && (
-                      <Botao onClick={() => conferirNoSap(l.loteId)}>Conferir</Botao>
-                    )}
-                    {conf?.carregando && (
-                      <span className="text-xs text-stone-500 dark:text-stone-400">
-                        consultando…
-                      </span>
-                    )}
-                    {conf?.erro && (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Tag cor="perigo">{conf.erro}</Tag>
-                        <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
-                      </div>
-                    )}
-                    {conf?.saldo && (() => {
+                    {(() => {
                       // O SAP conta em bags DO LOTE (a embalagem original dele, ex.:
                       // big bag de 5 milhões) — "#Total" conta em bags DE CADA ORDEM,
                       // na embalagem que ELA escolheu. 2 ordens MEIOBAG (2,5 milhões)
@@ -2466,55 +2452,79 @@ function ResumoBagsPorLote({ ordens }: { ordens: OrdemVisao[] }) {
                       const totalBagsLote =
                         l.pesoBagLoteKg > 0 ? l.pesoKg / l.pesoBagLoteKg : l.total
                       const divergeDoTotal = Math.round(totalBagsLote) !== l.total
+                      const saldo = conf?.saldo
+                      // Ordem já produzida consumiu o lote, então divergência aqui é
+                      // ponto de atenção pra conferir, não veredito automático.
+                      const dif = saldo ? Math.round(saldo.quantidadeTotal - totalBagsLote) : 0
+
+                      // três VAGAS de largura fixa em toda linha — número do SAP ·
+                      // veredito · ação — em vez de caixas soltas que caíam em
+                      // colunas diferentes conforme o caso (pedido do Arion,
+                      // 12/09/2026). O que é explicação longa vai pra linha de baixo.
+                      const numero = conf?.carregando
+                        ? 'consultando…'
+                        : saldo && saldo.encontrados > 0
+                          ? `SAP: ${n(saldo.quantidadeTotal, 0)}${saldo.pms != null ? ` · PMS ${n(saldo.pms, 0)}` : ''}`
+                          : saldo
+                            ? 'SAP: 0'
+                            : '—'
+                      const veredito = conf?.erro ? (
+                        <Tag cor="perigo" className="min-w-56 text-center">{conf.erro}</Tag>
+                      ) : !saldo ? null : saldo.encontrados === 0 ? (
+                        totalBagsLote > 0 ? (
+                          <Tag cor="perigo" className="min-w-56 text-center">
+                            sem saldo no SAP · {n(totalBagsLote, 1)} bg abaixo do planejado
+                          </Tag>
+                        ) : (
+                          <Tag cor="alerta" className="min-w-56 text-center">sem saldo no SAP</Tag>
+                        )
+                      ) : dif === 0 ? (
+                        <Tag cor="ok" className="min-w-56 text-center">bate com o planejado</Tag>
+                      ) : dif < 0 ? (
+                        <Tag cor="perigo" className="min-w-56 text-center">
+                          saldo {inteiro(-dif)} bg abaixo do planejado
+                        </Tag>
+                      ) : (
+                        <Tag cor="alerta" className="min-w-56 text-center">
+                          saldo {inteiro(dif)} bg acima do planejado
+                        </Tag>
+                      )
+                      const acao = !conf ? (
+                        <Botao onClick={() => conferirNoSap(l.loteId)}>Conferir</Botao>
+                      ) : conf.carregando ? null : (
+                        <Botao onClick={() => conferirNoSap(l.loteId)}>
+                          {conf.erro || (saldo && saldo.encontrados === 0) ? 'tentar de novo' : 'conferir de novo'}
+                        </Botao>
+                      )
                       return (
                         <>
-                          {conf.saldo.encontrados === 0 && (
-                            <div className="flex flex-wrap items-center gap-1">
-                              <Tag cor="alerta">sem saldo no SAP</Tag>
-                              {totalBagsLote > 0 && (
-                                <Tag cor="perigo">
-                                  saldo {n(totalBagsLote, 1)} bg do lote ABAIXO do planejado
-                                </Tag>
-                              )}
-                              <Botao onClick={() => conferirNoSap(l.loteId)}>tentar de novo</Botao>
-                              <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
-                                {conf.saldo.totalLinhasSaldo === 0
-                                  ? 'a TSI_SALDOS devolveu 0 linhas no total (não é só este lote)'
-                                  : `a TSI_SALDOS trouxe ${inteiro(conf.saldo.totalLinhasSaldo)} linha(s); nenhuma com o lote "${l.loteId}"${conf.saldo.amostraBatchNum.length ? ` — ex.: ${conf.saldo.amostraBatchNum.join(', ')}` : ''}${conf.saldoTemMais ? ' · havia mais páginas não lidas' : ''}`}
-                              </p>
-                            </div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span
+                              className={`num-tabular inline-block w-36 shrink-0 font-semibold ${
+                                saldo && saldo.encontrados > 0
+                                  ? 'text-stone-900 dark:text-stone-100'
+                                  : 'text-stone-400 dark:text-stone-500'
+                              }`}
+                            >
+                              {numero}
+                            </span>
+                            <span className="inline-flex min-w-56 shrink-0 justify-center">{veredito}</span>
+                            <span className="ml-auto inline-flex w-32 shrink-0 justify-end">{acao}</span>
+                          </div>
+                          {saldo && saldo.encontrados > 0 && (
+                            <p className="text-xs text-stone-500 dark:text-stone-400">
+                              {saldo.tratamentoSap ?? '—'} · {saldo.itemCodes.join(', ') || '—'}
+                            </p>
                           )}
-                          {conf.saldo.encontrados > 0 && (
-                            <div className="text-xs">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <p className="num-tabular font-semibold text-stone-900 dark:text-stone-100">
-                                  SAP: {n(conf.saldo.quantidadeTotal, 0)}
-                                  {conf.saldo.pms != null && ` · PMS ${n(conf.saldo.pms, 0)}`}
-                                </p>
-                                {(() => {
-                                  // Ordem já produzida consumiu o lote, então divergência
-                                  // aqui é ponto de atenção pra conferir, não veredito
-                                  // automático.
-                                  const dif = Math.round(conf.saldo.quantidadeTotal - totalBagsLote)
-                                  if (dif === 0) return <Tag cor="ok">bate com o planejado</Tag>
-                                  if (dif < 0)
-                                    return (
-                                      <Tag cor="perigo">
-                                        saldo {inteiro(-dif)} bg ABAIXO do planejado
-                                      </Tag>
-                                    )
-                                  return (
-                                    <Tag cor="alerta">saldo {inteiro(dif)} bg acima do planejado</Tag>
-                                  )
-                                })()}
-                              </div>
-                              <p className="text-stone-500 dark:text-stone-400">
-                                {conf.saldo.tratamentoSap ?? '—'} · {conf.saldo.itemCodes.join(', ') || '—'}
-                              </p>
-                            </div>
+                          {saldo && saldo.encontrados === 0 && (
+                            <p className="text-[11px] text-stone-400 dark:text-stone-500">
+                              {saldo.totalLinhasSaldo === 0
+                                ? 'a TSI_SALDOS devolveu 0 linhas no total (não é só este lote)'
+                                : `a TSI_SALDOS trouxe ${inteiro(saldo.totalLinhasSaldo)} linha(s); nenhuma com o lote "${l.loteId}"${saldo.amostraBatchNum.length ? ` — ex.: ${saldo.amostraBatchNum.join(', ')}` : ''}${conf?.saldoTemMais ? ' · havia mais páginas não lidas' : ''}`}
+                            </p>
                           )}
-                          {divergeDoTotal && (
-                            <p className="w-full text-[11px] text-stone-400 dark:text-stone-500">
+                          {saldo && divergeDoTotal && (
+                            <p className="text-[11px] text-stone-400 dark:text-stone-500">
                               planejado em bags do lote: {n(totalBagsLote, 1)} (≠ #Total{' '}
                               {inteiro(l.total)} — tem ordem em embalagem diferente da do lote)
                             </p>
