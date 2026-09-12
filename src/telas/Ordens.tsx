@@ -1729,11 +1729,10 @@ function PainelDemanda({
                           <Tag cor="alerta" className="min-w-32 text-center">sem receita</Tag>
                         )}
                         {aguardando > 0 && (
-                          <span
-                            className="whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400"
-                            title="Pedido aguardando liberação financeira que estoque e ordens ainda não cobrem — programar é adiantar essa venda"
-                          >
-                            +{inteiro(aguardando)} aguardando
+                          <span title="Pedido aguardando liberação financeira que estoque e ordens ainda não cobrem — programar é adiantar essa venda">
+                            <Tag cor="alerta" className="min-w-32 text-center">
+                              +{inteiro(aguardando)} aguardando
+                            </Tag>
                           </span>
                         )}
                         {/* programa o que falta de verdade E o que aguarda
