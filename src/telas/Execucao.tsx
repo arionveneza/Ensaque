@@ -383,13 +383,19 @@ function FragmentoMaquina({
                 buraco de reprogramações antigas (3,3,4,7...), e o que o
                 operador precisa é a ordem de execução — igual à Programação */}
             <td className="px-2 py-2 text-stone-400 lg:px-3">{numerada ? idx + 1 : '—'}</td>
-            <td className="px-2 py-2 font-medium lg:px-3">
+            <td className="px-2 py-2 font-medium whitespace-nowrap lg:px-3">
+              {/* a etiqueta mora numa vaga de largura fixa ANTES do número, em
+                  toda linha (vazia quando normal): assim o número começa
+                  sempre na mesma coluna e a urgência fica alinhada, logo
+                  depois da sequência (pedido do Arion, 12/09/2026) */}
+              <span className="mr-1.5 inline-block w-14 align-middle">
+                {o.prioridade === 'Urgente' && (
+                  <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:bg-red-950 dark:text-red-300">
+                    urgente
+                  </span>
+                )}
+              </span>
               {o.numero}
-              {o.prioridade === 'Urgente' && (
-                <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:bg-red-950 dark:text-red-300">
-                  urgente
-                </span>
-              )}
             </td>
             <td className="hidden px-3 py-2 lg:table-cell">{o.cultivar}</td>
             <td className="px-2 py-2 lg:px-3">{o.receitas.nome}</td>

@@ -892,20 +892,33 @@ export default function Programacao() {
                               mover+setas depois dela (padronização pedida
                               pelo Arion, 13/08/2026) */}
                           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-                            {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
-                            {/* expedição prevista (12/09/2026): é aqui que o PCP
-                                escolhe o dia, então o caminhão precisa estar à
-                                vista — e programar DEPOIS dele é o erro que a
-                                etiqueta vermelha denuncia */}
-                            {ord.data_expedicao && (
-                              <span className="text-xs text-stone-500" title="Expedição prevista">
-                                exp. {diaCurto(ord.data_expedicao)}
-                              </span>
-                            )}
-                            {ord.data_expedicao && ord.data_prog && ord.data_prog > ord.data_expedicao && (
-                              <span title="A máquina está programada para depois da data do caminhão">
-                                <Tag cor="perigo">após a expedição</Tag>
-                              </span>
+                            {/* expedição prevista (12/09/2026) EM CIMA da etiqueta
+                                urgente, numa coluna fixa: lado a lado, a etiqueta
+                                pulava de lugar conforme a linha tinha ou não a
+                                data (pedido do Arion). É aqui que o PCP escolhe o
+                                dia, então o caminhão precisa estar à vista — e
+                                programar DEPOIS dele é o erro que o vermelho
+                                denuncia. */}
+                            {(ord.prioridade === 'Urgente' || ord.data_expedicao) && (
+                              <div className="flex min-w-20 flex-col items-center gap-0.5">
+                                {ord.data_expedicao && (
+                                  <span
+                                    className={`text-xs whitespace-nowrap ${
+                                      ord.data_prog && ord.data_prog > ord.data_expedicao
+                                        ? 'font-semibold text-red-600 dark:text-red-400'
+                                        : 'text-stone-500'
+                                    }`}
+                                    title={
+                                      ord.data_prog && ord.data_prog > ord.data_expedicao
+                                        ? 'A máquina está programada para DEPOIS da data do caminhão'
+                                        : 'Expedição prevista'
+                                    }
+                                  >
+                                    exp. {diaCurto(ord.data_expedicao)}
+                                  </span>
+                                )}
+                                {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
+                              </div>
                             )}
                             <Tag cor={corDoStatus(ord.status_efetivo)} className="min-w-36 text-center">
                               {ord.status_efetivo}

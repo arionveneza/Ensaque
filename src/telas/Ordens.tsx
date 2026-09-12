@@ -1514,7 +1514,7 @@ function PainelDemanda({
     { id: 'descoberto', texto: `Falta produzir (${resumo.combosFaltando})`, ativo: resumo.combosFaltando > 0 },
     { id: 'sobra', texto: `Vai sobrar (${resumo.combosSobrando})`, ativo: resumo.combosSobrando > 0 },
     { id: 'sem-pedido', texto: `Sem pedido (${resumo.combosSemPedido})`, ativo: resumo.combosSemPedido > 0 },
-    { id: 'aguardando', texto: `Aguardando aprovação (${resumo.combosAguardando})`, ativo: resumo.combosAguardando > 0 },
+    { id: 'aguardando', texto: `Ag. aprovação (${resumo.combosAguardando})`, ativo: resumo.combosAguardando > 0 },
     { id: 'sem-receita', texto: `Sem receita (${semReceita})`, ativo: semReceita > 0 },
   ]
 
@@ -1717,7 +1717,11 @@ function PainelDemanda({
                       {sobra > 0 ? inteiro(sobra) : <span className="text-stone-300">—</span>}
                     </td>
                     <td className="whitespace-nowrap px-2 py-1.5">
-                      <div className="flex items-center gap-1.5">
+                      {/* situação à esquerda, botão colado à DIREITA da grade
+                          (ml-auto), em toda linha — antes o botão vinha logo
+                          depois do "+N aguardando" e ficava numa posição
+                          diferente a cada linha (pedido do Arion, 12/09/2026) */}
+                      <div className="flex w-full items-center gap-1.5">
                         <Tag cor={COR_SITUACAO[s]} className="min-w-32 text-center">
                           {ROTULO_SITUACAO[s]}
                         </Tag>
@@ -1740,23 +1744,19 @@ function PainelDemanda({
                             programar em partes (ex.: cooperado e não-cooperado
                             separados), por isso o botão continua ativo enquanto
                             sobrar algo pra fila. */}
-                        {b.receita_cadastrada && (naFilaTotal > 0 || restanteProgramar > 0) && (
-                          <>
-                            {naFilaTotal > 0 && (
-                              <Tag cor="info" className="min-w-32 text-center">
-                                na fila: {inteiro(naFilaTotal)} bg
-                              </Tag>
-                            )}
-                            {restanteProgramar > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setPopover(b)}
-                                className="min-w-32 rounded-md border border-stone-300 px-2 py-0.5 text-center text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
-                              >
-                                Programar
-                              </button>
-                            )}
-                          </>
+                        {b.receita_cadastrada && naFilaTotal > 0 && (
+                          <Tag cor="info" className="min-w-32 text-center">
+                            na fila: {inteiro(naFilaTotal)} bg
+                          </Tag>
+                        )}
+                        {b.receita_cadastrada && restanteProgramar > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setPopover(b)}
+                            className="ml-auto w-28 shrink-0 rounded-md border border-stone-300 px-2 py-0.5 text-center text-xs font-medium text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                          >
+                            Programar
+                          </button>
                         )}
                       </div>
                     </td>
@@ -2556,7 +2556,7 @@ const ROTULO_SITUACAO: Record<SituacaoDemanda, string> = {
   coberto: 'coberto',
   sobra: 'vai sobrar',
   'sem-pedido': 'sem pedido',
-  aguardando: 'aguardando aprovação',
+  aguardando: 'ag. aprovação',
 }
 
 const COR_SITUACAO: Record<SituacaoDemanda, 'neutro' | 'ok' | 'alerta' | 'perigo' | 'info'> = {
