@@ -790,6 +790,8 @@ function AbaMaquinas({
     'Máquina',
     '#Capacidade (t/h)',
     '#Tanques',
+    '#Setup mesmo trat. (min)',
+    '#Setup troca (min)',
     ...turnos.map((t) => `#${t.nome} (${n(Number(t.horas), 1)} h)`),
     '#Cap. dia',
     '',
@@ -807,6 +809,10 @@ function AbaMaquinas({
           turno; a do dia é a soma dos dois. Um dia que roda um turno só rende apenas a coluna
           correspondente — quais turnos cada dia roda é definido na tela de Programação.
           Mudar a capacidade horária altera a ocupação e o tempo planejado de toda ordem futura.
+          O <strong>setup</strong> é o tempo entre uma ordem e a seguinte na mesma máquina:
+          o menor quando o tratamento se repete (mesmo com outro cultivar), o maior quando
+          muda, porque envolve limpeza. Entra só na ocupação da Programação — o tempo
+          planejado da ordem e o OEE não o somam, porque o setup real já é apontado como parada.
         </p>
       </Cartao>
 
@@ -837,6 +843,8 @@ function LinhaMaquinaEdit({
   const [nome, setNome] = useState(maquina.nome)
   const [cap, setCap] = useState(String(maquina.capacidade_th))
   const [tanques, setTanques] = useState(String(maquina.qtd_tanques))
+  const [setupMesmo, setSetupMesmo] = useState(String(maquina.setup_mesmo_min))
+  const [setupTroca, setSetupTroca] = useState(String(maquina.setup_troca_min))
 
   if (!edit) {
     return (
@@ -844,6 +852,8 @@ function LinhaMaquinaEdit({
         <td className="px-2 py-2 font-medium">{maquina.nome}</td>
         <td className="num-tabular px-2 py-2 text-right">{n(maquina.capacidade_th, 1)}</td>
         <td className="num-tabular px-2 py-2 text-right">{maquina.qtd_tanques}</td>
+        <td className="num-tabular px-2 py-2 text-right">{maquina.setup_mesmo_min}</td>
+        <td className="num-tabular px-2 py-2 text-right">{maquina.setup_troca_min}</td>
         {horas.map((h, i) => (
           <td key={i} className="num-tabular px-2 py-2 text-right whitespace-nowrap text-stone-600 dark:text-stone-300">
             {n(maquina.capacidade_th * h, 0)} t
@@ -863,6 +873,8 @@ function LinhaMaquinaEdit({
       <td className="px-2 py-2"><input value={nome} onChange={(e) => setNome(e.target.value)} className={`${INPUT} w-28`} /></td>
       <td className="px-2 py-2 text-right"><input value={cap} onChange={(e) => setCap(e.target.value)} className={`${INPUT} w-20 text-right`} /></td>
       <td className="px-2 py-2 text-right"><input value={tanques} onChange={(e) => setTanques(e.target.value)} className={`${INPUT} w-16 text-right`} /></td>
+      <td className="px-2 py-2 text-right"><input value={setupMesmo} onChange={(e) => setSetupMesmo(e.target.value)} inputMode="numeric" className={`${INPUT} w-16 text-right`} /></td>
+      <td className="px-2 py-2 text-right"><input value={setupTroca} onChange={(e) => setSetupTroca(e.target.value)} inputMode="numeric" className={`${INPUT} w-16 text-right`} /></td>
       {horas.map((_, i) => (
         <td key={i} />
       ))}
@@ -871,10 +883,22 @@ function LinhaMaquinaEdit({
         <button
           onClick={() =>
             acao(async () => {
+              const capTh = Number(cap.replace(',', '.'))
+              if (!(capTh > 0)) throw new Error('Capacidade (t/h) precisa ser maior que zero.')
+              const mesmo = Number(setupMesmo)
+              const troca = Number(setupTroca)
+              if (
+                setupMesmo.trim() === '' || setupTroca.trim() === '' ||
+                !Number.isInteger(mesmo) || !Number.isInteger(troca) || mesmo < 0 || troca < 0
+              ) {
+                throw new Error('Setup em minutos inteiros, zero ou mais.')
+              }
               await adm.salvarMaquina({
                 id: maquina.id, nome,
-                capacidade_th: Number(cap.replace(',', '.')),
+                capacidade_th: capTh,
                 qtd_tanques: Number(tanques),
+                setup_mesmo_min: mesmo,
+                setup_troca_min: troca,
               })
               setEdit(false)
             })

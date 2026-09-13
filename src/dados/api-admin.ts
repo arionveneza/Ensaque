@@ -32,6 +32,8 @@ export async function salvarMaquina(m: {
   nome: string
   capacidade_th: number
   qtd_tanques: number
+  setup_mesmo_min: number
+  setup_troca_min: number
   ativa?: boolean
 }): Promise<void> {
   const { error } = await supabase.from('maquinas').upsert(m, { onConflict: 'id' })

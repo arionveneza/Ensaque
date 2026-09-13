@@ -16,6 +16,7 @@ import {
   temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
+import { setupPrevistoDaOrdem } from '@/dominio/programacao'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
@@ -48,6 +49,15 @@ const CORES_STATUS: Record<StatusEfetivo, string> = {
   // Record precisa da entrada
   Excluida: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300',
 }
+
+/** Forma mínima da ordem para o cálculo de setup previsto. */
+const paraSetup = (o: LinhaOrdem) => ({
+  id: o.id,
+  receitaId: o.receita_id,
+  dataProg: o.data_prog,
+  seq: o.seq,
+})
+const setupDa = (m: LinhaMaquina) => ({ mesmoMin: m.setup_mesmo_min, trocaMin: m.setup_troca_min })
 
 export default function Execucao() {
   const { usuario, permitido } = useAuth()
@@ -508,6 +518,8 @@ function CardMaquina({
   const progresso =
     tempos && planejado ? Math.min(100, (tempos.brutoS / planejado) * 100) : null
   const estourou = tempos != null && planejado != null && tempos.brutoS > planejado
+  // informativo: o setup real entra como parada Planejada, não no planejado
+  const setupPrevistoMin = atual ? setupPrevistoDaOrdem(paraSetup(atual), ordens.map(paraSetup), setupDa(maquina)) : 0
 
   // máquina livre: NÃO aponta a próxima — a sequência é sugestão do PCP, e é
   // o operador quem decide qual ordem vai entrar (pedido da operação, 06/08)
@@ -693,6 +705,14 @@ function CardMaquina({
               <dd className={`num-tabular text-sm font-semibold ${estourou ? 'text-red-700 dark:text-red-400' : ''}`}>
                 {planejado == null ? '—' : formataHms(planejado)}
               </dd>
+              {setupPrevistoMin > 0 && (
+                <dd
+                  className="num-tabular text-[10px] text-stone-500"
+                  title="Setup previsto pela programação (troca de ordem). Não soma ao planejado: o setup real é apontado como parada."
+                >
+                  + setup previsto {setupPrevistoMin} min
+                </dd>
+              )}
             </div>
             <div className="bg-white/70 px-4 py-2 text-center dark:bg-stone-900/60">
               <dt className="text-[10px] uppercase tracking-wide text-stone-500">Paradas</dt>

@@ -8,6 +8,7 @@ import {
   tempoPlanejadoS, temposOrdem,
 } from '@/dominio/calculos'
 import { statusEfetivo } from '@/dominio/status'
+import { setupPrevistoDaOrdem } from '@/dominio/programacao'
 import { useRealtime } from '@/dados/useRealtime'
 
 /**
@@ -264,6 +265,13 @@ function PainelMaquina({
   const planejado = atual ? tempoPlanejadoS(pesoOrdemKg(atual) / 1000, maquina.capacidade_th) : null
   const progresso = tempos && planejado ? Math.min(100, (tempos.brutoS / planejado) * 100) : null
   const estourou = tempos != null && planejado != null && tempos.brutoS > planejado
+  const paraSetup = (o: LinhaOrdem) => ({ id: o.id, receitaId: o.receita_id, dataProg: o.data_prog, seq: o.seq })
+  const setupPrevistoMin = atual
+    ? setupPrevistoDaOrdem(paraSetup(atual), ordens.map(paraSetup), {
+        mesmoMin: maquina.setup_mesmo_min,
+        trocaMin: maquina.setup_troca_min,
+      })
+    : 0
 
   const borda = !atual
     ? paradaMaq
@@ -343,6 +351,7 @@ function PainelMaquina({
             </p>
             <p className="mt-1 num-tabular text-sm text-stone-500">
               planejado {planejado == null ? '—' : formataHms(planejado)}
+              {setupPrevistoMin > 0 && ` · setup previsto ${setupPrevistoMin} min`}
             </p>
             {progresso != null && (
               <div className="mt-3 h-2.5 w-full max-w-md overflow-hidden rounded-full bg-stone-800">

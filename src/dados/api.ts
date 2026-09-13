@@ -11,6 +11,10 @@ export interface LinhaMaquina {
   nome: string
   capacidade_th: number
   qtd_tanques: number
+  /** Setup entre ordens seguidas do MESMO tratamento (min) — só na Programação. */
+  setup_mesmo_min: number
+  /** Setup quando o tratamento MUDA (limpeza), em min — só na Programação. */
+  setup_troca_min: number
 }
 
 export interface LinhaMotivo {
@@ -123,7 +127,10 @@ function exigeLinha(contexto: string, linhas: unknown[] | null): void {
 
 export async function carregarCadastros() {
   const [maquinas, motivos, produtos] = await Promise.all([
-    supabase.from('maquinas').select('id, nome, capacidade_th, qtd_tanques').order('id'),
+    supabase
+      .from('maquinas')
+      .select('id, nome, capacidade_th, qtd_tanques, setup_mesmo_min, setup_troca_min')
+      .order('id'),
     supabase.from('motivos_parada').select('id, descricao, tipo').eq('ativo', true).order('descricao'),
     supabase.from('produtos_quimicos').select('id, codigo, nome, unidade, densidade'),
   ])

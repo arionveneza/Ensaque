@@ -34,7 +34,11 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   início até 17:30 → T1; depois → T2.
 - **Dia de produção** = 07:30 até 03:00 do dia seguinte. O turno 2 cruza a meia-noite e pertence
   ao dia que começou.
-- Capacidade/dia por máquina = 12 t/h × 19,5 h = **234 t**.
+- Capacidade/dia por máquina = 12 t/h × 19,5 h = **234 t** — nominal. **A Programação conta
+  em HORAS e cobra setup entre ordens** (13/09/2026, ver §3 Ocupação): cada máquina tem no
+  cadastro `setup_mesmo_min` (padrão 20 — a ordem seguinte tem o MESMO tratamento, mesmo
+  com outro cultivar) e `setup_troca_min` (padrão 40 — o tratamento muda, envolve limpeza);
+  sem setup antes da primeira ordem do dia (migração `setup-por-maquina.sql`).
 - **Quais turnos cada dia roda é do calendário** (decisão de 06/08/2026): nem todo dia tem os
   dois, e importa saber **qual** — só 1º são 10 h (120 t), só 2º são 9h30 (114 t). A tabela
   `dias_producao` (`turno1`/`turno2` booleanos) guarda **só a exceção**: dia sem linha roda os
@@ -347,14 +351,44 @@ silêncio: Execução, Painel TV e Expedição só atualizavam ao voltar o foco 
 migração `parada-de-maquina.sql` acrescenta as cinco mais a tabela nova. **Tabela nova que
 alguma tela assine precisa entrar na publicação na mesma migração.**
 
-### Ocupação
+### Ocupação (em horas, com setup — 13/09/2026)
 ```
-horas_do_dia           = Σ das horas dos turnos que o dia roda (2 → 19,5 · 1 → 10 · 0 → 0)
-capacidade_dia_máquina = 12 t/h × horas_do_dia          (234 t no dia cheio)
-ocupação = Σ peso das ordens da máquina no dia ÷ capacidade_dia
+horas_do_dia   = Σ das horas dos turnos que o dia roda (2 → 19,5 · 1 → 10 · 0 → 0)
+horas_da_fila  = Σ (peso_t ÷ capacidade_th)  +  Σ setup(anterior, atual) ÷ 60
+setup(anterior, atual) = 0 se não há anterior · setup_mesmo_min se receita igual · setup_troca_min se muda
+ocupação = horas_da_fila ÷ horas_do_dia            (a fila NA ORDEM DA SEQUÊNCIA gravada)
 ```
-Alerta >85% (âmbar) e >100% (vermelho, com opção de rebalancear). Dia de 0 turnos com ordem
-programada é **bloqueio** no checklist.
+Pedido do Arion: "hoje consideramos só a capacidade nominal; cada ordem diferente deve
+considerar 20 min de setup, e 40 quando muda o tratamento, porque envolve limpeza". Com ~5
+ordens/dia na TSI 1 isso é 6 a 13% de capacidade que a conta em toneladas prometia e não
+existia. Toda a lógica de `src/dominio/programacao.ts` passou para horas: `resumoHorasFila`
+(produção, setup, trocas, horas), `melhorSlot`/`autoProgramar` ("cabe" = a ordem entra NO
+FIM da fila e paga o setup contra a última), `rebalancearDia` (custo de cada movida é o que
+ela vale no destino), `reprogramarCascata` (a "anterior" acompanha a fila; a iniciada do dia
+é a primeira anterior), `checklistDoDia` (percentual em horas; a mensagem diz "X h em Y h,
+sendo N min de setup"). Alerta >85% (âmbar) e >100% (vermelho, com opção de rebalancear); dia
+de 0 turnos com ordem programada é **bloqueio**; máquina com t/h zero é bloqueio próprio, não
+"Infinity%". A célula da semana mostra "% · t · h", o título do dia "X t · Y h de Z h · P%
+(N min de setup)" e o tooltip conta ordens/trocas/setup.
+- **Onde o setup NÃO entra** (decisão do Arion): `tempoPlanejadoS`, `v_ordem_tempos.planejado_s`,
+  OEE/performance e o cartão Aproveitamento — o setup real já é apontado como parada
+  Planejada ("Setup / troca de receita", "Limpeza de maquina"); somá-lo ao planejado contaria
+  duas vezes e inflaria a performance. Execução e Painel TV mostram só a linha informativa
+  "+ setup previsto N min" (`setupPrevistoDaOrdem`: a ordem de maior seq abaixo, no mesmo dia
+  e máquina), sem somar à barra nem ao "estourou".
+- **Tela e domínio ordenam a fila IGUAL**: seq, e no empate o número da ordem
+  (`OrdemProgramavel.numero`, `filaDa`). Ordem criada já com máquina e dia nasce com seq
+  nulo; se cada lado desempatasse de um jeito, a célula mostraria um setup e o checklist
+  outro. Pelo mesmo motivo "Programar automaticamente" renumera a célula inteira (fila atual
+  + novas no fim), como o Encaixar já fazia — "maior seq + 1" punha a nova na frente das
+  sem seq, e o setup gravado não era o precificado.
+- **A ordem iniciada entra na carga** (`iniciada: true`, nunca candidata a mover): antes só
+  as mexíveis iam para checklist/Encaixar/Rebalancear, e a Em produção sumia da conta —
+  horas livres que a máquina não tinha. Iniciada não conta como "lote não baixado".
+- **Cartão "Programado por tratamento"** (mesmo pedido): toneladas, bags e ordens por
+  tratamento na semana à vista ou só no dia selecionado (`toneladasPorTratamento`); só ordens
+  com máquina e dia, Apontada fora (já virou estoque) — por isso o total pode não bater com a
+  soma das células quando há Apontada na semana.
 
 ### Reprogramação em cascata
 Empurra para a frente o que não foi feito, a partir de um dia escolhido. Duas regras valem mais
@@ -552,7 +586,8 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    agrupa cultivar+tratamento), **Encaixar**, **Rebalancear**, **Otimizar sequência**,
    **Reprogramar cascata**, **Checklist do dia**.
    A fila é exibida **só pela sequência gravada** — urgência é etiqueta, não reordena sozinha,
-   senão arrastar uma ordem normal para o topo parecia não funcionar.
+   senão arrastar uma ordem normal para o topo parecia não funcionar. Cartão **Programado por
+   tratamento** (semana/dia) e ocupação **em horas com setup** (§3) desde 13/09/2026.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.

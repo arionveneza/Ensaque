@@ -4,6 +4,11 @@
  * O critério que atravessa tudo é reduzir setup: agrupar ordens da mesma
  * receita (e, melhor ainda, da mesma receita + cultivar) na mesma máquina
  * evita troca de produto, que é parada planejada mas ainda assim é tempo.
+ *
+ * Desde 13/09/2026 a capacidade é contada em HORAS, e cada troca de ordem
+ * custa setup (20 min mesmo tratamento, 40 min quando muda — cadastro da
+ * máquina). Isso vale SÓ aqui, na programação: o tempo planejado da ordem e
+ * o OEE seguem sem setup, porque o setup real já é apontado como parada.
  */
 
 export interface OrdemProgramavel {
@@ -18,28 +23,57 @@ export interface OrdemProgramavel {
   dataProg: string | null
   seq: number | null
   /**
+   * Nº da ordem, só para desempatar a fila quando o seq falta ou repete —
+   * a tela ordena por (seq, número) e o domínio precisa ordenar IGUAL, senão
+   * a cadeia de setup dá um valor na célula e outro no checklist.
+   */
+  numero?: string
+  /**
    * A produção já tocou a ordem: não se move, mas continua ocupando a
-   * capacidade e a numeração do dia dela. Só a cascata precisa saber.
+   * capacidade e a numeração do dia dela. Entra na carga da célula (setup
+   * inclusive) e nunca é candidata a mover.
    */
   iniciada?: boolean
 }
 
+/**
+ * Minutos de setup entre duas ordens seguidas na mesma máquina (13/09/2026,
+ * regra do Arion): o MESMO tratamento paga `mesmoMin` (troca de ordem, mesmo
+ * com cultivar igual); tratamento DIFERENTE paga `trocaMin`, porque envolve
+ * limpeza. Não há setup antes da primeira ordem do dia. Vem do cadastro de
+ * cada máquina.
+ */
+export interface Setup {
+  mesmoMin: number
+  trocaMin: number
+}
+
+export const SETUP_PADRAO: Setup = { mesmoMin: 20, trocaMin: 40 }
+
 export interface MaquinaCapacidade {
   id: string
-  capacidadeDiaT: number
+  /** Capacidade nominal, t/h. */
+  capacidadeTh: number
+  /** Horas de operação num dia cheio; o calendário (`HorasDia`) refina por dia. */
+  horasDia: number
+  setup: Setup
 }
 
 /**
- * Capacidade em toneladas de uma máquina num dia. É função, e não número
- * fixo, porque nem todo dia roda os dois turnos — sábado costuma ter um só
- * e domingo nenhum (tabela `dias_producao`).
+ * Horas de operação de uma máquina num dia. É função, e não número fixo,
+ * porque nem todo dia roda os dois turnos — sábado costuma ter um só e
+ * domingo nenhum (tabela `dias_producao`).
+ *
+ * A capacidade passou a ser medida em HORAS, não em toneladas (13/09/2026):
+ * é o único jeito de o setup entre ordens entrar na conta — 20 ou 40 minutos
+ * não têm equivalente em toneladas que valha para toda máquina.
  */
-export type CapacidadeDia = (maquinaId: string, dia: string) => number
+export type HorasDia = (maquinaId: string, dia: string) => number
 
-const capacidadeFixa =
-  (maquinas: MaquinaCapacidade[]): CapacidadeDia =>
+const horasFixas =
+  (maquinas: MaquinaCapacidade[]): HorasDia =>
   (id) =>
-    maquinas.find((m) => m.id === id)?.capacidadeDiaT ?? 0
+    maquinas.find((m) => m.id === id)?.horasDia ?? 0
 
 /**
  * Quais turnos um dia roda. Importa saber QUAL, não quantos: um dia só de
@@ -79,6 +113,97 @@ export function trocasDeReceita(seq: { receitaId: string }[]): number {
   )
 }
 
+/** Setup que a ordem `atual` paga por entrar depois de `anterior`. */
+export function setupEntre(
+  anterior: { receitaId: string } | null | undefined,
+  atual: { receitaId: string },
+  setup: Setup,
+): number {
+  if (!anterior) return 0
+  return anterior.receitaId === atual.receitaId ? setup.mesmoMin : setup.trocaMin
+}
+
+/**
+ * Setup que a ordem `atual` deve pagar, olhando a ordem imediatamente
+ * anterior na fila do MESMO dia e máquina (maior seq abaixo da dela). Serve à
+ * Execução/Painel como linha informativa — NÃO entra no tempo planejado nem
+ * no OEE, porque o setup real é apontado como parada Planejada.
+ */
+export function setupPrevistoDaOrdem<
+  T extends { id: string; receitaId: string; dataProg: string | null; seq: number | null },
+>(atual: T, daMaquina: T[], setup: Setup): number {
+  const anterior = daMaquina
+    .filter(
+      (o) =>
+        o.id !== atual.id &&
+        o.dataProg === atual.dataProg &&
+        o.seq != null &&
+        atual.seq != null &&
+        o.seq < atual.seq,
+    )
+    .sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))[0]
+  return setupEntre(anterior ?? null, atual, setup)
+}
+
+export interface HorasFila {
+  /** Σ peso ÷ capacidade nominal. */
+  producaoH: number
+  /** Σ setup entre ordens consecutivas. */
+  setupMin: number
+  /** Trocas de tratamento na fila. */
+  trocas: number
+  /** producaoH + setupMin/60 — o que a fila realmente ocupa. */
+  horas: number
+}
+
+/**
+ * Quanto uma fila ocupa, NA ORDEM EM QUE VAI RODAR (quem chama ordena por
+ * seq; aqui a lista é tomada como está). Máquina sem capacidade nominal
+ * não produz: qualquer fila nela vira infinita, e nada cabe.
+ */
+export function resumoHorasFila(
+  fila: { pesoT: number; receitaId: string }[],
+  capacidadeTh: number,
+  setup: Setup,
+): HorasFila {
+  const setupMin = fila.reduce((a, o, i) => a + setupEntre(fila[i - 1], o, setup), 0)
+  const trocas = trocasDeReceita(fila)
+  if (capacidadeTh <= 0) {
+    const inf = fila.length > 0 ? Infinity : 0
+    return { producaoH: inf, setupMin, trocas, horas: inf }
+  }
+  const producaoH = fila.reduce((a, o) => a + o.pesoT, 0) / capacidadeTh
+  return { producaoH, setupMin, trocas, horas: producaoH + setupMin / 60 }
+}
+
+export function horasDaFila(
+  fila: { pesoT: number; receitaId: string }[],
+  capacidadeTh: number,
+  setup: Setup,
+): number {
+  return resumoHorasFila(fila, capacidadeTh, setup).horas
+}
+
+/**
+ * Fila de uma célula (máquina × dia) na ordem da sequência gravada. O
+ * desempate (seq nulo ou repetido) é pelo número da ordem, o MESMO da tela
+ * (`celula()` em Programacao.tsx) — ordem criada já com máquina e dia nasce
+ * sem seq, e os dois lados precisam contar o mesmo setup.
+ */
+export function filaDa(
+  ordens: OrdemProgramavel[],
+  maquinaId: string,
+  dia: string,
+): OrdemProgramavel[] {
+  return ordens
+    .filter((o) => o.maquinaId === maquinaId && o.dataProg === dia)
+    .sort(
+      (a, b) =>
+        (a.seq ?? 9999) - (b.seq ?? 9999) ||
+        (a.numero ?? a.id).localeCompare(b.numero ?? b.id),
+    )
+}
+
 export function toneladasDa(
   ordens: OrdemProgramavel[],
   maquinaId: string,
@@ -94,35 +219,39 @@ export interface Slot {
   dia: string
   /** 0 = já tem mesma receita e cultivar · 1 = mesma receita · 2 = nenhuma afinidade */
   afinidade: 0 | 1 | 2
-  livreT: number
+  /** Horas que sobram no dia DEPOIS de encaixar a ordem no fim da fila. */
+  livreH: number
 }
 
 /**
  * Melhor encaixe para uma ordem: o dia mais cedo que couber; dentro do dia, a
  * máquina com maior afinidade de receita; empatando, a menos carregada.
+ * "Caber" é em horas, com a ordem entrando no FIM da fila — inclui o setup
+ * que ela paga por vir depois da última ordem já programada.
  */
 export function melhorSlot(
   ordem: OrdemProgramavel,
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dias: string[],
-  capDia?: CapacidadeDia,
+  horasDia?: HorasDia,
 ): Slot | null {
-  const cap = capDia ?? capacidadeFixa(maquinas)
+  const horas = horasDia ?? horasFixas(maquinas)
   for (const dia of dias) {
     const candidatas = maquinas
       .map((m) => {
-        const carga = toneladasDa(ordens, m.id, dia)
-        return { m, carga, livre: cap(m.id, dia) - carga }
+        const fila = filaDa(ordens, m.id, dia).filter((o) => o.id !== ordem.id)
+        const carga = horasDaFila(fila, m.capacidadeTh, m.setup)
+        const comEla = horasDaFila([...fila, ordem], m.capacidadeTh, m.setup)
+        return { m, fila, carga, livre: horas(m.id, dia) - comEla }
       })
-      .filter((c) => c.livre >= ordem.pesoT)
+      .filter((c) => c.livre >= 0)
       .map((c) => {
-        const naMaquina = ordens.filter((o) => o.maquinaId === c.m.id && o.dataProg === dia)
-        const afinidade: 0 | 1 | 2 = naMaquina.some(
+        const afinidade: 0 | 1 | 2 = c.fila.some(
           (o) => o.receitaId === ordem.receitaId && o.cultivar === ordem.cultivar,
         )
           ? 0
-          : naMaquina.some((o) => o.receitaId === ordem.receitaId)
+          : c.fila.some((o) => o.receitaId === ordem.receitaId)
             ? 1
             : 2
         return { ...c, afinidade }
@@ -135,7 +264,7 @@ export function melhorSlot(
         maquinaId: escolhida.m.id,
         dia,
         afinidade: escolhida.afinidade,
-        livreT: escolhida.livre,
+        livreH: escolhida.livre,
       }
     }
   }
@@ -166,7 +295,7 @@ export function autoProgramar(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dias: string[],
-  capDia?: CapacidadeDia,
+  horasDia?: HorasDia,
 ): ResultadoAutoProgramacao {
   const fila = ordens
     .filter((o) => !o.maquinaId)
@@ -184,7 +313,7 @@ export function autoProgramar(
   const naoCouberam: OrdemProgramavel[] = []
 
   for (const ordem of fila) {
-    const slot = melhorSlot(ordem, estado, maquinas, dias, capDia)
+    const slot = melhorSlot(ordem, estado, maquinas, dias, horasDia)
     if (!slot) {
       naoCouberam.push(ordem)
       continue
@@ -248,55 +377,58 @@ export interface Desbalanceamento {
 /**
  * Rebalanceia um dia: move ordens da máquina sobrecarregada para a que tem
  * folga, preferindo mover as que têm afinidade de receita com o destino.
- * Não move ordem já iniciada — quem chama filtra antes.
+ * Tudo em horas: cada ordem movida custa o peso dela mais o setup que paga
+ * por entrar no fim da fila do destino. Não move ordem já iniciada — quem
+ * chama filtra antes.
  */
 export function rebalancearDia(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dia: string,
-  capDia?: CapacidadeDia,
+  horasDia?: HorasDia,
 ): Desbalanceamento | null {
   if (maquinas.length < 2) return null
-  const cap = capDia ?? capacidadeFixa(maquinas)
+  const horas = horasDia ?? horasFixas(maquinas)
 
   const cargas = maquinas
-    .map((m) => ({ m, ton: toneladasDa(ordens, m.id, dia) }))
-    .sort((a, b) => b.ton - a.ton)
+    .map((m) => ({ m, h: horasDaFila(filaDa(ordens, m.id, dia), m.capacidadeTh, m.setup) }))
+    .sort((a, b) => b.h - a.h)
   const cheia = cargas[0]
   const vazia = cargas[cargas.length - 1]
   if (cheia.m.id === vazia.m.id) return null
+  if (vazia.m.capacidadeTh <= 0) return null
 
-  const diferenca = cheia.ton - vazia.ton
+  const diferenca = cheia.h - vazia.h
   if (diferenca <= 0) return null
 
-  const candidatas = ordens
-    .filter((o) => o.maquinaId === cheia.m.id && o.dataProg === dia)
-    .slice()
+  const noDestino = filaDa(ordens, vazia.m.id, dia)
+  // iniciada ocupa a máquina mas não sai dela; o custo de cada movida é o
+  // que ela passa a valer NO DESTINO — a origem pode economizar até um setup
+  // a mais (uma R2 entre duas R1 sai e 40+40 vira 20), então a regra da
+  // metade é heurística: a diferença sempre diminui, nunca oscila
+  const candidatas = filaDa(ordens, cheia.m.id, dia)
+    .filter((o) => !o.iniciada)
     .sort((a, b) => {
-      const noDestino = (x: OrdemProgramavel) =>
-        ordens.some(
-          (o) => o.maquinaId === vazia.m.id && o.dataProg === dia && o.receitaId === x.receitaId,
-        )
-          ? 0
-          : 1
-      return noDestino(a) - noDestino(b) || b.pesoT - a.pesoT
-    })
+    const afim = (x: OrdemProgramavel) =>
+      noDestino.some((o) => o.receitaId === x.receitaId) ? 0 : 1
+    return afim(a) - afim(b) || b.pesoT - a.pesoT
+  })
 
   const movidas: Atribuicao[] = []
   let transferido = 0
-  let livreDestino = cap(vazia.m.id, dia) - vazia.ton
-  const noDestino = ordens.filter(
-    (o) => o.maquinaId === vazia.m.id && o.dataProg === dia,
-  )
+  let livreDestino = horas(vazia.m.id, dia) - vazia.h
+  let ultima: OrdemProgramavel | null = noDestino[noDestino.length - 1] ?? null
   // maior seq existente, não contagem — mesma razão do autoProgramar
   const base = Math.max(noDestino.length, ...noDestino.map((o) => o.seq ?? 0))
 
   for (const o of candidatas) {
+    const custo = o.pesoT / vazia.m.capacidadeTh + setupEntre(ultima, o, vazia.m.setup) / 60
     // parar antes de inverter o desbalanceamento
-    if (transferido + o.pesoT > diferenca / 2) continue
-    if (o.pesoT > livreDestino) continue
-    transferido += o.pesoT
-    livreDestino -= o.pesoT
+    if (transferido + custo > diferenca / 2) continue
+    if (custo > livreDestino) continue
+    transferido += custo
+    livreDestino -= custo
+    ultima = o
     movidas.push({
       ordemId: o.id,
       maquinaId: vazia.m.id,
@@ -344,16 +476,18 @@ export interface ResultadoCascata {
  *
  * Ordens já iniciadas não se movem: continuam ocupando capacidade e
  * numeração do dia delas. Dia com 0 turnos não recebe nada, e o que estava
- * marcado nele é empurrado junto.
+ * marcado nele é empurrado junto. Cada ordem custa o peso dela mais o setup
+ * que paga por vir depois da anterior — por isso a fila é percorrida em
+ * ordem e a "anterior" acompanha.
  */
 export function reprogramarCascata(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dias: string[],
   apartirDe: string,
-  capDia?: CapacidadeDia,
+  horasDia?: HorasDia,
 ): ResultadoCascata {
-  const cap = capDia ?? capacidadeFixa(maquinas)
+  const horas = horasDia ?? horasFixas(maquinas)
   const destinos = dias.filter((d) => d > apartirDe).sort()
   const movimentos: MovimentoCascata[] = []
   const naoCouberam: OrdemProgramavel[] = []
@@ -378,15 +512,19 @@ export function reprogramarCascata(
 
     for (const dia of destinos) {
       const doDia = moveis.filter((o) => o.dataProg === dia).sort(naFila)
-      const capacidade = cap(m.id, dia)
-      if (capacidade <= 0) {
+      const capacidade = horas(m.id, dia)
+      if (capacidade <= 0 || m.capacidadeTh <= 0) {
         // dia sem produção: não recebe nada e devolve o que tinha para a fila
         espera = [...espera, ...doDia]
         continue
       }
-      const fixasDoDia = fixas.filter((o) => o.dataProg === dia)
-      let livre = capacidade - fixasDoDia.reduce((a, o) => a + o.pesoT, 0)
+      const fixasDoDia = fixas
+        .filter((o) => o.dataProg === dia)
+        .sort((a, b) => (a.seq ?? 9999) - (b.seq ?? 9999))
+      let livre = capacidade - horasDaFila(fixasDoDia, m.capacidadeTh, m.setup)
       let seq = fixasDoDia.reduce((mx, o) => Math.max(mx, o.seq ?? 0), 0)
+      // a última da fila decide o setup da próxima — começa pela última fixa
+      let anterior: OrdemProgramavel | null = fixasDoDia[fixasDoDia.length - 1] ?? null
 
       const fila = [...espera, ...doDia]
       espera = []
@@ -396,16 +534,19 @@ export function reprogramarCascata(
           espera.push(o)
           continue
         }
-        if (o.pesoT <= livre) {
+        const custo = o.pesoT / m.capacidadeTh + setupEntre(anterior, o, m.setup) / 60
+        if (custo <= livre) {
           movimentos.push({ ordem: o, deDia: o.dataProg, paraDia: dia, seq: ++seq })
-          livre -= o.pesoT
+          livre -= custo
+          anterior = o
           continue
         }
         // maior que o dia inteiro e ninguém à frente: vai assim mesmo, senão
         // travaria a fila para sempre e nada mais seria reprogramado
-        if (seq === 0 && o.pesoT > capacidade) {
+        if (seq === 0 && custo > capacidade) {
           movimentos.push({ ordem: o, deDia: o.dataProg, paraDia: dia, seq: ++seq })
           excedem.push(o)
+          anterior = o
           continue
         }
         travou = true
@@ -430,18 +571,21 @@ export interface ItemChecklist {
   mensagem: string
 }
 
+const fmtH = (h: number) => h.toFixed(1).replace('.', ',')
+
 /** Checklist do dia: o que impede ou ameaça a produção programada. */
 export function checklistDoDia(
   ordens: OrdemProgramavel[],
   maquinas: MaquinaCapacidade[],
   dia: string,
-  capDia?: CapacidadeDia,
+  horasDia?: HorasDia,
 ): ItemChecklist[] {
-  const cap = capDia ?? capacidadeFixa(maquinas)
+  const horas = horasDia ?? horasFixas(maquinas)
   const itens: ItemChecklist[] = []
   const doDia = ordens.filter((o) => o.dataProg === dia && o.maquinaId)
 
-  const semLote = doDia.filter((o) => !o.loteBaixado)
+  // iniciada já passou pela baixa — o status dela não é "Pronto para produzir"
+  const semLote = doDia.filter((o) => !o.loteBaixado && !o.iniciada)
   if (semLote.length > 0) {
     const urgentes = semLote.filter((o) => o.prioridade === 'Urgente').length
     itens.push({
@@ -453,8 +597,9 @@ export function checklistDoDia(
   }
 
   for (const m of maquinas) {
-    const ton = toneladasDa(ordens, m.id, dia)
-    const capacidade = cap(m.id, dia)
+    const fila = filaDa(ordens, m.id, dia)
+    const ton = fila.reduce((a, o) => a + o.pesoT, 0)
+    const capacidade = horas(m.id, dia)
     if (capacidade <= 0) {
       if (ton > 0) {
         itens.push({
@@ -464,16 +609,27 @@ export function checklistDoDia(
       }
       continue
     }
-    const pct = (ton / capacidade) * 100
+    const r = resumoHorasFila(fila, m.capacidadeTh, m.setup)
+    if (!Number.isFinite(r.horas)) {
+      itens.push({
+        gravidade: 'bloqueio',
+        mensagem: `${m.id} está sem capacidade nominal (t/h) no cadastro — nada cabe nela.`,
+      })
+      continue
+    }
+    const pct = (r.horas / capacidade) * 100
+    const detalhe =
+      `${fmtH(r.horas)} h em ${fmtH(capacidade)} h` +
+      (r.setupMin > 0 ? `, sendo ${r.setupMin} min de setup` : '')
     if (pct > 100) {
       itens.push({
         gravidade: 'bloqueio',
-        mensagem: `${m.id} está com ${pct.toFixed(0)}% da capacidade do dia — não cabe.`,
+        mensagem: `${m.id} está com ${pct.toFixed(0)}% da capacidade do dia (${detalhe}) — não cabe.`,
       })
     } else if (pct > 85) {
       itens.push({
         gravidade: 'alerta',
-        mensagem: `${m.id} está com ${pct.toFixed(0)}% da capacidade do dia.`,
+        mensagem: `${m.id} está com ${pct.toFixed(0)}% da capacidade do dia (${detalhe}).`,
       })
     }
   }
@@ -487,4 +643,33 @@ export function checklistDoDia(
   }
 
   return itens
+}
+
+export interface TotalPorTratamento {
+  tratamento: string
+  ordens: number
+  bags: number
+  pesoT: number
+}
+
+/**
+ * Toneladas programadas por tratamento (cartão da Programação, 13/09/2026).
+ * Recebe o que a tela já filtrou (semana ou dia; só ordens com máquina e
+ * dia) e devolve do maior peso para o menor.
+ */
+export function toneladasPorTratamento(
+  ordens: { tratamento: string; pesoT: number; bags: number }[],
+): TotalPorTratamento[] {
+  const mapa = new Map<string, TotalPorTratamento>()
+  for (const o of ordens) {
+    const t = o.tratamento.trim() || '(sem tratamento)'
+    const acc = mapa.get(t) ?? { tratamento: t, ordens: 0, bags: 0, pesoT: 0 }
+    acc.ordens += 1
+    acc.bags += o.bags
+    acc.pesoT += o.pesoT
+    mapa.set(t, acc)
+  }
+  return [...mapa.values()].sort(
+    (a, b) => b.pesoT - a.pesoT || a.tratamento.localeCompare(b.tratamento),
+  )
 }

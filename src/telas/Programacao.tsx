@@ -2,9 +2,10 @@
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
 import type { OrdemVisao } from '@/dados/api-gestao'
-import { capacidadeDiaT, diaDeProducao } from '@/dominio/calculos'
+import { diaDeProducao } from '@/dominio/calculos'
 import {
   autoProgramar,
+  DIA_CHEIO,
   HORAS_TURNOS,
   checklistDoDia,
   horasDoDia,
@@ -12,8 +13,11 @@ import {
   otimizarSequencia,
   rebalancearDia,
   reprogramarCascata,
+  resumoHorasFila,
   rotuloTurnos,
-  type CapacidadeDia,
+  toneladasPorTratamento,
+  type HorasDia,
+  type MaquinaCapacidade,
   type OrdemProgramavel,
   type TurnosDoDia,
 } from '@/dominio/programacao'
@@ -79,6 +83,9 @@ export default function Programacao() {
    * precisa de ação agora exigia ler linha por linha.
    */
   const [filtroStatus, setFiltroStatus] = useState<Set<StatusEfetivo>>(new Set())
+
+  /** Cartão "Programado por tratamento": a semana à vista ou só o dia selecionado. */
+  const [recorteTratamento, setRecorteTratamento] = useState<'semana' | 'dia'>('semana')
 
   const dias = useMemo(
     () => Array.from({ length: 7 }, (_, i) => somaDias(inicio, i)),
@@ -149,27 +156,32 @@ export default function Programacao() {
     [calendario],
   )
 
-  const capacidades = useMemo(
+  /**
+   * Capacidade de cada máquina para o domínio: t/h e os minutos de setup do
+   * cadastro. A conta da ocupação é em HORAS desde 13/09/2026 — é assim que
+   * o setup entre ordens (20 min mesmo tratamento, 40 na troca) entra.
+   */
+  const capacidades = useMemo<MaquinaCapacidade[]>(
     () =>
       maquinas.map((m) => ({
         id: m.id,
-        capacidadeDiaT: capacidadeDiaT(m.capacidade_th, HORAS_TURNOS),
+        capacidadeTh: m.capacidade_th,
+        horasDia: horasDoDia(DIA_CHEIO, HORAS_TURNOS),
+        setup: { mesmoMin: m.setup_mesmo_min, trocaMin: m.setup_troca_min },
       })),
     [maquinas],
   )
 
-  /** Capacidade real do dia: cai pela metade num dia de um turno só. */
-  const capDia = useCallback<CapacidadeDia>(
-    (maquinaId, dia) => {
-      const th = maquinas.find((m) => m.id === maquinaId)?.capacidade_th ?? 0
-      return th * horasDoDia(turnosDoDia(dia), HORAS_TURNOS)
-    },
-    [maquinas, turnosDoDia],
+  /** Horas reais do dia: caem pela metade num dia de um turno só. */
+  const capDia = useCallback<HorasDia>(
+    (_maquinaId, dia) => horasDoDia(turnosDoDia(dia), HORAS_TURNOS),
+    [turnosDoDia],
   )
 
   const paraDominio = useCallback(
     (o: OrdemVisao): OrdemProgramavel => ({
       id: o.id,
+      numero: o.numero,
       cultivar: o.cultivar,
       receitaId: o.receita_id,
       prioridade: o.prioridade,
@@ -185,9 +197,15 @@ export default function Programacao() {
     [],
   )
 
-  /** Ordens no formato do domínio de programação. Só as ainda mexíveis. */
+  /**
+   * TODAS as ordens no formato do domínio, inclusive as já iniciadas
+   * (`iniciada: true`). Antes só as mexíveis entravam, e a ordem Em produção
+   * sumia da conta: o checklist e o Encaixar viam horas livres que a máquina
+   * não tinha, e o setup da próxima ignorava o que estava rodando. O domínio
+   * nunca move uma iniciada; ela só pesa.
+   */
   const programaveis = useMemo<OrdemProgramavel[]>(
-    () => [...ordens, ...pool].filter((o) => !jaIniciada(o.status_efetivo as StatusEfetivo)).map(paraDominio),
+    () => [...ordens, ...pool].map(paraDominio),
     [ordens, pool, paraDominio],
   )
 
@@ -234,14 +252,59 @@ export default function Programacao() {
     [],
   )
 
+  /**
+   * Ocupação da célula em HORAS: produção (peso ÷ t/h) + setup entre as
+   * ordens na sequência gravada. `ton` continua para a leitura do PCP, mas
+   * o percentual é horas ÷ horas do dia.
+   */
   const ocupacaoCelula = useCallback(
     (maq: string, dia: string) => {
       const cap = capDia(maq, dia)
-      const ton = celula(maq, dia).reduce((a, o) => a + o.peso_t, 0)
-      return { ton, cap, pct: cap > 0 ? (ton / cap) * 100 : 0 }
+      const m = capacidades.find((x) => x.id === maq)
+      const fila = celula(maq, dia)
+      const ton = fila.reduce((a, o) => a + o.peso_t, 0)
+      const r = m
+        ? resumoHorasFila(
+            fila.map((o) => ({ pesoT: o.peso_t, receitaId: o.receita_id })),
+            m.capacidadeTh,
+            m.setup,
+          )
+        : { producaoH: 0, setupMin: 0, trocas: 0, horas: 0 }
+      return {
+        ton,
+        cap,
+        horas: r.horas,
+        setupMin: r.setupMin,
+        trocas: r.trocas,
+        ordens: fila.length,
+        pct: cap > 0 && Number.isFinite(r.horas) ? (r.horas / cap) * 100 : 0,
+      }
     },
-    [capDia, celula],
+    [capDia, capacidades, celula],
   )
+
+  /**
+   * Toneladas programadas por tratamento no recorte escolhido. Só ordens com
+   * máquina e dia; Apontada fica fora porque já virou estoque, Excluida a
+   * consulta já não traz.
+   */
+  const porTratamento = useMemo(() => {
+    const noRecorte = (o: OrdemVisao) =>
+      !!o.maquina_id &&
+      !!o.data_prog &&
+      o.status_efetivo !== 'Apontada' &&
+      (recorteTratamento === 'dia' ? o.data_prog === diaSel : dias.includes(o.data_prog))
+    const linhas = toneladasPorTratamento(
+      ordens
+        .filter(noRecorte)
+        .map((o) => ({ tratamento: o.receita_nome, pesoT: o.peso_t, bags: o.bags })),
+    )
+    return { linhas, total: linhas.reduce((a, l) => a + l.pesoT, 0) }
+  }, [ordens, recorteTratamento, diaSel, dias])
+
+  const dicaOcupacao = (o: ReturnType<typeof ocupacaoCelula>) =>
+    `${o.ordens} ordem(ns) · ${o.trocas} troca(s) de tratamento · ${o.setupMin} min de setup · ` +
+    `${n(o.horas, 1)} h de ${n(o.cap, 1)} h`
 
   async function comErro(fn: () => Promise<void>) {
     try {
@@ -366,7 +429,7 @@ export default function Programacao() {
   return (
     <Pagina
       titulo="Programação & Ocupação"
-      descricao="Capacidade de 12 t/h por máquina. Um dia de 2 turnos rende 234 t; de 1 turno, 120 t."
+      descricao="Ocupação em horas: peso ÷ capacidade (t/h) mais o setup entre ordens — 20 min no mesmo tratamento, 40 min na troca (cadastro da máquina). Um dia de 2 turnos tem 19,5 h; só 1º turno, 10 h."
       acoes={
         podeProgramar ? (
           <>
@@ -384,7 +447,25 @@ export default function Programacao() {
                     )
                     return
                   }
-                  await g.aplicarAtribuicoes(r.atribuicoes)
+                  // renumera cada célula tocada (fila atual + novas no fim), como o
+                  // Encaixar: o domínio precificou a nova NO FIM da fila, e numa célula
+                  // com seq nulo "maior seq + 1" a poria na frente — e o setup contado
+                  // não seria o gravado
+                  const porCelula = new Map<string, typeof r.atribuicoes>()
+                  for (const a of r.atribuicoes) {
+                    const chave = `${a.maquinaId}|${a.dia}`
+                    porCelula.set(chave, [...(porCelula.get(chave) ?? []), a])
+                  }
+                  const gravar = [...porCelula.entries()].flatMap(([, novas]) => {
+                    const { maquinaId, dia } = novas[0]
+                    const entrando = novas
+                      .slice()
+                      .sort((a, b) => a.seq - b.seq)
+                      .map((a) => pool.find((p) => p.id === a.ordemId))
+                      .filter((p): p is OrdemVisao => !!p)
+                    return renumerar(maquinaId, dia, [...celula(maquinaId, dia), ...entrando])
+                  })
+                  await g.aplicarAtribuicoes(gravar)
                   if (r.naoCouberam.length > 0) {
                     setErro(
                       `${r.atribuicoes.length} ordem(ns) programada(s). ${r.naoCouberam.length} não coube(ram) no horizonte.`,
@@ -596,7 +677,9 @@ export default function Programacao() {
                           ) : (
                             <>
                               <span className="block font-semibold">{n(o.pct, 0)}%</span>
-                              <span className="block opacity-70">{n(o.ton, 0)} t</span>
+                              <span className="block opacity-70">
+                                {n(o.ton, 0)} t · {n(o.horas, 1)} h
+                              </span>
                             </>
                           )}
                         </button>
@@ -661,6 +744,79 @@ export default function Programacao() {
             </tbody>
           </table>
         </div>
+      </Cartao>
+
+      {/* -------- programado por tratamento (Arion, 13/09/2026) -------- */}
+      <Cartao
+        titulo="Programado por tratamento"
+        className="mb-5"
+        acoes={
+          <div className="flex items-center gap-1 text-xs">
+            {(['semana', 'dia'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRecorteTratamento(r)}
+                className={`rounded-md border px-2 py-1 ${
+                  recorteTratamento === r
+                    ? 'border-green-600 bg-green-50 font-medium text-green-800 dark:bg-green-950 dark:text-green-300'
+                    : 'border-stone-300 text-stone-600 dark:border-stone-700 dark:text-stone-300'
+                }`}
+              >
+                {r === 'semana' ? 'semana' : `dia ${diaCurto(diaSel)}`}
+              </button>
+            ))}
+          </div>
+        }
+      >
+        {porTratamento.linhas.length === 0 ? (
+          <Vazio>Nada programado {recorteTratamento === 'semana' ? 'nesta semana' : 'neste dia'}.</Vazio>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+                  <th className="px-2 py-1.5">Tratamento</th>
+                  <th className="px-2 py-1.5 text-right">Ordens</th>
+                  <th className="px-2 py-1.5 text-right">Bags</th>
+                  <th className="px-2 py-1.5 text-right">Toneladas</th>
+                  <th className="hidden w-1/3 px-2 py-1.5 sm:table-cell" />
+                </tr>
+              </thead>
+              <tbody>
+                {porTratamento.linhas.map((l) => (
+                  <tr key={l.tratamento} className="border-t border-stone-100 dark:border-stone-800/60">
+                    <td className="px-2 py-1.5 font-medium">{l.tratamento}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{l.ordens}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{n(l.bags, 0)}</td>
+                    <td className="num-tabular px-2 py-1.5 text-right font-semibold">{n(l.pesoT, 1)} t</td>
+                    <td className="hidden px-2 py-1.5 sm:table-cell">
+                      <div className="h-2 w-full rounded bg-stone-100 dark:bg-stone-800">
+                        <div
+                          className="h-2 rounded bg-green-600 dark:bg-green-500"
+                          style={{ width: `${porTratamento.total > 0 ? (l.pesoT / porTratamento.total) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-stone-300 text-xs dark:border-stone-700">
+                  <td className="px-2 py-1.5 font-medium uppercase tracking-wide text-stone-500">Total</td>
+                  <td className="num-tabular px-2 py-1.5 text-right">
+                    {porTratamento.linhas.reduce((a, l) => a + l.ordens, 0)}
+                  </td>
+                  <td className="num-tabular px-2 py-1.5 text-right">
+                    {n(porTratamento.linhas.reduce((a, l) => a + l.bags, 0), 0)}
+                  </td>
+                  <td className="num-tabular px-2 py-1.5 text-right font-semibold">{n(porTratamento.total, 1)} t</td>
+                  <td className="hidden sm:table-cell" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </Cartao>
 
       {/* -------- checklist -------- */}
@@ -796,10 +952,12 @@ export default function Programacao() {
                     Dia sem produção{o.ton > 0 && ` — ${n(o.ton, 1)} t ainda programadas aqui`}
                   </span>
                 ) : (
-                  <>
-                    {n(o.ton, 1)} t de {n(o.cap, 0)} t · {n(o.pct, 0)}% de ocupação ·{' '}
+                  <span title={dicaOcupacao(o)}>
+                    {n(o.ton, 1)} t · {n(o.horas, 1)} h de {n(o.cap, 1)} h · {n(o.pct, 0)}% de
+                    ocupação
+                    {o.setupMin > 0 && ` (${o.setupMin} min de setup)`} ·{' '}
                     {rotuloTurnos(turnosDoDia(diaSel))}
-                  </>
+                  </span>
                 )}
               </p>
 
