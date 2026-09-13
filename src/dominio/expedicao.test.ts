@@ -10,6 +10,7 @@ import {
   resumoPorTipoVenda,
   saldosExpedicao,
   situacaoSaldo,
+  transferenciaDe,
   type CarregamentoLinha,
 } from './expedicao'
 import type { Linha as LinhaXlsx } from './importacao/simpleagro'
@@ -401,6 +402,34 @@ const linhaAg = (over: Partial<Record<string, Celula>> = {}): LinhaXlsx => {
   }
   return CAB_AGEND.map((c) => base[String(c)] ?? null)
 }
+
+describe('filial e transferencia de saldo', () => {
+  it('sem filial nao afirma nada', () => {
+    expect(transferenciaDe(null)).toEqual({ precisa: false, filial: null, curto: null })
+    expect(transferenciaDe('0').precisa).toBe(false)
+  })
+
+  it('matriz nao precisa de transferencia', () => {
+    const t = transferenciaDe('SEMENTES VENEZA LTDA')
+    expect(t.precisa).toBe(false)
+    expect(t.curto).toBe('MATRIZ')
+  })
+
+  it('outra filial precisa, com o nome curto para a etiqueta', () => {
+    expect(transferenciaDe('SEMENTES VENEZA LTDA - CHAPADAO DO SUL')).toEqual({
+      precisa: true,
+      filial: 'SEMENTES VENEZA LTDA-CHAPADAO DO SUL',
+      curto: 'CHAPADAO DO SUL',
+    })
+  })
+
+  it('converterAgendados le a FILIAL do proprio relatorio quando vier preenchida', () => {
+    const r = converterAgendados([CAB_AGEND, linhaAg({ FILIAL: 'SEMENTES VENEZA LTDA-TUPACIGUARA' }), linhaAg({ IDENTIFICADOR: 'ID-2' })])
+    expect(r.linhas[0].filial).toBe('SEMENTES VENEZA LTDA-TUPACIGUARA')
+    // hoje vem vazia em todas as linhas: nula, e a tela cruza com pedidos_filial
+    expect(r.linhas[1].filial).toBeNull()
+  })
+})
 
 describe('reconhecimento do relatorio de agendados', () => {
   it('aceita o cabecalho real e rejeita a montagem de carga', () => {

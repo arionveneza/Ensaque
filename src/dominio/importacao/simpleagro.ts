@@ -137,6 +137,9 @@ export interface ResumoPedidos {
   porStatusFinanceiro: Record<string, number>
   /** Bags de VENDA COOPERADO entre as linhas aproveitadas (aprovado + aguardando). */
   bagsCooperado: number
+  /** Pedidos distintos (Número Pedido) com filial informada / sem ('0' ou vazia). */
+  pedidosComFilial: number
+  pedidosSemFilial: number
 }
 
 /**
@@ -147,6 +150,37 @@ export interface ResumoPedidos {
  */
 export const normaliza = (s: string): string =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim()
+
+/**
+ * Filial "casa" (decisão do Arion, 13/09/2026): a matriz. Pedido de
+ * qualquer outra filial exige solicitar transferência de saldo em estoque
+ * antes de carregar — é o que a Expedição precisa enxergar.
+ */
+export const FILIAL_CASA = 'SEMENTES VENEZA LTDA'
+
+/**
+ * Filial como o relatório manda, mas comparável: caixa alta sem acento,
+ * espaços em volta do hífen colapsados ("SEMENTES VENEZA LTDA - CHAPADAO DO
+ * SUL" e "SEMENTES VENEZA LTDA-TUPACIGUARA" vêm nos dois formatos no MESMO
+ * arquivo). '0' e vazio são "não informada" → null.
+ */
+export const normalizaFilial = (v: unknown): string | null => {
+  const s = normaliza(txt(v)).replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ')
+  return s === '' || s === '0' ? null : s
+}
+
+/** Nome curto para etiqueta: o que vem depois do hífen; a matriz vira MATRIZ. */
+export const nomeCurtoFilial = (filial: string): string => {
+  if (filial === FILIAL_CASA) return 'MATRIZ'
+  const i = filial.indexOf('-')
+  return i >= 0 ? filial.slice(i + 1).trim() || filial : filial
+}
+
+/** Filial de um pedido de venda (col. B × col. D do Pedidos Analítico). */
+export interface PedidoFilial {
+  numero: string
+  filial: string | null
+}
 
 /**
  * Status Pedido que geram trabalho: pedido firme (decisão do PCP, 05/08/2026).
@@ -164,6 +198,13 @@ export interface ResultadoPedidos {
   resumo: ResumoPedidos
   totalAprovado: number
   totalPendente: number
+  /**
+   * Filial de CADA pedido (distinct por Número Pedido), de TODAS as linhas —
+   * inclusive as fora do status firme: a filial é um fato do pedido, e o
+   * agendado pode referenciar pedido que o balanço descarta. Vai para
+   * `pedidos_filial`, fora da agregação (13/09/2026).
+   */
+  pedidosFilial: PedidoFilial[]
 }
 
 export const ehRelatorioPedidos = (rows: Linha[]): boolean => {
@@ -195,6 +236,12 @@ export function converterPedidos(
   const iSaldo = ix('Saldo a Faturar')
   // coluna L; export antigo sem ela só deixa de marcar cooperado, não trava
   const iTipoVenda = ix('Tipo Venda')
+  // colunas B e D: filial e número do pedido, para a Expedição cruzar com os
+  // agendados; achadas pelo nome normalizado (acento em "Número" varia)
+  const ixNorm = (nome: string) => cabecalho.findIndex((c) => normaliza(c) === nome)
+  const iFilial = ixNorm('FILIAL')
+  const iNumero = ixNorm('NUMERO PEDIDO')
+  const filiais = new Map<string, string | null>()
 
   const receitas = new Set(receitasCadastradas.map((r) => r.toUpperCase()))
   const agregado = new Map<string, PedidoConvertido>()
@@ -209,9 +256,18 @@ export function converterPedidos(
     porStatusFora: {},
     porStatusFinanceiro: {},
     bagsCooperado: 0,
+    pedidosComFilial: 0,
+    pedidosSemFilial: 0,
   }
 
   for (const r of rows.slice(1)) {
+    // antes de qualquer filtro: a filial do pedido vale mesmo para linha descartada
+    if (iNumero >= 0) {
+      const numero = txt(r[iNumero])
+      if (numero && !filiais.has(numero)) {
+        filiais.set(numero, iFilial >= 0 ? normalizaFilial(r[iFilial]) : null)
+      }
+    }
     const statusRaw = txt(r[iStatus])
     const tratamento = txt(r[iTrat])
     const bags = num(r[iSaldo])
@@ -283,11 +339,16 @@ export function converterPedidos(
       a.embalagem.localeCompare(b.embalagem),
   )
 
+  const pedidosFilial = [...filiais.entries()].map(([numero, filial]) => ({ numero, filial }))
+  resumo.pedidosComFilial = pedidosFilial.filter((p) => p.filial).length
+  resumo.pedidosSemFilial = pedidosFilial.length - resumo.pedidosComFilial
+
   return {
     linhas,
     resumo,
     totalAprovado: linhas.filter((l) => l.aprovado).reduce((a, l) => a + l.bags, 0),
     totalPendente: linhas.filter((l) => !l.aprovado).reduce((a, l) => a + l.bags, 0),
+    pedidosFilial,
   }
 }
 

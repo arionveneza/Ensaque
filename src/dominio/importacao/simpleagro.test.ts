@@ -4,7 +4,10 @@ import {
   converterSaldos,
   ehRelatorioPedidos,
   ehRelatorioSaldos,
+  FILIAL_CASA,
+  nomeCurtoFilial,
   normalizaCultivar,
+  normalizaFilial,
   num,
   numPms,
   type Linha,
@@ -14,15 +17,64 @@ import {
 // Pedidos Analítico Resumido
 // ---------------------------------------------------------------
 
+// Filial e Número Pedido vêm DEPOIS das seis clássicas: linha curta (sem
+// elas) continua válida — filial nula, número vazio
 const CAB_PEDIDOS = [
   'Status Pedido', 'Status Financeiro', 'Produto', 'Tratamento',
-  'Embalagem', 'Saldo a Faturar',
+  'Embalagem', 'Saldo a Faturar', 'Filial', 'Número Pedido',
 ]
 
 const pedido = (
   status: string, fin: string, produto: string,
   trat: string, emb: string, saldo: number | string,
-): Linha => [status, fin, produto, trat, emb, saldo]
+  filial?: string, numero?: string,
+): Linha => [status, fin, produto, trat, emb, saldo, filial ?? null, numero ?? null]
+
+describe('filial do pedido', () => {
+  it('normaliza caixa, acento e espaços em volta do hífen', () => {
+    expect(normalizaFilial('SEMENTES VENEZA LTDA - CHAPADAO DO SUL')).toBe('SEMENTES VENEZA LTDA-CHAPADAO DO SUL')
+    expect(normalizaFilial('SEMENTES VENEZA LTDA-TUPACIGUARA')).toBe('SEMENTES VENEZA LTDA-TUPACIGUARA')
+    expect(normalizaFilial(' sementes veneza ltda ')).toBe(FILIAL_CASA)
+  })
+
+  it("'0' e vazio são filial não informada", () => {
+    expect(normalizaFilial('0')).toBeNull()
+    expect(normalizaFilial('')).toBeNull()
+    expect(normalizaFilial(null)).toBeNull()
+  })
+
+  it('nome curto: o que vem depois do hífen; a matriz vira MATRIZ', () => {
+    expect(nomeCurtoFilial('SEMENTES VENEZA LTDA-TUPACIGUARA')).toBe('TUPACIGUARA')
+    expect(nomeCurtoFilial(FILIAL_CASA)).toBe('MATRIZ')
+    expect(nomeCurtoFilial('OUTRA EMPRESA')).toBe('OUTRA EMPRESA')
+  })
+
+  it('converterPedidos devolve a filial por pedido, distinct, mesmo de linha descartada', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10, 'SEMENTES VENEZA LTDA-TUPACIGUARA', '26070049'),
+      pedido('Integrado', 'Aprovado', 'Y - Y', 'FTZ60', 'BB5M', 5, 'SEMENTES VENEZA LTDA-TUPACIGUARA', '26070049'),
+      // cancelado sai do balanço, mas a filial do pedido continua valendo
+      pedido('Cancelado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 99, 'SEMENTES VENEZA LTDA', '26070050'),
+      pedido('Integrado', 'Aprovado', 'X - X', 'SEM TSI', 'BB5M', 3, '0', '26070051'),
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 3),
+    ])
+    expect(r.pedidosFilial).toEqual([
+      { numero: '26070049', filial: 'SEMENTES VENEZA LTDA-TUPACIGUARA' },
+      { numero: '26070050', filial: FILIAL_CASA },
+      { numero: '26070051', filial: null },
+    ])
+    expect(r.resumo.pedidosComFilial).toBe(2)
+    expect(r.resumo.pedidosSemFilial).toBe(1)
+  })
+
+  it('export sem as colunas de filial nao trava e devolve lista vazia', () => {
+    const cab = CAB_PEDIDOS.slice(0, 6)
+    const r = converterPedidos([cab, ['Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10]])
+    expect(r.pedidosFilial).toEqual([])
+    expect(r.linhas).toHaveLength(1)
+  })
+})
 
 describe('deteccao do relatorio de pedidos', () => {
   it('reconhece pelo cabecalho', () => {

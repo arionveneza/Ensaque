@@ -637,6 +637,27 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    falta falsa: ganha etiqueta própria. O cartão de pedidos de venda saiu da Expedição (o
    painel Demanda × Estoque da aba Ordens já cobre). Recurso `expedicao` (ver/importar): PCP
    e Logística importam, Direção vê.
+   **Filial do pedido e transferência de saldo** (13/09/2026, pedido do Arion: "para pedido
+   de outra filial é necessário solicitar a transferência de saldo em estoque"). O relatório
+   de agendados tem coluna FILIAL, mas ela vem **vazia** (289/289 em 10/09); a filial só existe
+   no Pedidos Analítico (col. B `Filial`, col. D `Número Pedido`), e o `NUMERO` dos agendados
+   casa com o Número Pedido em 289/289. Então `converterPedidos` devolve, além do agregado,
+   `pedidosFilial` (distinct por número, de TODAS as linhas — a filial é fato do pedido, vale
+   mesmo para linha que o balanço descarta), gravado em **`pedidos_filial`** na MESMA carga
+   (migração `pedidos-filial.sql`; tabela própria porque pôr o número na chave de
+   `pedidos_venda` explodiria o balanço). A Expedição lê a carga de pedidos mais recente
+   (`listarPedidosFilial`, mesma regra `ult_ped`) e cruza pelo número; a FILIAL do próprio
+   relatório de agendados (`agendamentos.filial`) é fonte secundária, se um dia vier
+   preenchida. **Filial casa = `FILIAL_CASA` = SEMENTES VENEZA LTDA, a matriz** (decisão do
+   Arion); `normalizaFilial` colapsa os espaços em volta do hífen (o mesmo arquivo traz
+   "LTDA - CHAPADAO DO SUL" e "LTDA-TUPACIGUARA"), `'0'`/vazia = "não informada";
+   `transferenciaDe` só afirma `precisa` com filial conhecida e ≠ matriz. Na tela: coluna
+   **Filial** (nome curto: o que vem depois do hífen, MATRIZ para a casa), etiqueta âmbar
+   **"transferência · TUPACIGUARA"** na coluna das etiquetas e na sub-linha do tablet, chip
+   **"Precisa transferência (N)"**, resumo por filial no cartão Por tipo de venda, e aviso
+   (na tela e na importação de agendados) enquanto o Pedidos Analítico não foi importado —
+   **a filial só aparece depois de reimportar o Pedidos Analítico na aba Ordens** (a carga
+   anterior não tem `pedidos_filial`).
 6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
    tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`) SEPARADA de
    `lotes_semente` de propósito: a base de produção assume semente branca. **A unidade é

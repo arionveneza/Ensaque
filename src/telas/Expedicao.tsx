@@ -13,6 +13,7 @@ import {
   resumoPorTipoVenda,
   saldosExpedicao,
   situacaoSaldo,
+  transferenciaDe,
   SEM_TSI,
   type AlocacaoCaminhao,
   type LadoTipoVenda,
@@ -53,6 +54,8 @@ export default function Expedicao() {
   const [lotes, setLotes] = useState<g.LoteSementeLinha[]>([])
   const [estoquePa, setEstoquePa] = useState<g.EstoquePaLinha[]>([])
   const [ordens, setOrdens] = useState<g.OrdemVisao[]>([])
+  /** Número do pedido → filial, da última carga do Pedidos Analítico (aba Ordens). */
+  const [filiais, setFiliais] = useState<Map<string, string | null>>(new Map())
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -66,16 +69,31 @@ export default function Expedicao() {
   const [fTratamento, setFTratamento] = useState('')
   const [fEmbalagem, setFEmbalagem] = useState('')
   const [busca, setBusca] = useState('')
+  const [soTransferencia, setSoTransferencia] = useState(false)
 
   const recarregar = useCallback(async () => {
-    const [a, l, e, o] = await Promise.all([
+    const [a, l, e, o, f] = await Promise.all([
       g.listarAgendamentos(), g.listarLotes(), g.listarEstoquePa(), g.listarOrdens(),
+      g.listarPedidosFilial(),
     ])
     setAgendamentos(a)
     setLotes(l)
     setEstoquePa(e)
     setOrdens(o)
+    setFiliais(f)
   }, [])
+
+  /**
+   * Filial efetiva do agendamento: a do próprio relatório se um dia vier
+   * preenchida; senão a do Pedidos Analítico pelo número do pedido (289 de
+   * 289 casam no arquivo de 10/09/2026). Pedido que não está na carga de
+   * pedidos = não informada.
+   */
+  const transferencia = useCallback(
+    (a: AgendamentoBanco) =>
+      transferenciaDe(a.filial ?? (a.pedido ? filiais.get(a.pedido) : null) ?? null),
+    [filiais],
+  )
 
   useEffect(() => {
     setCarregando(true)
@@ -114,15 +132,34 @@ export default function Expedicao() {
         if (fCultivar && a.cultivar !== fCultivar) return false
         if (fTratamento && a.tratamento !== fTratamento) return false
         if (fEmbalagem && a.embalagem !== fEmbalagem) return false
+        if (soTransferencia && !transferencia(a).precisa) return false
         if (busca.trim()) {
           const q = busca.trim().toLowerCase()
-          const alvo = `${a.cliente ?? ''} ${a.pedido ?? ''} ${a.carga ?? ''} ${a.identificador} ${a.cidade ?? ''} ${a.estado ?? ''}`.toLowerCase()
+          const alvo = `${a.cliente ?? ''} ${a.pedido ?? ''} ${a.carga ?? ''} ${a.identificador} ${a.cidade ?? ''} ${a.estado ?? ''} ${transferencia(a).filial ?? ''}`.toLowerCase()
           if (!alvo.includes(q)) return false
         }
         return true
       }),
-    [agendamentos, de, ate, tipoSel, statusSel, fCultivar, fTratamento, fEmbalagem, busca],
+    [agendamentos, de, ate, tipoSel, statusSel, fCultivar, fTratamento, fEmbalagem, busca, soTransferencia, transferencia],
   )
+
+  /** Quantos agendamentos (e bags) são de filial ≠ matriz, por filial. */
+  const transferencias = useMemo(() => {
+    const porFilial = new Map<string, { n: number; bags: number }>()
+    let n = 0
+    let bags = 0
+    for (const a of agendamentos) {
+      const t = transferencia(a)
+      if (!t.precisa) continue
+      n++
+      bags += a.bags
+      const acc = porFilial.get(t.curto!) ?? { n: 0, bags: 0 }
+      acc.n++
+      acc.bags += a.bags
+      porFilial.set(t.curto!, acc)
+    }
+    return { n, bags, porFilial: [...porFilial.entries()].sort((x, y) => y[1].n - x[1].n) }
+  }, [agendamentos, transferencia])
 
   /** O cruzamento usa SÓ o que passou pelos filtros: o período é a pergunta. */
   const saldos = useMemo(
@@ -217,7 +254,7 @@ export default function Expedicao() {
       const { linhas, resumo } = converterAgendados(rows)
       await g.substituirAgendamentos(
         linhas.map((l) => ({
-          identificador: l.identificador, pedido: l.pedido || null, tipo_venda: l.tipoVenda,
+          identificador: l.identificador, pedido: l.pedido || null, filial: l.filial, tipo_venda: l.tipoVenda,
           cooperado: l.cooperado, cliente: l.cliente || null, cidade: l.cidade, estado: l.estado,
           cultivar: l.cultivar, categoria: l.categoria, tratamento: l.tratamento,
           embalagem: l.embalagem, qtd_pedido: l.qtdPedido, bags: l.bags,
@@ -232,6 +269,7 @@ export default function Expedicao() {
       if (resumo.semQuantidade > 0) avisos.push(`${resumo.semQuantidade} sem quantidade (ignorados)`)
       if (resumo.finalizados > 0) avisos.push(`${resumo.finalizados} finalizado(s) ignorado(s) — caminhão já saiu`)
       if (resumo.identificadorRepetido > 0) avisos.push(`${resumo.identificadorRepetido} identificador(es) repetido(s)`)
+      if (filiais.size === 0) avisos.push('filial dos pedidos não cruzada — importe o Pedidos Analítico na aba Ordens')
       const embDesc = Object.keys(resumo.embalagemDesconhecida)
       if (embDesc.length > 0) avisos.push(`embalagem sem de-para: ${embDesc.join(', ')}`)
       setMsg(
@@ -328,6 +366,21 @@ export default function Expedicao() {
               <span className="ml-1 text-xs text-stone-400">
                 ("Aguardando Estoque" entra: é exatamente a demanda que precisa de estoque)
               </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-stone-500">Filial do pedido:</span>
+              <Chip ativo={soTransferencia} onClick={() => setSoTransferencia((v) => !v)}>
+                Precisa transferência ({transferencias.n})
+              </Chip>
+              {filiais.size === 0 ? (
+                <span className="ml-1 text-xs text-amber-700 dark:text-amber-400">
+                  sem cruzamento: importe o Pedidos Analítico na aba Ordens para saber a filial de cada pedido
+                </span>
+              ) : (
+                <span className="ml-1 text-xs text-stone-400">
+                  (pedido de filial que não a matriz exige solicitar transferência de saldo antes de carregar)
+                </span>
+              )}
             </div>
           </Cartao>
 
@@ -495,6 +548,13 @@ export default function Expedicao() {
               data, sem olhar o tipo de venda — cada lado só soma o que coube e o que ficou
               descoberto nos seus caminhões. Nenhum bag é contado duas vezes.
             </p>
+            {transferencias.n > 0 && (
+              <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
+                <b>{transferencias.n} agendamento(s) · {inteiro(transferencias.bags)} bg</b> são de pedido de outra
+                filial e precisam de transferência de saldo:{' '}
+                {transferencias.porFilial.map(([f, v]) => `${f} ${v.n} (${inteiro(v.bags)} bg)`).join(' · ')}.
+              </p>
+            )}
           </Cartao>
 
           {/* ---------------- agendamentos ---------------- */}
@@ -505,6 +565,7 @@ export default function Expedicao() {
               <Tabela cabecalho={[
                 'Data',
                 { texto: 'Pedido', className: 'hidden lg:table-cell' },
+                { texto: 'Filial', className: 'hidden lg:table-cell' },
                 { texto: 'Tipo venda', className: 'hidden lg:table-cell' },
                 'Status', 'Cliente', 'Cultivar',
                 { texto: 'Tratamento', className: 'hidden lg:table-cell' },
@@ -517,6 +578,7 @@ export default function Expedicao() {
                   .sort((a, b) => (a.data ?? '').localeCompare(b.data ?? '') || (a.cliente ?? '').localeCompare(b.cliente ?? ''))
                   .map((a) => {
                     const al = alocacao.get(a.id)
+                    const tr = transferencia(a)
                     return (
                       <tr key={a.id} className="border-t border-stone-100 dark:border-stone-800/60">
                         <td className="px-2 py-1.5 whitespace-nowrap">
@@ -525,6 +587,15 @@ export default function Expedicao() {
                           )}
                         </td>
                         <td className="hidden num-tabular px-2 py-1.5 lg:table-cell">{a.pedido ?? '—'}</td>
+                        <td className="hidden px-2 py-1.5 text-xs lg:table-cell" title={tr.filial ?? undefined}>
+                          {tr.curto ? (
+                            <span className={tr.precisa ? 'font-medium text-amber-800 dark:text-amber-300' : 'text-stone-500'}>
+                              {tr.curto}
+                            </span>
+                          ) : (
+                            <span className="text-stone-400">{filiais.size === 0 ? '—' : 'não informada'}</span>
+                          )}
+                        </td>
                         <td className="hidden px-2 py-1.5 lg:table-cell">
                           {a.cooperado ? <Tag cor="roxo">{a.tipo_venda}</Tag> : <span className="text-stone-600 dark:text-stone-300">{a.tipo_venda || '—'}</span>}
                         </td>
@@ -536,7 +607,12 @@ export default function Expedicao() {
                             <p className="text-xs text-stone-500">{[a.cidade, a.estado].filter(Boolean).join('/')}</p>
                           )}
                           <p className="text-xs text-stone-500 lg:hidden">
-                            {[a.pedido && `pedido ${a.pedido}`, a.cooperado ? 'COOPERADO' : null, a.carga && `carga ${a.carga}`]
+                            {[
+                              a.pedido && `pedido ${a.pedido}`,
+                              tr.precisa ? `transferência ${tr.curto}` : null,
+                              a.cooperado ? 'COOPERADO' : null,
+                              a.carga && `carga ${a.carga}`,
+                            ]
                               .filter(Boolean)
                               .join(' · ')}
                           </p>
@@ -562,13 +638,20 @@ export default function Expedicao() {
                           {a.carga ? `${a.carga}${a.status_carga ? ` · ${a.status_carga}` : ''}` : '—'}
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
-                          {al == null ? null : al.descoberto <= 0 ? (
-                            <Tag cor="ok">coberto</Tag>
-                          ) : al.coberto <= 0 ? (
-                            <Tag cor="perigo">descoberto {inteiro(al.descoberto)}</Tag>
-                          ) : (
-                            <Tag cor="alerta">parcial {inteiro(al.coberto)} de {inteiro(al.bags)}</Tag>
-                          )}
+                          <div className="flex flex-col items-start gap-1">
+                            {al == null ? null : al.descoberto <= 0 ? (
+                              <Tag cor="ok">coberto</Tag>
+                            ) : al.coberto <= 0 ? (
+                              <Tag cor="perigo">descoberto {inteiro(al.descoberto)}</Tag>
+                            ) : (
+                              <Tag cor="alerta">parcial {inteiro(al.coberto)} de {inteiro(al.bags)}</Tag>
+                            )}
+                            {tr.precisa && (
+                              <span title={`Pedido da filial ${tr.filial} — solicitar transferência de saldo`}>
+                                <Tag cor="alerta" className="text-[10px]">transferência · {tr.curto}</Tag>
+                              </span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )

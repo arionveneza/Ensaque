@@ -16,8 +16,25 @@
  */
 
 import {
-  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, type Linha,
+  EMBALAGEM_DEPARA, FILIAL_CASA, nomeCurtoFilial, normaliza, normalizaCultivar, normalizaFilial,
+  type Linha,
 } from './importacao/simpleagro'
+
+/**
+ * O pedido precisa de transferência de saldo? Só quando a filial é
+ * conhecida E não é a matriz (`FILIAL_CASA`). Sem filial não se afirma nada
+ * — a tela mostra "filial não informada" (13/09/2026).
+ */
+export function transferenciaDe(filial: string | null | undefined): {
+  precisa: boolean
+  filial: string | null
+  /** Nome curto para etiqueta (TUPACIGUARA, MATRIZ…). */
+  curto: string | null
+} {
+  const f = filial ? normalizaFilial(filial) : null
+  if (!f) return { precisa: false, filial: null, curto: null }
+  return { precisa: f !== FILIAL_CASA, filial: f, curto: nomeCurtoFilial(f) }
+}
 
 const txt = (v: unknown): string => (v == null ? '' : String(v).trim())
 
@@ -203,6 +220,11 @@ export interface AgendamentoConvertido {
   identificador: string
   /** NUMERO do pedido — repete por item. */
   pedido: string
+  /**
+   * FILIAL do próprio relatório — vem vazia hoje (289/289 em 10/09/2026); a
+   * filial de verdade sai do cruzamento com `pedidos_filial` na tela.
+   */
+  filial: string | null
   tipoVenda: string
   /** `tipoVenda` contém COOPERADO — mesma regra do import de pedidos. */
   cooperado: boolean
@@ -264,6 +286,7 @@ export function converterAgendados(rows: Linha[]): {
   const ix = (nome: string) => cab.indexOf(normaliza(nome))
   const iId = ix('IDENTIFICADOR')
   const iPedido = ix('NUMERO')
+  const iFilial = ix('FILIAL')
   const iTipo = ix('TIPO VENDA')
   const iCliente = ix('CLIENTE')
   const iCidade = ix('CIDADE')
@@ -341,6 +364,7 @@ export function converterAgendados(rows: Linha[]): {
     linhas.push({
       identificador,
       pedido: txt(r[iPedido]),
+      filial: iFilial >= 0 ? normalizaFilial(r[iFilial]) : null,
       tipoVenda,
       cooperado,
       cliente: txt(r[iCliente]),

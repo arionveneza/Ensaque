@@ -1,7 +1,9 @@
 ﻿import { supabase } from '@/lib/supabase'
 import type { ClasseAgronomica, TipoParada, UnidadeDose } from '@/dominio/tipos'
 import { diaDeProducao, duracaoParadaMaquinaS } from '@/dominio/calculos'
-import type { PedidoConvertido, EstoquePaConvertido, LoteConvertido } from '@/dominio/importacao/simpleagro'
+import type {
+  PedidoConvertido, PedidoFilial, EstoquePaConvertido, LoteConvertido,
+} from '@/dominio/importacao/simpleagro'
 
 /** Consultas e comandos das telas de Programação, Lotes, Ordens, Qualidade, Indicadores e Cadastros. */
 
@@ -627,6 +629,8 @@ export interface AgendamentoBanco {
   id: string
   identificador: string
   pedido: string | null
+  /** FILIAL do relatório de agendados (vazia hoje); a Expedição cruza com pedidos_filial. */
+  filial: string | null
   tipo_venda: string
   cooperado: boolean
   cliente: string | null
@@ -737,10 +741,46 @@ export async function listarBalanco(): Promise<BalancoLinha[]> {
   return (data ?? []) as BalancoLinha[]
 }
 
+/**
+ * Filial de cada pedido da carga de pedidos MAIS RECENTE (mesma regra
+ * `ult_ped` da v_balanco_demanda): número do pedido → filial normalizada
+ * (null = '0'/vazia no relatório). Vazio se nunca importaram o Pedidos
+ * Analítico ou se a migração pedidos-filial.sql ainda não rodou.
+ */
+export async function listarPedidosFilial(): Promise<Map<string, string | null>> {
+  const mapa = new Map<string, string | null>()
+  const carga = await supabase
+    .from('cargas_demanda')
+    .select('id')
+    .eq('tipo', 'pedidos')
+    .order('criada_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (carga.error || !carga.data) return mapa
+  const cargaId = (carga.data as { id: string }).id
+  // PostgREST pagina em 1000: uma carga real tem ~500 pedidos, mas não se aposta
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await supabase
+      .from('pedidos_filial')
+      .select('numero_pedido, filial')
+      .eq('carga_id', cargaId)
+      .range(de, de + 999)
+    if (error) {
+      if (error.code === '42P01' || error.message.includes('pedidos_filial')) return mapa
+      erro('filial dos pedidos', error)
+    }
+    const lote = (data ?? []) as { numero_pedido: string; filial: string | null }[]
+    for (const l of lote) mapa.set(l.numero_pedido, l.filial)
+    if (lote.length < 1000) break
+  }
+  return mapa
+}
+
 /** Carga é substituição total: cada upload cria uma carga nova que passa a valer. */
 export async function importarPedidos(
   linhas: PedidoConvertido[],
   usuarioId: string,
+  pedidosFilial: PedidoFilial[] = [],
 ): Promise<number> {
   const carga = await supabase
     .from('cargas_demanda')
@@ -772,6 +812,19 @@ export async function importarPedidos(
       ;({ error } = await supabase.from('pedidos_venda').insert(semCoop()))
     }
     erro('inserir pedidos', error)
+  }
+  // filial por pedido, na MESMA carga (tabela própria, fora da agregação).
+  // Tabela ausente (migração pedidos-filial.sql ainda não rodou) não trava a
+  // carga do dia — só a Expedição fica sem o cruzamento
+  const filiais = pedidosFilial.map((p) => ({
+    carga_id: cargaId,
+    numero_pedido: p.numero,
+    filial: p.filial,
+  }))
+  for (let i = 0; i < filiais.length; i += 500) {
+    const { error } = await supabase.from('pedidos_filial').insert(filiais.slice(i, i + 500))
+    if (error && (error.code === '42P01' || error.message.includes('pedidos_filial'))) break
+    erro('gravar filial dos pedidos', error)
   }
   return registros.length
 }

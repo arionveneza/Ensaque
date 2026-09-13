@@ -621,9 +621,22 @@ export default function Ordens() {
                   variante="primario"
                   onClick={() =>
                     comErro(async () => {
-                      const qtd = await g.importarPedidos(previaPedidos.linhas, usuario!.id)
+                      const qtd = await g.importarPedidos(
+                        previaPedidos.linhas,
+                        usuario!.id,
+                        previaPedidos.pedidosFilial,
+                      )
+                      const nFil = previaPedidos.pedidosFilial.length
                       setPreviaPedidos(null)
-                      setMsg(`${qtd} linha(s) de pedido importadas — substituição total da carga anterior.`)
+                      setMsg(
+                        `${qtd} linha(s) de pedido importadas — substituição total da carga anterior.` +
+                          (nFil > 0
+                            ? ` Filial de ${nFil} pedido(s) gravada para a Expedição` +
+                              (previaPedidos.resumo.pedidosSemFilial > 0
+                                ? ` (${previaPedidos.resumo.pedidosSemFilial} sem filial no relatório).`
+                                : '.')
+                            : ''),
+                      )
                     })
                   }
                 >
