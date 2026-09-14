@@ -20,6 +20,7 @@ const Agrotis = lazy(() => import('@/telas/Agrotis'))
 const Etapas = lazy(() => import('@/telas/Etapas'))
 const Expedicao = lazy(() => import('@/telas/Expedicao'))
 const Veiculos = lazy(() => import('@/telas/Veiculos'))
+const Pesagem = lazy(() => import('@/telas/Pesagem'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Mrp = lazy(() => import('@/telas/Mrp'))
 const Mapa = lazy(() => import('@/telas/Mapa'))
@@ -34,7 +35,7 @@ const DefinirSenha = lazy(() => import('@/telas/DefinirSenha'))
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
   | 'agrotis' | 'etapas' | 'expedicao' | 'mapa' | 'inventario' | 'veiculos'
-  | 'indicadores' | 'mrp' | 'cadastros' | 'administracao' | 'sap'
+  | 'pesagem' | 'indicadores' | 'mrp' | 'cadastros' | 'administracao' | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -48,6 +49,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'mapa', nome: 'Mapa' },
   { id: 'inventario', nome: 'Inventário' },
   { id: 'veiculos', nome: 'Veículos' },
+  { id: 'pesagem', nome: 'Pesagem' },
   { id: 'indicadores', nome: 'Indicadores' },
   { id: 'mrp', nome: 'MRP' },
   { id: 'cadastros', nome: 'Cadastros' },
@@ -364,6 +366,7 @@ function Shell() {
             {atual === 'mapa' && <Mapa />}
             {atual === 'inventario' && <Inventario />}
             {atual === 'veiculos' && <Veiculos />}
+            {atual === 'pesagem' && <Pesagem />}
             {atual === 'indicadores' && <Indicadores />}
             {atual === 'mrp' && <Mrp />}
             {atual === 'cadastros' && <Cadastros />}
@@ -444,6 +447,13 @@ function IconeTela({ id }: { id: TelaId }) {
         <svg {...props}>
           <rect x="2" y="6" width="9" height="6" rx="1" />
           <path d="M11 8h2.5l.5 1.5V12h-3zM4 12.5a1 1 0 100 .01M12 12.5a1 1 0 100 .01" />
+        </svg>
+      )
+    case 'pesagem':
+      // balança de dois pratos
+      return (
+        <svg {...props}>
+          <path d="M8 2.5v11M5 13.5h6M3 5h10M3 5l-1.5 4.5h3zM13 5l-1.5 4.5h3z" />
         </svg>
       )
     case 'mapa':

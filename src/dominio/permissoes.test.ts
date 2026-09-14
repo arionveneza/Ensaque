@@ -67,11 +67,11 @@ describe('matriz padrao', () => {
         expect(permitidoPadrao('Gestor', recurso, acao)).toBe(true)
   })
 
-  it('Balanca so enxerga veiculos e o mapa (leitura), nada mais', () => {
+  it('Balanca so enxerga veiculos, o mapa (leitura) e a pesagem, nada mais', () => {
     // veiculos desde 15/08/2026; no mapa ela so VE — montar carga/lotear
-    // virou acao do PCP e Gestor em 30/08/2026
+    // virou acao do PCP e Gestor em 30/08/2026; pesagem desde 14/09/2026
     for (const [recurso, acoes] of Object.entries(ACOES_POR_RECURSO)) {
-      if (recurso === 'veiculos' || recurso === 'mapa') continue
+      if (recurso === 'veiculos' || recurso === 'mapa' || recurso === 'pesagem') continue
       for (const acao of acoes)
         expect(
           permitidoPadrao('Balanca', recurso, acao),
@@ -86,6 +86,18 @@ describe('matriz padrao', () => {
         permitidoPadrao('Balanca', 'mapa', acao),
         `Balanca nao pode ${acao} no mapa`,
       ).toBe(false)
+  })
+
+  it('pesagem (14/09/2026): so a Balanca registra, so o Gestor administra', () => {
+    expect(permitidoPadrao('Balanca', 'pesagem', 'registrar')).toBe(true)
+    expect(permitidoPadrao('Balanca', 'pesagem', 'administrar')).toBe(false)
+    expect(permitidoPadrao('Gestor', 'pesagem', 'administrar')).toBe(true)
+    for (const p of ['PCP', 'Logistica', 'Direcao'] as const) {
+      expect(permitidoPadrao(p, 'pesagem', 'ver')).toBe(true)
+      expect(permitidoPadrao(p, 'pesagem', 'registrar')).toBe(false)
+    }
+    for (const p of ['Producao', 'Qualidade'] as const)
+      expect(permitidoPadrao(p, 'pesagem', 'ver')).toBe(false)
   })
 
   it('ajuste de estoque do mapa (08/09/2026) e do PCP e da Logistica', () => {

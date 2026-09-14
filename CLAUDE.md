@@ -566,6 +566,11 @@ SAP_PASSWORD=
 | **Produção** | Programação, Execução, Indicadores | iniciar/parar/retomar/finalizar, pesos de tanque |
 | **Qualidade** | Execução, Qualidade, Indicadores | apontar qualidade visual e amostra |
 | **Gestor** | todas | todas |
+| **Balança** | Veículos, Mapa (ver), **Pesagem** | chamar motorista, checklist de veículo, **registrar pesagem** (etapas 1 e 2) |
+
+Recurso `pesagem` (14/09/2026): `ver` (Balança, PCP, Logística, Direção, Gestor) ·
+`registrar` (**só Balança**, e Gestor) · `administrar` (tipos de veículo, tolerâncias, correção
+de bruto — **só Gestor**). Decisão do Arion: "só Balança registra; Gestor administra".
 
 No protótipo os perfis são fixos no código. **No sistema real**: Supabase Auth com usuários
 nominais (apontamento registra a pessoa, não o perfil) e uma **tela de administração** onde o gestor
@@ -800,6 +805,45 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    endereçado → mapa (botão Novo lote continua pra compra de terceiros); consumo e
    reserva de ordens/cargas seguem sobre a tabela `lotes_mapa` cheia, sem mudança.
 
+6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
+   funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS
+   regras, para três operadores da balança ao mesmo tempo). Tela própria, recurso `pesagem`,
+   **totalmente separada da montagem de carga do Mapa** (decisão do Arion — `cargas_montadas`
+   tem placa/tara/peso, mas não se cruza nem pré-preenche). Tabelas `tipos_veiculo` (nome +
+   PBT máximo legal em kg, 7 tipos semeados: Rodotrem 74.000 · Bitrem 57.000 · LS Simples
+   41.500 · LS Trucada 48.500 · LS 4 Eixos 58.500 · Truck 23.000 · Bitruck 29.000),
+   `parametros_pesagem` (linha única: tolerância legal 5% — Lei 7.408/85 — e tolerância da
+   ordem 0,5%) e **`pesagens`** (não `carregamentos`: esse nome já é a foto legada da
+   SimpleAgro). Migração `pesagem.sql`. Tudo em kg inteiros.
+   **Duas etapas por veículo** (domínio puro `src/dominio/pesagem.ts`, mesma fórmula na
+   função SQL `calc_pesagem` usada pela view `v_pesagens` e conferida na migração com os 6
+   casos de aceite da especificação — mudou uma, mude a outra):
+   (1) **Pré-conferência**, antes de carregar: `tara + ordem ≤ PBT` → SIM, senão NÃO com
+   "Excede PBT em X kg" — **sem tolerância** (a tolerância legal é margem de balança, não de
+   planejamento). (2) **Pesagem final**: `líquido = bruto − tara`; legislação OK (≤ PBT) ·
+   ATENÇÃO (≤ PBT × 1,05) · EXCESSO; × ordem OK (|dif| ≤ 0,5%) · ACIMA · ABAIXO; **Liberado?**
+   = SIM se legislação ∈ {OK, ATENÇÃO} e ordem OK, NÃO caso contrário, PENDENTE sem bruto.
+   ATENÇÃO libera (está dentro da tolerância legal) mas fica visível. Comparações com EPS no
+   TS (74.000 × 1,05 e 175 ÷ 35.000 não são exatos em ponto flutuante); no SQL é `numeric`.
+   **O que fica congelado na linha**: `pbt_max_kg_aplicado` no INSERT (trocar o tipo antes de
+   pesar recongela; depois de pesado nunca muda) e as duas tolerâncias na **primeira**
+   gravação do bruto — mudar PBT ou tolerância vale só para o futuro, o histórico não muda de
+   status. **Pré-conferência NÃO não bloqueia a pesagem** (decisão do Arion: "permitir com
+   justificativa"): o gatilho exige observação preenchida e carimba
+   `excesso_autorizado_em/por`; a linha mostra "excesso autorizado". Etapa 1 continua
+   editável ("ajustar") enquanto não pesada — é o caminho para reduzir a ordem. Bruto já
+   gravado só muda com `administrar` (carimba `corrigido_em/por`; `pesado_em/por` guardam a
+   1ª pesagem). Sem policy de delete: registro de conformidade.
+   **Concorrência otimista** (novidade no app): `pesagens.versao` inteira, incrementada pelo
+   gatilho; o cliente grava com `.eq('versao', v)` lida na abertura do modal e zero linhas
+   vira "alterado por outro operador — a lista foi atualizada" (`atualizarComVersao` em
+   `api-pesagem.ts`). Inteiro, não `atualizado_em`: o PostgREST devolve microssegundos e
+   `Date` trunca em ms. A tela lê a TABELA (realtime não emite evento de view) e calcula pelo
+   domínio; `v_pesagens` (security_invoker) fica para relatório/BI. Realtime nas três tabelas.
+   Tela: resumo do período (contadores da §4.5 da especificação), filtros (data padrão hoje,
+   placa, ordem, tipo, chips Liberado?), lista com etiquetas coloridas e PENDENTE em âmbar
+   (caminhão no pátio) na frente, modal Etapa 1 com prévia ao vivo e rascunho, modal Etapa 2
+   com prévia e justificativa, cartão Parâmetros (Gestor), export .xlsx com todas as colunas.
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 

@@ -27,6 +27,9 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   cadastros: ['ver', 'editar'],
   expedicao: ['ver', 'importar'],
   veiculos: ['ver', 'chamar', 'checklist'],
+  // Pesagem (14/09/2026): checklist de carregamento — registrar = etapas 1 e 2
+  // e observações; administrar = tipos de veículo, tolerâncias e correção
+  pesagem: ['ver', 'registrar', 'administrar'],
 }
 
 export const ROTULO_ACAO: Record<string, string> = {
@@ -48,6 +51,8 @@ export const ROTULO_ACAO: Record<string, string> = {
   abrir: 'Abrir/fechar inventário',
   contar: 'Lançar contagem',
   ajustar: 'Ajustar estoque',
+  registrar: 'Registrar pesagem',
+  administrar: 'Parâmetros e correções',
 }
 
 /**
@@ -78,6 +83,8 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     cadastros: ['ver', 'editar'],
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],
+    // Pesagem (14/09/2026): PCP só acompanha; quem registra é a Balança
+    pesagem: ['ver'],
   },
   Logistica: {
     programacao: ['ver'],
@@ -92,6 +99,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     // os carregamentos são agenda da logística tanto quanto do PCP
     expedicao: ['ver', 'importar'],
     veiculos: ['ver', 'chamar', 'checklist'],
+    pesagem: ['ver'],
   },
   Producao: {
     programacao: ['ver'],
@@ -127,15 +135,18 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     cadastros: ['ver'],
     expedicao: ['ver'],
     veiculos: ['ver'],
+    pesagem: ['ver'],
   },
   /**
    * Balança (15/08/2026): perfil do pátio/portaria — checklist de veículo e
    * chamada de motorista. A montagem de carga passou pro PCP em 30/08/2026;
-   * a Balança segue VENDO o mapa e as cargas.
+   * a Balança segue VENDO o mapa e as cargas. Pesagem (14/09/2026): só ela
+   * registra; parâmetros e correções são do Gestor.
    */
   Balanca: {
     veiculos: ['ver', 'chamar', 'checklist'],
     mapa: ['ver'],
+    pesagem: ['ver', 'registrar'],
   },
   Gestor: { ...ACOES_POR_RECURSO },
 }
