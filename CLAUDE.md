@@ -833,7 +833,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    `excesso_autorizado_em/por`; a linha mostra "excesso autorizado". Etapa 1 continua
    editável ("ajustar") enquanto não pesada — é o caminho para reduzir a ordem. Bruto já
    gravado só muda com `administrar` (carimba `corrigido_em/por`; `pesado_em/por` guardam a
-   1ª pesagem). Sem policy de delete: registro de conformidade.
+   1ª pesagem). **Excluir** (pedido do Arion, mesmo dia; migração `pesagem-excluir.sql`):
+   quem registra exclui só carregamento ainda não pesado (erro da etapa 1); pesado, só o
+   administrador — com confirmação e a versão lida. **Filtro de data nasce vazio = todas as
+   datas** (pedido dele: "quando não tem data, mostrar todos").
    **Concorrência otimista** (novidade no app): `pesagens.versao` inteira, incrementada pelo
    gatilho; o cliente grava com `.eq('versao', v)` lida na abertura do modal e zero linhas
    vira "alterado por outro operador — a lista foi atualizada" (`atualizarComVersao` em

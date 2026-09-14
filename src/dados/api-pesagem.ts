@@ -141,16 +141,16 @@ function normalizaLinha(l: PesagemLinha): PesagemLinha {
 }
 
 export interface FiltroPesagens {
-  de: string
-  ate: string
+  /** Vazio = sem limite (Arion, 14/09/2026: "quando não tem data, mostrar todos"). */
+  de?: string
+  ate?: string
 }
 
 export async function listarPesagens(f: FiltroPesagens): Promise<PesagemLinha[]> {
-  const { data, error } = await supabase
-    .from('pesagens')
-    .select(SELECT_PESAGEM)
-    .gte('data', f.de)
-    .lte('data', f.ate)
+  let q = supabase.from('pesagens').select(SELECT_PESAGEM)
+  if (f.de) q = q.gte('data', f.de)
+  if (f.ate) q = q.lte('data', f.ate)
+  const { data, error } = await q
     .order('data', { ascending: false })
     .order('criado_em', { ascending: false })
   if (error) {
@@ -227,6 +227,26 @@ export const corrigirPesoFinal = (
   versao: number,
   d: { peso_bruto_final_kg: number; observacoes: string | null },
 ) => atualizarComVersao(id, versao, d, 'corrigir pesagem')
+
+/**
+ * Exclui o carregamento. A policy decide quem pode: registrar só o ainda não
+ * pesado, administrar qualquer um. Com a versão lida: zero linhas = mudou ou
+ * não pode.
+ */
+export async function excluirPesagem(id: string, versao: number): Promise<void> {
+  const { data, error } = await supabase
+    .from('pesagens')
+    .delete()
+    .eq('id', id)
+    .eq('versao', versao)
+    .select('id')
+  erro('excluir carregamento', error)
+  if (!data || data.length === 0) {
+    throw new Error(
+      'excluir carregamento: este registro foi alterado por outro operador, ou já foi pesado e só o administrador exclui.',
+    )
+  }
+}
 
 /** Nomes de quem criou/pesou/autorizou/corrigiu — resolvidos no cliente. */
 export async function mapaNomesUsuarios(): Promise<Map<string, string>> {

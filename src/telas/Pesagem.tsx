@@ -76,9 +76,9 @@ export default function Pesagem() {
   const [modal, setModal] = useState<Modal>(null)
   const [mostrarParametros, setMostrarParametros] = useState(false)
 
-  // ---- filtros ----
-  const [de, setDe] = useState(hojeIso)
-  const [ate, setAte] = useState(hojeIso)
+  // ---- filtros ---- (data vazia = todos; padrão limpo — pedido do Arion, 14/09/2026)
+  const [de, setDe] = useState('')
+  const [ate, setAte] = useState('')
   const [fPlaca, setFPlaca] = useState('')
   const [fOrdem, setFOrdem] = useState('')
   const [fTipo, setFTipo] = useState('')
@@ -90,11 +90,12 @@ export default function Pesagem() {
    * segmento digitado) e sem consultar com data pela metade.
    */
   const recarregar = useCallback(async () => {
-    if (!dataValida(de) || !dataValida(ate)) return
+    // data pela metade (digitando) não consulta; vazia consulta tudo
+    if ((de && !dataValida(de)) || (ate && !dataValida(ate))) return
     const [t, pr, ps, nm] = await Promise.all([
       api.listarTiposVeiculo(),
       api.lerParametros(),
-      api.listarPesagens({ de, ate }),
+      api.listarPesagens({ de: de || undefined, ate: ate || undefined }),
       api.mapaNomesUsuarios(),
     ])
     setTipos(t)
@@ -179,8 +180,10 @@ export default function Pesagem() {
     [filtradas],
   )
 
-  const temFiltro = !!(fPlaca || fOrdem || fTipo || fLiberado.size > 0)
+  const temFiltro = !!(de || ate || fPlaca || fOrdem || fTipo || fLiberado.size > 0)
   const limparFiltros = () => {
+    setDe('')
+    setAte('')
     setFPlaca('')
     setFOrdem('')
     setFTipo('')
@@ -222,7 +225,7 @@ export default function Pesagem() {
       p.observacoes ?? '',
     ])
     const num = (titulo: string, largura = 12) => ({ titulo, largura, tipo: 'numero' as const, casas: 0 })
-    await exportarXlsx(`pesagens-${de}${ate !== de ? `-a-${ate}` : ''}`, [
+    await exportarXlsx(`pesagens${de ? `-${de}` : ''}${ate && ate !== de ? `-a-${ate}` : ''}`, [
       { titulo: 'Data', largura: 11 },
       { titulo: 'Nº Ordem', largura: 12 },
       { titulo: 'Placa', largura: 10 },
@@ -306,7 +309,7 @@ export default function Pesagem() {
       </Cartao>
 
       {/* ---------------- filtros ---------------- */}
-      <Cartao titulo="Filtros" className="mb-5">
+      <Cartao titulo={`Filtros${!de && !ate ? ' · todas as datas' : ''}`} className="mb-5">
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs text-stone-500">
             De
@@ -471,6 +474,25 @@ export default function Pesagem() {
                         className="-m-1.5 rounded p-1.5 text-xs underline"
                       >
                         corrigir bruto
+                      </button>
+                    )}
+                    {/* excluir: quem registra, só antes de pesar; administrador, sempre */}
+                    {((podeRegistrar && p.peso_bruto_final_kg == null) || podeAdministrar) && (
+                      <button
+                        onClick={() => {
+                          const ok = window.confirm(
+                            `Excluir o carregamento da ordem ${p.numero_ordem} (placa ${p.placa})?` +
+                              (p.peso_bruto_final_kg != null ? ' Ele já foi pesado — o registro some do histórico.' : ''),
+                          )
+                          if (!ok) return
+                          void acao(async () => {
+                            await api.excluirPesagem(p.id, p.versao)
+                            setMsg(`Carregamento da ordem ${p.numero_ordem} excluído.`)
+                          })
+                        }}
+                        className="-m-1.5 ml-2 rounded p-1.5 text-xs text-red-700 underline dark:text-red-400"
+                      >
+                        excluir
                       </button>
                     )}
                     {p.observacoes && (
