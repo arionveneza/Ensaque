@@ -342,24 +342,47 @@ export function autoProgramar(
 /**
  * Reordena a fila de uma célula agrupando por receita para reduzir setup,
  * mantendo as urgentes na frente. Devolve a nova sequência (1..n).
+ *
+ * O setup só olha a RECEITA (`setupEntre`), então o agrupamento é por
+ * receita — dentro dela, por cultivar. Antes a chave era receita+cultivar e
+ * duas ordens da mesma receita com cultivares diferentes caíam em grupos
+ * separados, que podiam ficar longe (achado do Arion no dia 15/09/2026: o
+ * botão não tirava nada dos 320 min da TSI 1). A fronteira urgente → normal
+ * também é aproveitada: se alguma receita aparece dos dois lados, ela fecha
+ * as urgentes e abre as normais, e essa troca some.
  */
 export function otimizarSequencia(fila: OrdemProgramavel[]): Atribuicao[] {
   const urgentes = fila.filter((o) => o.prioridade === 'Urgente')
   const normais = fila.filter((o) => o.prioridade !== 'Urgente')
 
-  const agrupar = (lista: OrdemProgramavel[]) => {
-    const grupos = new Map<string, OrdemProgramavel[]>()
+  /** Blocos por receita (maiores primeiro); dentro do bloco, por cultivar (maiores primeiro). */
+  const blocos = (lista: OrdemProgramavel[]): OrdemProgramavel[][] => {
+    const porReceita = new Map<string, Map<string, OrdemProgramavel[]>>()
     for (const o of lista) {
-      const chave = `${o.receitaId}|${o.cultivar}`
-      const g = grupos.get(chave)
-      if (g) g.push(o)
-      else grupos.set(chave, [o])
+      const r = porReceita.get(o.receitaId) ?? new Map<string, OrdemProgramavel[]>()
+      const c = r.get(o.cultivar) ?? []
+      c.push(o)
+      r.set(o.cultivar, c)
+      porReceita.set(o.receitaId, r)
     }
-    // grupos maiores primeiro: concentram mais tempo sem troca
-    return [...grupos.values()].sort((a, b) => b.length - a.length).flat()
+    return [...porReceita.values()]
+      .map((r) => [...r.values()].sort((a, b) => b.length - a.length).flat())
+      .sort((a, b) => b.length - a.length)
   }
 
-  return [...agrupar(urgentes), ...agrupar(normais)].map((o, i) => ({
+  const bu = blocos(urgentes)
+  const bn = blocos(normais)
+  // receita comum aos dois lados: última das urgentes e primeira das normais
+  const iu = bu.findIndex((b) => bn.some((n) => n[0].receitaId === b[0].receitaId))
+  if (iu >= 0) {
+    const [b] = bu.splice(iu, 1)
+    bu.push(b)
+    const jn = bn.findIndex((n) => n[0].receitaId === b[0].receitaId)
+    const [n] = bn.splice(jn, 1)
+    bn.unshift(n)
+  }
+
+  return [...bu.flat(), ...bn.flat()].map((o, i) => ({
     ordemId: o.id,
     maquinaId: o.maquinaId!,
     dia: o.dataProg!,

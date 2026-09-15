@@ -196,6 +196,28 @@ describe('otimizar sequencia', () => {
     expect(nova[0].ordemId).toBe('u1')
   })
 
+  it('junta a mesma receita mesmo com cultivar diferente (setup so olha a receita)', () => {
+    // dia 15/09/2026 na TSI 1: 320 min com a chave receita+cultivar; o minimo e 280
+    const fila = [
+      ord({ id: '143226', receitaId: 'FTZ60', cultivar: 'NEO780', prioridade: 'Urgente', seq: 1 }),
+      ord({ id: '144727', receitaId: 'FTZ60+RCoMoNi+Lli', cultivar: 'NEO780', prioridade: 'Urgente', seq: 2 }),
+      ord({ id: '144775', receitaId: 'FTZ ELITE+RCoMoNi', cultivar: '761', prioridade: 'Urgente', seq: 3 }),
+      ord({ id: '144923', receitaId: 'FTZ60+VIC+Lli', cultivar: 'O720', prioridade: 'Urgente', seq: 4 }),
+      ord({ id: '144971', receitaId: 'FTZ ELITE+Lli', cultivar: 'NEO771', prioridade: 'Urgente', seq: 5 }),
+      ord({ id: '144996', receitaId: 'FTZ60+RCoMoNi', cultivar: 'NEO801', prioridade: 'Urgente', seq: 6 }),
+      ord({ id: '145018', receitaId: 'FTZ60+VIC+RCoMoNi', cultivar: 'NEO801', prioridade: 'Urgente', seq: 7 }),
+      ord({ id: '145041', receitaId: 'FTZ60+VIC+Lli', cultivar: 'NEO801', prioridade: 'Urgente', seq: 8 }),
+      ord({ id: 'P59', receitaId: 'FTZ60', cultivar: 'NEO680', prioridade: 'Normal', seq: 9 }),
+    ].map((o) => ({ ...o, maquinaId: 'TSI1', dataProg: DIAS[0] }))
+    expect(resumoHorasFila(fila, 12, SETUP).setupMin).toBe(320)
+    const nova = otimizarSequencia(fila).map((a) => fila.find((o) => o.id === a.ordemId)!)
+    expect(resumoHorasFila(nova, 12, SETUP).setupMin).toBe(280)
+    // urgentes continuam todas antes da normal
+    expect(nova[nova.length - 1].id).toBe('P59')
+    // e a FTZ60 urgente fechou a fila das urgentes para emendar com a P59
+    expect(nova[nova.length - 2].id).toBe('143226')
+  })
+
   it('renumera a sequencia de 1 a n', () => {
     const fila = [
       ord({ maquinaId: 'TSI1', dataProg: DIAS[0] }),
