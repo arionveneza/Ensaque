@@ -35,6 +35,14 @@ const CAMPO =
 const ABERTAS = ['Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
   'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada']
 
+/**
+ * Tipos de venda em destaque roxo na lista (Arion, 15/09/2026): COOPERADO e
+ * MULTIPLICADOR — os dois são compromisso com produtor parceiro. Só o visual;
+ * a divisão COOPERADO × OUTRAS dos saldos continua pela marca `cooperado`.
+ */
+const tipoVendaDestacado = (tipo: string | null | undefined) =>
+  /COOPERADO|MULTIPLICADOR/i.test(tipo ?? '')
+
 /** Embalagens que o app conhece — fora disso o estoque nunca casa. */
 const EMBALAGENS_APP = new Set(Object.values(EMBALAGEM_DEPARA).map((e) => e.codigo))
 
@@ -597,7 +605,7 @@ export default function Expedicao() {
                           )}
                         </td>
                         <td className="hidden px-2 py-1.5 lg:table-cell">
-                          {a.cooperado ? <Tag cor="roxo">{a.tipo_venda}</Tag> : <span className="text-stone-600 dark:text-stone-300">{a.tipo_venda || '—'}</span>}
+                          {tipoVendaDestacado(a.tipo_venda) ? <Tag cor="roxo">{a.tipo_venda}</Tag> : <span className="text-stone-600 dark:text-stone-300">{a.tipo_venda || '—'}</span>}
                         </td>
                         <td className="px-2 py-1.5"><Tag cor={corStatusEntrega(a.status_entrega)}>{a.status_entrega}</Tag></td>
                         {/* break-words em vez de truncate: em toque não há hover pro title */}
@@ -610,7 +618,7 @@ export default function Expedicao() {
                             {[
                               a.pedido && `pedido ${a.pedido}`,
                               tr.precisa ? `transferência ${tr.curto}` : null,
-                              a.cooperado ? 'COOPERADO' : null,
+                              tipoVendaDestacado(a.tipo_venda) ? a.tipo_venda.replace(/^VENDAs+/i, '') : null,
                               a.carga && `carga ${a.carga}`,
                             ]
                               .filter(Boolean)
