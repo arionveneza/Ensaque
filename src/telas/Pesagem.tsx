@@ -361,10 +361,10 @@ export default function Pesagem() {
             { texto: 'Tipo', className: 'hidden lg:table-cell' },
             { texto: '#Tara', className: 'hidden lg:table-cell' },
             { texto: '#Peso ordem', className: 'hidden md:table-cell' },
-            'Pode carregar?',
+            'Pode carregar? (etapa 1)',
             '#Bruto final', '#Líquido',
             { texto: '#Dif. ordem', className: 'hidden md:table-cell' },
-            'Legislação', '× Ordem', 'Liberado?',
+            'Legislação', '× Ordem', 'Liberado? (etapa 2)',
             { texto: 'Responsável', className: 'hidden lg:table-cell' },
             '',
           ]}>
@@ -412,21 +412,21 @@ export default function Pesagem() {
                   <td className="px-2">
                     <span title={ROTULO_LEGISLACAO[a.statusLegislacao]}>
                       <Tag cor={COR_LEGISLACAO[a.statusLegislacao]} className="min-w-24 justify-center">
-                        {a.statusLegislacao === 'AGUARDANDO' ? 'aguardando' : a.statusLegislacao === 'ATENCAO' ? 'ATENÇÃO' : a.statusLegislacao}
+                        {a.statusLegislacao === 'AGUARDANDO' ? 'após pesar' : a.statusLegislacao === 'ATENCAO' ? 'ATENÇÃO' : a.statusLegislacao}
                       </Tag>
                     </span>
                   </td>
                   <td className="px-2">
                     <span title={ROTULO_ORDEM[a.statusOrdem]}>
                       <Tag cor={COR_ORDEM[a.statusOrdem]} className="min-w-24 justify-center">
-                        {a.statusOrdem === 'AGUARDANDO' ? 'aguardando' : a.statusOrdem === 'OK' ? 'OK' : a.statusOrdem === 'DIVERGENTE_ACIMA' ? 'ACIMA' : 'ABAIXO'}
+                        {a.statusOrdem === 'AGUARDANDO' ? 'após pesar' : a.statusOrdem === 'OK' ? 'OK' : a.statusOrdem === 'DIVERGENTE_ACIMA' ? 'ACIMA' : 'ABAIXO'}
                       </Tag>
                     </span>
                   </td>
                   <td className="px-2">
                     <div className="flex flex-col items-start gap-1">
                       <Tag cor={COR_LIBERADO[a.liberado]} className="min-w-24 justify-center font-semibold">
-                        {a.liberado === 'PENDENTE' ? 'PENDENTE' : a.liberado === 'SIM' ? 'LIBERADO' : 'NÃO LIBERADO'}
+                        {a.liberado === 'PENDENTE' ? 'PENDENTE · pesar' : a.liberado === 'SIM' ? 'LIBERADO' : 'NÃO LIBERADO'}
                       </Tag>
                       {p.excesso_autorizado_em && (
                         <span
