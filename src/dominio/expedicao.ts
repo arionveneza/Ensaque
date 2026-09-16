@@ -260,9 +260,10 @@ export interface ResumoAgendados {
   bagsOutras: number
   identificadorRepetido: number
   /**
-   * STATUS ENTREGA = FINALIZADO/Finalizada: o caminhão já saiu e o upload
-   * seguinte de saldos já desconta — contar de novo dobraria a falta. Fica
-   * fora, contado (pedido do Arion, 12/09/2026).
+   * STATUS ENTREGA = FINALIZADO/Finalizada OU STATUS CARGA = Finalizado: o
+   * caminhão já saiu e o upload seguinte de saldos já desconta — contar de
+   * novo dobraria a falta. Fica fora, contado (pedido do Arion, 12/09/2026;
+   * STATUS CARGA incluído em 15/09/2026).
    */
   finalizados: number
 }
@@ -333,9 +334,13 @@ export function converterAgendados(rows: Linha[]): {
       resumo.semQuantidade++
       continue
     }
-    // antes de qualquer contador: finalizado não é demanda, é caminhão que já saiu
+    // antes de qualquer contador: finalizado não é demanda, é caminhão que já
+    // saiu. Vale pelo STATUS ENTREGA e pelo STATUS CARGA — a carga fica
+    // "Finalizado" com a entrega ainda "Aprovado" (182 linhas, 3.759 bags, na
+    // carga de 15/09/2026; achado do Arion)
     const statusEntrega = txt(r[iStatusEntrega]) || 'Sem status'
-    if (normaliza(statusEntrega).startsWith('FINALIZAD')) {
+    const statusCargaCru = normaliza(opcional(iStatusCarga, r) ?? '')
+    if (normaliza(statusEntrega).startsWith('FINALIZAD') || statusCargaCru.startsWith('FINALIZAD')) {
       resumo.finalizados++
       continue
     }

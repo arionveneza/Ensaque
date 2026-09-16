@@ -619,7 +619,9 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    `TRATAMENTO` é código composto (`FTZ60 + VIC`) normalizado por `normalizaTratamento` (caixa,
    acento, espaço em volta do `+`) nos dois lados do cruzamento. **Toda linha com quantidade
    entra, inclusive "Aguardando Estoque"** — é a demanda que precisa de estoque (status visível
-   e filtrável) — **exceto STATUS ENTREGA = FINALIZADO/Finalizada**, que fica fora na
+   e filtrável) — **exceto STATUS ENTREGA = FINALIZADO/Finalizada ou STATUS CARGA = Finalizado**
+   (15/09/2026: 182 linhas, 3.759 bags, tinham a carga finalizada com a entrega ainda
+   "Aprovado" e inflavam a falta), que fica fora na
    importação (caminhão já saiu; o upload seguinte de saldos já desconta — contar de novo
    dobraria a falta; `resumo.finalizados`, pedido do Arion 12/09/2026). A tabela consolidada
    mostra o `#Agendado` de cada produto repartido em **COOPERADO × OUTRAS VENDAS**

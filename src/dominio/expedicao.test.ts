@@ -496,6 +496,19 @@ describe('conversao dos pedidos agendados', () => {
     expect(resumo.aproveitadas).toBe(1)
   })
 
+  it('STATUS CARGA = Finalizado tambem fica fora, mesmo com a entrega Aprovado (15/09/2026)', () => {
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND,
+      linhaAg({ IDENTIFICADOR: 'a', 'STATUS ENTREGA': 'Aprovado', CARGA: '715', 'STATUS CARGA': 'Finalizado', 'QTD AGENDADA': 7 }),
+      linhaAg({ IDENTIFICADOR: 'b', 'STATUS ENTREGA': 'Aprovado', CARGA: '716', 'STATUS CARGA': 'Em carga', 'QTD AGENDADA': 8 }),
+      linhaAg({ IDENTIFICADOR: 'c', 'STATUS ENTREGA': 'Aprovado', CARGA: null, 'STATUS CARGA': null, 'QTD AGENDADA': 9 }),
+    ])
+    expect(linhas.map((l) => l.identificador)).toEqual(['b', 'c'])
+    expect(resumo.finalizados).toBe(1)
+    expect(resumo.porStatusCarga).toEqual({ 'Em carga': 1 })
+    expect(resumo.aproveitadas).toBe(2)
+  })
+
   it('Aguardando Estoque ENTRA na demanda e e contado no resumo', () => {
     const { linhas, resumo } = converterAgendados([
       CAB_AGEND, linhaAg(), linhaAg({ IDENTIFICADOR: 'ID-2', 'STATUS ENTREGA': 'Aguardando Estoque' }),
