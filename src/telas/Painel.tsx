@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import type { LinhaMaquina, LinhaOrdem } from '@/dados/api'
+import { prioridadeDiaDe } from '@/dados/api'
+import { ordenarComPrioridades } from '@/dominio/prioridadesDia'
 import * as g from '@/dados/api-gestao'
 import { mapaMotivos, paraOrdemDominio, pesoBagOrdemKg, pesoOrdemKg } from '@/dados/adaptadores'
 import {
@@ -65,7 +67,7 @@ export default function Painel({ onSair }: { onSair: () => void }) {
 
   useRealtime(
     ['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques', 'qualidade_checks',
-      'maquina_paradas'],
+      'maquina_paradas', 'ordem_prioridades_dia'],
     recarregar,
   )
 
@@ -280,6 +282,12 @@ function PainelMaquina({
     : emParada
       ? 'border-red-600'
       : 'border-green-600'
+  // faixa "Prioridades do dia" (16/09/2026): com a máquina livre, a TV aponta a P1
+  const p1 = !atual
+    ? ordenarComPrioridades(ordens.map((o) => ({ ...o, prioridade_dia: prioridadeDiaDe(o) }))).find(
+        (o) => o.prioridade_dia != null && !['Finalizada', 'Qualidade apontada', 'Apontada'].includes(statusEfetivo(paraOrdemDominio(o))),
+      ) ?? null
+    : null
 
   return (
     <div className={`flex flex-col rounded-2xl border-2 ${borda} bg-stone-900 p-5`}>
@@ -323,7 +331,18 @@ function PainelMaquina({
               </p>
             </>
           ) : (
-            <p className="text-xl text-stone-600">Máquina livre</p>
+            <>
+              <p className="text-xl text-stone-600">Máquina livre</p>
+              {p1 && (
+                <p className="mt-4 text-center text-2xl text-stone-200">
+                  <span className="mr-2 inline-block rounded bg-amber-500 px-2 py-0.5 text-lg font-bold text-white">P1</span>
+                  <span className="font-semibold">{p1.numero}</span> · {p1.cultivar}
+                  <span className="block text-base text-stone-500">
+                    {p1.receitas.nome} · {statusEfetivo(paraOrdemDominio(p1))}
+                  </span>
+                </p>
+              )}
+            </>
           )}
         </div>
       ) : (

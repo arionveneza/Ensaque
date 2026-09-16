@@ -22,6 +22,7 @@ import {
   type TurnosDoDia,
 } from '@/dominio/programacao'
 import { useRealtime } from '@/dados/useRealtime'
+import { faixaDe, listaAposArraste, moverNaFaixa, semDaFaixa } from '@/dominio/prioridadesDia'
 import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -66,6 +67,13 @@ export default function Programacao() {
   const [erro, setErro] = useState<string | null>(null)
   const [arrastando, setArrastando] = useState<string | null>(null)
   const [alvo, setAlvo] = useState<Alvo>(null)
+  /**
+   * Faixa "Prioridades do dia" (16/09/2026): alvo próprio do arraste (a faixa
+   * de cada máquina) e de onde a ordem saiu — soltar uma ordem DA FAIXA na
+   * fila tira ela da faixa, em vez de mover o seq.
+   */
+  const [alvoFaixa, setAlvoFaixa] = useState<{ maq: string; dia: string; pos: number | null } | null>(null)
+  const [arrastandoDaFaixa, setArrastandoDaFaixa] = useState(false)
   const [movendo, setMovendo] = useState<string | null>(null)
   const [previa, setPrevia] = useState<ReturnType<typeof reprogramarCascata> | null>(null)
   /** De onde a prévia da cascata partiu (o botão da semana usa diaSel; o das atrasadas, ontem). */
@@ -145,7 +153,7 @@ export default function Programacao() {
     }
   }, [janela])
 
-  useRealtime(['ordens', 'lotes_semente', 'dias_producao'], recarregar)
+  useRealtime(['ordens', 'lotes_semente', 'dias_producao', 'ordem_prioridades_dia'], recarregar)
 
   /** Turnos que o dia roda. Sem exceção cadastrada, roda os dois. */
   const turnosDoDia = useCallback(
@@ -376,10 +384,38 @@ export default function Programacao() {
 
   function soltar(maq: string, dia: string, pos: number | null) {
     const id = arrastando
+    const daFaixa = arrastandoDaFaixa
     setArrastando(null)
+    setArrastandoDaFaixa(false)
     setAlvo(null)
+    setAlvoFaixa(null)
     if (!id) return
+    const movida = [...ordens, ...pool].find((o) => o.id === id)
+    if (daFaixa && movida && movida.maquina_id === maq && movida.data_prog === dia) {
+      // veio da faixa e caiu na fila da MESMA célula: sai da faixa (o seq fica como está)
+      const ids = faixaDe(celula(maq, dia)).map((x) => x.id)
+      comErro(() => g.definirPrioridadesDia(maq, dia, semDaFaixa(ids, id)))
+      return
+    }
+    // outra célula: move de verdade — o gatilho derruba a prioridade sozinho
     comErro(() => mover(id, maq, dia, pos))
+  }
+
+  /** Solta na faixa de prioridades (vindo da fila ou da própria faixa). */
+  function soltarNaFaixa(maq: string, dia: string, pos: number | null) {
+    const id = arrastando
+    setArrastando(null)
+    setArrastandoDaFaixa(false)
+    setAlvo(null)
+    setAlvoFaixa(null)
+    if (!id) return
+    const movida = [...ordens, ...pool].find((o) => o.id === id)
+    if (!movida || movida.maquina_id !== maq || movida.data_prog !== dia) {
+      setErro('Só ordens já programadas nesta máquina e neste dia entram na faixa de prioridades.')
+      return
+    }
+    const ids = faixaDe(celula(maq, dia)).map((x) => x.id)
+    comErro(() => g.definirPrioridadesDia(maq, dia, listaAposArraste(ids, id, pos)))
   }
 
   const checklist = useMemo(
@@ -961,6 +997,139 @@ export default function Programacao() {
                 )}
               </p>
 
+              {/* -------- prioridades do dia (16/09/2026) -------- */}
+              {(() => {
+                const faixa = faixaDe(
+                  lista.filter((x) => !['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo)),
+                )
+                const ids = faixa.map((x) => x.id)
+                const naFaixa = alvoFaixa?.maq === m.id && alvoFaixa?.dia === diaSel
+                const gravar = (novos: string[]) =>
+                  comErro(() => g.definirPrioridadesDia(m.id, diaSel, novos))
+                if (faixa.length === 0 && !podeProgramar) return null
+                return (
+                  <div
+                    onDragOver={(e) => {
+                      if (!podeProgramar || !arrastando) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setAlvo(null)
+                      setAlvoFaixa((a) =>
+                        a && a.maq === m.id && a.dia === diaSel && a.pos === null ? a : { maq: m.id, dia: diaSel, pos: null },
+                      )
+                    }}
+                    onDragLeave={(e) => {
+                      // dragleave borbulha dos filhos: só apaga quando sai do contêiner de verdade
+                      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+                      if (naFaixa) setAlvoFaixa(null)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      soltarNaFaixa(m.id, diaSel, naFaixa ? alvoFaixa!.pos : null)
+                    }}
+                    className={`mb-3 rounded-md border-2 border-dashed p-2 ${
+                      naFaixa
+                        ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30'
+                        : 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/10'
+                    }`}
+                  >
+                    <p className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                      Prioridades do dia
+                      <span className="font-normal normal-case tracking-normal text-amber-700/80 dark:text-amber-400/80">
+                        — o que a produção faz primeiro; aparece no topo da Execução
+                      </span>
+                    </p>
+                    {faixa.length === 0 ? (
+                      <p className="py-2 text-center text-xs text-amber-700/70 dark:text-amber-400/70">
+                        Arraste ordens da fila para cá (ou use o botão "prioridade" na ordem)
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {faixa.map((ord, i) => (
+                          <div key={ord.id}>
+                            {naFaixa && alvoFaixa?.pos === i && <LinhaDeInsercao />}
+                            <div
+                              draggable={podeProgramar}
+                              onDragStart={() => {
+                                setArrastando(ord.id)
+                                setArrastandoDaFaixa(true)
+                              }}
+                              onDragEnd={() => {
+                                setArrastando(null)
+                                setArrastandoDaFaixa(false)
+                                setAlvo(null)
+                                setAlvoFaixa(null)
+                              }}
+                              onDragOver={(e) => {
+                                if (!podeProgramar || !arrastando) return
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const r = e.currentTarget.getBoundingClientRect()
+                                const antes = e.clientY < r.top + r.height / 2
+                                const pos = i + (antes ? 0 : 1)
+                                setAlvoFaixa((a) =>
+                                  a && a.maq === m.id && a.dia === diaSel && a.pos === pos ? a : { maq: m.id, dia: diaSel, pos },
+                                )
+                              }}
+                              className={`flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-sm dark:border-amber-900 dark:bg-stone-800 ${
+                                podeProgramar ? 'cursor-grab' : ''
+                              } ${arrastando === ord.id ? 'opacity-40' : ''}`}
+                            >
+                              <span className="inline-block w-8 rounded bg-amber-500 px-1.5 py-0.5 text-center text-xs font-bold text-white">
+                                P{i + 1}
+                              </span>
+                              <div className="min-w-40 flex-1">
+                                <p className="truncate font-medium">
+                                  {ord.numero} · {ord.cultivar}
+                                </p>
+                                <p className="truncate text-xs text-stone-500">
+                                  {ord.receita_nome} · lote {ord.lote_id} · {n(ord.peso_t, 1)} t
+                                </p>
+                              </div>
+                              <div className="ml-auto flex shrink-0 items-center gap-2">
+                                {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
+                                <Tag cor={corDoStatus(ord.status_efetivo)} className="min-w-36 text-center">
+                                  {ord.status_efetivo}
+                                </Tag>
+                                {podeProgramar && (
+                                  <>
+                                    <div className="flex flex-col">
+                                      <button
+                                        disabled={i === 0}
+                                        onClick={() => gravar(moverNaFaixa(ids, ord.id, -1))}
+                                        className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
+                                      >
+                                        ▲
+                                      </button>
+                                      <button
+                                        disabled={i === faixa.length - 1}
+                                        onClick={() => gravar(moverNaFaixa(ids, ord.id, 1))}
+                                        className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
+                                      >
+                                        ▼
+                                      </button>
+                                    </div>
+                                    <button
+                                      onClick={() => gravar(semDaFaixa(ids, ord.id))}
+                                      title="Tirar da faixa de prioridades (a ordem continua na fila)"
+                                      className="rounded border border-stone-300 px-2 py-2 text-xs text-stone-500 hover:bg-stone-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] dark:border-stone-600 dark:hover:bg-stone-700"
+                                    >
+                                      ✕
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            {naFaixa && alvoFaixa?.pos === i + 1 && <LinhaDeInsercao />}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div
                 onDragOver={(e) => {
                   if (!podeProgramar || !arrastando) return
@@ -1013,7 +1182,10 @@ export default function Programacao() {
                         {naCelula && alvo?.pos === idx && <LinhaDeInsercao />}
                         <div
                           draggable={movivel}
-                          onDragStart={() => setArrastando(ord.id)}
+                          onDragStart={() => {
+                            setArrastando(ord.id)
+                            setArrastandoDaFaixa(false)
+                          }}
                           onDragEnd={() => {
                             setArrastando(null)
                             setAlvo(null)
@@ -1033,6 +1205,15 @@ export default function Programacao() {
                           }`}
                         >
                           <span className="w-5 text-xs text-stone-400">{displayIdx + 1}</span>
+                          {/* já está na faixa de prioridades do dia (16/09/2026) */}
+                          {ord.prioridade_dia != null && (
+                            <span
+                              className="inline-block rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                              title="Está na faixa de prioridades do dia"
+                            >
+                              P{ord.prioridade_dia}
+                            </span>
+                          )}
                           {/* min-w-40: no celular, sem largura mínima o texto
                               identificador espremia até ficar ilegível quando
                               tags+mover+setas competiam pela mesma linha */}
@@ -1090,6 +1271,28 @@ export default function Programacao() {
                             className={`flex shrink-0 items-center gap-2 ${movivel ? '' : 'invisible'}`}
                             aria-hidden={!movivel}
                           >
+                            <button
+                              tabIndex={movivel ? 0 : -1}
+                              onClick={() => {
+                                const ids = faixaDe(
+                                  lista.filter((x) => !['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo)),
+                                ).map((x) => x.id)
+                                const novos = ord.prioridade_dia != null ? semDaFaixa(ids, ord.id) : [...ids, ord.id]
+                                comErro(() => g.definirPrioridadesDia(m.id, diaSel, novos))
+                              }}
+                              title={
+                                ord.prioridade_dia != null
+                                  ? 'Tirar da faixa de prioridades do dia'
+                                  : 'Pôr no fim da faixa de prioridades do dia (funciona no tablet)'
+                              }
+                              className={`rounded border px-3 py-2 text-xs uppercase tracking-wide hover:bg-amber-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] ${
+                                ord.prioridade_dia != null
+                                  ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                                  : 'border-stone-300 text-stone-500 dark:border-stone-600 dark:hover:bg-stone-700'
+                              }`}
+                            >
+                              {ord.prioridade_dia != null ? 'priorizada' : 'prioridade'}
+                            </button>
                             <button
                               tabIndex={movivel ? 0 : -1}
                               onClick={() => setMovendo(movendo === ord.id ? null : ord.id)}
@@ -1187,6 +1390,8 @@ export default function Programacao() {
           e.preventDefault()
           const id = arrastando
           setArrastando(null)
+          setArrastandoDaFaixa(false)
+          setAlvoFaixa(null)
           if (id) comErro(() => desprogramar(id))
         }}
       >
@@ -1202,7 +1407,10 @@ export default function Programacao() {
                 <div
                   key={o.id}
                   draggable={podeProgramar}
-                  onDragStart={() => setArrastando(o.id)}
+                  onDragStart={() => {
+                    setArrastando(o.id)
+                    setArrastandoDaFaixa(false)
+                  }}
                   onDragEnd={() => {
                     setArrastando(null)
                     setAlvo(null)
@@ -1279,7 +1487,9 @@ export default function Programacao() {
 
 /** Onde a ordem arrastada vai entrar. */
 function LinhaDeInsercao() {
-  return <div className="my-1 h-0.5 rounded-full bg-green-500" />
+  // pointer-events-none: a própria linha não pode roubar o dragover do item
+  // (senão o alvo pulava pro fim quando o ponteiro passava sobre ela)
+  return <div className="pointer-events-none my-1 h-0.5 rounded-full bg-green-500" />
 }
 
 /**

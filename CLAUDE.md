@@ -593,10 +593,27 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    A fila é exibida **só pela sequência gravada** — urgência é etiqueta, não reordena sozinha,
    senão arrastar uma ordem normal para o topo parecia não funcionar. Cartão **Programado por
    tratamento** (semana/dia) e ocupação **em horas com setup** (§3) desde 13/09/2026.
+   **Faixa "Prioridades do dia"** (16/09/2026, pedido do Arion: "várias urgentes, e a produção
+   não consegue priorizar entre elas"): acima da fila de cada máquina no quadro do dia, uma
+   lista curta e ORDENADA (P1, P2, P3…) montada por arraste (ou botão "prioridade" no cartão
+   da ordem, para tablet), com ▲▼ e ✕. Tabela própria `ordem_prioridades_dia` (migração
+   `prioridades-do-dia.sql`; coluna em `ordens` esbarraria no `fn_ordens_por_acao`), escrita
+   SÓ pela RPC `definir_prioridades_dia(maquina, dia, uuid[])`, que regrava a faixa inteira
+   de uma vez (exige `programacao/editar`). **A prioridade é da célula**: gatilho apaga a linha
+   quando a ordem muda de máquina/dia ou conclui. A ordem continua na fila com o seu `seq` (a
+   faixa é destaque, não tira da fila); `v_ordens.prioridade_dia` expõe a posição. Soltar uma
+   ordem DA faixa na fila da MESMA célula só a tira da faixa — não mexe no seq; soltar em outra
+   máquina/dia move a ordem (e o gatilho derruba a prioridade). Solta no pool, desprograma.
+   Armadilha do arraste: o Chrome não dispara `dragend` quando o nó de origem some do DOM
+   (realtime remonta a faixa), então TODO `onDragStart` zera `arrastandoDaFaixa`.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.
 4. **Execução** — cards por máquina (ordem atual, tempo planejado, decorrido, paradas, parada atual),
+   **faixa de prioridades do dia** (16/09/2026: a lista da máquina mostra P1/P2/P3 no topo,
+   em âmbar, antes das "demais ordens" por sequência; com a máquina livre o cartão aponta a
+   P1 e diz se já pode iniciar — revisita a decisão de 06/08 de não apontar a próxima: sem
+   faixa marcada segue sem apontar; o Painel TV mostra a P1 na máquina livre),
    grade completa agrupada por dia→máquina, botões de apontamento, coluna Lote sempre visível.
 5. **Qualidade** — visual (Aprovado / Aprovado com observação / Reprovado) + retirada de amostra (S/N).
 6. **Indicadores** — produção por máquina e turno, relatório por ordem (planejado vs realizado bruto e

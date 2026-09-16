@@ -38,6 +38,8 @@ export interface OrdemVisao {
   /** Data prevista do caminhão (12/09/2026) — informativa. */
   data_expedicao: string | null
   seq: number | null
+  /** Posição na faixa "Prioridades do dia" da célula (16/09/2026); nula = não priorizada. */
+  prioridade_dia: number | null
   turno_id: number | null
   status: string
   status_efetivo: string
@@ -319,6 +321,23 @@ export async function definirPrioridade(
     })
     .eq('id', id)
   erro('definir prioridade', error)
+}
+
+/**
+ * Regrava a faixa "Prioridades do dia" de uma célula (máquina × dia) inteira,
+ * na ordem recebida — RPC atômica; posição = índice + 1. Lista vazia limpa.
+ */
+export async function definirPrioridadesDia(
+  maquinaId: string,
+  dia: string,
+  ordemIds: string[],
+): Promise<void> {
+  const { error } = await supabase.rpc('definir_prioridades_dia', {
+    p_maquina: maquinaId,
+    p_dia: dia,
+    p_ordens: ordemIds,
+  })
+  erro('definir prioridades do dia', error)
 }
 
 /** Move/reordena uma ordem no quadro. */

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import type { LinhaMaquina, LinhaOrdem } from '@/dados/api'
+import { prioridadeDiaDe } from '@/dados/api'
+import { ordenarComPrioridades } from '@/dominio/prioridadesDia'
 import * as g from '@/dados/api-gestao'
 import type { ConferenciaLinha } from '@/dados/api-gestao'
 import {
@@ -116,7 +118,8 @@ export default function Execucao() {
 
   // o PCP e a produção olham a mesma ordem ao mesmo tempo: sem isto, uma tela mente
   useRealtime(
-    ['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques', 'maquina_paradas'],
+    ['ordens', 'ordem_eventos', 'ordem_paradas', 'ordem_tanques', 'maquina_paradas',
+      'ordem_prioridades_dia'],
     recarregar,
   )
 
@@ -185,13 +188,15 @@ export default function Execucao() {
     [recarregar],
   )
 
-  // mesma ordem do quadro da Programação: a sequência manda, e só ela — o
-  // operador precisa ver a fila exatamente como o PCP a deixou
+  // mesma ordem do quadro da Programação: a faixa "Prioridades do dia" primeiro
+  // (P1, P2…), depois a sequência — e só ela. O operador vê a fila exatamente
+  // como o PCP a deixou (16/09/2026: a faixa é o que faltava pra escolher entre
+  // várias urgentes)
   const porMaquina = useCallback(
     (m: string) =>
-      ordens
-        .filter((o) => o.maquina_id === m)
-        .sort((a, b) => (a.seq ?? 9999) - (b.seq ?? 9999) || a.numero.localeCompare(b.numero)),
+      ordenarComPrioridades(
+        ordens.filter((o) => o.maquina_id === m).map((o) => ({ ...o, prioridade_dia: prioridadeDiaDe(o) })),
+      ),
     [ordens],
   )
 
@@ -385,15 +390,49 @@ function FragmentoMaquina({
       </tr>
       {lista.map((o, idx) => {
         const status = statusEfetivo(paraOrdemDominio(o))
+        const pd = prioridadeDiaDe(o)
+        const temFaixa = numerada && lista.some((x) => prioridadeDiaDe(x) != null)
+        const primeiraDaFaixa = temFaixa && idx === 0 && pd != null
+        const primeiraForaDaFaixa = temFaixa && pd == null && (idx === 0 || prioridadeDiaDe(lista[idx - 1]) != null)
         return (
+          <Fragment key={o.id}>
+          {primeiraDaFaixa && (
+            <tr className="bg-amber-100/80 dark:bg-amber-950/50">
+              {/* colSpan 9 + célula fantasma: acompanha a coluna Cultivar, que some em tela estreita */}
+              <td colSpan={9} className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-800 lg:px-3 dark:text-amber-300">
+                Prioridades do dia — definidas pelo PCP na Programação
+              </td>
+              <td className="hidden lg:table-cell" />
+            </tr>
+          )}
+          {primeiraForaDaFaixa && (
+            <tr className="bg-stone-50 dark:bg-stone-800/40">
+              <td colSpan={9} className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-stone-500 lg:px-3">
+                Demais ordens
+              </td>
+              <td className="hidden lg:table-cell" />
+            </tr>
+          )}
           <tr
-            key={o.id}
-            className="border-t border-stone-100 hover:bg-stone-50 dark:border-stone-800/60 dark:hover:bg-stone-800/30"
+            className={`border-t border-stone-100 dark:border-stone-800/60 ${
+              pd != null
+                ? 'bg-amber-50/70 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:hover:bg-amber-950/40'
+                : 'hover:bg-stone-50 dark:hover:bg-stone-800/30'
+            }`}
           >
             {/* posição na fila, não o seq gravado: o seq herdou duplicata e
                 buraco de reprogramações antigas (3,3,4,7...), e o que o
-                operador precisa é a ordem de execução — igual à Programação */}
-            <td className="px-2 py-2 text-stone-400 lg:px-3">{numerada ? idx + 1 : '—'}</td>
+                operador precisa é a ordem de execução — igual à Programação.
+                Na faixa de prioridades, P1/P2/P3 (16/09/2026). */}
+            <td className="px-2 py-2 text-stone-400 lg:px-3">
+              {pd != null ? (
+                <span className="inline-block rounded bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-white">P{pd}</span>
+              ) : numerada ? (
+                idx + 1
+              ) : (
+                '—'
+              )}
+            </td>
             <td className="px-2 py-2 font-medium whitespace-nowrap lg:px-3">
               {/* a etiqueta mora numa vaga de largura fixa ANTES do número, em
                   toda linha (vazia quando normal): assim o número começa
@@ -468,6 +507,7 @@ function FragmentoMaquina({
               </div>
             </td>
           </tr>
+          </Fragment>
         )
       })}
     </>
@@ -521,11 +561,18 @@ function CardMaquina({
   // informativo: o setup real entra como parada Planejada, não no planejado
   const setupPrevistoMin = atual ? setupPrevistoDaOrdem(paraSetup(atual), ordens.map(paraSetup), setupDa(maquina)) : 0
 
-  // máquina livre: NÃO aponta a próxima — a sequência é sugestão do PCP, e é
-  // o operador quem decide qual ordem vai entrar (pedido da operação, 06/08)
+  // máquina livre: sem faixa de prioridades, NÃO aponta a próxima — a
+  // sequência é sugestão do PCP, e é o operador quem decide qual ordem vai
+  // entrar (pedido da operação, 06/08). COM a faixa (16/09/2026), o PCP
+  // decidiu de propósito: o cartão aponta a P1.
   const prontas = !atual
     ? ordens.filter((o) => statusEfetivo(paraOrdemDominio(o)) === 'Pronto para produzir').length
     : 0
+  const p1 = !atual
+    ? ordenarComPrioridades(ordens.map((o) => ({ ...o, prioridade_dia: prioridadeDiaDe(o) }))).find(
+        (o) => o.prioridade_dia != null && !['Finalizada', 'Qualidade apontada', 'Apontada'].includes(statusEfetivo(paraOrdemDominio(o))),
+      ) ?? null
+    : null
 
   // parada de máquina só existe com a máquina livre; se uma ordem começou, o
   // banco já a encerrou no confirmar_inicio
@@ -628,6 +675,17 @@ function CardMaquina({
             </>
           ) : (
             <>
+              {p1 && (
+                <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+                  <span className="mr-1.5 inline-block rounded bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-white">P1</span>
+                  <span className="font-semibold">{p1.numero}</span> · {p1.cultivar} · {p1.receitas.nome}
+                  <span className="block text-xs text-stone-500 dark:text-stone-400">
+                    {statusEfetivo(paraOrdemDominio(p1)) === 'Pronto para produzir'
+                      ? 'Prioridade do dia — pronta para iniciar.'
+                      : `Prioridade do dia — ${statusEfetivo(paraOrdemDominio(p1))}: ainda não pode iniciar.`}
+                  </span>
+                </p>
+              )}
               <p className="py-2 text-sm text-stone-500 dark:text-stone-400">
                 {prontas > 0
                   ? `${prontas} ${prontas === 1 ? 'ordem pronta' : 'ordens prontas'} para produzir — escolha na lista abaixo e toque em Iniciar.`

@@ -56,6 +56,12 @@ export interface LinhaOrdem {
   status: StatusPersistido
   fim_pendente: boolean
   bags_produzidos: number | null
+  /**
+   * Faixa "Prioridades do dia" (16/09/2026): objeto único (a FK é a PK da
+   * tabela filha) ou nulo. Use `prioridadeDiaDe` — o PostgREST pode devolver
+   * lista em vez de objeto conforme a detecção da relação.
+   */
+  ordem_prioridades_dia: { posicao: number } | { posicao: number }[] | null
   /** Liberação DESTA ordem — por ordem, não pelo lote inteiro (10/08/2026). */
   lote_liberado_em: string | null
   /** PCP confirmou a ordem programada — antes disso é invisível à Logística (11/08/2026). */
@@ -100,6 +106,7 @@ const SELECT_ORDEM = `
   destinacao, armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, data_expedicao, seq, turno_id, status, fim_pendente,
   bags_produzidos, lote_liberado_em, confirmada_em,
+  ordem_prioridades_dia ( posicao ),
   embalagens ( fator_peso, peso_fixo_kg ),
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status, peneira, categoria ),
   receitas ( nome, receita_itens ( produto_id, dose ) ),
@@ -355,4 +362,12 @@ export async function cancelarInicio(ordemId: string, detalhe: string): Promise<
     p_detalhe: detalhe,
   })
   erro('cancelar início', error)
+}
+
+/** Posição da ordem na faixa "Prioridades do dia" (16/09/2026), ou nula. */
+export function prioridadeDiaDe(o: { ordem_prioridades_dia?: LinhaOrdem['ordem_prioridades_dia'] }): number | null {
+  const v = o.ordem_prioridades_dia
+  if (!v) return null
+  if (Array.isArray(v)) return v[0]?.posicao ?? null
+  return v.posicao ?? null
 }
