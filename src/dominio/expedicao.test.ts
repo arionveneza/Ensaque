@@ -5,7 +5,7 @@ import {
   converterMontagemCarga,
   ehRelatorioAgendados,
   ehRelatorioMontagemCarga,
-  faltaPorData,
+  faltaPorProduto,
   normalizaLinhasXlsx,
   normalizaTratamento,
   resumoPorTipoVenda,
@@ -618,39 +618,33 @@ describe('alocacao por caminhao e visao por tipo de venda', () => {
     expect(r[0].deficitPrazo).toBe(0) // SEM TSI nao tem linha do tempo de producao
   })
 
-  it('falta por data: cada dia mostra so o que falta nele, e a soma e o descoberto da consolidada', () => {
+  it('falta por produto e data: cada item lista so as datas em que falta, e a soma e o descoberto da consolidada', () => {
     // estoque 12 · caminhões 10 (dia 10) e 10 (dia 12): o 1º sai cheio, o 2º fica com 8 descobertos
     const r = saldosExpedicao(
       [ag({ id: 'a', data: '2026-09-10' }), ag({ id: 'b', data: '2026-09-12' })],
       [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
     )
-    const dias = faltaPorData(r)
-    expect(dias.map((d) => [d.data, d.caminhoes, d.agendado, d.coberto, d.descoberto])).toEqual([
-      ['2026-09-10', 1, 10, 10, 0],
-      ['2026-09-12', 1, 10, 2, 8],
-    ])
-    expect(dias[0].produtos).toEqual([])
-    expect(dias[1].produtos).toEqual([
-      { cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M', semTsi: true, agendado: 10, descoberto: 8, situacao: 'falta' },
-    ])
-    expect(dias.reduce((t, d) => t + d.descoberto, 0)).toBe(r[0].caminhoes.reduce((t, c) => t + c.descoberto, 0))
+    const f = faltaPorProduto(r)
+    expect(f).toHaveLength(1)
+    expect(f[0]).toMatchObject({ cultivar: 'NEO700 I2X', semTsi: true, situacao: 'falta', descoberto: 8 })
+    // o dia 10 nao aparece: nao falta nele
+    expect(f[0].datas).toEqual([{ data: '2026-09-12', caminhoes: 1, agendado: 10, descoberto: 8 }])
+    expect(f[0].descoberto).toBe(r[0].caminhoes.reduce((t, c) => t + c.descoberto, 0))
   })
 
-  it('falta por data: caminhao sem data vira o primeiro dia (data nula) e dois produtos no mesmo dia se somam', () => {
+  it('falta por produto e data: produto coberto nao entra; sem data vira a primeira data; ordem do maior descoberto', () => {
     const r = saldosExpedicao(
       [
-        ag({ id: 's', data: null, bags: 4 }),
-        ag({ id: 'a', data: '2026-09-10', cultivar: 'X1', tratamento: 'FTZ60', bags: 6 }),
-        ag({ id: 'b', data: '2026-09-10', cultivar: 'X2', tratamento: 'FTZ60', bags: 5 }),
+        ag({ id: 'ok', cultivar: 'COBERTO', bags: 5 }),
+        ag({ id: 's', cultivar: 'X1', tratamento: 'FTZ60', data: null, bags: 4 }),
+        ag({ id: 'a', cultivar: 'X1', tratamento: 'FTZ60', data: '2026-09-10', bags: 6 }),
+        ag({ id: 'b', cultivar: 'X2', tratamento: 'FTZ60', data: '2026-09-10', bags: 5 }),
       ],
-      [], [], [],
+      [{ cultivar: 'COBERTO', bags: 10 }], [], [],
     )
-    const dias = faltaPorData(r)
-    expect(dias.map((d) => d.data)).toEqual([null, '2026-09-10'])
-    expect(dias[0]).toMatchObject({ caminhoes: 1, agendado: 4, descoberto: 4 })
-    expect(dias[1]).toMatchObject({ caminhoes: 2, agendado: 11, descoberto: 11 })
-    // produtos do maior descoberto para o menor
-    expect(dias[1].produtos.map((p) => [p.cultivar, p.descoberto])).toEqual([['X1', 6], ['X2', 5]])
+    const f = faltaPorProduto(r)
+    expect(f.map((p) => [p.cultivar, p.descoberto])).toEqual([['X1', 10], ['X2', 5]])
+    expect(f[0].datas.map((d) => [d.data, d.descoberto])).toEqual([[null, 4], ['2026-09-10', 6]])
   })
 
   it('caminhao sem data entra primeiro e so estoque + ordem iniciada o cobrem', () => {

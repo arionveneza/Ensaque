@@ -659,12 +659,14 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    consolidada manda**, nenhum bag é contado duas vezes, cooperado no fim da fila absorve o
    descoberto como a data manda (decisão do Arion, 12/09/2026). Embalagem sem de-para não vira
    falta falsa: ganha etiqueta própria. O cartão de pedidos de venda saiu da Expedição (o
-   painel Demanda × Estoque da aba Ordens já cobre). **Falta por data** (16/09/2026, pedido do
-   Arion: "escolho 16 a 18 e vejo a falta total, mas não quanto falta em cada data"): cartão
-   acima da consolidada com a MESMA fila agregada por dia do caminhão (`faltaPorData` —
-   caminhões, agendado, coberto, descoberto e os produtos em falta naquele dia, com a cor da
-   situação da linha consolidada); nenhum bag contado duas vezes — a soma dos dias é o
-   descoberto total. Recurso `expedicao` (ver/importar): PCP
+   painel Demanda × Estoque da aba Ordens já cobre). **Quando vai faltar** (16/09/2026, pedido
+   do Arion: "escolho 16 a 18 e vejo a falta total, mas não quanto falta em cada data" — e, na
+   1ª versão por dia, "ficou horrível, o dia e os itens separados; quero ver o ITEM e depois a
+   data em que vai faltar"): cartão acima da consolidada, uma linha por PRODUTO com falta e,
+   na linha, uma pastilha por DATA em que falta ("16/09 · faltam 13 de 43"), na cor da
+   situação da linha consolidada (`faltaPorProduto`). É a MESMA fila agregada por produto ×
+   dia do caminhão; nenhum bag contado duas vezes — a soma das datas é o descoberto do
+   produto; dia que não aparece não tem falta. Recurso `expedicao` (ver/importar): PCP
    e Logística importam, Direção vê.
    **Filial do pedido e transferência de saldo** (13/09/2026, pedido do Arion: "para pedido
    de outra filial é necessário solicitar a transferência de saldo em estoque"). O relatório

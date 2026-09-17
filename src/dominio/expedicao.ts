@@ -653,76 +653,62 @@ export function situacaoSaldo(s: SaldoExpedicao<CarregamentoLinha>): SituacaoSal
 }
 
 // ================================================================
-// Falta por DATA (16/09/2026)
+// Falta por produto E data (16/09/2026)
 // ================================================================
 
-export interface ProdutoEmFaltaNoDia {
-  cultivar: string
-  tratamento: string
-  embalagem: string
-  semTsi: boolean
-  /** Bags agendados desse produto NESTE dia. */
-  agendado: number
-  /** Bags descobertos desse produto NESTE dia. */
-  descoberto: number
-  /** Situação da LINHA consolidada — mantém a cor da tabela de saldo. */
-  situacao: SituacaoSaldo
-}
-
-export interface FaltaNoDia {
+export interface FaltaNaData {
   /** null = agendamento sem data (entra primeiro, como na fila). */
   data: string | null
   caminhoes: number
   agendado: number
-  coberto: number
-  /** O que falta NAQUELA data: Σ descoberto dos caminhões do dia. */
   descoberto: number
-  /** Só produtos com descoberto > 0 no dia, do maior para o menor. */
-  produtos: ProdutoEmFaltaNoDia[]
+}
+
+export interface FaltaPorProduto {
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  semTsi: boolean
+  /** Situação da linha consolidada — mantém a cor da tabela de saldo. */
+  situacao: SituacaoSaldo
+  /** Σ descoberto do produto no período. */
+  descoberto: number
+  /** Só as datas em que falta (descoberto > 0), em ordem. */
+  datas: FaltaNaData[]
 }
 
 /**
- * A mesma fila caminhão a caminhão de `saldosExpedicao`, agregada por DATA
- * (pedido do Arion, 16/09/2026: "escolho 16 a 18 e vejo a falta total, mas
- * não quanto falta em cada data"). Nenhum bag é contado duas vezes: a soma
- * dos dias é exatamente o descoberto da consolidada.
+ * O item primeiro, e para cada item as DATAS em que vai faltar (pedido do
+ * Arion, 16/09/2026: "quero ver o item e depois a data em que irá faltar,
+ * dentro do range escolhido"). É a mesma fila caminhão a caminhão de
+ * `saldosExpedicao`, agregada por produto × dia: nenhum bag contado duas
+ * vezes — a soma das datas é o descoberto da linha consolidada. Só entram
+ * produtos com falta em alguma data; do maior descoberto para o menor.
  */
-export function faltaPorData<T extends CarregamentoLinha>(saldos: SaldoExpedicao<T>[]): FaltaNoDia[] {
-  const dias = new Map<string, FaltaNoDia & { porProduto: Map<string, ProdutoEmFaltaNoDia> }>()
-  const chaveDia = (d: string | null) => d ?? ''
+export function faltaPorProduto<T extends CarregamentoLinha>(saldos: SaldoExpedicao<T>[]): FaltaPorProduto[] {
+  const out: FaltaPorProduto[] = []
   for (const s of saldos) {
-    const situacao = situacaoSaldo(s)
-    const chaveProduto = `${s.cultivar}|${s.tratamento}|${s.embalagem}`
+    const porData = new Map<string, FaltaNaData>()
     for (const c of s.caminhoes) {
-      const k = chaveDia(c.data)
-      const dia =
-        dias.get(k) ??
-        { data: c.data, caminhoes: 0, agendado: 0, coberto: 0, descoberto: 0, produtos: [], porProduto: new Map() }
-      dia.caminhoes++
-      dia.agendado += c.bags
-      dia.coberto += c.coberto
-      dia.descoberto += c.descoberto
-      const p =
-        dia.porProduto.get(chaveProduto) ??
-        { cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem, semTsi: s.semTsi, agendado: 0, descoberto: 0, situacao }
-      p.agendado += c.bags
-      p.descoberto += c.descoberto
-      dia.porProduto.set(chaveProduto, p)
-      dias.set(k, dia)
+      const k = c.data ?? ''
+      const d = porData.get(k) ?? { data: c.data, caminhoes: 0, agendado: 0, descoberto: 0 }
+      d.caminhoes++
+      d.agendado += c.bags
+      d.descoberto += c.descoberto
+      porData.set(k, d)
     }
+    const datas = [...porData.values()]
+      .map((d) => ({ ...d, agendado: arred2(d.agendado), descoberto: arred2(d.descoberto) }))
+      .filter((d) => d.descoberto > 0)
+      .sort((a, b) => (a.data ?? '').localeCompare(b.data ?? ''))
+    const descoberto = arred2(datas.reduce((t, d) => t + d.descoberto, 0))
+    if (descoberto <= 0) continue
+    out.push({
+      cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem, semTsi: s.semTsi,
+      situacao: situacaoSaldo(s), descoberto, datas,
+    })
   }
-  return [...dias.values()]
-    .sort((a, b) => (a.data ?? '').localeCompare(b.data ?? ''))
-    .map(({ porProduto, ...dia }) => ({
-      ...dia,
-      agendado: arred2(dia.agendado),
-      coberto: arred2(dia.coberto),
-      descoberto: arred2(dia.descoberto),
-      produtos: [...porProduto.values()]
-        .map((p) => ({ ...p, agendado: arred2(p.agendado), descoberto: arred2(p.descoberto) }))
-        .filter((p) => p.descoberto > 0)
-        .sort((a, b) => b.descoberto - a.descoberto),
-    }))
+  return out.sort((a, b) => b.descoberto - a.descoberto)
 }
 
 // ================================================================

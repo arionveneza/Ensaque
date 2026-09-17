@@ -9,7 +9,7 @@ import {
   agendadoPorTipo,
   converterAgendados,
   ehRelatorioAgendados,
-  faltaPorData,
+  faltaPorProduto,
   normalizaLinhasXlsx,
   resumoPorTipoVenda,
   saldosExpedicao,
@@ -208,9 +208,8 @@ export default function Expedicao() {
     [saldos],
   )
 
-  /** Falta por DATA (16/09/2026): a mesma fila, agregada por dia. */
-  const porData = useMemo(() => faltaPorData(saldos), [saldos])
-  const [diasAbertos, setDiasAbertos] = useState<Set<string>>(new Set())
+  /** Falta por produto × data (16/09/2026): a mesma fila, item primeiro e as datas em que falta. */
+  const faltaProdutos = useMemo(() => faltaPorProduto(saldos), [saldos])
 
   const faltas = saldos.filter((s) => situacaoSaldo(s) === 'falta')
   const precisamAdiantar = saldos.filter((s) => situacaoSaldo(s) === 'adiantar')
@@ -442,93 +441,74 @@ export default function Expedicao() {
             </div>
           )}
 
-          {/* ---------------- falta por data (16/09/2026) ---------------- */}
+          {/* ---------------- falta por produto e data (16/09/2026) ---------------- */}
           <Cartao
-            titulo={`Falta por data · ${
+            titulo={`Quando vai faltar · ${
               de && ate ? `${diaCurto(de)} a ${diaCurto(ate)}` : de ? `a partir de ${diaCurto(de)}` : ate ? `até ${diaCurto(ate)}` : 'todas as datas'
             }`}
             className="mb-5"
           >
-            {porData.length === 0 ? (
+            {saldos.length === 0 ? (
               <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
+            ) : faltaProdutos.length === 0 ? (
+              <p className="py-3 text-center text-sm text-green-700 dark:text-green-400">
+                Nenhuma falta nas datas do período.
+              </p>
             ) : (
-              <>
-                <Tabela cabecalho={[
-                  'Data', '#Caminhões', '#Agendado', '#Coberto', '#Descoberto', 'Produtos em falta no dia',
-                ]}>
-                  {porData.map((d) => {
-                    const chave = d.data ?? 'sem-data'
-                    const aberto = diasAbertos.has(chave)
-                    const visiveis = aberto ? d.produtos : d.produtos.slice(0, 4)
-                    const escondidos = d.produtos.length - visiveis.length
-                    return (
-                      <tr
-                        key={chave}
-                        className={`border-t border-stone-100 dark:border-stone-800/60 [&>td]:py-2 [&>td]:align-top ${
-                          d.descoberto > 0 ? 'bg-red-50/50 dark:bg-red-950/15' : ''
-                        }`}
-                      >
-                        <td className="px-2 font-medium whitespace-nowrap">
-                          {d.data ? diaCurto(d.data) : <Tag cor="neutro">sem data</Tag>}
-                        </td>
-                        <td className="num-tabular px-2 text-right">{d.caminhoes}</td>
-                        <td className="num-tabular px-2 text-right">{inteiro(d.agendado)}</td>
-                        <td className="num-tabular px-2 text-right">{inteiro(d.coberto)}</td>
-                        <td className={`num-tabular px-2 text-right font-semibold ${d.descoberto > 0 ? 'text-red-700 dark:text-red-400' : 'text-stone-400'}`}>
-                          {d.descoberto > 0 ? inteiro(d.descoberto) : '—'}
-                        </td>
-                        <td className="px-2">
-                          {d.produtos.length === 0 ? (
-                            <span className="text-xs text-green-700 dark:text-green-400">tudo coberto</span>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {visiveis.map((p) => (
-                                <Tag
-                                  key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`}
-                                  cor={p.situacao === 'falta' ? 'perigo' : p.situacao === 'adiantar' ? 'alerta' : 'info'}
-                                  className="text-[11px]"
-                                >
-                                  {p.cultivar} · {p.semTsi ? 'SEM TSI' : p.tratamento}
-                                  {!p.semTsi && ` · ${p.embalagem}`} · faltam {inteiro(p.descoberto)}
-                                </Tag>
-                              ))}
-                              {escondidos > 0 && (
-                                <button
-                                  onClick={() => setDiasAbertos((s) => new Set([...s, chave]))}
-                                  className="text-xs underline text-stone-500"
-                                >
-                                  +{escondidos}
-                                </button>
-                              )}
-                              {aberto && d.produtos.length > 4 && (
-                                <button
-                                  onClick={() => setDiasAbertos((s) => { const n = new Set(s); n.delete(chave); return n })}
-                                  className="text-xs underline text-stone-500"
-                                >
-                                  menos
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  <tr className="border-t border-stone-300 text-xs dark:border-stone-700">
-                    <td className="px-2 py-2 font-medium uppercase tracking-wide text-stone-500">Total</td>
-                    <td className="num-tabular px-2 py-2 text-right">{porData.reduce((t, d) => t + d.caminhoes, 0)}</td>
-                    <td className="num-tabular px-2 py-2 text-right">{inteiro(porData.reduce((t, d) => t + d.agendado, 0))}</td>
-                    <td className="num-tabular px-2 py-2 text-right">{inteiro(porData.reduce((t, d) => t + d.coberto, 0))}</td>
-                    <td className="num-tabular px-2 py-2 text-right font-semibold text-red-700 dark:text-red-400">
-                      {inteiro(porData.reduce((t, d) => t + d.descoberto, 0))}
+              <Tabela cabecalho={[
+                'Cultivar', 'Tratamento',
+                { texto: 'Emb.', className: 'hidden lg:table-cell' },
+                '#Falta no período', 'Em que data falta (bags descobertos no dia)',
+              ]}>
+                {faltaProdutos.map((p) => (
+                  <tr
+                    key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`}
+                    className={`border-t border-stone-100 dark:border-stone-800/60 [&>td]:py-2 [&>td]:align-top ${
+                      p.situacao === 'falta' ? 'bg-red-50/50 dark:bg-red-950/15' : p.situacao === 'adiantar' ? 'bg-amber-50/50 dark:bg-amber-950/15' : ''
+                    }`}
+                  >
+                    <td className="px-2 font-medium">
+                      {p.cultivar}
+                      <p className="text-xs font-normal text-stone-500 lg:hidden">
+                        {p.semTsi ? 'SEM TSI' : `${p.tratamento} · ${p.embalagem}`}
+                      </p>
                     </td>
-                    <td className="px-2 py-2 text-stone-500">
-                      mesma fila da tabela abaixo, repartida pelo dia do caminhão — a soma dos dias é o descoberto total
+                    <td className="px-2">{p.semTsi ? <Tag cor="neutro">SEM TSI</Tag> : p.tratamento}</td>
+                    <td className="hidden px-2 lg:table-cell">{p.embalagem}</td>
+                    <td className="num-tabular px-2 text-right">
+                      <Tag cor={p.situacao === 'falta' ? 'perigo' : p.situacao === 'adiantar' ? 'alerta' : 'info'} className="min-w-20 justify-center font-semibold">
+                        {inteiro(p.descoberto)}
+                      </Tag>
+                    </td>
+                    <td className="px-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {p.datas.map((d) => (
+                          <span
+                            key={d.data ?? 'sem-data'}
+                            title={`${d.caminhoes} caminhão(ões) · ${inteiro(d.agendado)} bags agendados · ${inteiro(d.descoberto)} descobertos`}
+                            className={`num-tabular inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${
+                              p.situacao === 'falta'
+                                ? 'border-red-200 bg-white text-red-800 dark:border-red-900 dark:bg-stone-900 dark:text-red-300'
+                                : p.situacao === 'adiantar'
+                                  ? 'border-amber-300 bg-white text-amber-800 dark:border-amber-800 dark:bg-stone-900 dark:text-amber-300'
+                                  : 'border-sky-200 bg-white text-sky-800 dark:border-sky-900 dark:bg-stone-900 dark:text-sky-300'
+                            }`}
+                          >
+                            <span className="font-semibold">{d.data ? diaCurto(d.data) : 'sem data'}</span>
+                            <span>faltam {inteiro(d.descoberto)}</span>
+                            <span className="text-stone-400">de {inteiro(d.agendado)}</span>
+                          </span>
+                        ))}
+                      </div>
                     </td>
                   </tr>
-                </Tabela>
-              </>
+                ))}
+              </Tabela>
             )}
+            <p className="mt-3 text-xs text-stone-500">
+              Mesma fila caminhão a caminhão da tabela abaixo, repartida pelo dia de cada caminhão:
+              a soma das datas de um produto é o descoberto dele no período. Dia que não aparece não tem falta.
+            </p>
           </Cartao>
 
           {/* ---------------- saldo por produto (consolidado) ---------------- */}
