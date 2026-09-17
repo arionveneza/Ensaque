@@ -208,8 +208,13 @@ export default function Expedicao() {
     [saldos],
   )
 
-  /** Falta por produto × data (16/09/2026): a mesma fila, item primeiro e as datas em que falta. */
+  /** Falta por produto × data (16/09/2026): a mesma fila, item nas linhas e as datas do período nas colunas. */
   const faltaProdutos = useMemo(() => faltaPorProduto(saldos), [saldos])
+  /** Todas as datas com caminhão no período filtrado (colunas da grade), sem data primeiro. */
+  const datasDoPeriodo = useMemo(
+    () => [...new Set(saldos.flatMap((s) => s.caminhoes.map((c) => c.data ?? '')))].sort(),
+    [saldos],
+  )
 
   const faltas = saldos.filter((s) => situacaoSaldo(s) === 'falta')
   const precisamAdiantar = saldos.filter((s) => situacaoSaldo(s) === 'adiantar')
@@ -455,59 +460,81 @@ export default function Expedicao() {
                 Nenhuma falta nas datas do período.
               </p>
             ) : (
-              <Tabela cabecalho={[
-                'Cultivar', 'Tratamento',
-                { texto: 'Emb.', className: 'hidden lg:table-cell' },
-                '#Falta no período', 'Em que data falta (bags descobertos no dia)',
-              ]}>
-                {faltaProdutos.map((p) => (
-                  <tr
-                    key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`}
-                    className={`border-t border-stone-100 dark:border-stone-800/60 [&>td]:py-2 [&>td]:align-top ${
-                      p.situacao === 'falta' ? 'bg-red-50/50 dark:bg-red-950/15' : p.situacao === 'adiantar' ? 'bg-amber-50/50 dark:bg-amber-950/15' : ''
-                    }`}
-                  >
-                    <td className="px-2 font-medium">
-                      {p.cultivar}
-                      <p className="text-xs font-normal text-stone-500 lg:hidden">
-                        {p.semTsi ? 'SEM TSI' : `${p.tratamento} · ${p.embalagem}`}
-                      </p>
-                    </td>
-                    <td className="px-2">{p.semTsi ? <Tag cor="neutro">SEM TSI</Tag> : p.tratamento}</td>
-                    <td className="hidden px-2 lg:table-cell">{p.embalagem}</td>
-                    <td className="num-tabular px-2 text-right">
-                      <Tag cor={p.situacao === 'falta' ? 'perigo' : p.situacao === 'adiantar' ? 'alerta' : 'info'} className="min-w-20 justify-center font-semibold">
-                        {inteiro(p.descoberto)}
-                      </Tag>
-                    </td>
-                    <td className="px-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {p.datas.map((d) => (
-                          <span
-                            key={d.data ?? 'sem-data'}
-                            title={`${d.caminhoes} caminhão(ões) · ${inteiro(d.agendado)} bags agendados · ${inteiro(d.descoberto)} descobertos`}
-                            className={`num-tabular inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${
-                              p.situacao === 'falta'
-                                ? 'border-red-200 bg-white text-red-800 dark:border-red-900 dark:bg-stone-900 dark:text-red-300'
-                                : p.situacao === 'adiantar'
-                                  ? 'border-amber-300 bg-white text-amber-800 dark:border-amber-800 dark:bg-stone-900 dark:text-amber-300'
-                                  : 'border-sky-200 bg-white text-sky-800 dark:border-sky-900 dark:bg-stone-900 dark:text-sky-300'
-                            }`}
-                          >
-                            <span className="font-semibold">{d.data ? diaCurto(d.data) : 'sem data'}</span>
-                            <span>faltam {inteiro(d.descoberto)}</span>
-                            <span className="text-stone-400">de {inteiro(d.agendado)}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </Tabela>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
+                      <th className="px-2 py-2">Produto</th>
+                      {datasDoPeriodo.map((d) => (
+                        <th key={d || 'sem-data'} className="num-tabular px-2 py-2 text-right whitespace-nowrap">
+                          {d ? diaCurto(d) : 'sem data'}
+                        </th>
+                      ))}
+                      <th className="num-tabular px-2 py-2 text-right whitespace-nowrap">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {faltaProdutos.map((p) => {
+                      const porData = new Map(p.datas.map((d) => [d.data ?? '', d]))
+                      const corTexto =
+                        p.situacao === 'falta'
+                          ? 'text-red-700 dark:text-red-400'
+                          : p.situacao === 'adiantar'
+                            ? 'text-amber-700 dark:text-amber-400'
+                            : 'text-sky-700 dark:text-sky-400'
+                      return (
+                        <tr key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="border-t border-stone-100 dark:border-stone-800/60">
+                          <td className="px-2 py-2">
+                            <p className="font-medium">{p.cultivar}</p>
+                            <p className="text-xs text-stone-500">
+                              {p.semTsi ? 'SEM TSI' : `${p.tratamento} · ${p.embalagem}`}
+                            </p>
+                          </td>
+                          {datasDoPeriodo.map((d) => {
+                            const f = porData.get(d)
+                            return (
+                              <td
+                                key={d || 'sem-data'}
+                                className={`num-tabular px-2 py-2 text-right align-middle ${f ? `font-semibold ${corTexto}` : 'text-stone-300 dark:text-stone-700'}`}
+                                title={f ? `${f.caminhoes} caminhão(ões) · ${inteiro(f.agendado)} agendados · faltam ${inteiro(f.descoberto)}` : 'sem falta neste dia'}
+                              >
+                                {f ? inteiro(f.descoberto) : '·'}
+                              </td>
+                            )
+                          })}
+                          <td className="num-tabular px-2 py-2 text-right align-middle">
+                            <Tag cor={p.situacao === 'falta' ? 'perigo' : p.situacao === 'adiantar' ? 'alerta' : 'info'} className="min-w-16 justify-center font-semibold">
+                              {inteiro(p.descoberto)}
+                            </Tag>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    <tr className="border-t border-stone-300 text-xs dark:border-stone-700">
+                      <td className="px-2 py-2 font-medium uppercase tracking-wide text-stone-500">Total do dia</td>
+                      {datasDoPeriodo.map((d) => {
+                        const t = faltaProdutos.reduce(
+                          (acc, p) => acc + (p.datas.find((x) => (x.data ?? '') === d)?.descoberto ?? 0),
+                          0,
+                        )
+                        return (
+                          <td key={d || 'sem-data'} className={`num-tabular px-2 py-2 text-right font-semibold ${t > 0 ? 'text-red-700 dark:text-red-400' : 'text-stone-300 dark:text-stone-700'}`}>
+                            {t > 0 ? inteiro(t) : '·'}
+                          </td>
+                        )
+                      })}
+                      <td className="num-tabular px-2 py-2 text-right font-semibold text-red-700 dark:text-red-400">
+                        {inteiro(faltaProdutos.reduce((t, p) => t + p.descoberto, 0))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             )}
             <p className="mt-3 text-xs text-stone-500">
-              Mesma fila caminhão a caminhão da tabela abaixo, repartida pelo dia de cada caminhão:
-              a soma das datas de um produto é o descoberto dele no período. Dia que não aparece não tem falta.
+              Bags que faltam para o caminhão de cada dia (vermelho = falta mesmo adiantando; âmbar = resolve
+              adiantando produção; azul = coberto só por produção futura). Ponto = sem falta naquele dia. Só
+              produtos com alguma falta no período.
             </p>
           </Cartao>
 
