@@ -9,6 +9,7 @@ import {
   agendadoPorTipo,
   converterAgendados,
   ehRelatorioAgendados,
+  faltaPorData,
   normalizaLinhasXlsx,
   resumoPorTipoVenda,
   saldosExpedicao,
@@ -206,6 +207,10 @@ export default function Expedicao() {
       ),
     [saldos],
   )
+
+  /** Falta por DATA (16/09/2026): a mesma fila, agregada por dia. */
+  const porData = useMemo(() => faltaPorData(saldos), [saldos])
+  const [diasAbertos, setDiasAbertos] = useState<Set<string>>(new Set())
 
   const faltas = saldos.filter((s) => situacaoSaldo(s) === 'falta')
   const precisamAdiantar = saldos.filter((s) => situacaoSaldo(s) === 'adiantar')
@@ -436,6 +441,95 @@ export default function Expedicao() {
               </Aviso>
             </div>
           )}
+
+          {/* ---------------- falta por data (16/09/2026) ---------------- */}
+          <Cartao
+            titulo={`Falta por data · ${
+              de && ate ? `${diaCurto(de)} a ${diaCurto(ate)}` : de ? `a partir de ${diaCurto(de)}` : ate ? `até ${diaCurto(ate)}` : 'todas as datas'
+            }`}
+            className="mb-5"
+          >
+            {porData.length === 0 ? (
+              <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
+            ) : (
+              <>
+                <Tabela cabecalho={[
+                  'Data', '#Caminhões', '#Agendado', '#Coberto', '#Descoberto', 'Produtos em falta no dia',
+                ]}>
+                  {porData.map((d) => {
+                    const chave = d.data ?? 'sem-data'
+                    const aberto = diasAbertos.has(chave)
+                    const visiveis = aberto ? d.produtos : d.produtos.slice(0, 4)
+                    const escondidos = d.produtos.length - visiveis.length
+                    return (
+                      <tr
+                        key={chave}
+                        className={`border-t border-stone-100 dark:border-stone-800/60 [&>td]:py-2 [&>td]:align-top ${
+                          d.descoberto > 0 ? 'bg-red-50/50 dark:bg-red-950/15' : ''
+                        }`}
+                      >
+                        <td className="px-2 font-medium whitespace-nowrap">
+                          {d.data ? diaCurto(d.data) : <Tag cor="neutro">sem data</Tag>}
+                        </td>
+                        <td className="num-tabular px-2 text-right">{d.caminhoes}</td>
+                        <td className="num-tabular px-2 text-right">{inteiro(d.agendado)}</td>
+                        <td className="num-tabular px-2 text-right">{inteiro(d.coberto)}</td>
+                        <td className={`num-tabular px-2 text-right font-semibold ${d.descoberto > 0 ? 'text-red-700 dark:text-red-400' : 'text-stone-400'}`}>
+                          {d.descoberto > 0 ? inteiro(d.descoberto) : '—'}
+                        </td>
+                        <td className="px-2">
+                          {d.produtos.length === 0 ? (
+                            <span className="text-xs text-green-700 dark:text-green-400">tudo coberto</span>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {visiveis.map((p) => (
+                                <Tag
+                                  key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`}
+                                  cor={p.situacao === 'falta' ? 'perigo' : p.situacao === 'adiantar' ? 'alerta' : 'info'}
+                                  className="text-[11px]"
+                                >
+                                  {p.cultivar} · {p.semTsi ? 'SEM TSI' : p.tratamento}
+                                  {!p.semTsi && ` · ${p.embalagem}`} · faltam {inteiro(p.descoberto)}
+                                </Tag>
+                              ))}
+                              {escondidos > 0 && (
+                                <button
+                                  onClick={() => setDiasAbertos((s) => new Set([...s, chave]))}
+                                  className="text-xs underline text-stone-500"
+                                >
+                                  +{escondidos}
+                                </button>
+                              )}
+                              {aberto && d.produtos.length > 4 && (
+                                <button
+                                  onClick={() => setDiasAbertos((s) => { const n = new Set(s); n.delete(chave); return n })}
+                                  className="text-xs underline text-stone-500"
+                                >
+                                  menos
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="border-t border-stone-300 text-xs dark:border-stone-700">
+                    <td className="px-2 py-2 font-medium uppercase tracking-wide text-stone-500">Total</td>
+                    <td className="num-tabular px-2 py-2 text-right">{porData.reduce((t, d) => t + d.caminhoes, 0)}</td>
+                    <td className="num-tabular px-2 py-2 text-right">{inteiro(porData.reduce((t, d) => t + d.agendado, 0))}</td>
+                    <td className="num-tabular px-2 py-2 text-right">{inteiro(porData.reduce((t, d) => t + d.coberto, 0))}</td>
+                    <td className="num-tabular px-2 py-2 text-right font-semibold text-red-700 dark:text-red-400">
+                      {inteiro(porData.reduce((t, d) => t + d.descoberto, 0))}
+                    </td>
+                    <td className="px-2 py-2 text-stone-500">
+                      mesma fila da tabela abaixo, repartida pelo dia do caminhão — a soma dos dias é o descoberto total
+                    </td>
+                  </tr>
+                </Tabela>
+              </>
+            )}
+          </Cartao>
 
           {/* ---------------- saldo por produto (consolidado) ---------------- */}
           <Cartao
