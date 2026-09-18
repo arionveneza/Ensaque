@@ -100,6 +100,15 @@ describe('matriz padrao', () => {
       expect(permitidoPadrao(p, 'pesagem', 'ver')).toBe(false)
   })
 
+  it('enderecamento planilha (18/09/2026): so leitura, so PCP, Logistica e Gestor', () => {
+    for (const p of ['PCP', 'Logistica', 'Gestor'] as const)
+      expect(permitidoPadrao(p, 'enderecamento', 'ver')).toBe(true)
+    for (const p of ['Producao', 'Qualidade', 'Direcao', 'Balanca'] as const)
+      expect(permitidoPadrao(p, 'enderecamento', 'ver')).toBe(false)
+    // a tela so LE a planilha do Google: nao existe acao de escrita nenhuma
+    expect(ACOES_POR_RECURSO.enderecamento).toEqual(['ver'])
+  })
+
   it('ajuste de estoque do mapa (08/09/2026) e do PCP e da Logistica', () => {
     expect(permitidoPadrao('PCP', 'mapa', 'ajustar')).toBe(true)
     expect(permitidoPadrao('Logistica', 'mapa', 'ajustar')).toBe(true)

@@ -502,6 +502,18 @@ lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
 importador pula linha com Qtd em Estoque 0 — é por isso que só o sufixo com bags existe
 em `lotes_semente` (o `-1` "sumido" não é bug).
 
+### Planilha do Google "Produção 2026" — leitura direta do navegador (18/09/2026)
+Primeira origem que o app lê **sem upload e sem servidor no meio**: o Google manda cabeçalhos
+CORS no export de planilha pública, então a tela busca o CSV direto. Duas requisições, as duas
+medidas em produção: (1) `export?format=csv&range=A1:CZ12` (~3 KB) só pro cabeçalho, que dá o
+mapa **nome da coluna → letra**; (2) `gviz/tq?tq=select <letras> where <lote> is not null`
+(~89 KB) pros dados. O CSV inteiro tem 971 KB — peso demais pro tablet do galpão —, e o gviz
+sozinho não serve pro passo 1 porque come as linhas do topo e desalinha o cabeçalho. Filtrar o
+saldo no servidor economizaria 2 KB em 89 e obrigaria a buscar de novo pra conferir lote
+zerado: não vale, a tela esconde o zerado por conta própria. Se um dia a planilha deixar de ser
+pública, o caminho é uma Edge Function de proxy — a rede está isolada em
+`src/dados/planilhaEnderecamento.ts` justamente por isso.
+
 ### SAP Business One — Service Layer: **laboratório no app, integração de produção pendente** 🟡
 A integração de produção (job que alimenta o app) **ainda não existe** — os dados seguem
 vindo do upload das planilhas da SimpleAgro. O que existe desde 09/08/2026 é a aba
@@ -567,6 +579,10 @@ SAP_PASSWORD=
 | **Qualidade** | Execução, Qualidade, Indicadores | apontar qualidade visual e amostra |
 | **Gestor** | todas | todas |
 | **Balança** | Veículos, Mapa (ver), **Pesagem** | chamar motorista, checklist de veículo, **registrar pesagem** (etapas 1 e 2) |
+
+Recurso `enderecamento` (18/09/2026): só `ver` — **PCP, Logística e Gestor**. A tela
+só lê uma planilha de fora; não existe ação de escrita, e por isso também não existe migração
+SQL (a `tem_acao` do banco só serve a policy de tabela, e aqui não há tabela).
 
 Recurso `pesagem` (14/09/2026): `ver` (Balança, PCP, Logística, Direção, Gestor) ·
 `registrar` (**só Balança**, e Gestor) · `administrar` (tipos de veículo, tolerâncias, correção
@@ -873,6 +889,39 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    placa, ordem, tipo, chips Liberado?), lista com etiquetas coloridas e PENDENTE em âmbar
    (caminhão no pátio) na frente, modal Etapa 1 com prévia ao vivo e rascunho, modal Etapa 2
    com prévia e justificativa, cartão Parâmetros (Gestor), export .xlsx com todas as colunas.
+6f. **Endereçamento planilha** (18/09/2026, pedido do Arion: "a planilha é dinâmica, tem como
+   colocar uma aba dentro do app com o nome 'ENDEREÇAMENTO PLANILHA' e ir atualizando conforme
+   ela atualiza ou um botão pra atualizar?"). Espelho de **leitura** da aba `Lote PA` da
+   planilha Google "Produção 2026", onde a operação anota à mão em que armazém/bloco/quadra
+   cada lote está. **Não é o Mapa** e não grava nada — nem no TSI nem na planilha; a tela avisa
+   isso em destaque, porque duas verdades no mesmo sistema é o risco humano caro aqui.
+   **Atualiza só pelo botão** (decisão dele), com uma exceção: sem foto guardada, busca uma vez
+   ao abrir, senão a tela nasceria vazia. A última foto fica em `localStorage`
+   (`tsi.enderecamento.foto`, `src/lib/fotoEnderecamento.ts`, molde do `ajusteFicha`): abre
+   instantânea, e **falha de busca nunca apaga a foto anterior** — o erro vai em cima, a lista
+   antiga fica embaixo com a hora dela.
+   **A regra do "mais fácil" é do Arion e o galpão confirma**: dentro do MESMO bloco, quadra de
+   número MAIOR fica junto do portão (a aba "MO AZ A" da planilha desenha os blocos 41D e 42D
+   cercando o PORTÃO 08 pelas quadras 8 e 9). É a mesma regra da grade do Mapa. **Posição** =
+   1 + nº de linhas do bloco com quadra estritamente maior, então empate divide a posição e a
+   seguinte pula (4,3,3,2,1 → 1º,2º,2º,4º,5º); **bags na frente** = soma dos bags em quadras
+   maiores, fora os do próprio lote (ele não é obstáculo de si mesmo) e fora os empatados (esses
+   estão do lado, não na frente). Quadra não numérica ou endereço incompleto fica **sem posição**
+   e vai pro fim — nunca aparece como 1º.
+   **A unidade é a LINHA (lote + tratamento + endereço), não o lote**: 123 lotes estão em mais de
+   um lugar ao mesmo tempo. Linha idêntica repetida soma os bags e vira item do cartão
+   "Problemas na planilha", junto com endereço incompleto e quadra ilegível — o cartão vira lista
+   de tarefa pra operação corrigir lá na planilha.
+   **Coluna pelo NOME, nunca pela letra** (mesma lição da SimpleAgro, §4), e a linha do cabeçalho
+   é DESCOBERTA, não fixa — hoje é a 5ª. Nome repetido: vence a **primeira** ocorrência, e
+   **exato ganha de normalizado**, porque `AZ` aparece 3× e `SALDO` colide com um `saldo`
+   minúsculo das colunas auxiliares de fórmula; sem essa precedência, renomear a coluna de dado
+   fazia a auxiliar assumir o lugar em silêncio. **O filtro é lote + saldo, NUNCA data**: exigir
+   data escondeu 3 lotes com saldo do primeiro relatório entregue (`SV0321026260777`,
+   `SV0271046760629`, `11149P1630`). Bloco passa por `normalizaBloco` (`5D` e `05D`
+   são o mesmo bloco). Domínio puro em `src/dominio/enderecamento.ts` e
+   `src/dominio/importacao/planilhaEnderecamento.ts`; parser de CSV próprio em
+   `src/dominio/importacao/csv.ts` (o primeiro do projeto — todo o resto é .xlsx).
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 

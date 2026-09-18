@@ -24,6 +24,7 @@ const Pesagem = lazy(() => import('@/telas/Pesagem'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
 const Mrp = lazy(() => import('@/telas/Mrp'))
 const Mapa = lazy(() => import('@/telas/Mapa'))
+const Enderecamento = lazy(() => import('@/telas/Enderecamento'))
 const Inventario = lazy(() => import('@/telas/Inventario'))
 const Cadastros = lazy(() => import('@/telas/Cadastros'))
 const Administracao = lazy(() => import('@/telas/Administracao'))
@@ -34,8 +35,8 @@ const DefinirSenha = lazy(() => import('@/telas/DefinirSenha'))
 
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
-  | 'agrotis' | 'etapas' | 'expedicao' | 'mapa' | 'inventario' | 'veiculos'
-  | 'pesagem' | 'indicadores' | 'mrp' | 'cadastros' | 'administracao' | 'sap'
+  | 'agrotis' | 'etapas' | 'expedicao' | 'mapa' | 'enderecamento' | 'inventario'
+  | 'veiculos' | 'pesagem' | 'indicadores' | 'mrp' | 'cadastros' | 'administracao' | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -47,6 +48,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'etapas', nome: 'Etapas' },
   { id: 'expedicao', nome: 'Expedição' },
   { id: 'mapa', nome: 'Mapa' },
+  { id: 'enderecamento', nome: 'Endereçamento planilha' },
   { id: 'inventario', nome: 'Inventário' },
   { id: 'veiculos', nome: 'Veículos' },
   { id: 'pesagem', nome: 'Pesagem' },
@@ -364,6 +366,7 @@ function Shell() {
             {atual === 'etapas' && <Etapas />}
             {atual === 'expedicao' && <Expedicao />}
             {atual === 'mapa' && <Mapa />}
+            {atual === 'enderecamento' && <Enderecamento />}
             {atual === 'inventario' && <Inventario />}
             {atual === 'veiculos' && <Veiculos />}
             {atual === 'pesagem' && <Pesagem />}
@@ -461,6 +464,15 @@ function IconeTela({ id }: { id: TelaId }) {
         <svg {...props}>
           <path d="M2 4l4-1.5 4 1.5 4-1.5v9.5l-4 1.5-4-1.5-4 1.5z" />
           <path d="M6 2.5v9.5M10 4v9.5" />
+        </svg>
+      )
+    case 'enderecamento':
+      // pilha de caixas com a da frente destacada
+      return (
+        <svg {...props}>
+          <path d="M2 9.5h4v4H2zM6.5 9.5h4v4h-4zM11 9.5h3v4h-3z" />
+          <path d="M11.5 2.5h3v4h-3z" />
+          <path d="M13 8.5V7" />
         </svg>
       )
     case 'inventario':
