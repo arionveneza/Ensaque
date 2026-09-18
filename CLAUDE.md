@@ -946,6 +946,24 @@ tela, no máximo 1× a cada 30 s.
   na frente da impressora acerta sozinho, sem publicar nada. Se o desvio variar de folha
   pra folha com o mesmo ajuste, é papel/bandeja — a saída definitiva é o app imprimir a
   ficha inteira em papel branco (proposto, não decidido).
+  **Etiqueta do lote na ficha** (17/09/2026, pedido do Arion: "imprimir a etiqueta do
+  lote na ficha; vou fazer o upload da etiqueta em PDF, e ela deve ficar no espaço acima
+  e à esquerda destinado à etiqueta"). O PDF é o do SimpleAgro (JasperReports): página
+  de 207 × 283 pt com `/Rotate 90` = etiqueta deitada de **99,8 × 73 mm** (QR, cultivar,
+  lote, categoria, safra, peneira, peso, germinação, produtor). No menu "Ficha de
+  químicos ▾" há o bloco **Etiqueta do lote (PDF)**: escolhe o arquivo, o app rasteriza a
+  1ª página **no navegador** com `pdfjs-dist` (chunk carregado só ali, 300 dpi —
+  `src/lib/etiquetaPdf.ts`) e mostra a prévia; "girar" roda 90° (o pdf.js já aplica o
+  `/Rotate` da página, então o padrão sai legível; `rotacaoSugeridaEtiqueta` só gira
+  página que ainda sair de pé). A imagem entra na ficha como `<img>` absoluta no
+  **tamanho real do PDF** (`FICHA_QUIMICOS_LAYOUT.etiqueta = {left 10, top 14}`, canto
+  do espaço reservado no cabeçalho, que vai de 0 a 90 mm — estimativa, como as outras
+  posições nasceram), e o teste de alinhamento desenha a guia da etiqueta mesmo sem PDF
+  (100 × 73 mm supostos). O ajuste fino ganhou **Etiqueta do lote (vertical)** e
+  **(horizontal)**, além do x geral que ela também acompanha (`AJUSTES_HORIZONTAIS` diz
+  quais chaves são ◂▸). O arquivo fica **só na memória do detalhe da ordem** — nada sobe
+  pro Storage, fechar o modal esquece; com etiqueta o `abrirParaImpressao` espera a
+  imagem decodificar antes do `print()`.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

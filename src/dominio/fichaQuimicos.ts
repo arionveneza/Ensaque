@@ -65,6 +65,9 @@ export const CAPACIDADE_FICHA: Record<SecaoFicha | 'outros', number> = {
  */
 export interface AjusteFicha {
   x: number
+  /** etiqueta do lote (17/09/2026): vertical e horizontal próprios, além do x geral */
+  etiqueta: number
+  etiquetaX: number
   receita: number
   biologicos: number
   inseticida: number
@@ -75,11 +78,13 @@ export interface AjusteFicha {
 }
 
 export const AJUSTE_FICHA_ZERO: AjusteFicha = {
-  x: 0, receita: 0, biologicos: 0, inseticida: 0, fungicida: 0, nematicida: 0, inoculante: 0, outros: 0,
+  x: 0, etiqueta: 0, etiquetaX: 0, receita: 0, biologicos: 0, inseticida: 0, fungicida: 0, nematicida: 0, inoculante: 0, outros: 0,
 }
 
 /** Ordem e rótulo das linhas do painel de ajuste. */
 export const LINHAS_AJUSTE_FICHA: { chave: keyof AjusteFicha; rotulo: string }[] = [
+  { chave: 'etiqueta', rotulo: 'Etiqueta do lote (vertical)' },
+  { chave: 'etiquetaX', rotulo: 'Etiqueta do lote (horizontal)' },
   { chave: 'receita', rotulo: 'Receita (nome do tratamento)' },
   { chave: 'biologicos', rotulo: 'Biológicos (SIM/NÃO)' },
   { chave: 'inseticida', rotulo: 'Inseticida' },
@@ -89,6 +94,9 @@ export const LINHAS_AJUSTE_FICHA: { chave: keyof AjusteFicha; rotulo: string }[]
   { chave: 'outros', rotulo: 'Outros produtos' },
   { chave: 'x', rotulo: 'Tudo na horizontal' },
 ]
+
+/** Chaves que deslocam na HORIZONTAL (setas ◂▸ no painel); as demais são verticais. */
+export const AJUSTES_HORIZONTAIS: ReadonlySet<keyof AjusteFicha> = new Set<keyof AjusteFicha>(['x', 'etiquetaX'])
 
 /** Mais que isso é erro de digitação, não calibração. */
 export const LIMITE_AJUSTE_MM = 30
@@ -112,6 +120,7 @@ export function normalizarAjusteFicha(bruto: unknown): AjusteFicha {
 interface LayoutAjustavel {
   esquerda: number
   esquerdaOutros: number
+  etiqueta: { left: number; top: number }
   receita: { left: number; top: number }
   biologicos: { left: number; top: number }
   top: Record<SecaoFicha | 'outros', number>
@@ -123,6 +132,11 @@ export function aplicarAjusteFicha<L extends LayoutAjustavel>(layout: L, ajuste:
     ...layout,
     esquerda: layout.esquerda + ajuste.x,
     esquerdaOutros: layout.esquerdaOutros + ajuste.x,
+    // a etiqueta acompanha o x geral (desvio da impressora) e ainda tem o seu próprio
+    etiqueta: {
+      left: layout.etiqueta.left + ajuste.x + ajuste.etiquetaX,
+      top: layout.etiqueta.top + ajuste.etiqueta,
+    },
     receita: { left: layout.receita.left + ajuste.x, top: layout.receita.top + ajuste.receita },
     biologicos: { left: layout.biologicos.left + ajuste.x, top: layout.biologicos.top + ajuste.biologicos },
     top: {
@@ -232,3 +246,40 @@ export function montarFichaQuimicos(receita: string, itens: ItemFicha[]): FichaQ
   }
   return ficha
 }
+
+// ---------------------------------------------------------------------------
+// Etiqueta do lote na ficha (17/09/2026, pedido do Arion: "imprimir a etiqueta
+// do lote na ficha de tratamento; vou fazer o upload da etiqueta em PDF, e ela
+// deve ficar no espaço acima e à esquerda destinado à etiqueta"). O PDF vem do
+// SimpleAgro (JasperReports): página de 207 × 283 pt com /Rotate 90 — o pdf.js
+// já aplica o giro e ela sai deitada, 99,8 × 73 mm, como a etiqueta física. O app
+// rasteriza a 1ª página no navegador (pdf.js) e imprime a imagem no tamanho
+// REAL do PDF, no canto reservado da ficha. Aqui só o que é puro.
+// ---------------------------------------------------------------------------
+
+export type RotacaoEtiqueta = 0 | 90 | 180 | 270
+
+/** Imagem já rasterizada da etiqueta, pronta pra ir na ficha. */
+export interface EtiquetaFicha {
+  /** PNG em data URL. */
+  dataUrl: string
+  /** Tamanho REAL da página (já girada), em mm — a imagem sai nesse tamanho no papel. */
+  larguraMm: number
+  alturaMm: number
+  /** Giro aplicado sobre a página (o operador pode girar mais no menu). */
+  rotacao: RotacaoEtiqueta
+  nome: string
+}
+
+/** Pontos PDF (1/72") → mm, com 1 casa. */
+export const mmDePontos = (pt: number): number => Math.round((pt * 25.4) / 72 * 10) / 10
+
+/**
+ * Rede pra PDF que ainda saia "de pé" (mais alto que largo) depois do /Rotate
+ * da página: girar 90° no sentido horário o deita no formato físico. A
+ * etiqueta do SimpleAgro já vem deitada pelo /Rotate 90 e não gira aqui.
+ */
+export const rotacaoSugeridaEtiqueta = (larguraPt: number, alturaPt: number): RotacaoEtiqueta =>
+  alturaPt > larguraPt ? 90 : 0
+
+export const proximaRotacao = (r: RotacaoEtiqueta): RotacaoEtiqueta => (((r + 90) % 360) as RotacaoEtiqueta)

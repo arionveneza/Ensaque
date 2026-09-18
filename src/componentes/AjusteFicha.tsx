@@ -1,5 +1,5 @@
 import {
-  AJUSTE_FICHA_ZERO, LIMITE_AJUSTE_MM, LINHAS_AJUSTE_FICHA, type AjusteFicha,
+  AJUSTES_HORIZONTAIS, AJUSTE_FICHA_ZERO, LIMITE_AJUSTE_MM, LINHAS_AJUSTE_FICHA, type AjusteFicha,
 } from '@/dominio/fichaQuimicos'
 
 interface Props {
@@ -32,7 +32,9 @@ export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirF
       </p>
       <table className="mt-1 w-full text-sm">
         <tbody>
-          {LINHAS_AJUSTE_FICHA.map(({ chave, rotulo }) => (
+          {LINHAS_AJUSTE_FICHA.map(({ chave, rotulo }) => {
+            const horizontal = AJUSTES_HORIZONTAIS.has(chave)
+            return (
             <tr key={chave}>
               <td className="px-2 py-0.5">{rotulo}</td>
               <td className="px-1 py-0.5 text-right">
@@ -40,11 +42,11 @@ export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirF
                   <button
                     type="button"
                     onClick={() => mudar(chave, -1)}
-                    aria-label={`${rotulo}: 1 mm ${chave === 'x' ? 'pra esquerda' : 'pra cima'}`}
-                    title={chave === 'x' ? '1 mm pra esquerda' : '1 mm pra cima'}
+                    aria-label={`${rotulo}: 1 mm ${horizontal ? 'pra esquerda' : 'pra cima'}`}
+                    title={horizontal ? '1 mm pra esquerda' : '1 mm pra cima'}
                     className="h-7 w-7 rounded border border-stone-300 text-base leading-none hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
                   >
-                    {chave === 'x' ? '◂' : '▴'}
+                    {horizontal ? '◂' : '▴'}
                   </button>
                   <span className={`num-tabular inline-block w-16 text-center ${valor[chave] === 0 ? 'text-stone-400' : 'font-semibold'}`}>
                     {mm(valor[chave])}
@@ -52,16 +54,17 @@ export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirF
                   <button
                     type="button"
                     onClick={() => mudar(chave, +1)}
-                    aria-label={`${rotulo}: 1 mm ${chave === 'x' ? 'pra direita' : 'pra baixo'}`}
-                    title={chave === 'x' ? '1 mm pra direita' : '1 mm pra baixo'}
+                    aria-label={`${rotulo}: 1 mm ${horizontal ? 'pra direita' : 'pra baixo'}`}
+                    title={horizontal ? '1 mm pra direita' : '1 mm pra baixo'}
                     className="h-7 w-7 rounded border border-stone-300 text-base leading-none hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
                   >
-                    {chave === 'x' ? '▸' : '▾'}
+                    {horizontal ? '▸' : '▾'}
                   </button>
                 </div>
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 px-2 pb-1">

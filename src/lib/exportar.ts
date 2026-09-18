@@ -3,6 +3,7 @@ import writeXlsxFile, { type SheetData } from 'write-excel-file/browser'
 import {
   AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LINHAS_AJUSTE_FICHA, SECOES_FICHA, aplicarAjusteFicha,
   type AjusteFicha, type FichaQuimicos,
+type EtiquetaFicha,
 } from '@/dominio/fichaQuimicos'
 
 /**
@@ -462,6 +463,15 @@ export const FICHA_QUIMICOS_LAYOUT = {
   receita: { left: 58, top: 90 },
   biologicos: { left: 164, top: 90 },
   /**
+   * Canto superior esquerdo do espaço reservado à ETIQUETA DO LOTE no
+   * cabeçalho da ficha (17/09/2026) — estimativa: o cabeçalho vai de 0 a
+   * 90 mm e a etiqueta física tem 100 × 73 mm. A imagem sai no tamanho
+   * real do PDF; posição se acerta pelo Ajuste fino (Etiqueta do lote).
+   */
+  etiqueta: { left: 10, top: 14 },
+  /** tamanho suposto da etiqueta, só pra desenhar a guia do teste sem PDF carregado. */
+  etiquetaPadrao: { largura: 100, altura: 73 },
+  /**
    * A coluna DOSAGEM (última) fica 1 cm mais à direita do que a grade
    * uniforme sugere — em TODAS as seções, OUTROS inclusive (medido pelo
    * Arion, 12/09/2026).
@@ -481,7 +491,7 @@ export const FICHA_QUIMICOS_LAYOUT = {
  */
 export function imprimirFichaQuimicos(
   f: FichaQuimicos,
-  opcoes: { teste?: boolean; ajuste?: AjusteFicha } = {},
+  opcoes: { teste?: boolean; ajuste?: AjusteFicha; etiqueta?: EtiquetaFicha | null } = {},
   janelaPronta?: Window,
 ): void {
   // padrão + ajuste fino da impressora deste computador (12/09/2026)
@@ -502,6 +512,19 @@ export function imprimirFichaQuimicos(
 
   const partes: string[] = []
   const guias: string[] = []
+
+  // etiqueta do lote (PDF rasterizado no navegador), no espaço reservado do cabeçalho
+  const et = opcoes.etiqueta ?? null
+  const etLarg = et?.larguraMm ?? L.etiquetaPadrao.largura
+  const etAlt = et?.alturaMm ?? L.etiquetaPadrao.altura
+  if (et) {
+    partes.push(
+      `<img class="et" src="${et.dataUrl}" alt="Etiqueta do lote" style="left:${mm(L.etiqueta.left)};top:${mm(L.etiqueta.top)};width:${mm(etLarg)};height:${mm(etAlt)}">`,
+    )
+  }
+  guias.push(
+    `<div class="g" style="left:${mm(L.etiqueta.left)};top:${mm(L.etiqueta.top)};width:${mm(etLarg)};height:${mm(etAlt)}"><span>ETIQUETA DO LOTE · ${esc(`${etLarg} × ${etAlt} mm`)}${et ? '' : ' (posição suposta — sem PDF carregado)'}</span></div>`,
+  )
 
   // cabeçalho: RECEITA na 2ª coluna, BIOLÓGICOS na 4ª (os rótulos estão no papel)
   partes.push(celula(L.receita.left, L.receita.top, L.largura, f.receita))
@@ -568,6 +591,7 @@ export function imprimirFichaQuimicos(
        font-size: 10.5pt; line-height: 1.15; }
   .c.nowrap { white-space: nowrap; }
   .c.quebra { font-size: 8pt; }
+  .et { position: absolute; display: block; object-fit: contain; }
   .teste .c { outline: 0.25mm solid #c00; outline-offset: -0.15mm; }
   .g { position: absolute; outline: 0.2mm dashed #888; outline-offset: -0.1mm; }
   .g span { position: absolute; left: 1mm; bottom: 0.4mm; font-size: 4.5pt; color: #888; white-space: nowrap; }
@@ -580,7 +604,8 @@ ${partes.join('\n')}
 ${regua.join('\n')}
 </body></html>`
 
-  abrirParaImpressao(html, false, janelaPronta)
+  // com etiqueta, espera a imagem decodificar antes do print() — senão pode sair o quadro vazio
+  abrirParaImpressao(html, et != null, janelaPronta)
 }
 
 export interface ItemCarregamentoImpressao {

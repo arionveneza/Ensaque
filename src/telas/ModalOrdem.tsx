@@ -26,9 +26,10 @@ import {
   abrirJanelaImpressao, confirmarNaJanela, imprimirEtiquetaDm, imprimirFichaQuimicos,
   imprimirOrdemProducao, mostrarErroNaJanela,
 } from '@/lib/exportar'
-import { montarFichaQuimicos, type AjusteFicha } from '@/dominio/fichaQuimicos'
+import { montarFichaQuimicos, proximaRotacao, type AjusteFicha, type EtiquetaFicha } from '@/dominio/fichaQuimicos'
 import { itensReceitaComPrincipios } from '@/dados/api-gestao'
 import { carregarAjusteFicha, salvarAjusteFicha } from '@/lib/ajusteFicha'
+import { renderizarEtiquetaPdf } from '@/lib/etiquetaPdf'
 import { PainelAjusteFicha } from '@/componentes/AjusteFicha'
 
 const num = (v: number | null | undefined, casas = 1) =>
@@ -82,6 +83,53 @@ export default function ModalOrdem({
   const mudarAjusteFicha = (v: AjusteFicha) => {
     setAjusteFicha(v)
     salvarAjusteFicha(v)
+  }
+  /**
+   * Etiqueta do lote em PDF (17/09/2026): o operador escolhe o arquivo do
+   * SimpleAgro no menu da ficha e a imagem sai no espaço reservado do
+   * cabeçalho. Fica só na memória deste detalhe — não sobe pro servidor.
+   * Guardamos os bytes pra poder girar de novo sem pedir o arquivo.
+   */
+  const [etiquetaPdf, setEtiquetaPdf] = useState<{ bytes: ArrayBuffer; nome: string } | null>(null)
+  const [etiqueta, setEtiqueta] = useState<EtiquetaFicha | null>(null)
+  const [lendoEtiqueta, setLendoEtiqueta] = useState(false)
+  const [erroEtiqueta, setErroEtiqueta] = useState<string | null>(null)
+
+  async function escolherEtiqueta(arquivo: File | undefined) {
+    if (!arquivo) return
+    setErroEtiqueta(null)
+    setLendoEtiqueta(true)
+    try {
+      const bytes = await arquivo.arrayBuffer()
+      const imagem = await renderizarEtiquetaPdf(bytes, 'auto', arquivo.name)
+      setEtiquetaPdf({ bytes, nome: arquivo.name })
+      setEtiqueta(imagem)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setErroEtiqueta(`Não consegui ler o PDF: ${msg}`)
+    } finally {
+      setLendoEtiqueta(false)
+    }
+  }
+
+  async function girarEtiqueta() {
+    if (!etiquetaPdf || !etiqueta) return
+    setErroEtiqueta(null)
+    setLendoEtiqueta(true)
+    try {
+      setEtiqueta(await renderizarEtiquetaPdf(etiquetaPdf.bytes, proximaRotacao(etiqueta.rotacao), etiquetaPdf.nome))
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setErroEtiqueta(`Não consegui girar a etiqueta: ${msg}`)
+    } finally {
+      setLendoEtiqueta(false)
+    }
+  }
+
+  function removerEtiqueta() {
+    setEtiquetaPdf(null)
+    setEtiqueta(null)
+    setErroEtiqueta(null)
   }
 
   const prods = useMemo(() => mapaProdutos(produtos), [produtos])
@@ -270,7 +318,7 @@ export default function ModalOrdem({
       if (ficha.naoCouberam.length > 0) {
         avisos.push(`Não couberam na ficha (OUTROS PRODUTOS lotou): ${ficha.naoCouberam.join(', ')}.`)
       }
-      const opcoes = { teste, ajuste: ajusteFicha }
+      const opcoes = { teste, ajuste: ajusteFicha, etiqueta }
       if (avisos.length === 0) {
         imprimirFichaQuimicos(ficha, opcoes, janela)
         return
@@ -417,6 +465,62 @@ export default function ModalOrdem({
                       imprime também a grade e uma régua — numa ficha real, mostra o desvio
                     </span>
                   </button>
+                  {/* etiqueta do lote em PDF (17/09/2026): sai no canto superior esquerdo da ficha */}
+                  <div className="mt-1 border-t border-stone-200 px-2 py-1.5 dark:border-stone-700">
+                    <p className="text-sm font-medium">Etiqueta do lote (PDF)</p>
+                    {etiqueta ? (
+                      <div className="mt-1 flex items-start gap-2">
+                        <img
+                          src={etiqueta.dataUrl}
+                          alt="Prévia da etiqueta do lote"
+                          className="max-h-20 max-w-32 rounded border border-stone-300 bg-white object-contain dark:border-stone-600"
+                        />
+                        <div className="min-w-0 flex-1 text-xs text-stone-500">
+                          <p className="truncate" title={etiqueta.nome}>{etiqueta.nome}</p>
+                          <p className="num-tabular">
+                            {etiqueta.larguraMm} × {etiqueta.alturaMm} mm
+                            {etiqueta.rotacao !== 0 && ` · girada ${etiqueta.rotacao}°`}
+                          </p>
+                          <div className="mt-1 flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => void girarEtiqueta()}
+                              disabled={lendoEtiqueta}
+                              title="Gira 90° — se o texto sair de lado na prévia"
+                              className="rounded border border-stone-300 px-1.5 py-0.5 hover:bg-stone-100 disabled:opacity-40 dark:border-stone-700 dark:hover:bg-stone-800"
+                            >
+                              ↻ girar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={removerEtiqueta}
+                              className="rounded border border-stone-300 px-1.5 py-0.5 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
+                            >
+                              ✕ remover
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="mt-1 block cursor-pointer rounded border border-dashed border-stone-300 px-2 py-1.5 text-xs text-stone-600 hover:bg-stone-100 dark:border-stone-600 dark:text-stone-300 dark:hover:bg-stone-800">
+                        {lendoEtiqueta ? 'Lendo o PDF…' : 'Escolher o PDF da etiqueta do SimpleAgro…'}
+                        <input
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          className="hidden"
+                          disabled={lendoEtiqueta}
+                          onChange={(e) => {
+                            void escolherEtiqueta(e.target.files?.[0])
+                            e.target.value = ''
+                          }}
+                        />
+                        <span className="mt-0.5 block text-stone-500">
+                          sai no espaço da etiqueta, no alto à esquerda da ficha, no tamanho real
+                        </span>
+                      </label>
+                    )}
+                    {erroEtiqueta && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{erroEtiqueta}</p>}
+                  </div>
                   <button
                     onClick={() => setAjustandoFicha((v) => !v)}
                     className="flex w-full items-baseline justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800"

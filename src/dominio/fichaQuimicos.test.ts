@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LIMITE_AJUSTE_MM, aplicarAjusteFicha, concentracaoFicha,
-  doseFicha, montarFichaQuimicos, normalizarAjusteFicha, type ItemFicha, type PrincipioFicha,
+  doseFicha, mmDePontos, montarFichaQuimicos, normalizarAjusteFicha, proximaRotacao,
+  rotacaoSugeridaEtiqueta, type ItemFicha, type PrincipioFicha,
 } from './fichaQuimicos'
 
 const LAYOUT = {
   esquerda: 10,
   esquerdaOutros: 8.5,
+  etiqueta: { left: 10, top: 14 },
   receita: { left: 58, top: 90 },
   biologicos: { left: 164, top: 90 },
   top: { inseticida: 116, fungicida: 151, nematicida: 184, inoculante: 211, outros: 240 },
@@ -25,9 +27,39 @@ describe('aplicarAjusteFicha: ajuste por impressora somado ao padrão', () => {
     expect(a.biologicos).toEqual({ left: 163, top: 90 })
     expect(a.esquerda).toBe(9)
     expect(a.esquerdaOutros).toBe(7.5)
+    // a etiqueta acompanha o x geral, sem ajuste próprio
+    expect(a.etiqueta).toEqual({ left: 9, top: 14 })
     expect(a.outraCoisa).toBe('preservada')
     // pura: o padrão não muda
     expect(LAYOUT.top.fungicida).toBe(151)
+  })
+
+  it('etiqueta do lote tem vertical e horizontal próprios, somados ao x geral', () => {
+    const a = aplicarAjusteFicha(LAYOUT, { ...AJUSTE_FICHA_ZERO, etiqueta: -3, etiquetaX: 2, x: 1 })
+    expect(a.etiqueta).toEqual({ left: 13, top: 11 })
+    // o resto não mexe com o ajuste da etiqueta
+    expect(a.receita).toEqual({ left: 59, top: 90 })
+    expect(a.top.inseticida).toBe(116)
+  })
+})
+
+describe('etiqueta do lote em PDF: medidas e giro', () => {
+  it('converte pontos em mm — a etiqueta do SimpleAgro (207 × 283 pt) é 73 × 100 mm', () => {
+    expect(mmDePontos(207)).toBe(73)
+    expect(mmDePontos(283)).toBe(99.8)
+    expect(mmDePontos(72)).toBe(25.4)
+  })
+
+  it('página de pé (etiqueta exportada girada) sugere 90°; deitada não gira', () => {
+    expect(rotacaoSugeridaEtiqueta(207, 283)).toBe(90)
+    expect(rotacaoSugeridaEtiqueta(283, 207)).toBe(0)
+    expect(rotacaoSugeridaEtiqueta(200, 200)).toBe(0)
+  })
+
+  it('girar dá a volta completa', () => {
+    expect(proximaRotacao(0)).toBe(90)
+    expect(proximaRotacao(90)).toBe(180)
+    expect(proximaRotacao(270)).toBe(0)
   })
 })
 
@@ -36,6 +68,9 @@ describe('normalizarAjusteFicha: o que vem do navegador', () => {
     expect(normalizarAjusteFicha({ fungicida: '2', outros: 'abc', x: null })).toEqual({
       ...AJUSTE_FICHA_ZERO, fungicida: 2,
     })
+    // ajuste salvo ANTES da etiqueta existir (sem as chaves novas) continua válido
+    expect(normalizarAjusteFicha({ receita: 1 }).etiqueta).toBe(0)
+    expect(normalizarAjusteFicha({ receita: 1 }).etiquetaX).toBe(0)
     expect(normalizarAjusteFicha(null)).toEqual(AJUSTE_FICHA_ZERO)
   })
 
