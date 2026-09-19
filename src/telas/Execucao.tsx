@@ -253,7 +253,11 @@ export default function Execucao() {
       )}
 
       {/* ---------- cards por máquina ---------- */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2">
+      {/* 3 colunas a partir da 3ª máquina (TSI 3, 19/09/2026), já a partir do
+          tablet (md): o cartão foi compactado pra caber três lado a lado —
+          pedido do Arion, "diminua os cards para que fiquem um ao lado do
+          outro"; em 2 colunas a TSI 3 caía sozinha numa segunda linha */}
+      <div className={`mb-6 grid gap-3 sm:grid-cols-2 ${(cadastros?.maquinas.length ?? 0) >= 3 ? 'md:grid-cols-3' : ''}`}>
         {(cadastros?.maquinas ?? []).map((m) => (
           <CardMaquina
             key={m.id}
@@ -609,12 +613,12 @@ function CardMaquina({
           por isso ocupa a linha inteira, em corpo grande, com o estado logo
           abaixo. Antes disputava espaço com a etiqueta de status em text-lg
           e sumia no meio do cartão. */}
-      <div className="flex items-start justify-between gap-3 px-4 pt-3">
+      <div className="flex items-start justify-between gap-2 px-3 pt-2.5">
         <div className="min-w-0">
-          <h3 className="text-3xl font-bold leading-none tracking-tight text-stone-900 dark:text-stone-100">
+          <h3 className="text-2xl font-bold leading-none tracking-tight text-stone-900 dark:text-stone-100">
             {maquina.nome}
           </h3>
-          <div className="mt-1.5">
+          <div className="mt-1">
             {atual ? (
               <span
                 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -640,13 +644,16 @@ function CardMaquina({
             )}
           </div>
         </div>
-        <span className="shrink-0 pt-1 text-right text-xs text-stone-500 dark:text-stone-400">
-          {maquina.capacidade_th} t/h · {maquina.qtd_tanques} tanques
+        {/* em duas linhas curtas: com três cartões lado a lado não sobra
+            largura pra "12 t/h · 5 tanques" ao lado do nome */}
+        <span className="shrink-0 pt-0.5 text-right text-[11px] leading-tight text-stone-500 dark:text-stone-400">
+          <span className="block">{maquina.capacidade_th} t/h</span>
+          <span className="block">{maquina.qtd_tanques} tanques</span>
         </span>
       </div>
 
       {!atual ? (
-        <div className="px-4 pt-4 pb-5">
+        <div className="px-3 pt-3 pb-4">
           {paradaMaq ? (
             <>
               <p className="text-sm text-amber-900 dark:text-amber-200">
@@ -656,7 +663,7 @@ function CardMaquina({
                   minute: '2-digit',
                 })}
               </p>
-              <p className="num-tabular mt-1 text-4xl font-bold tabular-nums text-amber-900 dark:text-amber-200">
+              <p className="num-tabular mt-1 text-3xl font-bold tabular-nums text-amber-900 dark:text-amber-200">
                 {formataHms(paradaMaqS)}
               </p>
               {paradaMaqDeOntem && (
@@ -667,7 +674,7 @@ function CardMaquina({
               {podeApontar && (
                 <button
                   onClick={() => onEncerrarParada(maquina.id)}
-                  className="mt-3 rounded-md border border-amber-400 px-4 py-2.5 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                  className="mt-2 rounded-md border border-amber-400 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
                 >
                   Encerrar parada
                 </button>
@@ -700,7 +707,7 @@ function CardMaquina({
                   {motivoSemente && (
                     <button
                       onClick={() => onAbrirParada(maquina.id, motivoSemente.id)}
-                      className="rounded-md bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
+                      className="rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600"
                     >
                       Aguardando semente
                     </button>
@@ -718,7 +725,7 @@ function CardMaquina({
         </div>
       ) : (
         <>
-          <div className="px-4 pt-1">
+          <div className="px-3 pt-1">
             <button
               onClick={() => onAbrir(atual.id)}
               className="text-left text-sm font-semibold text-stone-900 underline-offset-4 transition-colors hover:underline dark:text-stone-100"
@@ -732,12 +739,12 @@ function CardMaquina({
           </div>
 
           {/* o número que se lê do outro lado da máquina */}
-          <div className="mt-2 px-4 text-center">
+          <div className="mt-1.5 px-3 text-center">
             <p className="text-[10px] font-medium uppercase tracking-widest text-stone-500">
               Decorrido
             </p>
             <p
-              className={`num-tabular text-4xl font-bold tracking-tight ${
+              className={`num-tabular text-3xl font-bold tracking-tight ${
                 emParada
                   ? 'text-red-700 dark:text-red-400'
                   : 'text-stone-900 dark:text-stone-100'
@@ -746,7 +753,7 @@ function CardMaquina({
               {tempos ? formataHms(tempos.brutoS) : '—'}
             </p>
             {progresso != null && (
-              <div className="mx-auto mt-2 h-1.5 max-w-64 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+              <div className="mx-auto mt-1.5 h-1.5 max-w-56 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
                 <div
                   className={`h-full rounded-full transition-[width] duration-1000 ${
                     estourou ? 'bg-red-500' : 'bg-green-600'
@@ -757,8 +764,8 @@ function CardMaquina({
             )}
           </div>
 
-          <dl className="mt-3 grid grid-cols-2 gap-px border-t border-stone-200/70 bg-stone-200/70 dark:border-stone-800 dark:bg-stone-800">
-            <div className="bg-white/70 px-4 py-2 text-center dark:bg-stone-900/60">
+          <dl className="mt-2 grid grid-cols-2 gap-px border-t border-stone-200/70 bg-stone-200/70 dark:border-stone-800 dark:bg-stone-800">
+            <div className="bg-white/70 px-3 py-1.5 text-center dark:bg-stone-900/60">
               <dt className="text-[10px] uppercase tracking-wide text-stone-500">Planejado</dt>
               <dd className={`num-tabular text-sm font-semibold ${estourou ? 'text-red-700 dark:text-red-400' : ''}`}>
                 {planejado == null ? '—' : formataHms(planejado)}
@@ -772,7 +779,7 @@ function CardMaquina({
                 </dd>
               )}
             </div>
-            <div className="bg-white/70 px-4 py-2 text-center dark:bg-stone-900/60">
+            <div className="bg-white/70 px-3 py-1.5 text-center dark:bg-stone-900/60">
               <dt className="text-[10px] uppercase tracking-wide text-stone-500">Paradas</dt>
               <dd className="num-tabular text-sm font-semibold">
                 {tempos ? formataHms(tempos.paradasS) : '—'}
@@ -781,7 +788,7 @@ function CardMaquina({
           </dl>
 
           {parada && (
-            <div className="flex items-center gap-2 bg-red-600 px-4 py-2.5 text-sm text-white">
+            <div className="flex items-center gap-2 bg-red-600 px-3 py-2 text-sm text-white">
               <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-white" />
               <span className="min-w-0 truncate">
                 <b>{motivoAtual?.descricao ?? 'Parada'}</b>{' '}

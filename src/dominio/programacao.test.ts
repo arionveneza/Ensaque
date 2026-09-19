@@ -260,6 +260,100 @@ describe('rebalancear o dia', () => {
     expect(r?.ordensMovidas.map((a) => a.ordemId)).toEqual(['livre'])
   })
 
+  // TSI 3 (19/09/2026): terceira máquina, aqui com t/h menor de propósito —
+  // é o caso em que a trava antiga do Rebalancear errava
+  const MAQUINAS3: MaquinaCapacidade[] = [
+    ...MAQUINAS,
+    { id: 'TSI3', capacidadeTh: 6, horasDia: 19.5, setup: SETUP },
+  ]
+
+  it('com tres maquinas, move da mais cheia para a mais vazia', () => {
+    const ordens = [
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 60 }),
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 60 }),
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 60 }),
+      ord({ maquinaId: 'TSI2', dataProg: DIAS[0], pesoT: 60 }),
+    ]
+    const r = rebalancearDia(ordens, MAQUINAS3, DIAS[0])
+    expect(r?.origem).toBe('TSI1')
+    expect(r?.destino).toBe('TSI3')
+    expect(r!.ordensMovidas.length).toBeGreaterThan(0)
+  })
+
+  it('maquina lenta vazia recebe a ordem que equilibra — a trava antiga recusava', () => {
+    // TSI 1 com 3 × 76 t (19,67 h, estourada) e a TSI 3 (6 t/h) vazia: a ordem
+    // custa 12,67 h na TSI 3, mais que a "metade da diferença" (9,83 h) da trava
+    // antiga — ela devolvia null e a tela dizia "o dia já está equilibrado"
+    const ordens = [
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 76 }),
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 76 }),
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 76 }),
+    ]
+    const r = rebalancearDia(ordens, [MAQUINAS[0], MAQUINAS3[2]], DIAS[0])
+    expect(r?.destino).toBe('TSI3')
+    expect(r!.ordensMovidas.length).toBe(1)
+  })
+
+  it('maquina lenta estourada com UMA ordem recebe alivio — a trava por producao devolvia null', () => {
+    // TSI 3 a 6 t/h com 1 × 120 t = 20 h (103% do dia) e a TSI 1 vazia: a
+    // única movida possível passa do ponto (10 h no destino contra 0 na
+    // origem), mas a diferença cai de 20 h para 10 h — tem de mover
+    const lenta: MaquinaCapacidade = { id: 'TSI3', capacidadeTh: 6, horasDia: 19.5, setup: SETUP }
+    const ordens = [ord({ maquinaId: 'TSI3', dataProg: DIAS[0], pesoT: 120 })]
+    const r = rebalancearDia(ordens, [MAQUINAS[0], lenta], DIAS[0])
+    expect(r?.destino).toBe('TSI1')
+    expect(r!.ordensMovidas.length).toBe(1)
+  })
+
+  it('maquina com t/h zero nao trava o rebalanceamento das outras', () => {
+    const zerada: MaquinaCapacidade = { id: 'TSI3', capacidadeTh: 0, horasDia: 19.5, setup: SETUP }
+    const ordens = [
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 60 }),
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 60 }),
+      ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 60 }),
+    ]
+    const r = rebalancearDia(ordens, [...MAQUINAS, zerada], DIAS[0])
+    expect(r?.destino).toBe('TSI2')
+  })
+
+  it('a diferenca sempre encolhe: a segunda passada nunca desfaz a primeira', () => {
+    // TSI 1 com R1, R2, R1 (10 t cada, 12 t/h) e a TSI 3 vazia a 12 t/h. Depois
+    // de aplicar o resultado, um novo Rebalancear não pode mover de volta
+    const rapida: MaquinaCapacidade = { id: 'TSI3', capacidadeTh: 12, horasDia: 19.5, setup: SETUP }
+    const ordens = [
+      ord({ id: 'a', maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 10, receitaId: 'R1', seq: 1 }),
+      ord({ id: 'b', maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 10, receitaId: 'R2', seq: 2 }),
+      ord({ id: 'c', maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 10, receitaId: 'R1', seq: 3 }),
+    ]
+    const maqs = [MAQUINAS[0], rapida]
+    const r = rebalancearDia(ordens, maqs, DIAS[0])
+    expect(r).not.toBeNull()
+    const depois = ordens.map((o) => {
+      const mov = r!.ordensMovidas.find((m) => m.ordemId === o.id)
+      return mov ? { ...o, maquinaId: mov.maquinaId, seq: mov.seq } : o
+    })
+    const h = (mid: string) => horasDaFila(filaDa(depois, mid, DIAS[0]), 12, SETUP)
+    const antes = horasDaFila(filaDa(ordens, 'TSI1', DIAS[0]), 12, SETUP)
+    expect(Math.abs(h('TSI1') - h('TSI3'))).toBeLessThan(antes)
+    const r2 = rebalancearDia(depois, maqs, DIAS[0])
+    expect(r2).toBeNull()
+  })
+
+  it('maquina lenta cheia nao e esvaziada num clique', () => {
+    // TSI 3 a 4 t/h com 3 × 20 t (15,67 h) e a TSI 1 vazia: cada ordem custa
+    // 1,67 h na TSI 1 mas alivia 5 h na TSI 3 — a trava antiga deixava as três
+    // passarem e invertia o desbalanceamento
+    const lenta: MaquinaCapacidade = { id: 'TSI3', capacidadeTh: 4, horasDia: 19.5, setup: SETUP }
+    const ordens = [
+      ord({ maquinaId: 'TSI3', dataProg: DIAS[0], pesoT: 20 }),
+      ord({ maquinaId: 'TSI3', dataProg: DIAS[0], pesoT: 20 }),
+      ord({ maquinaId: 'TSI3', dataProg: DIAS[0], pesoT: 20 }),
+    ]
+    const r = rebalancearDia(ordens, [MAQUINAS[0], lenta], DIAS[0])
+    expect(r?.destino).toBe('TSI1')
+    expect(r!.ordensMovidas.length).toBe(2)
+  })
+
   it('dia equilibrado nao gera movimento', () => {
     const ordens = [
       ord({ maquinaId: 'TSI1', dataProg: DIAS[0], pesoT: 50 }),

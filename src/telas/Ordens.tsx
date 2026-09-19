@@ -61,8 +61,12 @@ const SA_SALDOS = `${SA_BASE}/work/saldos`
 const CAMPO_FILTRO =
   'rounded-lg border border-stone-300 px-3 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800'
 
-/** Documentação do layout, exibida na tela e usada para gerar o modelo. */
-const LAYOUT_ORDENS: { coluna: string; obrigatoria: boolean; obs: string }[] = [
+/**
+ * Documentação do layout, exibida na tela e usada para gerar o modelo. É
+ * função porque a linha Máquina lista as máquinas do cadastro — dizia
+ * "TSI1 ou TSI2" fixo até a TSI 3 entrar (19/09/2026).
+ */
+const layoutOrdens = (maquinas: api.LinhaMaquina[]): { coluna: string; obrigatoria: boolean; obs: string }[] => [
   { coluna: 'Ordem', obrigatoria: true, obs: 'Nº da ordem. Aceita também Numero, Nº Ordem, Pedido ou OP.' },
   { coluna: 'Lote', obrigatoria: true, obs: 'Lote de semente já cadastrado. Define o cultivar e o peso do bag.' },
   { coluna: 'Tratamento', obrigatoria: true, obs: 'Nome da receita, exatamente como cadastrada. Aceita Receita.' },
@@ -73,7 +77,11 @@ const LAYOUT_ORDENS: { coluna: string; obrigatoria: boolean; obs: string }[] = [
   { coluna: 'Armazém', obrigatoria: false, obs: 'Onde buscar o lote, ex.: ARMAZEM C. Aceita Deposito.' },
   { coluna: 'Bloco', obrigatoria: false, obs: 'Ex.: BL01. Aceita BL.' },
   { coluna: 'Quadra', obrigatoria: false, obs: 'Ex.: QD04. Aceita QD.' },
-  { coluna: 'Maquina', obrigatoria: false, obs: 'TSI1 ou TSI2. Em branco, a ordem cai no pool para programar depois.' },
+  {
+    coluna: 'Maquina',
+    obrigatoria: false,
+    obs: `${maquinas.map((m) => m.id).join(', ') || 'o id da máquina, como está em Cadastros ▸ Máquinas'} (ou o nome do cadastro). Em branco, a ordem cai no pool para programar depois.`,
+  },
   { coluna: 'Dia', obrigatoria: false, obs: 'Data da programação, em 28/07/2026 ou 2026-07-28.' },
   { coluna: 'Expedição', obrigatoria: false, obs: 'Data prevista do caminhão, mesmo formato do Dia. Só informativa.' },
   { coluna: 'Urgente', obrigatoria: false, obs: 'SIM ou X marca a ordem como urgente. Em branco, normal.' },
@@ -98,7 +106,7 @@ async function baixarModeloOrdens(
 
   await exportarXlsx(
     'modelo-ordens',
-    LAYOUT_ORDENS.map((c) => ({
+    layoutOrdens(maquinas).map((c) => ({
       titulo: c.coluna,
       largura: c.coluna === 'Obs' || c.coluna === 'Cliente' ? 28 : 16,
       tipo: c.coluna === 'Bags' ? 'numero' : 'texto',
@@ -258,6 +266,7 @@ export default function Ordens() {
             receitasConhecidas: new Set(receitas.map((r) => r.nome.toUpperCase())),
             embalagensConhecidas: new Set(embalagens.map((e) => e.codigo)),
             maquinasConhecidas: new Set(maquinas.map((m) => m.id)),
+            nomesMaquinas: maquinas.map((m) => [m.nome, m.id] as [string, string]),
           }),
         )
       } else {
@@ -508,7 +517,7 @@ export default function Ordens() {
                   </tr>
                 </thead>
                 <tbody className="text-stone-600 dark:text-stone-300">
-                  {LAYOUT_ORDENS.map((c) => (
+                  {layoutOrdens(maquinas).map((c) => (
                     <tr key={c.coluna} className="border-t border-stone-200 dark:border-stone-700">
                       <td className="py-1 pr-3 font-medium">{c.coluna}</td>
                       <td className="py-1 pr-3">{c.obrigatoria ? 'sim' : 'não'}</td>

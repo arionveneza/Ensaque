@@ -784,6 +784,9 @@ function AbaMaquinas({
   acao: Acao
 }) {
   const horas = turnos.map((t) => Number(t.horas))
+  // "Nova máquina" (19/09/2026, TSI 3): até aqui a aba só editava as duas
+  // existentes e máquina nova só entrava por SQL
+  const [nova, setNova] = useState(false)
   // a capacidade de cada turno é a coluna que o PCP usa quando o dia roda um
   // turno só — a soma sozinha não dizia quanto rende um sábado de 1º turno
   const cabecalho = [
@@ -798,7 +801,16 @@ function AbaMaquinas({
   ]
   return (
     <>
-      <Cartao titulo="Máquinas e capacidade" className="mb-5">
+      <Cartao
+        titulo="Máquinas e capacidade"
+        className="mb-5"
+        acoes={podeEditar ? (
+          <Botao onClick={() => setNova(!nova)}>{nova ? 'Cancelar' : 'Nova máquina'}</Botao>
+        ) : undefined}
+      >
+        {nova && (
+          <FormNovaMaquina existentes={maquinas} acao={acao} aoSalvar={() => setNova(false)} />
+        )}
         <Tabela cabecalho={cabecalho}>
           {maquinas.map((m) => (
             <LinhaMaquinaEdit key={m.id} maquina={m} horas={horas} podeEditar={podeEditar} acao={acao} />
@@ -828,6 +840,110 @@ function AbaMaquinas({
         </Tabela>
       </Cartao>
     </>
+  )
+}
+
+/**
+ * Cria uma máquina (19/09/2026). O id é a chave que a planilha de ordens
+ * usa na coluna Máquina e que o app ordena — sem espaço, maiúsculo, como
+ * TSI1/TSI2. O resto (capacidade, tanques, setup) segue editável na linha.
+ * Grava por INSERT (adm.criarMaquina): a PK barra id repetido no banco; a
+ * checagem daqui é só o aviso imediato na tela. O id é definitivo — a linha
+ * não o edita e "excluir" só funciona enquanto a máquina não tem história —,
+ * por isso o confirm() mostra o id já normalizado antes de gravar.
+ */
+function FormNovaMaquina({
+  existentes, acao, aoSalvar,
+}: { existentes: api.LinhaMaquina[]; acao: Acao; aoSalvar: () => void }) {
+  const [id, setId] = useState('')
+  const [nome, setNome] = useState('')
+  const [cap, setCap] = useState('12')
+  const [tanques, setTanques] = useState('5')
+  const [setupMesmo, setSetupMesmo] = useState('20')
+  const [setupTroca, setSetupTroca] = useState('40')
+
+  const idLimpo = id.trim().toUpperCase().replace(/\s+/g, '')
+  const idValido = /^[A-Z0-9]{2,12}$/.test(idLimpo)
+  const repetido = existentes.some((m) => m.id === idLimpo)
+  // o importador de ordens aceita o NOME da máquina: dois nomes iguais
+  // deixariam a planilha ambígua
+  const nomeRepetido = existentes.some((m) => m.nome.trim().toLowerCase() === nome.trim().toLowerCase())
+  const valido = idValido && !repetido && !nomeRepetido && nome.trim() !== ""
+
+  return (
+    <div className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-700">
+      <p className="mb-2 text-sm text-stone-500">
+        O <b>id</b> é como a máquina aparece na planilha de ordens e nos relatórios (ex.: TSI3 —
+        maiúsculo, espaços são removidos) e <b>não muda depois</b>; o <b>nome</b> é o que as telas
+        mostram (ex.: TSI 3 (DM)). Capacidade, tanques e setup podem ser ajustados depois, na linha.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-stone-500">
+          Id
+          <input value={id} onChange={(e) => setId(e.target.value.toUpperCase().replace(/\s+/g, ''))} placeholder="TSI3" className={`${INPUT} mt-1 block w-24`} />
+        </label>
+        <label className="text-xs text-stone-500">
+          Nome
+          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="TSI 3 (DM)" className={`${INPUT} mt-1 block w-40`} />
+        </label>
+        <label className="text-xs text-stone-500">
+          Capacidade (t/h)
+          <input value={cap} onChange={(e) => setCap(e.target.value)} inputMode="decimal" className={`${INPUT} mt-1 block w-20 text-right`} />
+        </label>
+        <label className="text-xs text-stone-500" title="Informativo: o apontamento oferece T1 a T5 em qualquer máquina.">
+          Tanques (informativo)
+          <input value={tanques} onChange={(e) => setTanques(e.target.value)} inputMode="numeric" className={`${INPUT} mt-1 block w-16 text-right`} />
+        </label>
+        <label className="text-xs text-stone-500">
+          Setup mesmo trat. (min)
+          <input value={setupMesmo} onChange={(e) => setSetupMesmo(e.target.value)} inputMode="numeric" className={`${INPUT} mt-1 block w-16 text-right`} />
+        </label>
+        <label className="text-xs text-stone-500">
+          Setup troca (min)
+          <input value={setupTroca} onChange={(e) => setSetupTroca(e.target.value)} inputMode="numeric" className={`${INPUT} mt-1 block w-16 text-right`} />
+        </label>
+        <Botao
+          variante="primario"
+          disabled={!valido}
+          onClick={() => {
+            if (
+              !confirm(
+                `Criar a máquina ${idLimpo} (${nome.trim()})? O id é definitivo: não dá para alterá-lo depois, e a máquina só pode ser excluída enquanto não tiver ordens.`
+              )
+            ) return
+            acao(async () => {
+              const capTh = Number(cap.replace(',', '.'))
+              if (!(capTh > 0)) throw new Error('Capacidade (t/h) precisa ser maior que zero.')
+              const nTanques = Number(tanques)
+              if (!Number.isInteger(nTanques) || nTanques < 1 || nTanques > 5) {
+                throw new Error('Tanques: de 1 a 5 — o apontamento e o banco trabalham com até 5 (T1 a T5).')
+              }
+              const mesmo = Number(setupMesmo)
+              const troca = Number(setupTroca)
+              // mesma guarda da edição na linha: Number("") é 0 e passaria calado
+              if (
+                setupMesmo.trim() === '' || setupTroca.trim() === '' ||
+                !Number.isInteger(mesmo) || !Number.isInteger(troca) || mesmo < 0 || troca < 0
+              ) {
+                throw new Error('Setup em minutos inteiros, zero ou mais.')
+              }
+              await adm.criarMaquina({
+                id: idLimpo, nome: nome.trim(), capacidade_th: capTh, qtd_tanques: nTanques,
+                setup_mesmo_min: mesmo, setup_troca_min: troca,
+              })
+              aoSalvar()
+            })
+          }}
+        >
+          Criar máquina
+        </Botao>
+      </div>
+      {id.trim() !== "" && !idValido && (
+        <p className="mt-2 text-xs text-red-600">Id: só letras e números, de 2 a 12 caracteres.</p>
+      )}
+      {repetido && <p className="mt-2 text-xs text-red-600">Já existe uma máquina com o id {idLimpo}.</p>}
+      {nomeRepetido && <p className="mt-2 text-xs text-red-600">Já existe uma máquina com esse nome — a planilha de ordens ficaria ambígua.</p>}
+    </div>
   )
 }
 
@@ -862,8 +978,19 @@ function LinhaMaquinaEdit({
         <td className="num-tabular px-2 py-2 text-right font-semibold whitespace-nowrap">
           {n(capacidadeDiaT(maquina.capacidade_th, horas), 0)} t
         </td>
-        <td className="px-2 py-2 text-right">
-          {podeEditar && <button onClick={() => setEdit(true)} className="-m-1.5 rounded p-1.5 text-xs underline">editar</button>}
+        <td className="px-2 py-2 text-right whitespace-nowrap">
+          {podeEditar && <button onClick={() => setEdit(true)} className="-my-1.5 mr-2 rounded px-1.5 py-1.5 text-xs underline">editar</button>}
+          {podeEditar && (
+            <button
+              onClick={() => {
+                if (!confirm(`Excluir a máquina ${maquina.nome} (${maquina.id})? Só é possível enquanto ela não tem ordens nem paradas.`)) return
+                acao(() => adm.excluirMaquina(maquina.id))
+              }}
+              className="-m-1.5 rounded p-1.5 text-xs text-red-600 underline"
+            >
+              excluir
+            </button>
+          )}
         </td>
       </tr>
     )

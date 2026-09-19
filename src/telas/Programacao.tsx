@@ -914,7 +914,7 @@ export default function Programacao() {
       )}
 
       {/* -------- quadro do dia -------- */}
-      <div className="mb-5 grid gap-4 sm:grid-cols-2">
+      <div className={`mb-5 grid gap-4 sm:grid-cols-2 ${maquinas.length >= 3 ? 'xl:grid-cols-3' : ''}`}>
         {maquinas.map((m) => {
           const lista = celula(m.id, diaSel)
           const listaVisivel = lista.filter(visivel)

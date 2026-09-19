@@ -6,7 +6,8 @@ const CTX: ContextoImportacao = {
   lotesConhecidos: new Set(['L-4412', 'L-4418']),
   receitasConhecidas: new Set(['FTZ60', 'V&P']),
   embalagensConhecidas: new Set(['BG5M', 'MEIOBAG']),
-  maquinasConhecidas: new Set(['TSI1', 'TSI2']),
+  maquinasConhecidas: new Set(['TSI1', 'TSI2', 'TSI3']),
+  nomesMaquinas: [['TSI 1', 'TSI1'], ['TSI 2', 'TSI2'], ['TSI 3 (DM)', 'TSI3']],
 }
 
 const CAB = ['Ordem', 'Lote', 'Tratamento', 'Embalagem', 'Bags', 'Cliente', 'Obs', 'Máquina', 'Dia']
@@ -195,6 +196,20 @@ describe('conversao de ordens', () => {
     const r = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10)], CTX)
     expect(r.ordens[0].maquinaId).toBeNull()
     expect(r.ordens[0].dataProg).toBeNull()
+  })
+
+  it('aceita o nome do cadastro da maquina, alem do id (TSI 3, 19/09/2026)', () => {
+    const pelaDescricao = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', 'TSI 3 (DM)')], CTX)
+    expect(pelaDescricao.ordens[0].maquinaId).toBe('TSI3')
+    const peloId = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', 'tsi 3')], CTX)
+    expect(peloId.ordens[0].maquinaId).toBe('TSI3')
+  })
+
+  it('nome que casa com duas maquinas e erro da linha, nao escolha calada', () => {
+    const ctx: ContextoImportacao = { ...CTX, nomesMaquinas: [...CTX.nomesMaquinas!, ['tsi 3 (dm)', 'TSI4']] }
+    const r = converterOrdens([CAB, linha('1', 'L-4412', 'FTZ60', 'BG5M', 10, '', '', 'TSI 3 (DM)')], ctx)
+    expect(r.ordens).toHaveLength(0)
+    expect(r.problemas[0].motivo).toMatch(/ambígua/)
   })
 
   it('reconhece a maquina ignorando caixa e espaco', () => {

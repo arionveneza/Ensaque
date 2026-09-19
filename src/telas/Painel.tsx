@@ -202,7 +202,11 @@ export default function Painel({ onSair }: { onSair: () => void }) {
       )}
 
       {/* máquinas */}
-      <main className="grid flex-1 grid-cols-1 gap-4 p-4 sm:grid-cols-2">
+      {/* na TV, 3 máquinas lado a lado (19/09/2026): em 2 colunas a 3ª caía numa 2ª
+          linha e o cronômetro perdia metade da altura. Só de 1280 px: o cronômetro
+          herói (text-7xl, mono, 8 dígitos) mede ~330 px e a coluna de 1024 px não
+          o comporta — vazaria por cima do cartão vizinho, sem rolagem */}
+      <main className={`grid flex-1 grid-cols-1 gap-4 p-4 sm:grid-cols-2 ${(cadastros?.maquinas.length ?? 0) >= 3 ? 'xl:grid-cols-3' : ''}`}>
         {(cadastros?.maquinas ?? []).map((m) => (
           <PainelMaquina
             key={m.id}
@@ -291,8 +295,8 @@ function PainelMaquina({
 
   return (
     <div className={`flex flex-col rounded-2xl border-2 ${borda} bg-stone-900 p-5`}>
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">{maquina.nome}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="min-w-0 truncate text-3xl font-bold tracking-tight">{maquina.nome}</h2>
         {atual ? (
           <span
             className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-bold ${

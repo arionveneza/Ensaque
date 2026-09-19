@@ -45,6 +45,12 @@ export interface ContextoImportacao {
   receitasConhecidas: Set<string>
   embalagensConhecidas: Set<string>
   maquinasConhecidas: Set<string>
+  /**
+   * Pares [nome do cadastro, id] ("TSI 3 (DM)" → "TSI3"), para a planilha
+   * aceitar o nome também (19/09/2026). Lista, não Record: `maquinas.nome`
+   * não é único no banco, e dois nomes iguais têm de virar erro da linha.
+   */
+  nomesMaquinas?: [string, string][]
 }
 
 const semAcento = (s: string) =>
@@ -159,10 +165,16 @@ export function converterOrdens(rows: Linha[], ctx: ContextoImportacao): Resulta
     const maquinaTexto = texto(cols.maquinaId != null ? r[cols.maquinaId] : '')
     let maquinaId: string | null = null
     if (maquinaTexto) {
-      const achada = [...ctx.maquinasConhecidas].find(
-        (m) => normaliza(m) === normaliza(maquinaTexto),
+      const alvo = normaliza(maquinaTexto)
+      // pelo id ("TSI3", "tsi 3") ou pelo nome do cadastro ("TSI 3 (DM)");
+      // nome que casa com mais de uma máquina é erro, não a primeira da lista
+      const porId = [...ctx.maquinasConhecidas].find((m) => normaliza(m) === alvo)
+      const idsPorNome = new Set(
+        (ctx.nomesMaquinas ?? []).filter(([nome]) => normaliza(nome) === alvo).map(([, id]) => id),
       )
+      const achada = porId ?? (idsPorNome.size === 1 ? [...idsPorNome][0] : null)
       if (achada) maquinaId = achada
+      else if (idsPorNome.size > 1) erros.push(`máquina ${maquinaTexto} ambígua no cadastro`)
       else erros.push(`máquina ${maquinaTexto} desconhecida`)
     }
 

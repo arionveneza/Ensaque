@@ -15,7 +15,8 @@
 
 ## Domínio em uma frase
 
-Duas máquinas (TSI 1 e TSI 2) tratam sementes de soja com receitas químicas. O PCP programa ordens por
+Três máquinas (TSI 1, TSI 2 e, desde 19/09/2026, TSI 3 (DM), para volumes menores) tratam
+sementes de soja com receitas químicas. O PCP programa ordens por
 dia e máquina; a logística baixa os lotes de semente; a produção aponta início/paradas/fim e os pesos de
 balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 
@@ -24,7 +25,44 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
 ## 1. Entidades e regras de negócio
 
 ### Máquinas e capacidade
-- 2 máquinas: **TSI 1** e **TSI 2**. Cada uma com **5 tanques fixos**.
+- 3 máquinas: **TSI 1**, **TSI 2** e **TSI 3 (DM)** (19/09/2026, pedido do Arion: "iremos
+  produzir volumes menores nesta máquina" — DM = Difusão de Mercado; decisão dele: mesmo
+  requisito das outras, 5 tanques, mesmos turnos, 12 t/h de partida ajustável em Cadastros).
+  Cada uma com **5 tanques**. A lista de máquinas é a tabela `maquinas` (id sem espaço,
+  `TSI3`; nome livre), lida em toda tela — **nada no código assume duas** desde a varredura
+  de 19/09 (64 agentes): migração `maquina-tsi3.sql` (insert idempotente); Cadastros ▸ Máquinas
+  ganhou **"Nova máquina"** (id/nome/capacidade/tanques/setup — antes máquina nova só
+  entrava por SQL): grava por **INSERT** (`criarMaquina`; a PK barra id repetido — o upsert
+  de `salvarMaquina` sobrescreveria em silêncio), com `confirm()` mostrando o id já
+  normalizado porque **o id é definitivo** (a linha não o edita), nome repetido é recusado
+  (o importador aceita o nome) e a mesma guarda de setup em branco da edição. **Excluir**
+  na linha só funciona para máquina **sem história** — as FKs de `ordens` e
+  `maquina_paradas` barram (23503) — é o desfazer da criação errada; não existe
+  "desativar". Os cartões da Execução, do Painel TV e do quadro do dia
+  passam a 3 colunas com 3+ máquinas (em 2 colunas o 3º caía sozinho e o cronômetro da TV
+  perdia metade da altura) — na Execução o cartão foi **compactado** (nome 2xl, cronômetro
+  3xl, capacidade em duas linhas curtas, recuos menores) e as 3 colunas valem já do tablet
+  (`md`), pedido dele: "diminua os cards para que fiquem um ao lado do outro"; no Painel TV
+  só de `xl` (1280 px): o cronômetro herói text-7xl mono tem ~330 px e não cabe em coluna
+  de 1024. A ajuda da planilha de ordens lista as máquinas do cadastro e o importador
+  aceita o **nome** além do id (`nomesMaquinas`, pares — nome que casa com duas máquinas é
+  erro da linha, "ambígua no cadastro", nunca a primeira da lista). A trava do
+  **Rebalancear** passou a exigir que a **diferença entre as duas máquinas encolha**, com
+  as horas reais das duas filas depois da movida (setup incluído, `horasOrigemSem`) — a
+  original ("metade da diferença") só fechava com capacidades iguais (máquina lenta vazia
+  recusava a ordem que equilibraria; lenta cheia era esvaziada num clique), e a primeira
+  correção, estimando o alívio da origem só pela produção, invertia o quadro por até um
+  setup por movida e recusava a única ordem de uma máquina lenta estourada (achados da
+  revisão adversarial, 254 mil casos aleatórios). Passar do ponto é permitido quando
+  aproxima as duas; máquina com t/h zero fica fora do par. O Rebalancear segue
+  tratando UM par por clique (a mais cheia → a mais vazia); com 3 máquinas a do meio entra no
+  clique seguinte. **Máquina nova não chega por realtime**: `maquinas` está fora da
+  publicação — recarregar o Painel TV e os tablets da Execução que ficam abertos o dia
+  inteiro. **Fora de escopo, de propósito** (a TSI 3 tem 5 tanques e os mesmos turnos):
+  seletor de tanque do ModalOrdem fixo em `[1..5]` e CHECK `tanque between 0 and 5` no SQL
+  (`maquinas.qtd_tanques` é só informativo, e o campo diz isso), horas/turnos por máquina
+  (`dias_producao` é por dia), coluna `ativa` ignorada pelo front (leitura e escrita), seq
+  das movidas do Rebalancear só acrescenta ao fim (`base + n`, sem renumerar a célula).
 - Capacidade **12 t/h por máquina** (configurável).
 - **Recurso único**: uma máquina roda **uma ordem por vez**. Ordem `Parada` também ocupa a máquina.
 

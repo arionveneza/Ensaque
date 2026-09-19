@@ -410,26 +410,26 @@ export function rebalancearDia(
   dia: string,
   horasDia?: HorasDia,
 ): Desbalanceamento | null {
-  if (maquinas.length < 2) return null
+  // máquina com t/h zero (só por SQL — o cadastro exige > 0) fica fora do
+  // par: como "vazia" ela travava o Rebalancear do dia inteiro, e como
+  // "cheia" a carga dela é Infinity
+  const validas = maquinas.filter((m) => m.capacidadeTh > 0)
+  if (validas.length < 2) return null
   const horas = horasDia ?? horasFixas(maquinas)
 
-  const cargas = maquinas
+  const cargas = validas
     .map((m) => ({ m, h: horasDaFila(filaDa(ordens, m.id, dia), m.capacidadeTh, m.setup) }))
     .sort((a, b) => b.h - a.h)
   const cheia = cargas[0]
   const vazia = cargas[cargas.length - 1]
   if (cheia.m.id === vazia.m.id) return null
-  if (vazia.m.capacidadeTh <= 0) return null
-
-  const diferenca = cheia.h - vazia.h
-  if (diferenca <= 0) return null
+  if (cheia.h - vazia.h <= 0) return null
 
   const noDestino = filaDa(ordens, vazia.m.id, dia)
-  // iniciada ocupa a máquina mas não sai dela; o custo de cada movida é o
-  // que ela passa a valer NO DESTINO — a origem pode economizar até um setup
-  // a mais (uma R2 entre duas R1 sai e 40+40 vira 20), então a regra da
-  // metade é heurística: a diferença sempre diminui, nunca oscila
-  const candidatas = filaDa(ordens, cheia.m.id, dia)
+  // iniciada ocupa a máquina mas não sai dela: fica na fila da origem (conta
+  // nas horas e no setup) e nunca é candidata
+  const filaOrigem = filaDa(ordens, cheia.m.id, dia)
+  const candidatas = filaOrigem
     .filter((o) => !o.iniciada)
     .sort((a, b) => {
     const afim = (x: OrdemProgramavel) =>
@@ -438,20 +438,43 @@ export function rebalancearDia(
   })
 
   const movidas: Atribuicao[] = []
+  const movidos = new Set<string>()
   let transferido = 0
   let livreDestino = horas(vazia.m.id, dia) - vazia.h
   let ultima: OrdemProgramavel | null = noDestino[noDestino.length - 1] ?? null
   // maior seq existente, não contagem — mesma razão do autoProgramar
   const base = Math.max(noDestino.length, ...noDestino.map((o) => o.seq ?? 0))
+  const horasOrigemSem = (ids: Set<string>) =>
+    horasDaFila(filaOrigem.filter((x) => !ids.has(x.id)), cheia.m.capacidadeTh, cheia.m.setup)
 
   for (const o of candidatas) {
     const custo = o.pesoT / vazia.m.capacidadeTh + setupEntre(ultima, o, vazia.m.setup) / 60
-    // parar antes de inverter o desbalanceamento
-    if (transferido + custo > diferenca / 2) continue
+    /**
+     * A movida só passa se a DIFERENÇA entre as duas máquinas ENCOLHER, com
+     * as horas reais das duas filas depois dela (setup incluído). Duas
+     * versões anteriores erravam (19/09/2026, revisão da TSI 3): a original
+     * ("transferido + custo > diferenca / 2") comparava horas do destino com
+     * metade de uma diferença medida na origem — só fecha com capacidades
+     * iguais; a seguinte estimava o alívio da origem só pela produção
+     * (pesoT ÷ t/h), ignorando o setup que ela deixa de pagar — ficava MAIS
+     * permissiva que o prometido (invertia o quadro por até um setup por
+     * movida, mesmo com capacidades iguais) e, exigindo "origem >= destino",
+     * recusava a única ordem de uma máquina lenta estourada (alívio = carga
+     * inteira → sobra zero → nada passa). Recalcular a fila que sobra é a
+     * mesma conta do topo da função: uma chamada por candidata, fila de um
+     * dia. Passar do ponto é permitido quando aproxima as duas — o clique
+     * seguinte não desfaz, porque voltar não encolheria a diferença.
+     */
+    const origemAntes = horasOrigemSem(movidos)
+    const origemDepois = horasOrigemSem(new Set([...movidos, o.id]))
+    const destinoAntes = vazia.h + transferido
+    const destinoDepois = destinoAntes + custo
+    if (Math.abs(destinoDepois - origemDepois) >= Math.abs(origemAntes - destinoAntes)) continue
     if (custo > livreDestino) continue
     transferido += custo
     livreDestino -= custo
     ultima = o
+    movidos.add(o.id)
     movidas.push({
       ordemId: o.id,
       maquinaId: vazia.m.id,

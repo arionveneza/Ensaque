@@ -40,6 +40,28 @@ export async function salvarMaquina(m: {
   erro('salvar máquina', error)
 }
 
+/**
+ * Criação é INSERT puro, não o upsert de salvarMaquina: com `on conflict do
+ * update` o 23505 nunca sobe, e a checagem de id repetido ficava só no
+ * cliente, contra uma lista que pode estar velha (revisão de 19/09/2026).
+ */
+export async function criarMaquina(m: Parameters<typeof salvarMaquina>[0]): Promise<void> {
+  const { error } = await supabase.from('maquinas').insert(m)
+  erro('criar máquina', error)
+}
+
+/**
+ * Só máquina sem história: as FKs de ordens e maquina_paradas barram o resto
+ * (23503). É o desfazer da criação errada — não existe "desativar" máquina.
+ */
+export async function excluirMaquina(id: string): Promise<void> {
+  const { error } = await supabase.from('maquinas').delete().eq('id', id)
+  if (error?.code === '23503') {
+    throw new Error('excluir máquina: ela já tem ordens ou paradas registradas e não pode ser removida.')
+  }
+  erro('excluir máquina', error)
+}
+
 // ---------------- turnos ----------------
 
 export async function salvarTurno(t: {
