@@ -13,6 +13,7 @@ import {
   ehRelatorioAgendados,
   faltaPorProduto,
   normalizaLinhasXlsx,
+  ordenarFaltaPorProduto,
   recorteDaSelecao,
   resumoPorTipoVenda,
   saldosExpedicao,
@@ -20,6 +21,7 @@ import {
   transferenciaDe,
   SEM_TSI,
   type AlocacaoCaminhao,
+  type CriterioFalta,
   type LadoTipoVenda,
   type OrdemPrevista,
 } from '@/dominio/expedicao'
@@ -91,6 +93,8 @@ export default function Expedicao() {
    * continua com todo o período; a seleção só recorta o que se soma.
    */
   const [cargaSel, setCargaSel] = useState<Set<string>>(new Set())
+  /** Ordem da grade "Quando vai faltar" (19/09/2026): maior falta, cultivar ou tratamento. */
+  const [ordemFalta, setOrdemFalta] = useState<CriterioFalta>('falta')
   const [painelCargas, setPainelCargas] = useState(false)
   const [buscaCarga, setBuscaCarga] = useState('')
   const [soSelecao, setSoSelecao] = useState(false)
@@ -263,6 +267,7 @@ export default function Expedicao() {
     () => faltaPorProduto(saldos, temSelecao ? naSelecao : undefined),
     [saldos, temSelecao, naSelecao],
   )
+  const faltaOrdenada = useMemo(() => ordenarFaltaPorProduto(faltaProdutos, ordemFalta), [faltaProdutos, ordemFalta])
   /** Todas as datas com caminhão no recorte em vista (colunas da grade), sem data primeiro. */
   const datasDoPeriodo = useMemo(
     () =>
@@ -752,6 +757,24 @@ export default function Expedicao() {
               de && ate ? `${diaCurto(de)} a ${diaCurto(ate)}` : de ? `a partir de ${diaCurto(de)}` : ate ? `até ${diaCurto(ate)}` : 'todas as datas'
             }${temSelecao ? ' · só as cargas marcadas' : ''}`}
             className="mb-5"
+            acoes={
+              faltaProdutos.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
+                  <span className="mr-0.5">Ordenar por</span>
+                  {(
+                    [
+                      ['falta', 'maior falta'],
+                      ['cultivar', 'cultivar'],
+                      ['tratamento', 'tratamento'],
+                    ] as [CriterioFalta, string][]
+                  ).map(([c, rotulo]) => (
+                    <Chip key={c} ativo={ordemFalta === c} onClick={() => setOrdemFalta(c)}>
+                      {rotulo}
+                    </Chip>
+                  ))}
+                </div>
+              ) : undefined
+            }
           >
             {saldos.length === 0 ? (
               <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
@@ -774,7 +797,7 @@ export default function Expedicao() {
                     </tr>
                   </thead>
                   <tbody>
-                    {faltaProdutos.map((p) => {
+                    {faltaOrdenada.map((p) => {
                       const porData = new Map(p.datas.map((d) => [d.data ?? '', d]))
                       const corTexto =
                         p.situacao === 'falta'
@@ -785,10 +808,23 @@ export default function Expedicao() {
                       return (
                         <tr key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="border-t border-stone-100 dark:border-stone-800/60">
                           <td className="px-2 py-2">
-                            <p className="font-medium">{p.cultivar}</p>
-                            <p className="text-xs text-stone-500">
-                              {p.semTsi ? 'SEM TSI' : `${p.tratamento} · ${p.embalagem}`}
-                            </p>
+                            {/* a chave da ordenação vai em cima: agrupado por
+                                tratamento, é o tratamento que o olho percorre */}
+                            {ordemFalta === 'tratamento' ? (
+                              <>
+                                <p className="font-medium">{p.semTsi ? 'SEM TSI' : p.tratamento}</p>
+                                <p className="text-xs text-stone-500">
+                                  {p.cultivar}{p.semTsi ? '' : ` · ${p.embalagem}`}
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-medium">{p.cultivar}</p>
+                                <p className="text-xs text-stone-500">
+                                  {p.semTsi ? 'SEM TSI' : `${p.tratamento} · ${p.embalagem}`}
+                                </p>
+                              </>
+                            )}
                           </td>
                           {datasDoPeriodo.map((d) => {
                             const f = porData.get(d)

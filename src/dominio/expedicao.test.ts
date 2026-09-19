@@ -8,6 +8,7 @@ import {
   bagsProduzidosSemApontar,
   cargasAgendadas,
   faltaPorProduto,
+  ordenarFaltaPorProduto,
   recorteDaSelecao,
   resumoDoGrupo,
   normalizaLinhasXlsx,
@@ -17,6 +18,7 @@ import {
   situacaoSaldo,
   transferenciaDe,
   type CarregamentoLinha,
+  type FaltaPorProduto,
 } from './expedicao'
 import type { Linha as LinhaXlsx } from './importacao/simpleagro'
 
@@ -973,5 +975,72 @@ describe('recorte por carga (19/09/2026)', () => {
       { carga: '7', data: '2026-09-17', bags: 1, cliente: null, statusCarga: 'Carregado' },
     ])
     expect(cargas[0].status).toEqual(['Em carga', 'Carregado'])
+  })
+})
+describe('ordenarFaltaPorProduto (19/09/2026)', () => {
+  const linha = (cultivar: string, tratamento: string, embalagem: string, descoberto: number): FaltaPorProduto => ({
+    cultivar, tratamento, embalagem, semTsi: tratamento === 'SEM TSI', situacao: 'falta',
+    descoberto, agendado: descoberto, datas: [],
+  })
+  // tratamentos com iniciais distintas de propósito: o teste é da ordenação,
+  // não de como o ICU compara espaço com dígito
+  const base = [
+    linha('O790 IPRO', 'V&P', 'BG5M', 2),
+    linha('NEO680 IPRO', 'FTZ60', 'MEIOBAG', 5),
+    linha('NEO680 IPRO', 'FTZ60', 'BG5M', 23),
+    linha('0820 IPRO', 'DER + LMT', 'BG5M', 9),
+    linha('NEO1000 IPRO', 'SEM TSI', 'BG5M', 1),
+    // as duas abaixo forçam a 2ª chave de desempate (revisão de 19/09/2026):
+    // mesma cultivar com tratamento E embalagem discordando, e mesmo
+    // tratamento com cultivar E embalagem discordando — sem elas, trocar a
+    // prioridade entre a 2ª e a 3ª chave passava pela suíte
+    linha('NEO680 IPRO', 'V&P', 'BG5M', 7),
+    linha('SS NEO700 I2X', 'FTZ60', 'BG5M', 3),
+  ]
+  const id = (l: FaltaPorProduto[]) => l.map((x) => `${x.cultivar} | ${x.tratamento} | ${x.embalagem}`)
+
+  it('padrao: maior falta primeiro', () => {
+    expect(ordenarFaltaPorProduto(base, 'falta').map((x) => x.descoberto)).toEqual([23, 9, 7, 5, 3, 2, 1])
+  })
+
+  it('por cultivar: ordem numerica (680 antes de 1000), depois tratamento e embalagem', () => {
+    expect(id(ordenarFaltaPorProduto(base, 'cultivar'))).toEqual([
+      '0820 IPRO | DER + LMT | BG5M',
+      'NEO680 IPRO | FTZ60 | BG5M',
+      'NEO680 IPRO | FTZ60 | MEIOBAG',
+      'NEO680 IPRO | V&P | BG5M',
+      'NEO1000 IPRO | SEM TSI | BG5M',
+      'O790 IPRO | V&P | BG5M',
+      'SS NEO700 I2X | FTZ60 | BG5M',
+    ])
+  })
+
+  it('por tratamento: agrupa o tratamento e desempata por cultivar e embalagem', () => {
+    expect(id(ordenarFaltaPorProduto(base, 'tratamento'))).toEqual([
+      '0820 IPRO | DER + LMT | BG5M',
+      'NEO680 IPRO | FTZ60 | BG5M',
+      'NEO680 IPRO | FTZ60 | MEIOBAG',
+      'SS NEO700 I2X | FTZ60 | BG5M',
+      'NEO1000 IPRO | SEM TSI | BG5M',
+      'NEO680 IPRO | V&P | BG5M',
+      'O790 IPRO | V&P | BG5M',
+    ])
+  })
+
+  it('empate na falta e resolvido pelo nome, nunca pela ordem de chegada', () => {
+    const iguais = [linha('B', 'X', 'BG5M', 4), linha('A', 'X', 'BG5M', 4)]
+    expect(ordenarFaltaPorProduto(iguais, 'falta').map((x) => x.cultivar)).toEqual(['A', 'B'])
+  })
+
+  it('nao altera a lista recebida e devolve lista nova', () => {
+    // lista própria e desordenada: com o `base` compartilhado, a versão que
+    // ordenava in place passava neste teste por acidente (os `it` anteriores
+    // já tinham deixado o `base` na ordem certa)
+    const entrada = [linha('B', 'X', 'BG5M', 1), linha('A', 'X', 'BG5M', 9)]
+    const antes = id(entrada)
+    const saida = ordenarFaltaPorProduto(entrada, 'cultivar')
+    expect(saida).not.toBe(entrada)
+    expect(id(entrada)).toEqual(antes)
+    expect(id(saida)).toEqual(['A | X | BG5M', 'B | X | BG5M'])
   })
 })

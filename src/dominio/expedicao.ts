@@ -796,6 +796,41 @@ export function faltaPorProduto<T extends CarregamentoLinha>(
   return out.sort((a, b) => b.descoberto - a.descoberto)
 }
 
+/** Como a grade "Quando vai faltar" é ordenada (19/09/2026). */
+export type CriterioFalta = 'falta' | 'cultivar' | 'tratamento'
+
+const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR', { numeric: true })
+
+/**
+ * Ordena a saída de `faltaPorProduto` sem mudar a conta (19/09/2026, pedido
+ * do Arion: "coloque uma forma de classificar por tratamento, cultivar").
+ * 'falta' é o padrão de sempre (maior descoberto primeiro); 'cultivar' e
+ * 'tratamento' põem junto o que a máquina faz junto. Comparação numérica
+ * ("NEO680" antes de "NEO1000", "SC10" antes de "SC20") e empate sempre
+ * resolvido pelas outras chaves — a mesma entrada dá sempre a mesma ordem.
+ * Devolve lista nova; a recebida não muda.
+ */
+export function ordenarFaltaPorProduto(lista: FaltaPorProduto[], criterio: CriterioFalta): FaltaPorProduto[] {
+  type Cmp = (a: FaltaPorProduto, b: FaltaPorProduto) => number
+  const cultivar: Cmp = (a, b) => porNome(a.cultivar, b.cultivar)
+  const tratamento: Cmp = (a, b) => porNome(a.tratamento, b.tratamento)
+  const embalagem: Cmp = (a, b) => porNome(a.embalagem, b.embalagem)
+  const falta: Cmp = (a, b) => b.descoberto - a.descoberto
+  const chaves: Cmp[] =
+    criterio === 'cultivar'
+      ? [cultivar, tratamento, embalagem]
+      : criterio === 'tratamento'
+        ? [tratamento, cultivar, embalagem]
+        : [falta, cultivar, tratamento, embalagem]
+  return [...lista].sort((a, b) => {
+    for (const c of chaves) {
+      const r = c(a, b)
+      if (r !== 0) return r
+    }
+    return 0
+  })
+}
+
 // ================================================================
 // Por tipo de venda: VENDA COOPERADO × OUTRAS (12/09/2026)
 // ================================================================

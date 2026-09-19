@@ -729,7 +729,13 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    pareceu vir de fora do período. `FaltaPorProduto.agendado` traz o agendado do produto no
    recorte (todas as datas) e `FaltaNaData.agendado` o do dia; a coluna Total sai "29 de 82".
    Os dois "falta" continuam com sentidos distintos e a legenda diz: 29 é a soma por dia (parte
-   se resolve adiantando a produção de 19/09 para 18/09), 23 é o que falta mesmo adiantando. Recurso `expedicao` (ver/importar): PCP
+   se resolve adiantando a produção de 19/09 para 18/09), 23 é o que falta mesmo adiantando.
+   **Ordenar por** maior falta (padrão) · cultivar · tratamento (19/09/2026, pedido do Arion:
+   "coloque uma forma de classificar por tratamento, cultivar"): chips no cabeçalho do cartão,
+   `ordenarFaltaPorProduto` (puro, testado) com comparação numérica pt-BR e empate resolvido
+   pelas outras chaves — a conta não muda, só a ordem das linhas; agrupado por tratamento, a
+   célula do produto inverte as linhas (tratamento em cima, cultivar · emb. embaixo), porque a
+   chave da ordenação é o que o olho percorre. Recurso `expedicao` (ver/importar): PCP
    e Logística importam, Direção vê.
    **Recorte por CARGA** (19/09/2026, pedido do Arion: "selecionar as cargas e ver a demanda
    daquelas cargas apenas, não o geral — que aí eu consigo dar prioridade nos materiais não
