@@ -733,6 +733,13 @@ describe('alocacao por caminhao e visao por tipo de venda', () => {
     // soma dos lados = consolidado
     expect(t.cooperado.agendado + t.outras.agendado).toBe(r[0].agendado)
     expect(t.cooperado.descoberto + t.outras.descoberto).toBe(-r[0].saldo)
+    // e cada lado lista OS PRODUTOS que agendou, com o que coube nos seus caminhões (19/09/2026)
+    expect(t.outras.produtos).toEqual([
+      { cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M', agendado: 10, coberto: 10, descoberto: 0, caminhoes: 1 },
+    ])
+    expect(t.cooperado.produtos).toEqual([
+      { cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M', agendado: 10, coberto: 2, descoberto: 8, caminhoes: 1 },
+    ])
   })
 
   it('agendadoPorTipo: reparte o agendado do produto e soma o total', () => {

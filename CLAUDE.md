@@ -788,7 +788,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    quando o buraco não encolhe entre caminhões; SEM TSI: `Σ descoberto = max(0, −saldo)`) — e a
    visão **por tipo de venda** (VENDA COOPERADO × OUTRAS, `resumoPorTipoVenda`) **só detalha: a
    consolidada manda**, nenhum bag é contado duas vezes, cooperado no fim da fila absorve o
-   descoberto como a data manda (decisão do Arion, 12/09/2026). Embalagem sem de-para não vira
+   descoberto como a data manda (decisão do Arion, 12/09/2026). Cada lado lista **os
+   produtos** que agendou (`LadoTipoVenda.produtos`: agendado, coberto e falta só nos caminhões
+   do grupo; em falta primeiro — 19/09/2026, "mostra a quantidade do cooperado ou multiplicador,
+   mas não quais são os produtos"). Embalagem sem de-para não vira
    falta falsa: ganha etiqueta própria. O cartão de pedidos de venda saiu da Expedição (o
    painel Demanda × Estoque da aba Ordens já cobre). **Quando vai faltar** (16/09/2026, pedido
    do Arion: "escolho 16 a 18 e vejo a falta total, mas não quanto falta em cada data" — e, na

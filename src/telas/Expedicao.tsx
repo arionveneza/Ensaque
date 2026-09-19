@@ -1211,22 +1211,45 @@ function PainelLado({ titulo, lado, cor }: { titulo: string; lado: LadoTipoVenda
           </dd>
         </div>
       </dl>
-      {lado.produtosEmFalta.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-sm">
-          {lado.produtosEmFalta.map((p) => (
-            <li key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="flex items-baseline justify-between gap-2">
-              <span>
-                <b>{p.cultivar}</b> · {p.tratamento === SEM_TSI ? 'SEM TSI' : p.tratamento}
-                <span className="text-xs text-stone-500"> · {p.embalagem}</span>
-              </span>
-              <Tag cor="perigo">faltam {inteiro(p.descoberto)}</Tag>
-            </li>
-          ))}
-        </ul>
+      {/* TODOS os produtos do grupo (19/09/2026, pedido do Arion: "mostra a
+          quantidade do cooperado ou multiplicador, mas não quais são os
+          produtos"): em falta primeiro, depois os maiores agendados */}
+      {lado.produtos.length > 0 ? (
+        <table className="mt-3 w-full text-sm">
+          <thead>
+            <tr className="border-b border-stone-200 text-left text-[10px] uppercase tracking-wide text-stone-500 dark:border-stone-800">
+              <th className="py-1 pr-2 font-medium">Produto</th>
+              <th className="num-tabular py-1 px-1 text-right font-medium">Agend.</th>
+              <th className="num-tabular py-1 px-1 text-right font-medium">Coberto</th>
+              <th className="num-tabular py-1 pl-1 text-right font-medium">Falta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lado.produtos.map((p) => (
+              <tr key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="border-t border-stone-100 dark:border-stone-800/60">
+                <td className="py-1 pr-2 align-middle">
+                  <b>{p.cultivar}</b> · {p.tratamento === SEM_TSI ? 'SEM TSI' : p.tratamento}
+                  <span className="text-xs text-stone-500"> · {p.embalagem}</span>
+                  <span className="text-xs text-stone-400"> · {p.caminhoes} cam.</span>
+                </td>
+                <td className="num-tabular py-1 px-1 text-right align-middle">{inteiro(p.agendado)}</td>
+                <td className="num-tabular py-1 px-1 text-right align-middle text-green-700 dark:text-green-400">{inteiro(p.coberto)}</td>
+                <td className="num-tabular py-1 pl-1 text-right align-middle">
+                  {p.descoberto > 0 ? (
+                    <Tag cor="perigo">faltam {inteiro(p.descoberto)}</Tag>
+                  ) : (
+                    <span className="text-stone-300 dark:text-stone-700">·</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : (
-        <p className="mt-3 text-xs text-green-700 dark:text-green-400">
-          {lado.caminhoes === 0 ? 'Nenhum agendamento deste tipo nos filtros.' : 'Tudo coberto na data.'}
-        </p>
+        <p className="mt-3 text-xs text-stone-500">Nenhum agendamento deste tipo nos filtros.</p>
+      )}
+      {lado.produtos.length > 0 && lado.descoberto === 0 && (
+        <p className="mt-2 text-xs text-green-700 dark:text-green-400">Tudo coberto na data.</p>
       )}
     </div>
   )

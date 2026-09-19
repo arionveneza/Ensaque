@@ -843,6 +843,24 @@ export interface LadoTipoVenda {
   caminhoes: number
   /** Produtos em que ESTE grupo ficou descoberto, do pior pro menor. */
   produtosEmFalta: { cultivar: string; tratamento: string; embalagem: string; descoberto: number }[]
+  /**
+   * TODOS os produtos agendados neste grupo (19/09/2026, pedido do Arion: "o
+   * card por tipo de venda mostra a quantidade do cooperado ou multiplicador,
+   * mas não quais são os produtos"): agendado, coberto e descoberto de cada
+   * um só nos caminhões do grupo. Em falta primeiro, depois os maiores.
+   */
+  produtos: ProdutoDoLado[]
+}
+
+export interface ProdutoDoLado {
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  agendado: number
+  coberto: number
+  descoberto: number
+  /** Quantos caminhões do grupo levam este produto. */
+  caminhoes: number
 }
 
 /**
@@ -878,21 +896,31 @@ export function resumoDoGrupo<T extends CarregamentoLinha>(
   saldos: SaldoExpedicao<T>[],
   incluir: (c: T) => boolean,
 ): LadoTipoVenda {
-  const r: LadoTipoVenda = { agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [] }
+  const r: LadoTipoVenda = { agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [], produtos: [] }
   for (const s of saldos) {
-    let falta = 0
+    const p: ProdutoDoLado = {
+      cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem,
+      agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0,
+    }
     for (const c of s.caminhoes) {
       if (!incluir(c.caminhao)) continue
-      r.agendado += c.bags
-      r.coberto += c.coberto
-      r.descoberto += c.descoberto
-      r.caminhoes++
-      falta += c.descoberto
+      p.agendado += c.bags
+      p.coberto += c.coberto
+      p.descoberto += c.descoberto
+      p.caminhoes++
     }
-    if (falta > 0) {
+    if (p.caminhoes === 0) continue
+    p.agendado = arred2(p.agendado)
+    p.coberto = arred2(p.coberto)
+    p.descoberto = arred2(p.descoberto)
+    r.agendado += p.agendado
+    r.coberto += p.coberto
+    r.descoberto += p.descoberto
+    r.caminhoes += p.caminhoes
+    r.produtos.push(p)
+    if (p.descoberto > 0) {
       r.produtosEmFalta.push({
-        cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem,
-        descoberto: arred2(falta),
+        cultivar: p.cultivar, tratamento: p.tratamento, embalagem: p.embalagem, descoberto: p.descoberto,
       })
     }
   }
@@ -900,6 +928,10 @@ export function resumoDoGrupo<T extends CarregamentoLinha>(
   r.coberto = arred2(r.coberto)
   r.descoberto = arred2(r.descoberto)
   r.produtosEmFalta.sort((a, b) => b.descoberto - a.descoberto)
+  // em falta primeiro (a maior falta no topo), depois os maiores agendados
+  r.produtos.sort(
+    (a, b) => b.descoberto - a.descoberto || b.agendado - a.agendado || a.cultivar.localeCompare(b.cultivar),
+  )
   return r
 }
 
