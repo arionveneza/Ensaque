@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ehConcluida, exibicaoDoDia, grupoMovel, ordenarQuadroDoDia, posicoesDeExibicao } from './quadroDoDia'
+import { ehConcluida, exibicaoDoDia, filaSemStatus, grupoMovel, ordenarQuadroDoDia, posicoesDeExibicao } from './quadroDoDia'
 
 const o = (
   id: string,
@@ -131,5 +131,23 @@ describe('ordenarQuadroDoDia', () => {
     ordenarQuadroDoDia(fila, { campo: 'cultivar', dir: 'desc' })
     ordenarQuadroDoDia(fila, { campo: 'expedicao', dir: 'desc' })
     expect(fila.map((x) => x.id)).toEqual(antes)
+  })
+})
+
+describe('sem status (a fila como a maquina vai rodar)', () => {
+  it('filaSemStatus: ativas na sequencia gravada, produzidas no fim', () => {
+    expect(filaSemStatus(fila).map((x) => x.id)).toEqual(['1', '3', '4', '5', '6', '2', '7'])
+  })
+
+  it('posicoes e ordenacao nula seguem a fila pura quando porStatus e falso', () => {
+    const p = posicoesDeExibicao(fila, false)
+    expect(p.get('1')).toBe(1)
+    expect(p.get('3')).toBe(2)
+    expect(p.get('2')).toBe(6)
+    expect(ordenarQuadroDoDia(fila, null, undefined, false).map((x) => x.id)).toEqual(['1', '3', '4', '5', '6', '2', '7'])
+    // ordenar por coluna não depende do modo
+    expect(ordenarQuadroDoDia(fila, { campo: 'status', dir: 'asc' }, undefined, false).map((x) => x.id)).toEqual(
+      ordenarQuadroDoDia(fila, { campo: 'status', dir: 'asc' }).map((x) => x.id),
+    )
   })
 })

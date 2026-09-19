@@ -7,13 +7,14 @@ import { ListaMaquinaDia, type PropsListaMaquinaDia } from './ProgramacaoLista'
 /**
  * A Programação exige login e o preview não vê a tela montada — este teste é
  * a conferência estrutural da lista: a coluna Seq numera pela fila padrão e
- * NÃO muda quando a tabela é ordenada por cultivar; concluída apagada;
- * urgente/normal; expedição atrasada em vermelho; total; cliques; setas.
+ * NÃO muda quando a tabela é ordenada por cultivar; concluída verde;
+ * urgente/normal; expedição atrasada em vermelho; tempo; total; cliques; setas.
  */
 const ordem = (p: Partial<OrdemVisao> & { id: string }): OrdemVisao =>
   ({
     numero: p.id,
     cultivar: 'NEO680 IPRO',
+    receita_id: 'r-ftz60',
     receita_nome: 'FTZ60',
     embalagem: 'BG5M',
     bags: 10,
@@ -41,17 +42,22 @@ const fila: OrdemVisao[] = [
   ordem({ id: 'E', seq: 6, status_efetivo: 'Finalizada', cultivar: '0000 IPRO', bags: 5, peso_t: 4 }),
 ]
 
+const COL = { seq: 0, ordem: 1, tempo: 8, expedicao: 9, acoes: 12 }
+
 function montar(extra: Partial<PropsListaMaquinaDia> = {}) {
   const { grupos } = exibicaoDoDia(fila)
   const props: PropsListaMaquinaDia = {
     titulo: 'TSI 1',
     resumo: <p>resumo</p>,
     fila,
+    capacidadeTh: 12,
     visivel: () => true,
     filtroAtivo: false,
     onLimparFiltro: vi.fn(),
     ordenacao: null,
     onOrdenar: vi.fn(),
+    porStatus: true,
+    onAlternarPorStatus: vi.fn(),
     podeProgramar: true,
     podeMarcarUrgente: true,
     onAbrir: vi.fn(),
@@ -73,12 +79,12 @@ function montar(extra: Partial<PropsListaMaquinaDia> = {}) {
   const linhas = () =>
     [...r.container.querySelectorAll<HTMLTableRowElement>('tbody tr[data-ordem]')].map((tr) => ({
       id: tr.dataset.ordem,
-      seq: tr.cells[0].textContent,
+      seq: tr.cells[COL.seq].textContent,
       classes: tr.className,
     }))
   const linha = (id: string) => r.container.querySelector<HTMLTableRowElement>(`tr[data-ordem="${id}"]`)!
   const setas = (id: string) => {
-    const bs = [...linha(id).cells[11].querySelectorAll('button')]
+    const bs = [...linha(id).cells[COL.acoes].querySelectorAll('button')]
     return { subir: bs.find((b) => b.textContent === '▲')!, descer: bs.find((b) => b.textContent === '▼')! }
   }
   return { ...r, props, linhas, linha, setas }
@@ -88,6 +94,13 @@ describe('ListaMaquinaDia', () => {
   it('sem ordenacao, segue a exibicao dos cartoes e numera 1..n', () => {
     const { linhas } = montar()
     expect(linhas().map((l) => `${l.id}:${l.seq}`)).toEqual(['C:1', 'A:2', 'B:3', 'D:4', 'F:5', 'E:6'])
+  })
+
+  it('pela sequencia (sem status): a fila como a maquina vai rodar, produzida no fim', () => {
+    const { linhas, props } = montar({ porStatus: false })
+    expect(linhas().map((l) => `${l.id}:${l.seq}`)).toEqual(['A:1', 'B:2', 'C:3', 'D:4', 'F:5', 'E:6'])
+    fireEvent.click(screen.getByText('por status'))
+    expect(props.onAlternarPorStatus).toHaveBeenCalled()
   })
 
   it('ordenar por cultivar reordena as linhas mas NAO renumera a fila nem mexe na ja produzida', () => {
@@ -105,12 +118,21 @@ describe('ListaMaquinaDia', () => {
     expect(screen.getByText('P1')).toBeInTheDocument()
   })
 
+  it('tempo planejado por ordem (peso ÷ t/h) e no total; sem capacidade, traco', () => {
+    const { linha } = montar()
+    expect(linha('A').cells[COL.tempo].textContent).toBe('1h25') // 17 t ÷ 12 t/h = 1,417 h
+    expect(linha('D').cells[COL.tempo].textContent).toBe('0h43') // 8,5 ÷ 12 = 0,708 h
+    expect(document.querySelector('tfoot')!.textContent).toContain('4h35') // 55,0 t ÷ 12 = 4,583 h
+    montar({ capacidadeTh: 0 })
+    expect(document.querySelectorAll<HTMLTableRowElement>('tr[data-ordem="A"]')[1].cells[COL.tempo].textContent).toBe('—')
+  })
+
   it('expedicao anterior ao dia programado sai em vermelho; sem expedicao e um traco', () => {
     const { linha } = montar()
-    const celA = linha('A').cells[8]
+    const celA = linha('A').cells[COL.expedicao]
     expect(celA.textContent).toBe('18/09')
     expect(celA.className).toContain('text-red-600')
-    expect(linha('D').cells[8].textContent).toBe('—')
+    expect(linha('D').cells[COL.expedicao].textContent).toBe('—')
   })
 
   it('marca de reprogramacao e total de bags e toneladas', () => {
@@ -155,7 +177,7 @@ describe('ListaMaquinaDia', () => {
 
   it('botao urgente alterna; some sem a acao priorizar', () => {
     const { props, linha } = montar()
-    const btn = [...linha('D').cells[11].querySelectorAll('button')].find((b) => b.textContent === 'urgente')!
+    const btn = [...linha('D').cells[COL.acoes].querySelectorAll('button')].find((b) => b.textContent === 'urgente')!
     fireEvent.click(btn)
     expect(props.onAlternarUrgente).toHaveBeenCalledWith(expect.objectContaining({ id: 'D' }))
     montar({ podeMarcarUrgente: false })
@@ -166,8 +188,8 @@ describe('ListaMaquinaDia', () => {
     const { container, linha } = montar({ movendoId: 'D' })
     expect(container.querySelectorAll('tr[data-painel-mover]')).toHaveLength(1)
     expect(container.querySelector('tr[data-painel-mover="D"]')?.textContent).toContain('PAINEL')
-    expect(linha('C').cells[11].firstElementChild!.className).toContain('invisible')
-    expect(linha('D').cells[11].firstElementChild!.className).not.toContain('invisible')
+    expect(linha('C').cells[COL.acoes].firstElementChild!.className).toContain('invisible')
+    expect(linha('D').cells[COL.acoes].firstElementChild!.className).not.toContain('invisible')
   })
 
   it('filtro de status que esconde tudo oferece "ver todas"; fila vazia diz que nao ha ordem', () => {

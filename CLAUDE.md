@@ -718,6 +718,19 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Teste jsdom `ProgramacaoLista.test.tsx` é a conferência estrutural (a tela exige login e o
    preview não a vê montada); o componente puro foi montado no dev server com dados falsos
    para conferir 1280/1024/768 px.
+   **3ª rodada (19/09/2026)**: (a) **"Otimizar sem status"** — "hoje a otimização leva o status
+   em consideração": não leva (o seq é otimizado igual), mas a lista por status separa uma
+   FTZ60 aguardando lote de uma FTZ60 pronta mesmo com seq vizinho, e a sequência otimizada não
+   aparece de ponta a ponta. O botão faz a mesma otimização e põe a lista da máquina **pela
+   sequência** (`filaSemStatus` na tela, `filaSemStatus()` no domínio: ativas por seq,
+   produzidas no fim); a lista tem o toggle "Ordem da fila: por status | pela sequência", e
+   nesse modo as setas ▲▼ trocam com o vizinho real da fila (todas as não iniciadas), não só
+   do mesmo status. (b) Coluna **Tempo** (`tempoPlanejadoS` = peso ÷ t/h, sem setup, "1h25")
+   por ordem e no total. (c) O resumo da máquina ganhou **legenda por número** — Programado ·
+   Setup previsto · Dia · Ocupação — e **"Falta produzir"** (`ocupacaoCelula(...).falta`:
+   toneladas, horas com setup e nº de ordens **não finalizadas** — finalizada é a que a
+   produção já informou a quantidade produzida), em destaque âmbar; o cartão usa o mesmo
+   resumo.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.

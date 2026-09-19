@@ -118,6 +118,14 @@ export default function Programacao() {
     setOrdenacaoPorMaquina((a) => ({ ...a, [maq]: alternarOrdenacao(a[maq] ?? null, campo) }))
   const semOrdenacao = (maq: string) => setOrdenacaoPorMaquina((a) => ({ ...a, [maq]: null }))
   /**
+   * Lista pela sequência gravada, sem separar por status ("Otimizar sem
+   * status", 19/09/2026): por status, a sequência otimizada não aparece de
+   * ponta a ponta — uma FTZ60 aguardando lote e uma FTZ60 pronta ficam em
+   * grupos diferentes mesmo com seq vizinho, e "a otimização parece levar
+   * o status em consideração".
+   */
+  const [filaSemStatus, setFilaSemStatus] = useState<Record<string, boolean>>({})
+  /**
    * Detalhe da ordem (ModalOrdem) aberto a partir da lista. Motivos e
    * produtos já vinham do carregarCadastros e eram descartados; embalagens
    * e a conferência DA ORDEM entram só no clique (a carga inicial roda a
@@ -329,21 +337,36 @@ export default function Programacao() {
       const m = capacidades.find((x) => x.id === maq)
       const fila = celula(maq, dia)
       const ton = fila.reduce((a, o) => a + o.peso_t, 0)
-      const r = m
-        ? resumoHorasFila(
-            fila.map((o) => ({ pesoT: o.peso_t, receitaId: o.receita_id })),
-            m.capacidadeTh,
-            m.setup,
-          )
-        : { producaoH: 0, setupMin: 0, trocas: 0, horas: 0 }
+      const horasDe = (lista: OrdemVisao[]) =>
+        m
+          ? resumoHorasFila(
+              lista.map((o) => ({ pesoT: o.peso_t, receitaId: o.receita_id })),
+              m.capacidadeTh,
+              m.setup,
+            )
+          : { producaoH: 0, setupMin: 0, trocas: 0, horas: 0 }
+      const r = horasDe(fila)
+      // o que AINDA FALTA: ordens que a produção ainda não deu por produzidas
+      // — finalizada é a que já teve a quantidade produzida informada
+      // (pedido do Arion, 19/09/2026: quanto em tonelada e tempo ainda falta
+      // para produzir ordens não finalizadas)
+      const restante = fila.filter((o) => !ehConcluida(o.status_efetivo))
+      const rf = horasDe(restante)
       return {
         ton,
         cap,
+        capacidadeTh: m?.capacidadeTh ?? 0,
         horas: r.horas,
         setupMin: r.setupMin,
         trocas: r.trocas,
         ordens: fila.length,
         pct: cap > 0 && Number.isFinite(r.horas) ? (r.horas / cap) * 100 : 0,
+        falta: {
+          ton: restante.reduce((a, o) => a + o.peso_t, 0),
+          horas: rf.horas,
+          setupMin: rf.setupMin,
+          ordens: restante.length,
+        },
       }
     },
     [capDia, capacidades, celula],
@@ -372,22 +395,50 @@ export default function Programacao() {
     `${o.ordens} ordem(ns) · ${o.trocas} troca(s) de tratamento · ${o.setupMin} min de setup · ` +
     `${n(o.horas, 1)} h de ${n(o.cap, 1)} h`
 
-  /** Linha "X t · Y h de Z h · P%" do cartão da máquina — a mesma na lista. */
-  const resumoOcupacao = (o: ReturnType<typeof ocupacaoCelula>) => (
-    <p className="num-tabular mb-3 text-xs text-stone-500">
-      {o.cap <= 0 ? (
-        <span className="font-medium text-amber-700 dark:text-amber-400">
+  /**
+   * Resumo da máquina no dia — no cartão e na lista. Cada número com a sua
+   * legenda (19/09/2026, Arion: "no cabeçalho não dá pra saber o que é o
+   * que") e o que AINDA FALTA produzir: as ordens não finalizadas —
+   * finalizada é a que a produção já informou a quantidade produzida.
+   */
+  const resumoOcupacao = (o: ReturnType<typeof ocupacaoCelula>) => {
+    const item = (rotulo: string, valor: string, titulo?: string, destaque = false) => (
+      <span
+        key={rotulo}
+        title={titulo}
+        className={`inline-flex items-baseline gap-1.5 rounded-md border px-2 py-0.5 ${
+          destaque
+            ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200'
+            : 'border-stone-200 dark:border-stone-700'
+        }`}
+      >
+        <span className="text-[10px] font-medium uppercase tracking-wide text-stone-500 dark:text-stone-400">{rotulo}</span>
+        <span className="num-tabular font-medium">{valor}</span>
+      </span>
+    )
+    if (o.cap <= 0) {
+      return (
+        <p className="mb-3 text-xs font-medium text-amber-700 dark:text-amber-400">
           Dia sem produção{o.ton > 0 && ` — ${n(o.ton, 1)} t ainda programadas aqui`}
-        </span>
-      ) : (
-        <span title={dicaOcupacao(o)}>
-          {n(o.ton, 1)} t · {n(o.horas, 1)} h de {n(o.cap, 1)} h · {n(o.pct, 0)}% de ocupação
-          {o.setupMin > 0 && ` (${o.setupMin} min de setup)`} ·{' '}
-          {rotuloTurnos(turnosDoDia(diaSel))}
-        </span>
-      )}
-    </p>
-  )
+        </p>
+      )
+    }
+    const plural = (q: number) => (q === 1 ? 'ordem' : 'ordens')
+    return (
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-stone-700 dark:text-stone-300">
+        {item('Programado', `${n(o.ton, 1)} t · ${n(o.horas, 1)} h`, `${o.ordens} ${plural(o.ordens)} no dia — horas de produção mais setup`)}
+        {item('Setup previsto', `${o.setupMin} min`, `${o.trocas} troca(s) de tratamento`)}
+        {item('Dia', `${n(o.cap, 1)} h · ${rotuloTurnos(turnosDoDia(diaSel))}`, 'Horas disponíveis nos turnos que o dia roda')}
+        {item('Ocupação', `${n(o.pct, 0)}%`, dicaOcupacao(o))}
+        {item(
+          'Falta produzir',
+          `${n(o.falta.ton, 1)} t · ${n(o.falta.horas, 1)} h · ${o.falta.ordens} ${plural(o.falta.ordens)}`,
+          'Ordens ainda NÃO finalizadas — finalizada é a que a produção já informou a quantidade produzida. Horas de produção mais setup.',
+          true,
+        )}
+      </div>
+    )
+  }
 
   /**
    * "Otimizar sequência" — no cartão e na lista (não é arraste; o PCP usa no
@@ -395,23 +446,34 @@ export default function Programacao() {
    * otimização regrava o seq, e numa tabela ordenada por cultivar nada se
    * mexia — "o botão parece que não funciona" (Arion, 19/09/2026).
    */
+  const otimizar = (lista: OrdemVisao[], maq: string, semStatus: boolean) =>
+    comErro(async () => {
+      const fila = lista
+        .filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
+        .map((x) => programaveis.find((p) => p.id === x.id)!)
+        .filter(Boolean)
+      semOrdenacao(maq)
+      setFilaSemStatus((a) => ({ ...a, [maq]: semStatus }))
+      await g.aplicarAtribuicoes(otimizarSequencia(fila, itensPorReceita))
+    })
   const botaoOtimizar = (lista: OrdemVisao[], maq: string) =>
     podeProgramar && lista.length > 1 ? (
-      <Botao
-        titulo="Agrupa receitas iguais para reduzir trocas, mantendo urgentes na frente"
-        onClick={() =>
-          comErro(async () => {
-            const fila = lista
-              .filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
-              .map((x) => programaveis.find((p) => p.id === x.id)!)
-              .filter(Boolean)
-            semOrdenacao(maq)
-            await g.aplicarAtribuicoes(otimizarSequencia(fila, itensPorReceita))
-          })
-        }
-      >
-        Otimizar sequência
-      </Botao>
+      <>
+        <Botao
+          titulo="Agrupa por família de tratamento (base antes das derivações) para reduzir trocas, mantendo urgentes na frente; a lista continua separada por status"
+          onClick={() => otimizar(lista, maq, false)}
+        >
+          Otimizar sequência
+        </Botao>
+        {modoQuadro === 'lista' && (
+          <Botao
+            titulo="A mesma otimização, e a lista passa a mostrar a fila pela sequência gravada, sem separar por status — a sequência otimizada de ponta a ponta"
+            onClick={() => otimizar(lista, maq, true)}
+          >
+            Otimizar sem status
+          </Botao>
+        )}
+      </>
     ) : undefined
 
   /** Botão "prioridade" (16/09/2026) — o mesmo clique no cartão e na lista. */
@@ -438,9 +500,17 @@ export default function Programacao() {
     />
   )
 
-  /** Posição da ordem no seu grupo de status — as setas ▲▼ só trocam dentro do grupo. */
-  const posicaoNoGrupo = (lista: OrdemVisao[], ord: OrdemVisao) => {
-    const grupo = grupoMovel(exibicaoDoDia(lista).grupos, ord)
+  /**
+   * Grupo em que a ordem pode subir/descer: o do seu status (cartões e lista
+   * por status) ou a fila inteira das não iniciadas (lista pela sequência —
+   * ali o vizinho da fila está visível, então a troca pode ser com ele).
+   */
+  const grupoDe = (lista: OrdemVisao[], ord: OrdemVisao, porStatus = true) =>
+    porStatus
+      ? grupoMovel(exibicaoDoDia(lista).grupos, ord)
+      : lista.filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
+  const posicaoNoGrupo = (lista: OrdemVisao[], ord: OrdemVisao, porStatus = true) => {
+    const grupo = grupoDe(lista, ord, porStatus)
     return { pos: grupo.indexOf(ord), tamanho: grupo.length }
   }
 
@@ -450,8 +520,10 @@ export default function Programacao() {
    * literal da fila real pareceria não fazer nada (ele pode estar rodando ou
    * concluído, desenhado noutra parte da tela).
    */
-  const trocarComVizinho = (maq: string, dia: string, lista: OrdemVisao[], ord: OrdemVisao, delta: -1 | 1) => {
-    const grupo = grupoMovel(exibicaoDoDia(lista).grupos, ord)
+  const trocarComVizinho = (
+    maq: string, dia: string, lista: OrdemVisao[], ord: OrdemVisao, delta: -1 | 1, porStatus = true,
+  ) => {
+    const grupo = grupoDe(lista, ord, porStatus)
     const vizinho = grupo[grupo.indexOf(ord) + delta]
     if (!vizinho) return
     const copia = [...lista]
@@ -1122,13 +1194,18 @@ export default function Programacao() {
         <div className="mb-5 space-y-4">
           {maquinas.map((m) => {
             const lista = celula(m.id, diaSel)
+            const o = ocupacaoCelula(m.id, diaSel)
+            const porStatus = !filaSemStatus[m.id]
             return (
               <ListaMaquinaDia
                 key={m.id}
                 titulo={`${m.nome} · ${diaSemana(diaSel)} ${diaCurto(diaSel)}`}
                 acoes={botaoOtimizar(lista, m.id)}
-                resumo={resumoOcupacao(ocupacaoCelula(m.id, diaSel))}
+                resumo={resumoOcupacao(o)}
                 fila={lista}
+                capacidadeTh={o.capacidadeTh}
+                porStatus={porStatus}
+                onAlternarPorStatus={() => setFilaSemStatus((a) => ({ ...a, [m.id]: !a[m.id] }))}
                 visivel={visivel}
                 filtroAtivo={filtroStatus.size > 0}
                 onLimparFiltro={() => setFiltroStatus(new Set())}
@@ -1141,9 +1218,9 @@ export default function Programacao() {
                 abrindoId={abrindoId}
                 onPrioridade={(ord) => alternarPrioridadeDia(m.id, diaSel, lista, ord)}
                 onAlternarUrgente={alternarUrgente}
-                posicaoNoGrupo={(ord) => posicaoNoGrupo(lista, ord)}
-                onSubir={(ord) => trocarComVizinho(m.id, diaSel, lista, ord, -1)}
-                onDescer={(ord) => trocarComVizinho(m.id, diaSel, lista, ord, 1)}
+                posicaoNoGrupo={(ord) => posicaoNoGrupo(lista, ord, porStatus)}
+                onSubir={(ord) => trocarComVizinho(m.id, diaSel, lista, ord, -1, porStatus)}
+                onDescer={(ord) => trocarComVizinho(m.id, diaSel, lista, ord, 1, porStatus)}
                 movendoId={movendo}
                 onAlternarMover={(ord) => setMovendo(movendo === ord.id ? null : ord.id)}
                 painelMover={(ord) => painelMoverDe(ord, m.id)}

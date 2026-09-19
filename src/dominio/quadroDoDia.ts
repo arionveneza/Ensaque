@@ -77,6 +77,18 @@ export function exibicaoDoDia<T extends { status_efetivo: string }>(
 }
 
 /**
+ * A fila SEM separar por status ("Otimizar sem status", 19/09/2026): as
+ * ativas na sequência gravada, exatamente como a máquina vai rodar, e as já
+ * produzidas no fim. É a única visão em que a sequência otimizada aparece de
+ * ponta a ponta — por status, uma FTZ60 aguardando lote e uma FTZ60 pronta
+ * ficam em grupos diferentes mesmo com seq vizinho, e "a otimização parece
+ * levar o status em consideração".
+ */
+export function filaSemStatus<T extends { status_efetivo: string }>(fila: readonly T[]): T[] {
+  return [...fila.filter((x) => !ehConcluida(x.status_efetivo)), ...fila.filter((x) => ehConcluida(x.status_efetivo))]
+}
+
+/**
  * O grupo dentro do qual as setas ▲▼ trocam a ordem de lugar: só com o
  * vizinho do MESMO status. Rodando e concluída não se movem (lista vazia).
  */
@@ -92,20 +104,24 @@ export function grupoMovel<T extends { status_efetivo: string }>(grupos: GruposD
 
 /**
  * Posição de exibição (1..n) de cada ordem — a numeração que o cartão
- * mostra. A lista a calcula da fila PADRÃO, nunca do índice da tabela
- * ordenada: ordenar por cultivar não pode renumerar a fila.
+ * mostra (por status) ou a posição na fila (sem status). A lista a calcula
+ * da fila PADRÃO, nunca do índice da tabela ordenada: ordenar por cultivar
+ * não pode renumerar a fila.
  */
 export function posicoesDeExibicao<T extends { id: string; status_efetivo: string }>(
   fila: readonly T[],
+  porStatus = true,
 ): Map<string, number> {
   const m = new Map<string, number>()
-  exibicaoDoDia(fila).exibicao.forEach((x, i) => m.set(x.id, i + 1))
+  const base = porStatus ? exibicaoDoDia(fila).exibicao : filaSemStatus(fila)
+  base.forEach((x, i) => m.set(x.id, i + 1))
   return m
 }
 
 /**
- * Linhas da lista: nulo = a exibição padrão dos cartões; senão pelo campo,
- * com empate pelo nº da ordem (pt-BR numérico). SÓ VISÃO — o seq não muda.
+ * Linhas da lista: nulo = a exibição padrão (por status, como os cartões, ou
+ * a fila pura); senão pelo campo, com empate pelo nº da ordem (pt-BR
+ * numérico). SÓ VISÃO — o seq não muda.
  * - As já produzidas (concluídas) NÃO entram na ordenação: ficam sempre no
  *   fim, na ordem da fila ("quando classificar, não mexer nas ordens que já
  *   foram produzidas" — Arion, 19/09/2026).
@@ -119,8 +135,9 @@ export function ordenarQuadroDoDia<T extends OrdemDoQuadro>(
   fila: readonly T[],
   ordenacao: Ordenacao<CampoQuadro>,
   itensPorReceita?: ReadonlyMap<string, number>,
+  porStatus = true,
 ): T[] {
-  if (!ordenacao) return exibicaoDoDia(fila).exibicao
+  if (!ordenacao) return porStatus ? exibicaoDoDia(fila).exibicao : filaSemStatus(fila)
   const ativas = fila.filter((x) => !ehConcluida(x.status_efetivo))
   const concluidas = fila.filter((x) => ehConcluida(x.status_efetivo))
   const porNumeroDaOrdem = (a: T, b: T) => porNome(a.numero, b.numero)

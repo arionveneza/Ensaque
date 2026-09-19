@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 import type { OrdemVisao } from '@/dados/api-gestao'
 import { Cartao, Tabela, Tag, Vazio, corDoStatus, diaCurto, n } from '@/componentes/ui'
+import { tempoPlanejadoS } from '@/dominio/calculos'
 import { ehConcluida, ordenarQuadroDoDia, posicoesDeExibicao, type CampoQuadro } from '@/dominio/quadroDoDia'
 import type { Ordenacao } from '@/dominio/ordenacao'
 import { jaIniciada } from '@/dominio/status'
@@ -21,14 +22,21 @@ import type { StatusEfetivo } from '@/dominio/tipos'
  * do índice da tabela ordenada, e o seq gravado não muda. As setas ▲▼ só
  * funcionam na ordem padrão (numa tabela ordenada por cultivar, "subir" uma
  * linha seria ambíguo) — a mesma trava que os cartões têm com o filtro.
+ *
+ * Duas ordens padrão: POR STATUS (como os cartões: rodando → pronto →
+ * aguardando → programada → produzidas) ou PELA SEQUÊNCIA (a fila como a
+ * máquina vai rodar, produzidas no fim) — a segunda é a que mostra a
+ * sequência otimizada de ponta a ponta ("Otimizar sem status").
  */
 export interface PropsListaMaquinaDia {
   titulo: ReactNode
   acoes?: ReactNode
-  /** Linha "X t · Y h de Z h · P%" — a mesma do cartão. */
+  /** Resumo da máquina no dia (programado, setup, ocupação, falta produzir) — o mesmo do cartão. */
   resumo: ReactNode
   /** Fila da máquina no dia, por seq. */
   fila: OrdemVisao[]
+  /** t/h da máquina — dá o tempo planejado de cada ordem (0 = sem capacidade). */
+  capacidadeTh: number
   /** Filtro de status do quadro (o mesmo dos cartões). */
   visivel: (o: OrdemVisao) => boolean
   filtroAtivo: boolean
@@ -38,6 +46,9 @@ export interface PropsListaMaquinaDia {
   onOrdenar: (campo: CampoQuadro) => void
   /** Nº de itens por receita — a coluna Tratamento ordena por família e base antes das derivações. */
   itensPorReceita?: ReadonlyMap<string, number>
+  /** Ordem padrão: por status (cartões) ou pela sequência gravada. */
+  porStatus: boolean
+  onAlternarPorStatus: () => void
   podeProgramar: boolean
   /** Ação ordens/priorizar — o botão "urgente". */
   podeMarcarUrgente: boolean
@@ -45,7 +56,7 @@ export interface PropsListaMaquinaDia {
   abrindoId: string | null
   onPrioridade: (ord: OrdemVisao) => void
   onAlternarUrgente: (ord: OrdemVisao) => void
-  /** ▲▼: posição da ordem no seu grupo de status (as setas só trocam dentro do grupo). */
+  /** ▲▼: posição da ordem no seu grupo (do status, ou a fila inteira sem status). */
   posicaoNoGrupo: (ord: OrdemVisao) => { pos: number; tamanho: number }
   onSubir: (ord: OrdemVisao) => void
   onDescer: (ord: OrdemVisao) => void
@@ -56,22 +67,30 @@ export interface PropsListaMaquinaDia {
 }
 
 /** Colunas visíveis fora de `lg` (Emb. e Lote somem) — as linhas especiais precisam somar isto. */
-const COLUNAS_SEMPRE = 10
+const COLUNAS_SEMPRE = 11
 const COLUNAS_SO_LG = 2
 
 const BOTAO = 'rounded border px-3 py-2 text-xs uppercase tracking-wide lg:px-1.5 lg:py-0.5 lg:text-[10px]'
 
+/** "1h25", "0h40" — horas e minutos, sem segundos (a lista é planejamento). */
+const hm = (segundos: number): string => {
+  if (!Number.isFinite(segundos)) return '—'
+  const min = Math.round(segundos / 60)
+  return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`
+}
+
 export function ListaMaquinaDia({
-  titulo, acoes, resumo, fila, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar, itensPorReceita,
-  podeProgramar, podeMarcarUrgente, onAbrir, abrindoId, onPrioridade, onAlternarUrgente,
-  posicaoNoGrupo, onSubir, onDescer, movendoId, onAlternarMover, painelMover,
+  titulo, acoes, resumo, fila, capacidadeTh, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar,
+  itensPorReceita, porStatus, onAlternarPorStatus, podeProgramar, podeMarcarUrgente, onAbrir, abrindoId,
+  onPrioridade, onAlternarUrgente, posicaoNoGrupo, onSubir, onDescer, movendoId, onAlternarMover, painelMover,
 }: PropsListaMaquinaDia) {
-  const posicao = posicoesDeExibicao(fila)
-  const linhas = ordenarQuadroDoDia(fila, ordenacao, itensPorReceita).filter(visivel)
+  const posicao = posicoesDeExibicao(fila, porStatus)
+  const linhas = ordenarQuadroDoDia(fila, ordenacao, itensPorReceita, porStatus).filter(visivel)
   const seta = (c: CampoQuadro) => (ordenacao?.campo === c ? ordenacao.dir : undefined)
   const col = (texto: string, campo: CampoQuadro, className?: string) => ({
     texto, className, onClick: () => onOrdenar(campo), ordem: seta(campo),
   })
+  const tempo = (pesoT: number) => (capacidadeTh > 0 ? hm(tempoPlanejadoS(pesoT, capacidadeTh)) : '—')
   const totBags = linhas.reduce((a, o) => a + o.bags, 0)
   const totT = linhas.reduce((a, o) => a + o.peso_t, 0)
   const setasTravadas = ordenacao != null || filtroAtivo
@@ -84,6 +103,29 @@ export function ListaMaquinaDia({
   return (
     <Cartao titulo={titulo} acoes={acoes}>
       {resumo}
+      <div className="mb-2 flex flex-wrap items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
+        <span className="mr-1">Ordem da fila:</span>
+        {(
+          [
+            [true, 'por status', 'Rodando → pronta → aguardando lote → programada → produzidas (como os cartões)'],
+            [false, 'pela sequência', 'A fila como a máquina vai rodar — a sequência otimizada de ponta a ponta; produzidas no fim'],
+          ] as const
+        ).map(([valor, rotulo, dica]) => (
+          <button
+            key={rotulo}
+            type="button"
+            title={dica}
+            onClick={() => porStatus !== valor && onAlternarPorStatus()}
+            className={`rounded-md border px-2 py-1 ${
+              porStatus === valor
+                ? 'border-green-600 bg-green-50 font-medium text-green-800 dark:bg-green-950 dark:text-green-300'
+                : 'border-stone-300 text-stone-600 dark:border-stone-700 dark:text-stone-300'
+            }`}
+          >
+            {rotulo}
+          </button>
+        ))}
+      </div>
       {fila.length === 0 ? (
         <Vazio>Nenhuma ordem programada.</Vazio>
       ) : linhas.length === 0 ? (
@@ -106,13 +148,14 @@ export function ListaMaquinaDia({
           cabecalho={[
             { texto: '#Seq', className: 'w-12' },
             { texto: 'Ordem', className: 'w-24' },
-            col('Cultivar', 'cultivar', 'w-36'),
-            col('Tratamento', 'tratamento', 'w-36'),
+            col('Cultivar', 'cultivar', 'w-28'),
+            col('Tratamento', 'tratamento', 'w-28'),
             { texto: 'Emb.', className: 'hidden w-20 lg:table-cell' },
             { texto: 'Lote', className: 'hidden w-36 lg:table-cell' },
             col('#Bags', 'bags', 'w-20'),
             col('#Peso', 'peso', 'w-20'),
-            col('Expedição', 'expedicao', 'w-28'),
+            { texto: '#Tempo', className: 'w-16' },
+            col('Expedição', 'expedicao', 'w-24'),
             { texto: 'Urgente', className: 'w-20' },
             col('Status', 'status', 'w-52'),
             { texto: '', className: 'w-60' },
@@ -126,6 +169,7 @@ export function ListaMaquinaDia({
               <td className="hidden lg:table-cell" colSpan={COLUNAS_SO_LG} />
               <td className="num-tabular px-2 py-1.5 text-right font-semibold">{n(totBags, 0)}</td>
               <td className="num-tabular px-2 py-1.5 text-right font-semibold whitespace-nowrap">{n(totT, 1)} t</td>
+              <td className="num-tabular px-2 py-1.5 text-right font-semibold whitespace-nowrap">{tempo(totT)}</td>
               <td colSpan={4} />
             </tr>
           }
@@ -182,6 +226,12 @@ export function ListaMaquinaDia({
                   <td className="hidden px-2 py-1.5 align-middle font-medium lg:table-cell">{ord.lote_id}</td>
                   <td className="num-tabular px-2 py-1.5 text-right align-middle">{ord.bags}</td>
                   <td className="num-tabular px-2 py-1.5 text-right align-middle whitespace-nowrap">{n(ord.peso_t, 1)} t</td>
+                  <td
+                    className="num-tabular px-2 py-1.5 text-right align-middle whitespace-nowrap text-stone-600 dark:text-stone-300"
+                    title={`Tempo planejado desta ordem: ${n(ord.peso_t, 1)} t ÷ ${n(capacidadeTh, 1)} t/h (sem setup)`}
+                  >
+                    {tempo(ord.peso_t)}
+                  </td>
                   <td
                     className={`num-tabular px-2 py-1.5 align-middle text-xs whitespace-nowrap ${
                       atrasada ? 'font-semibold text-red-600 dark:text-red-400' : 'text-stone-500'
