@@ -1,8 +1,9 @@
-# Continuar o projeto em outro computador
+# Trabalhar o projeto em dois computadores
 
-Roteiro para pôr o TSI para rodar numa máquina nova, sem recriar nada. O projeto inteiro vive
+Roteiro para editar o TSI em mais de uma máquina, alternando entre elas. O projeto inteiro vive
 no GitHub (`https://github.com/arionveneza/Ensaque`) — o que **não** vai junto são só as
-credenciais e as preferências de cada máquina. Leva uns 15 minutos.
+credenciais e as preferências de cada máquina. Pôr a segunda máquina de pé leva uns 15 minutos;
+depois disso, a sincronia é automática (ver a última seção).
 
 ## Caminho rápido (deixa o Claude Code fazer)
 
@@ -70,20 +71,23 @@ para você entrar, e guarda a partir dali.
 | **Permissões locais do Claude Code** | `.claude/settings.local.json` é por máquina; ele pergunta de novo o que precisar. |
 | **Memória do Claude Code** | As preferências que ele guardou sobre o seu jeito de trabalhar são desta máquina. O que importa do projeto está no `CLAUDE.md`, que vem no clone. |
 
-## Regra de ouro trabalhando em dois computadores
+## Sincronia entre as duas máquinas — já é automática
 
-**Antes de começar, puxe o que o outro computador fez:**
+O Claude Code faz `commit` e `push` a cada mudança, então o **GitHub é sempre a versão boa**. E o
+que faltava — puxar o que a outra máquina fez antes de começar — agora é automático: o arquivo
+`.claude/settings.json` (versionado, vale nos dois computadores) tem um gancho que roda
+`git pull --ff-only` toda vez que o projeto é aberto.
 
-```bash
-git pull
-```
+Como ele se comporta:
 
-E no fim do trabalho, confira que subiu:
+- **Nada mudou na outra máquina** → silêncio, você nem percebe.
+- **A outra máquina trabalhou** → as mudanças entram e o resumo aparece na abertura.
+- **Sem internet, ou as duas máquinas divergiram** → ele avisa o motivo e **não mexe em nada**.
+  O `--ff-only` é justamente isso: ou avança limpo, ou não faz nada.
 
-```bash
-git status
-```
+Na primeira vez que você abrir o projeto em cada máquina, o Claude Code pede para aprovar o
+gancho — é a mesma pergunta de permissão de sempre, e a resposta fica guardada ali.
 
-O Claude Code já faz `commit` e `push` a cada mudança, então o GitHub é sempre a versão boa. O
-único jeito de dar dor de cabeça é começar a mexer numa máquina que está atrasada — o `git pull`
-de dois segundos evita isso.
+**A única disciplina que sobra:** não trabalhe nos dois computadores ao mesmo tempo. Termine
+numa, deixe o Claude publicar, e só então abra na outra. Se as duas divergirem, o gancho avisa
+na abertura e é só pedir ao Claude para resolver.

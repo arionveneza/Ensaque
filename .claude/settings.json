@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git pull --ff-only 2>&1 | grep -viE \"^already up to date\" || true",
+            "timeout": 30,
+            "statusMessage": "Sincronizando com o GitHub…"
+          }
+        ]
+      }
+    ]
+  }
+}
