@@ -420,14 +420,25 @@ export function otimizarSequencia(
 
   const bu = blocos(urgentes)
   const bn = blocos(normais)
-  // receita comum aos dois lados: última das urgentes e primeira das normais
+  // receita comum aos dois lados: última das urgentes e primeira das normais.
+  // A FAMÍLIA vai junto (revisão de 19/09/2026): arrancar só o bloco da
+  // receita partia a família em dois pedaços separados por famílias inteiras
+  // — sem economizar setup nenhum, porque o setup só olha a receita e cada
+  // bloco continua contíguo dos dois jeitos.
+  const fam = (b: OrdemProgramavel[]) =>
+    b[0].receitaNome ? familiaDoTratamento(b[0].receitaNome) : b[0].receitaId
+  const tiraFamilia = (bs: OrdemProgramavel[][], f: string) => {
+    const g = bs.filter((x) => fam(x) === f)
+    for (const x of g) bs.splice(bs.indexOf(x), 1)
+    return g
+  }
   const iu = bu.findIndex((b) => bn.some((n) => n[0].receitaId === b[0].receitaId))
   if (iu >= 0) {
     const [b] = bu.splice(iu, 1)
-    bu.push(b)
+    bu.push(...tiraFamilia(bu, fam(b)), b)
     const jn = bn.findIndex((n) => n[0].receitaId === b[0].receitaId)
     const [n] = bn.splice(jn, 1)
-    bn.unshift(n)
+    bn.unshift(n, ...tiraFamilia(bn, fam(n)))
   }
 
   return [...bu.flat(), ...bn.flat()].map((o, i) => ({

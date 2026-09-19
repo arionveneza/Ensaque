@@ -15,9 +15,11 @@ describe('familiaDoTratamento — nomes reais do cadastro', () => {
     expect(familiaDoTratamento('FTZ60 S + Cert N + RCoMoNi')).toBe('FTZ60')
   })
 
-  it('fora das conhecidas, o primeiro segmento e a familia', () => {
+  it('fora das conhecidas, o primeiro segmento normalizado e a familia — grafias diferentes caem juntas', () => {
     expect(familiaDoTratamento('FTZ80 + RCoMoNi + Lli')).toBe('FTZ80')
-    expect(familiaDoTratamento('SEM TSI')).toBe('SEM TSI')
+    expect(familiaDoTratamento('FTZ 80 + Lli')).toBe('FTZ80')
+    expect(familiaDoTratamento('ftz80')).toBe('FTZ80')
+    expect(familiaDoTratamento('SEM TSI')).toBe('SEMTSI')
     expect(familiaDoTratamento('  ')).toBe('')
   })
 
@@ -47,5 +49,16 @@ describe('compararTratamentos — base antes das derivacoes', () => {
   it('sem a contagem de itens, ordena pelo nome dentro da familia', () => {
     const lista = [t('FTZ60 + VIC'), t('FTZ60'), t('FTZ60 + ARV')]
     expect(lista.sort(compararTratamentos).map((x) => x.nome)).toEqual(['FTZ60', 'FTZ60 + ARV', 'FTZ60 + VIC'])
+  })
+
+  it('contagem faltando so em parte da familia: quem nao tem vai pro fim, e a saida nao depende da ordem de entrada', () => {
+    // comparador PARCIAL (pular a regra quando um lado não tinha contagem) era
+    // intransitivo: 6 permutações davam 3 saídas, e a receita de 8 itens saía
+    // na frente da de 5 — achado da revisão adversarial, 19/09/2026
+    const itens = [t('FTZ60 + RCoMoNi + Lli', 8), t('FTZ60 + VIC + Lli'), t('FTZ60 S + RCoMoNi', 5)]
+    const permutacoes = (l: typeof itens): (typeof itens)[] =>
+      l.length <= 1 ? [l] : l.flatMap((x, i) => permutacoes([...l.slice(0, i), ...l.slice(i + 1)]).map((p) => [x, ...p]))
+    const saidas = new Set(permutacoes(itens).map((p) => [...p].sort(compararTratamentos).map((x) => x.nome).join(' | ')))
+    expect([...saidas]).toEqual(['FTZ60 S + RCoMoNi | FTZ60 + RCoMoNi + Lli | FTZ60 + VIC + Lli'])
   })
 })

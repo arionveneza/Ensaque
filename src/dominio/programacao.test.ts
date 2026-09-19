@@ -245,6 +245,22 @@ describe('otimizar sequencia', () => {
     expect(otimizarSequencia(fila, itens).map((a) => a.ordemId)).toEqual(['f2', 'f1', 'f3', 'v2', 'v1', 'd1'])
   })
 
+  it('a fronteira urgente→normal leva a familia inteira junto, nao so a receita casada', () => {
+    const itens = new Map([['r-vp', 5], ['r-vp-raiz', 6], ['r-ftz60', 5], ['r-der', 4]])
+    const fila = [
+      ord({ id: 'u1', receitaId: 'r-vp', receitaNome: 'V&P', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'u2', receitaId: 'r-vp-raiz', receitaNome: 'V&P + RAIZ', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'u3', receitaId: 'r-ftz60', receitaNome: 'FTZ60', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'n1', receitaId: 'r-vp-raiz', receitaNome: 'V&P + RAIZ', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'n2', receitaId: 'r-der', receitaNome: 'DER + LMT', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'n3', receitaId: 'r-ftz60', receitaNome: 'FTZ60', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+    ]
+    // V&P + RAIZ existe dos dois lados: fecha as urgentes com a família V&P
+    // inteira (u1 antes de u2) e abre as normais — a versão anterior deixava
+    // o u3 (FTZ60) entre o V&P e o V&P + RAIZ
+    expect(otimizarSequencia(fila, itens).map((a) => a.ordemId)).toEqual(['u3', 'u1', 'u2', 'n1', 'n2', 'n3'])
+  })
+
   it('sem nome nem contagem, cada receita e a propria familia e o resultado e o de antes', () => {
     const fila = [
       ord({ id: 'a', receitaId: 'R1', maquinaId: 'TSI1', dataProg: DIAS[0] }),

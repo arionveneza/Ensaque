@@ -24,32 +24,37 @@ const chave = (s: string) =>
 
 /**
  * Família de um tratamento pelo nome da receita. Fora das conhecidas, o
- * primeiro segmento antes do "+" é a própria família ("FTZ80 + RCoMoNi" →
- * "FTZ80"; "SEM TSI" → "SEM TSI") — nunca devolve vazio.
+ * primeiro segmento antes do "+" é a própria família, NORMALIZADO — "FTZ80 +
+ * RCoMoNi", "FTZ 80 + Lli" e "ftz80" são a mesma família ("FTZ80"); "SEM TSI"
+ * → "SEMTSI". É chave de agrupamento, não texto de tela. Só devolve vazio
+ * para nome vazio.
  */
 export function familiaDoTratamento(nome: string): string {
   const k = chave(nome)
   for (const f of FAMILIAS_TSI) {
     if (f.prefixos.some((p) => k.startsWith(chave(p)))) return f.familia
   }
-  const primeiro = nome.split('+')[0].trim()
-  return primeiro || nome.trim()
+  return chave(nome.split('+')[0]) || k
 }
 
 export interface TratamentoOrdenavel {
   nome: string
-  /** Nº de produtos da receita; sem contagem, ordena pelo nome. */
+  /** Nº de produtos da receita; sem contagem, vai para o fim da família. */
   itens?: number | null
 }
 
 /**
  * Família (pt-BR) → menos itens primeiro → nome. É a ordem "base antes das
  * derivações" que a otimização de sequência e a coluna Tratamento da lista
- * usam.
+ * usam. Quem não tem contagem conta como infinito: a regra vale para TODOS
+ * os pares da família (comparador total) — pular a regra quando um lado não
+ * tinha contagem deixava o sort dependente da ordem de entrada.
  */
 export function compararTratamentos(a: TratamentoOrdenavel, b: TratamentoOrdenavel): number {
   const f = porNome(familiaDoTratamento(a.nome), familiaDoTratamento(b.nome))
   if (f !== 0) return f
-  if (a.itens != null && b.itens != null && a.itens !== b.itens) return a.itens - b.itens
+  const ia = a.itens ?? Number.POSITIVE_INFINITY
+  const ib = b.itens ?? Number.POSITIVE_INFINITY
+  if (ia !== ib) return ia < ib ? -1 : 1
   return porNome(a.nome, b.nome)
 }

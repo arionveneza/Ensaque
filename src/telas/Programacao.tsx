@@ -177,14 +177,12 @@ export default function Programacao() {
       g.listarPool(),
       g.listarDiasProducao(janela.de, janela.ate),
       g.listarOrdensAtrasadas(diaDeProducao(new Date())),
-      g.listarReceitas(),
     ])
-      .then(([c, lista, poolLista, cal, atrasadasLista, receitas]) => {
+      .then(([c, lista, poolLista, cal, atrasadasLista]) => {
         if (!vivo) return
         setMaquinas(c.maquinas)
         setMotivos(c.motivos)
         setProdutos(c.produtos)
-        setItensPorReceita(new Map(receitas.map((r) => [r.id, r.receita_itens.length])))
         setOrdens(lista)
         setPool(poolLista)
         setCalendario(cal)
@@ -196,6 +194,21 @@ export default function Programacao() {
       vivo = false
     }
   }, [janela])
+
+  // receitas UMA vez só (o efeito acima roda a cada semana navegada): a
+  // contagem de itens não muda com a semana. Sem ela a ordenação por
+  // tratamento cai no nome — não vale derrubar a tela por isso.
+  useEffect(() => {
+    let vivo = true
+    g.listarReceitas()
+      .then((rs) => {
+        if (vivo) setItensPorReceita(new Map(rs.map((r) => [r.id, r.receita_itens.length])))
+      })
+      .catch(() => {})
+    return () => {
+      vivo = false
+    }
+  }, [])
 
   useRealtime(['ordens', 'lotes_semente', 'dias_producao', 'ordem_prioridades_dia'], recarregar)
 
