@@ -777,6 +777,27 @@ describe('recorte por carga (19/09/2026)', () => {
   ]
   const daCarga = (...cargas: (string | null)[]) => (c: AgC) => cargas.includes(c.carga)
 
+  it('faltaPorProduto traz o agendado do produto, de TODAS as datas, ao lado do descoberto', () => {
+    // caso real de 19/09: 24 bg em 18/09 e 58 em 21/09, estoque 18, 41 de
+    // produção em 19/09 → falta 6 em 18/09 e 23 em 21/09; a grade dizia só
+    // "6" e "23", e o Arion leu como pedido do dia
+    const s = saldosExpedicao(
+      [agc({ id: 'a', data: '2026-09-18', bags: 24 }), agc({ id: 'b', data: '2026-09-21', bags: 58 })],
+      [], pa(18),
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 41, dataProg: '2026-09-19' }],
+      '2026-09-19',
+    )
+    const [f] = faltaPorProduto(s)
+    expect(f.agendado).toBe(82)
+    expect(f.descoberto).toBe(29)
+    expect(f.datas.map((d) => [d.data, d.agendado, d.descoberto])).toEqual([
+      ['2026-09-18', 24, 6],
+      ['2026-09-21', 58, 23],
+    ])
+    // no recorte, o agendado é só o da seleção
+    expect(faltaPorProduto(s, (c) => c.id === 'b')[0].agendado).toBe(58)
+  })
+
   it('sem predicado, faltaPorProduto continua exatamente como era', () => {
     const s = saldosExpedicao(
       [agc({ id: 'a', carga: '10', data: '2026-09-08' }), agc({ id: 'b', carga: '20', data: '2026-09-12' })],

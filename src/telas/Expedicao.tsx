@@ -798,13 +798,19 @@ export default function Expedicao() {
                                 className={`num-tabular px-2 py-2 text-right align-middle ${f ? `font-semibold ${corTexto}` : 'text-stone-300 dark:text-stone-700'}`}
                                 title={f ? `${f.caminhoes} caminhão(ões) · ${inteiro(f.agendado)} agendados · faltam ${inteiro(f.descoberto)}` : 'sem falta neste dia'}
                               >
-                                {f ? inteiro(f.descoberto) : '·'}
+                                {f ? (
+                                  <>
+                                    {inteiro(f.descoberto)}
+                                    <span className="font-normal text-stone-400"> de {inteiro(f.agendado)}</span>
+                                  </>
+                                ) : '·'}
                               </td>
                             )
                           })}
                           <td className="num-tabular px-2 py-2 text-right align-middle">
                             <Tag cor={p.situacao === 'falta' ? 'perigo' : p.situacao === 'adiantar' ? 'alerta' : 'info'} className="min-w-16 justify-center font-semibold">
                               {inteiro(p.descoberto)}
+                              <span className="ml-1 font-normal opacity-70">de {inteiro(p.agendado)}</span>
                             </Tag>
                           </td>
                         </tr>
@@ -833,7 +839,8 @@ export default function Expedicao() {
             )}
             <p className="mt-3 text-xs text-stone-500">
               Bags que faltam para o caminhão de cada dia (vermelho = falta mesmo adiantando; âmbar = resolve
-              adiantando produção; azul = coberto só por produção futura). Ponto = sem falta naquele dia. Só
+              adiantando produção; azul = coberto só por produção futura). Cada célula é "faltam X de Y",
+              onde Y é o que está agendado naquele dia — a falta, não o pedido. Ponto = sem falta naquele dia. Só
               produtos com alguma falta no período.
             </p>
           </Cartao>

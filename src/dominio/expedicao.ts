@@ -743,6 +743,12 @@ export interface FaltaPorProduto {
   situacao: SituacaoSaldo
   /** Σ descoberto do produto no período. */
   descoberto: number
+  /**
+   * Σ agendado do produto no recorte, TODAS as datas (19/09/2026). A grade
+   * mostrava só o descoberto e o Arion leu "6 e 23" como o pedido do dia,
+   * quando o pedido era 24 e 58 — agora cada célula diz "faltam X de Y".
+   */
+  agendado: number
   /** Só as datas em que falta (descoberto > 0), em ordem. */
   datas: FaltaNaData[]
 }
@@ -762,6 +768,7 @@ export function faltaPorProduto<T extends CarregamentoLinha>(
   const out: FaltaPorProduto[] = []
   for (const s of saldos) {
     const porData = new Map<string, FaltaNaData>()
+    let agendado = 0
     for (const c of s.caminhoes) {
       // recorte por carga (19/09/2026): a fila já decidiu a cobertura lá em
       // cima, com TODOS os caminhões do período. Aqui só se escolhe quais
@@ -771,6 +778,7 @@ export function faltaPorProduto<T extends CarregamentoLinha>(
       const d = porData.get(k) ?? { data: c.data, caminhoes: 0, agendado: 0, descoberto: 0 }
       d.caminhoes++
       d.agendado += c.bags
+      agendado += c.bags
       d.descoberto += c.descoberto
       porData.set(k, d)
     }
@@ -782,7 +790,7 @@ export function faltaPorProduto<T extends CarregamentoLinha>(
     if (descoberto <= 0) continue
     out.push({
       cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem, semTsi: s.semTsi,
-      situacao: situacaoSaldo(s), descoberto, datas,
+      situacao: situacaoSaldo(s), descoberto, agendado: arred2(agendado), datas,
     })
   }
   return out.sort((a, b) => b.descoberto - a.descoberto)

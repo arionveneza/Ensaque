@@ -682,7 +682,13 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    na linha, uma pastilha por DATA em que falta ("16/09 · faltam 13 de 43"), na cor da
    situação da linha consolidada (`faltaPorProduto`). É a MESMA fila agregada por produto ×
    dia do caminhão; nenhum bag contado duas vezes — a soma das datas é o descoberto do
-   produto; dia que não aparece não tem falta. Recurso `expedicao` (ver/importar): PCP
+   produto; dia que não aparece não tem falta. **Cada célula diz "faltam X de Y"**
+   (19/09/2026): a grade mostrava só o descoberto e o Arion leu "6 e 23" como o pedido do
+   dia — o pedido era 24 e 58 (NEO680 IPRO · FTZ60, 18 e 21/09), e "faltam 23" na consolidada
+   pareceu vir de fora do período. `FaltaPorProduto.agendado` traz o agendado do produto no
+   recorte (todas as datas) e `FaltaNaData.agendado` o do dia; a coluna Total sai "29 de 82".
+   Os dois "falta" continuam com sentidos distintos e a legenda diz: 29 é a soma por dia (parte
+   se resolve adiantando a produção de 19/09 para 18/09), 23 é o que falta mesmo adiantando. Recurso `expedicao` (ver/importar): PCP
    e Logística importam, Direção vê.
    **Recorte por CARGA** (19/09/2026, pedido do Arion: "selecionar as cargas e ver a demanda
    daquelas cargas apenas, não o geral — que aí eu consigo dar prioridade nos materiais não
