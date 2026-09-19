@@ -717,6 +717,20 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    543 sem carga = 82% dos bags — continuam na fila e o cartão do recorte diz isso. Achado de
    passagem: `soTransferencia` não entrava em `temFiltro`/`limparFiltros` (o botão "Limpar
    filtros" não aparecia); corrigido junto com `cargaSel`.
+   **A ordem que cobre a linha aparece com nº e status** (19/09/2026, pedido do Arion: "não dá
+   pra colocar o status da ordem?"). Caso real: a Expedição dizia "aguardando produção — 2 bg a
+   produzir" para O790 IPRO · FTZ ELITE, e ele não achava a ordem; era a **148734**, 19 bags,
+   já com **Qualidade apontada** — os bags existiam, mas o saldo do SAP (subido às 09:10 do
+   mesmo dia) ainda não os trazia, porque a ordem não tinha sido apontada no AGROTIS. "Atende"
+   é reservado a estoque físico no SAP (regra de 07/08), então tudo que só tem ordem cai em
+   "aguardando produção", mesmo produzido. Agora `ProducaoPrevista` leva `numero` e
+   `status` (só exibição), `SaldoExpedicao.producao` é `OrdemPrevista[]` com os dois, e a
+   tela lista as ordens embaixo da etiqueta na consolidada (`OrdensDaLinha`: nº · status ·
+   bags · dia), nos avisos de texto (`ordensCurto`) e na coluna "Já programado" do recorte por
+   carga. `bagsProduzidosSemApontar` soma as ordens em `STATUS_PRODUZIDO` (Finalizada,
+   Qualidade apontada); quando cobrem o que falta, a etiqueta vira **"produzido · falta
+   apontar"** em vez de "aguardando produção", e o aviso diz o caminho: apontar no AGROTIS e
+   subir o saldo do SAP de novo.
    **Filial do pedido e transferência de saldo** (13/09/2026, pedido do Arion: "para pedido
    de outra filial é necessário solicitar a transferência de saldo em estoque"). O relatório
    de agendados tem coluna FILIAL, mas ela vem **vazia** (289/289 em 10/09); a filial só existe

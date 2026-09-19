@@ -437,6 +437,9 @@ export interface ProducaoPrevista {
    * estão no galpão: o caso feliz da regra virando alarme falso.
    */
   iniciada?: boolean
+  /** Só para a tela mostrar QUAL ordem cobre a linha (19/09/2026): nº e status efetivo. */
+  numero?: string
+  status?: string
 }
 
 /**
@@ -465,6 +468,15 @@ export interface AlocacaoCaminhao<T> {
    */
   cobertoEstoque: number
   descoberto: number
+}
+
+/** Uma ordem aberta da combinação, como o saldo a guarda — com nº e status para a tela. */
+export interface OrdemPrevista {
+  bags: number
+  dataProg: string | null
+  iniciada: boolean
+  numero: string | null
+  status: string | null
 }
 
 export interface SaldoExpedicao<T extends CarregamentoLinha = CarregamentoLinha> {
@@ -503,7 +515,7 @@ export interface SaldoExpedicao<T extends CarregamentoLinha = CarregamentoLinha>
    * mandar abrir ordem duplicada. Vazio em SEM TSI: semente branca não
    * passa pela máquina.
    */
-  producao: { bags: number; dataProg: string | null; iniciada: boolean }[]
+  producao: OrdemPrevista[]
 }
 
 /**
@@ -663,6 +675,8 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
         bags: p.bags,
         dataProg: p.dataProg,
         iniciada: p.iniciada === true,
+        numero: p.numero ?? null,
+        status: p.status ?? null,
       }))
     }
     s.saldo = arred2(s.estoque + s.producaoPrevista - s.agendado)
@@ -688,6 +702,24 @@ export function situacaoSaldo(s: SaldoExpedicao<CarregamentoLinha>): SituacaoSal
   if (s.deficitPrazo > 0) return 'adiantar'
   if (!s.semTsi && s.estoque < s.agendado) return 'aguardando-producao'
   return 'atende'
+}
+
+/** Ordem que já saiu da máquina: os bags existem, só não estão no saldo do SAP ainda. */
+export const STATUS_PRODUZIDO: readonly string[] = ['Finalizada', 'Qualidade apontada']
+
+/**
+ * Bags das ordens da linha que JÁ FORAM PRODUZIDAS e ainda não viraram
+ * estoque no SAP (19/09/2026). Caso real: a 148734 (O790 IPRO · FTZ ELITE)
+ * estava com qualidade apontada, 19 bags no galpão, e a tela dizia
+ * "aguardando produção — 2 bg a produzir" porque o saldo do SAP ainda não
+ * a enxergava. O rótulo certo é "produzido, falta apontar".
+ */
+export function bagsProduzidosSemApontar(s: SaldoExpedicao<CarregamentoLinha>): number {
+  return arred2(
+    s.producao
+      .filter((p) => p.status != null && STATUS_PRODUZIDO.includes(p.status))
+      .reduce((t, p) => t + p.bags, 0),
+  )
 }
 
 // ================================================================
@@ -940,6 +972,8 @@ export interface ItemRecorte {
   cargas: string[]
   /** Situação do PRODUTO inteiro (todas as cargas) — a tela rotula como tal. */
   situacao: SituacaoSaldo
+  /** As ordens abertas do produto, com nº e status, para a coluna "Já programado". */
+  ordens: OrdemPrevista[]
   /**
    * O que a fila entregou ANTES do primeiro caminhão desta seleção, para a
    * tela poder responder "para onde foi o estoque". Aproximação explicativa
@@ -1007,6 +1041,7 @@ export function recorteDaSelecao<T extends CarregamentoLinha>(
       precisaAte: meus.map((c) => c.data).filter((d): d is string => d != null).sort()[0] ?? null,
       cargas: cargas.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })),
       situacao: situacaoSaldo(s),
+      ordens: s.producao,
       antes: { outrasCargas: arred2(antes.outrasCargas), semCarga: arred2(antes.semCarga) },
     })
   }

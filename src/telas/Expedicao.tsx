@@ -7,6 +7,7 @@ import * as g from '@/dados/api-gestao'
 import type { AgendamentoBanco } from '@/dados/api-gestao'
 import {
   agendadoPorTipo,
+  bagsProduzidosSemApontar,
   cargasAgendadas,
   converterAgendados,
   ehRelatorioAgendados,
@@ -20,6 +21,7 @@ import {
   SEM_TSI,
   type AlocacaoCaminhao,
   type LadoTipoVenda,
+  type OrdemPrevista,
 } from '@/dominio/expedicao'
 import { EMBALAGEM_DEPARA } from '@/dominio/importacao/simpleagro'
 import { jaIniciada } from '@/dominio/status'
@@ -209,6 +211,8 @@ export default function Expedicao() {
             // ordem que a produção já tocou é material garantido — inclusive a
             // ADIANTADA, cuja data programada continua no futuro
             iniciada: jaIniciada(o.status_efetivo as StatusEfetivo),
+            numero: o.numero,
+            status: o.status_efetivo,
           })),
         new Date().toISOString().slice(0, 10),
         // desempate estável entre caminhões do MESMO dia: sem ele quem leva o
@@ -638,9 +642,7 @@ export default function Expedicao() {
                           {p.descoberto > 0 ? inteiro(p.descoberto) : '—'}
                         </td>
                         <td className="hidden px-2 py-1.5 text-xs lg:table-cell">
-                          {p.programado > 0
-                            ? `${inteiro(p.programado)} bg · ${p.programadoAte ? diaCurto(p.programadoAte) : 'sem dia'}${p.rodando ? ' · rodando' : ''}`
-                            : '—'}
+                          {p.ordens.length === 0 ? '—' : <OrdensDaLinha ordens={p.ordens} />}
                         </td>
                         <td className="hidden px-2 py-1.5 lg:table-cell">
                           <Tag
@@ -712,7 +714,7 @@ export default function Expedicao() {
               <Aviso gravidade="alerta">
                 <b>{precisamAdiantar.length} produto(s) só atendem adiantando a produção:</b>{' '}
                 {precisamAdiantar
-                  .map((s) => `${s.cultivar} · ${s.tratamento} (adiantar ≥ ${inteiro(s.deficitPrazo)} bg)`)
+                  .map((s) => `${s.cultivar} · ${s.tratamento} (adiantar ≥ ${inteiro(s.deficitPrazo)} bg${ordensCurto(s.producao)})`)
                   .join(' — ')}.
                 Vale marcar essas ordens como urgentes na Programação.
               </Aviso>
@@ -721,12 +723,17 @@ export default function Expedicao() {
           {aguardando.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="alerta">
-                <b>{aguardando.length} produto(s) sem estoque pronto</b> — dependem de
-                produção programada (no prazo):{' '}
+                <b>{aguardando.length} produto(s) sem estoque pronto no SAP</b> — dependem de
+                ordem aberta:{' '}
                 {aguardando
-                  .map((s) => `${s.cultivar} · ${s.tratamento} (${inteiro(s.agendado - s.estoque)} bg a produzir)`)
+                  .map((s) => {
+                    const precisa = s.agendado - s.estoque
+                    const jaFeito = bagsProduzidosSemApontar(s) >= precisa
+                    return `${s.cultivar} · ${s.tratamento} (${inteiro(precisa)} bg ${jaFeito ? "já produzidos, falta apontar" : "a produzir"}${ordensCurto(s.producao)})`
+                  })
                   .join(' — ')}.
-                O caminhão só carrega se essas ordens rodarem.
+                Ordem que ainda não rodou precisa rodar; ordem que já rodou precisa ser apontada no
+                AGROTIS e o saldo do SAP subir de novo para a linha virar "atende".
               </Aviso>
             </div>
           )}
@@ -912,12 +919,19 @@ export default function Expedicao() {
                           ) : situacao === 'adiantar' ? (
                             <Tag cor="alerta">adiantar ≥ {inteiro(s.deficitPrazo)} bg</Tag>
                           ) : situacao === 'aguardando-producao' ? (
-                            <span title={`${inteiro(s.agendado - s.estoque)} bags dependem de produção ainda não realizada (programada no prazo)`}>
-                              <Tag cor="info">aguardando produção</Tag>
-                            </span>
+                            bagsProduzidosSemApontar(s) >= s.agendado - s.estoque ? (
+                              <span title="As ordens já rodaram: os bags existem, mas o saldo do SAP ainda não os traz. Aponte no AGROTIS e suba o saldo de novo.">
+                                <Tag cor="info">produzido · falta apontar</Tag>
+                              </span>
+                            ) : (
+                              <span title={`${inteiro(s.agendado - s.estoque)} bags dependem de ordem que ainda não rodou (programada no prazo)`}>
+                                <Tag cor="info">aguardando produção</Tag>
+                              </span>
+                            )
                           ) : (
                             <Tag cor="ok">atende</Tag>
                           )}
+                          {!s.semTsi && <OrdensDaLinha ordens={s.producao} />}
                         </td>
                       </tr>
                     )
@@ -1082,6 +1096,37 @@ export default function Expedicao() {
         </>
       )}
     </Pagina>
+  )
+}
+
+/** "— ordem 148734 · Qualidade apontada" para os avisos de texto corrido. */
+const ordensCurto = (ordens: OrdemPrevista[]): string =>
+  ordens.length === 0
+    ? ''
+    : ' — ' + (ordens.length === 1 ? 'ordem ' : 'ordens ') +
+      ordens.map((o) => `${o.numero ?? 'sem nº'} · ${o.status ?? '?'}`).join(', ')
+
+/**
+ * As ordens que cobrem uma linha, com nº e status (19/09/2026, pedido do
+ * Arion: "não dá pra colocar o status da ordem?"). Antes a tela dizia
+ * "aguardando produção" para uma ordem já com qualidade apontada — os bags
+ * existiam, só não estavam no saldo do SAP — e ninguém achava a ordem.
+ */
+function OrdensDaLinha({ ordens }: { ordens: OrdemPrevista[] }) {
+  if (ordens.length === 0) return null
+  const lista = [...ordens].sort((a, b) => (a.dataProg ?? '9999').localeCompare(b.dataProg ?? '9999'))
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs text-stone-500 dark:text-stone-400">
+      {lista.map((o, i) => (
+        <li key={`${o.numero ?? 'sem'}|${i}`} className="whitespace-nowrap">
+          <span className="num-tabular font-medium text-stone-700 dark:text-stone-200">
+            {o.numero ?? 'sem nº'}
+          </span>
+          {' · '}{o.status ?? '—'}{' · '}{inteiro(o.bags)} bg
+          {o.dataProg ? ` · ${diaCurto(o.dataProg)}` : ' · sem dia'}
+        </li>
+      ))}
+    </ul>
   )
 }
 

@@ -5,6 +5,7 @@ import {
   converterMontagemCarga,
   ehRelatorioAgendados,
   ehRelatorioMontagemCarga,
+  bagsProduzidosSemApontar,
   cargasAgendadas,
   faltaPorProduto,
   recorteDaSelecao,
@@ -894,6 +895,40 @@ describe('recorte por carga (19/09/2026)', () => {
       Object.fromEntries(s[0].caminhoes.map((c) => [c.caminhao.carga, c.coberto]))
     expect(cob(s1)).toEqual(cob(s2))
     expect(cob(s1)).toEqual({ '10': 30, '20': 10 })
+  })
+
+  it('a ordem prevista chega na tela com numero e status', () => {
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10', data: '2026-09-18', bags: 2 })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 19, dataProg: '2026-09-18',
+         iniciada: true, numero: '148734', status: 'Qualidade apontada' }],
+      '2026-09-19',
+    )
+    expect(s[0].producao).toEqual([
+      { bags: 19, dataProg: '2026-09-18', iniciada: true, numero: '148734', status: 'Qualidade apontada' },
+    ])
+    const r = recorteDaSelecao(s, daCarga('10'), (c) => c.carga)
+    expect(r.produtos[0].ordens[0].numero).toBe('148734')
+  })
+
+  it('produzido sem apontar: so Finalizada e Qualidade apontada contam', () => {
+    // o caso real da O790 IPRO · FTZ ELITE (19/09/2026): 2 bg agendados, 0 no
+    // SAP, ordem de 19 bg já com qualidade apontada — a tela dizia "a produzir"
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10', data: '2026-09-18', bags: 2 })],
+      [], [],
+      [
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 19, dataProg: '2026-09-18', iniciada: true, numero: '148734', status: 'Qualidade apontada' },
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 7, dataProg: '2026-09-20', iniciada: false, numero: '148800', status: 'Programada' },
+        { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 5, dataProg: '2026-09-18', iniciada: true, numero: '148801', status: 'Em producao' },
+      ],
+      '2026-09-19',
+    )
+    expect(situacaoSaldo(s[0])).toBe('aguardando-producao')
+    expect(bagsProduzidosSemApontar(s[0])).toBe(19)
+    // cobre os 2 bg que faltam: a etiqueta certa é "produzido · falta apontar"
+    expect(bagsProduzidosSemApontar(s[0]) >= s[0].agendado - s[0].estoque).toBe(true)
   })
 
   it('cargasAgendadas agrupa datas, clientes e status, e ignora quem nao tem carga', () => {
