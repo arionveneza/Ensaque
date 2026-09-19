@@ -239,8 +239,11 @@ da lista `ignorar` do `fn_ordens_por_acao` (mudar exige `ordens/editar`, como cl
 fora do `fn_ordem_imutavel` porque não entra em cálculo nenhum — mas hoje só é editável
 pelo formulário, enquanto a ordem não foi iniciada (`MATRIZ_STATUS.editar`); corrigir a
 data do caminhão em ordem já rodada ficou como próximo passo (item no menu de ações, ao
-lado do renumerar). Aparece na lista (coluna **Destaque**, junto da etiqueta urgente, e na
-sub-linha do tablet), no detalhe, na folha impressa, no .xlsx e na folha do quadro. A
+lado do renumerar). Aparece na lista (coluna **Destaque**, numa vaga fixa DEPOIS da
+etiqueta urgente — a vaga da etiqueta existe em toda linha, vazia quando normal, para o
+"exp." nunca mudar de coluna: pedido do Arion de 19/09/2026, "mantenha o expedição sempre
+no mesmo local, mesmo quando não tenha o card de urgente" — e na sub-linha do tablet), no
+detalhe, na folha impressa, no .xlsx e na folha do quadro. A
 `v_ordens` enumera colunas: coluna nova entra **no fim** do `select` (é a única forma que
 `create or replace view` aceita). **Recriar view = repetir `alter view … set
 (security_invoker = true)` e conferir no fim**: `create or replace view` zera as

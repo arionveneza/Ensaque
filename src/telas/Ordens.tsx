@@ -3059,8 +3059,16 @@ function FragmentoDia({
                     {/* max-w-full: sem isso o inline-flex cresce até o texto
                         inteiro do cliente e o truncate do filho nunca elipsa */}
                     <span className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap">
-                      {o.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
-                      {o.data_expedicao && (
+                      {/* vaga FIXA da etiqueta urgente, em toda linha (vazia
+                          quando normal): sem ela o "exp." andava pra esquerda
+                          nas linhas sem urgência e a coluna não alinhava —
+                          pedido do Arion, 19/09/2026: "mantenha o expedição
+                          sempre no mesmo local, mesmo quando não tenha o card
+                          de urgente". w-16 = largura da etiqueta "urgente". */}
+                      <span className="inline-flex w-16 shrink-0 items-center">
+                        {o.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
+                      </span>
+                      {o.data_expedicao ? (
                         <span
                           className={`text-xs ${
                             o.data_prog && o.data_prog > o.data_expedicao
@@ -3075,8 +3083,7 @@ function FragmentoDia({
                         >
                           exp. {diaCurto(o.data_expedicao)}
                         </span>
-                      )}
-                      {o.prioridade !== 'Urgente' && !o.data_expedicao && (
+                      ) : (
                         <span className="truncate">{o.cliente ?? '—'}</span>
                       )}
                     </span>
