@@ -10,6 +10,17 @@ export const STATUS_CONCLUIDOS = ['Finalizada', 'Qualidade apontada', 'Apontada'
 export const ehConcluida = (status: string): boolean =>
   (STATUS_CONCLUIDOS as readonly string[]).includes(status)
 
+/** O ciclo de vida, na ordem — é por ela que a coluna Status ordena. */
+export const CICLO_STATUS = [
+  'Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
+  'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada', 'Apontada',
+] as const
+
+const posNoCiclo = (s: string): number => {
+  const i = (CICLO_STATUS as readonly string[]).indexOf(s)
+  return i < 0 ? CICLO_STATUS.length : i
+}
+
 /** O que a lista precisa de uma ordem para ordenar e numerar. */
 export interface OrdemDoQuadro {
   id: string
@@ -19,10 +30,11 @@ export interface OrdemDoQuadro {
   bags: number
   peso_t: number
   status_efetivo: string
+  data_expedicao: string | null
 }
 
 /** Colunas ordenáveis da lista. */
-export type CampoQuadro = 'cultivar' | 'tratamento' | 'bags' | 'peso'
+export type CampoQuadro = 'cultivar' | 'tratamento' | 'bags' | 'peso' | 'expedicao' | 'status'
 
 export interface GruposDoDia<T> {
   rodando: T[]
@@ -63,6 +75,20 @@ export function exibicaoDoDia<T extends { status_efetivo: string }>(
 }
 
 /**
+ * O grupo dentro do qual as setas ▲▼ trocam a ordem de lugar: só com o
+ * vizinho do MESMO status. Rodando e concluída não se movem (lista vazia).
+ */
+export function grupoMovel<T extends { status_efetivo: string }>(grupos: GruposDoDia<T>, x: T): T[] {
+  return x.status_efetivo === 'Pronto para produzir'
+    ? grupos.pronto
+    : x.status_efetivo === 'Aguardando lote'
+      ? grupos.aguardando
+      : x.status_efetivo === 'Programada'
+        ? grupos.programada
+        : []
+}
+
+/**
  * Posição de exibição (1..n) de cada ordem — a numeração que o cartão
  * mostra. A lista a calcula da fila PADRÃO, nunca do índice da tabela
  * ordenada: ordenar por cultivar não pode renumerar a fila.
@@ -77,23 +103,29 @@ export function posicoesDeExibicao<T extends { id: string; status_efetivo: strin
 
 /**
  * Linhas da lista: nulo = a exibição padrão dos cartões; senão pelo campo,
- * com empate pelo nº da ordem (pt-BR numérico). SÓ VISÃO — o seq não muda,
- * e por isso a lista não tem ▲▼.
+ * com empate pelo nº da ordem (pt-BR numérico). SÓ VISÃO — o seq não muda.
+ * Expedição: quem não tem data fica SEMPRE no fim, em asc e em desc (data
+ * é o que se procura; "sem data" não é "a maior"). Status: na ordem do
+ * ciclo de vida, não alfabética.
  */
 export function ordenarQuadroDoDia<T extends OrdemDoQuadro>(
   fila: readonly T[],
   ordenacao: Ordenacao<CampoQuadro>,
 ): T[] {
   if (!ordenacao) return exibicaoDoDia(fila).exibicao
-  return ordenarPor(
-    fila,
-    ordenacao,
-    {
-      cultivar: (a, b) => porNome(a.cultivar, b.cultivar),
-      tratamento: (a, b) => porNome(a.receita_nome, b.receita_nome),
-      bags: (a, b) => porNumero(a.bags, b.bags),
-      peso: (a, b) => porNumero(a.peso_t, b.peso_t),
-    },
-    (a, b) => porNome(a.numero, b.numero),
-  )
+  const porNumeroDaOrdem = (a: T, b: T) => porNome(a.numero, b.numero)
+  const comparadores = {
+    cultivar: (a: T, b: T) => porNome(a.cultivar, b.cultivar),
+    tratamento: (a: T, b: T) => porNome(a.receita_nome, b.receita_nome),
+    bags: (a: T, b: T) => porNumero(a.bags, b.bags),
+    peso: (a: T, b: T) => porNumero(a.peso_t, b.peso_t),
+    expedicao: (a: T, b: T) => (a.data_expedicao ?? '').localeCompare(b.data_expedicao ?? ''),
+    status: (a: T, b: T) => porNumero(posNoCiclo(a.status_efetivo), posNoCiclo(b.status_efetivo)),
+  }
+  if (ordenacao.campo === 'expedicao') {
+    const comData = fila.filter((x) => x.data_expedicao)
+    const semData = [...fila.filter((x) => !x.data_expedicao)].sort(porNumeroDaOrdem)
+    return [...ordenarPor(comData, ordenacao, comparadores, porNumeroDaOrdem), ...semData]
+  }
+  return ordenarPor(fila, ordenacao, comparadores, porNumeroDaOrdem)
 }

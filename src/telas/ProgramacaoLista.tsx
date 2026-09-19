@@ -13,13 +13,14 @@ import type { StatusEfetivo } from '@/dominio/tipos'
  * tratamento e tonelada? […] Quase como um Excel").
  *
  * Só apresentação: a fila chega por seq (a ordem REAL), o agrupamento e a
- * ordenação vêm do domínio (`quadroDoDia`), e prioridade/mover/abrir são
- * callbacks da Programação — a mesma lógica dos cartões, sem duplicar.
- * Ordenar pelo cabeçalho é só visão: a coluna Seq continua mostrando a
- * posição real da fila, calculada da fila padrão e não do índice da tabela
- * ordenada, e o seq gravado não muda. Por isso aqui NÃO há ▲▼ nem arraste —
- * "subir" uma linha numa tabela ordenada por cultivar seria ambíguo; para
- * isso existem os cartões.
+ * ordenação vêm do domínio (`quadroDoDia`), e as ações (prioridade, mover,
+ * urgente, ▲▼, abrir) são callbacks da Programação — a mesma lógica dos
+ * cartões, sem duplicar; mexer num modo reflete no outro porque os dois
+ * leem a mesma fila. Ordenar pelo cabeçalho é só visão: a coluna Seq
+ * continua mostrando a posição real da fila, calculada da fila padrão e não
+ * do índice da tabela ordenada, e o seq gravado não muda. As setas ▲▼ só
+ * funcionam na ordem padrão (numa tabela ordenada por cultivar, "subir" uma
+ * linha seria ambíguo) — a mesma trava que os cartões têm com o filtro.
  */
 export interface PropsListaMaquinaDia {
   titulo: ReactNode
@@ -32,12 +33,20 @@ export interface PropsListaMaquinaDia {
   visivel: (o: OrdemVisao) => boolean
   filtroAtivo: boolean
   onLimparFiltro: () => void
+  /** Ordenação DESTA máquina (cada tabela tem a sua — pedido do Arion). */
   ordenacao: Ordenacao<CampoQuadro>
   onOrdenar: (campo: CampoQuadro) => void
   podeProgramar: boolean
+  /** Ação ordens/priorizar — o botão "urgente". */
+  podeMarcarUrgente: boolean
   onAbrir: (id: string) => void
   abrindoId: string | null
   onPrioridade: (ord: OrdemVisao) => void
+  onAlternarUrgente: (ord: OrdemVisao) => void
+  /** ▲▼: posição da ordem no seu grupo de status (as setas só trocam dentro do grupo). */
+  posicaoNoGrupo: (ord: OrdemVisao) => { pos: number; tamanho: number }
+  onSubir: (ord: OrdemVisao) => void
+  onDescer: (ord: OrdemVisao) => void
   movendoId: string | null
   onAlternarMover: (ord: OrdemVisao) => void
   /** O PainelMover da Programação, aberto numa linha extra abaixo da ordem. */
@@ -48,9 +57,12 @@ export interface PropsListaMaquinaDia {
 const COLUNAS_SEMPRE = 10
 const COLUNAS_SO_LG = 2
 
+const BOTAO = 'rounded border px-3 py-2 text-xs uppercase tracking-wide lg:px-1.5 lg:py-0.5 lg:text-[10px]'
+
 export function ListaMaquinaDia({
   titulo, acoes, resumo, fila, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar,
-  podeProgramar, onAbrir, abrindoId, onPrioridade, movendoId, onAlternarMover, painelMover,
+  podeProgramar, podeMarcarUrgente, onAbrir, abrindoId, onPrioridade, onAlternarUrgente,
+  posicaoNoGrupo, onSubir, onDescer, movendoId, onAlternarMover, painelMover,
 }: PropsListaMaquinaDia) {
   const posicao = posicoesDeExibicao(fila)
   const linhas = ordenarQuadroDoDia(fila, ordenacao).filter(visivel)
@@ -60,6 +72,12 @@ export function ListaMaquinaDia({
   })
   const totBags = linhas.reduce((a, o) => a + o.bags, 0)
   const totT = linhas.reduce((a, o) => a + o.peso_t, 0)
+  const setasTravadas = ordenacao != null || filtroAtivo
+  const dicaSetas = ordenacao != null
+    ? 'Volte à ordem padrão (clique de novo no cabeçalho) para reordenar com as setas'
+    : filtroAtivo
+      ? 'Limpe o filtro para reordenar com as setas'
+      : undefined
 
   return (
     <Cartao titulo={titulo} acoes={acoes}>
@@ -75,24 +93,27 @@ export function ListaMaquinaDia({
         /* larguraFixa: são várias tabelas SEPARADAS, uma por máquina,
            empilhadas — sem table-fixed cada uma calcula as colunas pelo
            próprio conteúdo e Bags/Peso da TSI 1 não ficam embaixo dos da
-           TSI 2 (o achado do Arion de 26/08/2026 na Logística). Toda coluna
-           de conteúdo previsível tem largura; Cultivar e Tratamento ficam
-           com o que sobra. */
+           TSI 2 (o achado do Arion de 26/08/2026 na Logística). TODA coluna
+           tem largura (com folga pro cabeçalho em maiúsculas + a seta):
+           deixar Cultivar/Tratamento "com o que sobra" as esmagava a 23 px
+           num monitor de 1280, porque table-fixed + w-full não deixa a
+           tabela crescer; com largura própria a tabela passa da caixa e
+           rola de lado, que é o comportamento da lista de Ordens. */
         <Tabela
           larguraFixa
           cabecalho={[
             { texto: '#Seq', className: 'w-12' },
             { texto: 'Ordem', className: 'w-24' },
-            col('Cultivar', 'cultivar'),
-            col('Tratamento', 'tratamento'),
+            col('Cultivar', 'cultivar', 'w-36'),
+            col('Tratamento', 'tratamento', 'w-36'),
             { texto: 'Emb.', className: 'hidden w-20 lg:table-cell' },
             { texto: 'Lote', className: 'hidden w-36 lg:table-cell' },
-            col('#Bags', 'bags', 'w-14'),
-            col('#Peso', 'peso', 'w-16'),
-            { texto: 'Expedição', className: 'w-16' },
+            col('#Bags', 'bags', 'w-20'),
+            col('#Peso', 'peso', 'w-20'),
+            col('Expedição', 'expedicao', 'w-28'),
             { texto: 'Urgente', className: 'w-20' },
-            { texto: 'Status', className: 'w-52' },
-            { texto: '', className: 'w-40' },
+            col('Status', 'status', 'w-52'),
+            { texto: '', className: 'w-60' },
           ]}
           rodape={
             <tr className="border-t border-stone-300 text-xs dark:border-stone-700">
@@ -111,6 +132,8 @@ export function ListaMaquinaDia({
             const concluida = ehConcluida(ord.status_efetivo)
             const movivel = podeProgramar && !jaIniciada(ord.status_efetivo as StatusEfetivo)
             const atrasada = !!ord.data_expedicao && !!ord.data_prog && ord.data_prog > ord.data_expedicao
+            const { pos, tamanho } = posicaoNoGrupo(ord)
+            const urgente = ord.prioridade === 'Urgente'
             return (
               <Fragment key={ord.id}>
                 <tr
@@ -163,11 +186,7 @@ export function ListaMaquinaDia({
                     {ord.data_expedicao ? diaCurto(ord.data_expedicao) : '—'}
                   </td>
                   <td className="px-2 py-1.5 align-middle">
-                    {ord.prioridade === 'Urgente' ? (
-                      <Tag cor="perigo">urgente</Tag>
-                    ) : (
-                      <span className="text-xs text-stone-400">normal</span>
-                    )}
+                    {urgente ? <Tag cor="perigo">urgente</Tag> : <span className="text-xs text-stone-400">normal</span>}
                   </td>
                   <td className="px-2 py-1.5 align-middle whitespace-nowrap">
                     {/* vaga fixa do P{n} da faixa de prioridades, como no cartão */}
@@ -203,7 +222,7 @@ export function ListaMaquinaDia({
                             ? 'Tirar da faixa de prioridades do dia'
                             : 'Pôr no fim da faixa de prioridades do dia'
                         }
-                        className={`rounded border px-3 py-2 text-xs uppercase tracking-wide hover:bg-amber-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] ${
+                        className={`${BOTAO} hover:bg-amber-100 ${
                           ord.prioridade_dia != null
                             ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
                             : 'border-stone-300 text-stone-500 dark:border-stone-600 dark:hover:bg-stone-700'
@@ -216,10 +235,47 @@ export function ListaMaquinaDia({
                         tabIndex={movivel ? 0 : -1}
                         onClick={() => onAlternarMover(ord)}
                         title="Mover para outro dia ou máquina"
-                        className="rounded border border-stone-300 px-3 py-2 text-xs uppercase tracking-wide text-stone-500 hover:bg-stone-100 lg:px-1.5 lg:py-0.5 lg:text-[10px] dark:border-stone-600 dark:hover:bg-stone-700"
+                        className={`${BOTAO} border-stone-300 text-stone-500 hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700`}
                       >
                         mover
                       </button>
+                      {podeMarcarUrgente && (
+                        <button
+                          type="button"
+                          tabIndex={movivel ? 0 : -1}
+                          onClick={() => onAlternarUrgente(ord)}
+                          title={urgente ? 'Voltar a normal' : 'Marcar como urgente'}
+                          className={`${BOTAO} ${
+                            urgente
+                              ? 'border-red-400 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300'
+                              : 'border-stone-300 text-stone-500 hover:bg-red-50 dark:border-stone-600 dark:hover:bg-stone-700'
+                          }`}
+                        >
+                          urgente
+                        </button>
+                      )}
+                      <span className="inline-flex flex-col">
+                        <button
+                          type="button"
+                          tabIndex={movivel ? 0 : -1}
+                          disabled={setasTravadas || pos <= 0}
+                          title={dicaSetas}
+                          onClick={() => onSubir(ord)}
+                          className="px-1 text-sm leading-none disabled:opacity-20 lg:text-xs"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={movivel ? 0 : -1}
+                          disabled={setasTravadas || pos < 0 || pos >= tamanho - 1}
+                          title={dicaSetas}
+                          onClick={() => onDescer(ord)}
+                          className="px-1 text-sm leading-none disabled:opacity-20 lg:text-xs"
+                        >
+                          ▼
+                        </button>
+                      </span>
                     </span>
                   </td>
                 </tr>

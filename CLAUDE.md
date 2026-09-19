@@ -681,12 +681,19 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    o `PainelMover` abre numa linha extra). Os cartões ficam atrás do botão "cartões" — único
    lugar com arrastar, ▲▼ e a faixa Prioridades do dia. **Ordenar pelo cabeçalho é só visão**
    (`ordenarQuadroDoDia` em `src/dominio/quadroDoDia.ts` sobre `src/dominio/ordenacao.ts`:
-   pt-BR numérico, empate pelo nº sempre asc; um estado só para todas as máquinas, como no
-   Excel; ciclo asc→desc→padrão): o `seq` gravado não muda — por isso a lista **não tem ▲▼**,
-   "subir" uma linha numa tabela ordenada por cultivar seria a ambiguidade das setas com
-   filtro. `exibicaoDoDia` (rodando → pronto → aguardando → programada → concluídas; status
-   desconhecido cai em programada, nunca some) saiu do JSX do cartão para o domínio e vale nos
-   dois modos. Total (bags · t) no `<tfoot>` — `Tabela` ganhou `rodape`, porque `children` cai
+   pt-BR numérico, empate pelo nº sempre asc; ciclo asc→desc→padrão; **por máquina** — a 1ª
+   versão tinha um estado só e "quando eu classifico uma, a de baixo classifica também";
+   Expedição com sem-data sempre no fim, Status na ordem do ciclo de vida): o `seq` gravado
+   não muda. **A lista tem as mesmas ações do cartão** (2ª rodada, pedido dele: "as mesmas
+   funcionalidades do card e uma alteração em um sempre refletir no outro" — refletem porque
+   os dois leem a mesma fila): prioridade, mover, **urgente** (botão novo nos DOIS modos,
+   `definirPrioridade`, ação `ordens/priorizar`) e **▲▼** (`trocarComVizinho` — o mesmo
+   helper do cartão; na lista as setas ficam travadas com ordenação por coluna ativa ou
+   filtro, pela mesma ambiguidade das setas com filtro nos cartões). **Otimizar sequência**
+   zera a ordenação da máquina antes de gravar: numa tabela ordenada por cultivar o novo seq
+   não aparecia — "o botão parece que não funciona". `exibicaoDoDia` (rodando → pronto →
+   aguardando → programada → concluídas; status desconhecido cai em programada, nunca some)
+   e `grupoMovel` saíram do JSX do cartão para o domínio e valem nos dois modos. Total (bags · t) no `<tfoot>` — `Tabela` ganhou `rodape`, porque `children` cai
    dentro do `<tbody>`. Linhas do painel de mover e do total somam colSpan 12 em `lg` e 10
    abaixo (`<td hidden lg:table-cell colSpan=2>`, como em Ordens) — um `colSpan` único cria
    coluna-fantasma no tablet. As tabelas por máquina usam **`larguraFixa`** com largura em

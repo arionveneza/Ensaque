@@ -24,7 +24,7 @@ import {
 import { useRealtime } from '@/dados/useRealtime'
 import { alternarNaFaixa, faixaDe, listaAposArraste, moverNaFaixa, semDaFaixa } from '@/dominio/prioridadesDia'
 import { alternarOrdenacao, type Ordenacao } from '@/dominio/ordenacao'
-import { ehConcluida, exibicaoDoDia, type CampoQuadro } from '@/dominio/quadroDoDia'
+import { ehConcluida, exibicaoDoDia, grupoMovel, type CampoQuadro } from '@/dominio/quadroDoDia'
 import ModalOrdem from './ModalOrdem'
 import { ListaMaquinaDia } from './ProgramacaoLista'
 import { jaIniciada } from '@/dominio/status'
@@ -60,6 +60,8 @@ type Alvo = { maq: string; dia: string; pos: number | null } | null
 export default function Programacao() {
   const { usuario, permitido } = useAuth()
   const podeProgramar = permitido('programacao', 'editar')
+  /** Botão "urgente" no cartão e na lista (19/09/2026) — a mesma ação Priorizar da tela de Ordens. */
+  const podeMarcarUrgente = permitido('ordens', 'priorizar')
 
   const [inicio, setInicio] = useState(() => diaDeProducao(new Date()))
   const [diaSel, setDiaSel] = useState(() => diaDeProducao(new Date()))
@@ -106,8 +108,15 @@ export default function Programacao() {
    * botão, para arrastar, ▲▼ e a faixa de prioridades.
    */
   const [modoQuadro, setModoQuadro] = useState<'lista' | 'cartoes'>('lista')
-  /** Ordenação da lista — UMA para todas as máquinas, como no Excel; só visão, o seq não muda. */
-  const [ordenacaoLista, setOrdenacaoLista] = useState<Ordenacao<CampoQuadro>>(null)
+  /**
+   * Ordenação da lista, POR MÁQUINA (a 1ª versão tinha um estado só e "quando
+   * eu classifico uma, a de baixo classifica também" — Arion, 19/09/2026).
+   * Só visão: o seq não muda.
+   */
+  const [ordenacaoPorMaquina, setOrdenacaoPorMaquina] = useState<Record<string, Ordenacao<CampoQuadro>>>({})
+  const ordenarMaquina = (maq: string, campo: CampoQuadro) =>
+    setOrdenacaoPorMaquina((a) => ({ ...a, [maq]: alternarOrdenacao(a[maq] ?? null, campo) }))
+  const semOrdenacao = (maq: string) => setOrdenacaoPorMaquina((a) => ({ ...a, [maq]: null }))
   /**
    * Detalhe da ordem (ModalOrdem) aberto a partir da lista. Motivos e
    * produtos já vinham do carregarCadastros e eram descartados; embalagens
@@ -358,8 +367,13 @@ export default function Programacao() {
     </p>
   )
 
-  /** "Otimizar sequência" — no cartão e na lista (não é arraste; o PCP usa no tablet). */
-  const botaoOtimizar = (lista: OrdemVisao[]) =>
+  /**
+   * "Otimizar sequência" — no cartão e na lista (não é arraste; o PCP usa no
+   * tablet). Na lista, zera a ordenação por coluna daquela máquina: a
+   * otimização regrava o seq, e numa tabela ordenada por cultivar nada se
+   * mexia — "o botão parece que não funciona" (Arion, 19/09/2026).
+   */
+  const botaoOtimizar = (lista: OrdemVisao[], maq: string) =>
     podeProgramar && lista.length > 1 ? (
       <Botao
         titulo="Agrupa receitas iguais para reduzir trocas, mantendo urgentes na frente"
@@ -369,6 +383,7 @@ export default function Programacao() {
               .filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
               .map((x) => programaveis.find((p) => p.id === x.id)!)
               .filter(Boolean)
+            semOrdenacao(maq)
             await g.aplicarAtribuicoes(otimizarSequencia(fila))
           })
         }
@@ -400,6 +415,33 @@ export default function Programacao() {
       }}
     />
   )
+
+  /** Posição da ordem no seu grupo de status — as setas ▲▼ só trocam dentro do grupo. */
+  const posicaoNoGrupo = (lista: OrdemVisao[], ord: OrdemVisao) => {
+    const grupo = grupoMovel(exibicaoDoDia(lista).grupos, ord)
+    return { pos: grupo.indexOf(ord), tamanho: grupo.length }
+  }
+
+  /**
+   * ▲▼ — troca com o vizinho do MESMO grupo (mesmo status) e regrava a fila
+   * inteira; o mesmo clique no cartão e na lista. Trocar com o vizinho
+   * literal da fila real pareceria não fazer nada (ele pode estar rodando ou
+   * concluído, desenhado noutra parte da tela).
+   */
+  const trocarComVizinho = (maq: string, dia: string, lista: OrdemVisao[], ord: OrdemVisao, delta: -1 | 1) => {
+    const grupo = grupoMovel(exibicaoDoDia(lista).grupos, ord)
+    const vizinho = grupo[grupo.indexOf(ord) + delta]
+    if (!vizinho) return
+    const copia = [...lista]
+    const iA = copia.indexOf(ord)
+    const iB = copia.indexOf(vizinho)
+    ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
+    return comErro(() => g.aplicarAtribuicoes(renumerar(maq, dia, copia)))
+  }
+
+  /** Urgente ↔ normal (ação ordens/priorizar) — o mesmo clique no cartão e na lista. */
+  const alternarUrgente = (ord: OrdemVisao) =>
+    comErro(() => g.definirPrioridade(ord.id, ord.prioridade === 'Urgente' ? 'Normal' : 'Urgente', usuario!.id))
 
   /** Trocar de modo zera o que era do outro: painel de mover aberto e estados de arraste. */
   const trocarModoQuadro = (md: 'lista' | 'cartoes') => {
@@ -1062,18 +1104,23 @@ export default function Programacao() {
               <ListaMaquinaDia
                 key={m.id}
                 titulo={`${m.nome} · ${diaSemana(diaSel)} ${diaCurto(diaSel)}`}
-                acoes={botaoOtimizar(lista)}
+                acoes={botaoOtimizar(lista, m.id)}
                 resumo={resumoOcupacao(ocupacaoCelula(m.id, diaSel))}
                 fila={lista}
                 visivel={visivel}
                 filtroAtivo={filtroStatus.size > 0}
                 onLimparFiltro={() => setFiltroStatus(new Set())}
-                ordenacao={ordenacaoLista}
-                onOrdenar={(c) => setOrdenacaoLista((a) => alternarOrdenacao(a, c))}
+                ordenacao={ordenacaoPorMaquina[m.id] ?? null}
+                onOrdenar={(c) => ordenarMaquina(m.id, c)}
                 podeProgramar={podeProgramar}
+                podeMarcarUrgente={podeMarcarUrgente}
                 onAbrir={abrirOrdem}
                 abrindoId={abrindoId}
                 onPrioridade={(ord) => alternarPrioridadeDia(m.id, diaSel, lista, ord)}
+                onAlternarUrgente={alternarUrgente}
+                posicaoNoGrupo={(ord) => posicaoNoGrupo(lista, ord)}
+                onSubir={(ord) => trocarComVizinho(m.id, diaSel, lista, ord, -1)}
+                onDescer={(ord) => trocarComVizinho(m.id, diaSel, lista, ord, 1)}
                 movendoId={movendo}
                 onAlternarMover={(ord) => setMovendo(movendo === ord.id ? null : ord.id)}
                 painelMover={(ord) => painelMoverDe(ord, m.id)}
@@ -1110,19 +1157,12 @@ export default function Programacao() {
            */
           const { exibicao, inicioConcluidas, grupos } = exibicaoDoDia(lista)
           const concluidas = grupos.concluidas
-          const grupoMovelDe = (x: OrdemVisao) =>
-            x.status_efetivo === 'Pronto para produzir'
-              ? grupos.pronto
-              : x.status_efetivo === 'Aguardando lote'
-                ? grupos.aguardando
-                : x.status_efetivo === 'Programada'
-                  ? grupos.programada
-                  : []
+          const grupoMovelDe = (x: OrdemVisao) => grupoMovel(grupos, x)
           return (
             <Cartao
               key={m.id}
               titulo={`${m.nome} · ${diaSemana(diaSel)} ${diaCurto(diaSel)}`}
-              acoes={botaoOtimizar(lista)}
+              acoes={botaoOtimizar(lista, m.id)}
             >
               {resumoOcupacao(o)}
 
@@ -1429,6 +1469,20 @@ export default function Programacao() {
                             >
                               mover
                             </button>
+                            {podeMarcarUrgente && (
+                              <button
+                                tabIndex={movivel ? 0 : -1}
+                                onClick={() => alternarUrgente(ord)}
+                                title={ord.prioridade === 'Urgente' ? 'Voltar a normal' : 'Marcar como urgente'}
+                                className={`rounded border px-3 py-2 text-xs uppercase tracking-wide lg:px-1.5 lg:py-0.5 lg:text-[10px] ${
+                                  ord.prioridade === 'Urgente'
+                                    ? 'border-red-400 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300'
+                                    : 'border-stone-300 text-stone-500 hover:bg-red-50 dark:border-stone-600 dark:hover:bg-stone-700'
+                                }`}
+                              >
+                                urgente
+                              </button>
+                            )}
                             {/* as setas trocam com o vizinho do MESMO GRUPO
                                 (mesmo status), não com o vizinho literal da
                                 lista real — que agora pode ser uma ordem já
@@ -1445,16 +1499,7 @@ export default function Programacao() {
                                 tabIndex={movivel ? 0 : -1}
                                 disabled={posNoGrupo <= 0 || filtroStatus.size > 0}
                                 title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
-                                onClick={() =>
-                                  comErro(async () => {
-                                    const vizinho = grupo[posNoGrupo - 1]
-                                    const copia = [...lista]
-                                    const iA = copia.indexOf(ord)
-                                    const iB = copia.indexOf(vizinho)
-                                    ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
-                                    await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
-                                  })
-                                }
+                                onClick={() => trocarComVizinho(m.id, diaSel, lista, ord, -1)}
                                 className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
                               >
                                 ▲
@@ -1463,16 +1508,7 @@ export default function Programacao() {
                                 tabIndex={movivel ? 0 : -1}
                                 disabled={posNoGrupo < 0 || posNoGrupo === grupo.length - 1 || filtroStatus.size > 0}
                                 title={filtroStatus.size > 0 ? 'Limpe o filtro para reordenar com as setas' : undefined}
-                                onClick={() =>
-                                  comErro(async () => {
-                                    const vizinho = grupo[posNoGrupo + 1]
-                                    const copia = [...lista]
-                                    const iA = copia.indexOf(ord)
-                                    const iB = copia.indexOf(vizinho)
-                                    ;[copia[iA], copia[iB]] = [copia[iB], copia[iA]]
-                                    await g.aplicarAtribuicoes(renumerar(m.id, diaSel, copia))
-                                  })
-                                }
+                                onClick={() => trocarComVizinho(m.id, diaSel, lista, ord, 1)}
                                 className="p-2 text-sm leading-none disabled:opacity-20 lg:p-0 lg:text-xs"
                               >
                                 ▼

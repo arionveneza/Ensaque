@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { ehConcluida, exibicaoDoDia, ordenarQuadroDoDia, posicoesDeExibicao } from './quadroDoDia'
+import { ehConcluida, exibicaoDoDia, grupoMovel, ordenarQuadroDoDia, posicoesDeExibicao } from './quadroDoDia'
 
-const o = (id: string, status_efetivo: string, extra: Partial<{ cultivar: string; receita_nome: string; bags: number; peso_t: number }> = {}) => ({
+const o = (
+  id: string,
+  status_efetivo: string,
+  extra: Partial<{ cultivar: string; receita_nome: string; bags: number; peso_t: number; data_expedicao: string | null }> = {},
+) => ({
   id,
   numero: id,
   status_efetivo,
@@ -9,6 +13,7 @@ const o = (id: string, status_efetivo: string, extra: Partial<{ cultivar: string
   receita_nome: 'FTZ60',
   bags: 10,
   peso_t: 8.5,
+  data_expedicao: null as string | null,
   ...extra,
 })
 
@@ -47,6 +52,14 @@ describe('exibicaoDoDia', () => {
   it('ehConcluida cobre os tres status finais', () => {
     expect(['Finalizada', 'Qualidade apontada', 'Apontada'].every(ehConcluida)).toBe(true)
     expect(ehConcluida('Em producao')).toBe(false)
+  })
+
+  it('grupoMovel: as setas so trocam dentro do proprio status; rodando e concluida nao se movem', () => {
+    const { grupos } = exibicaoDoDia(fila)
+    expect(grupoMovel(grupos, fila[4]).map((x) => x.id)).toEqual(['5'])
+    expect(grupoMovel(grupos, fila[0]).map((x) => x.id)).toEqual(['1'])
+    expect(grupoMovel(grupos, fila[2])).toEqual([])
+    expect(grupoMovel(grupos, fila[1])).toEqual([])
   })
 })
 
@@ -91,9 +104,27 @@ describe('ordenarQuadroDoDia', () => {
     expect(ordenarQuadroDoDia(lista, { campo: 'bags', dir: 'asc' }).map((x) => x.id)).toEqual(['1', '3', '2'])
   })
 
+  it('expedicao: por data, e quem nao tem data fica no fim em asc E em desc', () => {
+    const lista = [
+      o('semB', 'Programada'),
+      o('21', 'Programada', { data_expedicao: '2026-09-21' }),
+      o('semA', 'Programada'),
+      o('18', 'Programada', { data_expedicao: '2026-09-18' }),
+    ]
+    expect(ordenarQuadroDoDia(lista, { campo: 'expedicao', dir: 'asc' }).map((x) => x.id)).toEqual(['18', '21', 'semA', 'semB'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'expedicao', dir: 'desc' }).map((x) => x.id)).toEqual(['21', '18', 'semA', 'semB'])
+  })
+
+  it('status: na ordem do ciclo de vida, nao alfabetica; desconhecido por ultimo', () => {
+    const lista = [o('f', 'Finalizada'), o('x', 'Zzz'), o('e', 'Em producao'), o('p', 'Programada'), o('a', 'Aguardando lote')]
+    expect(ordenarQuadroDoDia(lista, { campo: 'status', dir: 'asc' }).map((x) => x.id)).toEqual(['p', 'a', 'e', 'f', 'x'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'status', dir: 'desc' }).map((x) => x.id)).toEqual(['x', 'f', 'e', 'a', 'p'])
+  })
+
   it('nao altera a fila recebida', () => {
     const antes = fila.map((x) => x.id)
     ordenarQuadroDoDia(fila, { campo: 'cultivar', dir: 'desc' })
+    ordenarQuadroDoDia(fila, { campo: 'expedicao', dir: 'desc' })
     expect(fila.map((x) => x.id)).toEqual(antes)
   })
 })
