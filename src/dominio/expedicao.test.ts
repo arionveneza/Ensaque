@@ -5,7 +5,10 @@ import {
   converterMontagemCarga,
   ehRelatorioAgendados,
   ehRelatorioMontagemCarga,
+  cargasAgendadas,
   faltaPorProduto,
+  recorteDaSelecao,
+  resumoDoGrupo,
   normalizaLinhasXlsx,
   normalizaTratamento,
   resumoPorTipoVenda,
@@ -316,7 +319,7 @@ describe('saldo dinamico da expedicao', () => {
   it('a hierarquia: falta > adiantar > aguardando', () => {
     const base = {
       cultivar: 'X', tratamento: 'T', embalagem: 'BG5M', producaoPrevista: 0, semTsi: false,
-      caminhoes: [],
+      caminhoes: [], producao: [],
     }
     expect(situacaoSaldo({ ...base, agendado: 10, estoque: 0, deficitPrazo: 10, saldo: -5 })).toBe('falta')
     expect(situacaoSaldo({ ...base, agendado: 10, estoque: 0, deficitPrazo: 10, saldo: 0 })).toBe('adiantar')
@@ -759,5 +762,160 @@ describe('alocacao por caminhao e visao por tipo de venda', () => {
     const t = resumoPorTipoVenda(r, (c) => c.cooperado)
     expect(t.cooperado.descoberto).toBe(0)
     expect(t.outras.descoberto).toBe(8)
+  })
+})
+
+describe('recorte por carga (19/09/2026)', () => {
+  type AgC = CarregamentoLinha & { id: string; cooperado: boolean; carga: string | null }
+  const agc = (over: Partial<AgC> = {}): AgC => ({
+    id: 'x', cooperado: false, carga: null, cultivar: 'NEO700 I2X', tratamento: 'FTZ60',
+    embalagem: 'BG5M', bags: 10, data: '2026-09-10', ...over,
+  })
+  const pa = (bags: number) => [
+    { cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags },
+  ]
+  const daCarga = (...cargas: (string | null)[]) => (c: AgC) => cargas.includes(c.carga)
+
+  it('sem predicado, faltaPorProduto continua exatamente como era', () => {
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10', data: '2026-09-08' }), agc({ id: 'b', carga: '20', data: '2026-09-12' })],
+      [], pa(12), [],
+    )
+    expect(faltaPorProduto(s, () => true)).toEqual(faltaPorProduto(s))
+  })
+
+  it('a carga que vem DEPOIS fica descoberta, mesmo com estoque no total', () => {
+    // o caso que o recorte existe para não mentir: estoque 12 cobre a de 08,
+    // e a de 12 fica com 8 descobertos — recortar não devolve o estoque
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10', data: '2026-09-08' }), agc({ id: 'b', carga: '20', data: '2026-09-12' })],
+      [], pa(12), [],
+    )
+    expect(resumoDoGrupo(s, daCarga('20')).descoberto).toBe(8)
+    expect(resumoDoGrupo(s, daCarga('10')).descoberto).toBe(0)
+    expect(resumoDoGrupo(s, daCarga('10', '20')).descoberto).toBe(8)
+  })
+
+  it('a soma dos recortes de uma particao da o total, por produto e por data', () => {
+    const s = saldosExpedicao(
+      [
+        agc({ id: 'a', carga: '10', data: '2026-09-08' }),
+        agc({ id: 'b', carga: '20', data: '2026-09-10' }),
+        agc({ id: 'c', carga: null, data: '2026-09-09' }),
+      ],
+      [], pa(11), [],
+    )
+    const total = faltaPorProduto(s)[0]
+    const partes = [daCarga('10'), daCarga('20'), daCarga(null)].map((p) => faltaPorProduto(s, p))
+    const soma = partes.reduce((t, p) => t + (p[0]?.descoberto ?? 0), 0)
+    expect(soma).toBe(total.descoberto)
+    // e por data: 09 e 10 ficam descobertas, 08 não
+    const porData = new Map(total.datas.map((d) => [d.data, d.descoberto]))
+    const somaData = new Map<string | null, number>()
+    for (const p of partes) {
+      for (const d of p[0]?.datas ?? []) somaData.set(d.data, (somaData.get(d.data) ?? 0) + d.descoberto)
+    }
+    expect([...somaData.entries()].sort()).toEqual([...porData.entries()].sort())
+  })
+
+  it('coberto pela producao programada NAO conta como material que existe', () => {
+    // é a diferença entre "a fila fecha" e "o bag está no galpão": sem isso,
+    // o produto some da lista de prioridade e ninguém manda produzir
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10', data: '2026-09-10' })],
+      [], [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, dataProg: '2026-09-09' }],
+      '2026-09-01',
+    )
+    expect(s[0].caminhoes[0].coberto).toBe(10)
+    expect(s[0].caminhoes[0].cobertoEstoque).toBe(0)
+    const r = recorteDaSelecao(s, daCarga('10'), (c) => c.carga)
+    expect(r.produtos[0].aProduzir).toBe(10)
+    expect(r.produtos[0].descoberto).toBe(0)
+    expect(r.produtos[0].programado).toBe(20)
+  })
+
+  it('cobertoEstoque distribui o estoque fisico na ordem da fila', () => {
+    const s = saldosExpedicao(
+      [
+        agc({ id: 'a', data: '2026-09-08', bags: 10 }),
+        agc({ id: 'b', data: '2026-09-10', bags: 10 }),
+        agc({ id: 'c', data: '2026-09-12', bags: 10 }),
+      ],
+      [], pa(15), [],
+    )
+    expect(s[0].caminhoes.map((c) => c.cobertoEstoque)).toEqual([10, 5, 0])
+    const soma = s[0].caminhoes.reduce((t, c) => t + c.cobertoEstoque, 0)
+    expect(soma).toBe(Math.min(15, 30))
+  })
+
+  it('mostra para quem o estoque foi antes desta selecao', () => {
+    const s = saldosExpedicao(
+      [
+        agc({ id: 'a', carga: null, data: '2026-09-08', bags: 40 }),
+        agc({ id: 'b', carga: '10', data: '2026-09-09', bags: 60 }),
+        agc({ id: 'c', carga: '20', data: '2026-09-10', bags: 60 }),
+      ],
+      [], pa(100), [],
+    )
+    const r = recorteDaSelecao(s, daCarga('20'), (c) => c.carga)
+    expect(r.produtos[0].antes).toEqual({ outrasCargas: 60, semCarga: 40 })
+    expect(r.produtos[0].temHoje).toBe(0)
+    expect(r.produtos[0].aProduzir).toBe(60)
+  })
+
+  it('o recorte nao muta os saldos', () => {
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10' }), agc({ id: 'b', carga: '20' })],
+      [], pa(5), [],
+    )
+    const antes = JSON.stringify(s)
+    recorteDaSelecao(s, daCarga('10'), (c) => c.carga)
+    expect(JSON.stringify(s)).toBe(antes)
+  })
+
+  it('SEM TSI sai marcado: semente branca nao passa pela maquina', () => {
+    const s = saldosExpedicao(
+      [agc({ id: 'a', carga: '10', tratamento: 'SEM TSI' })],
+      [{ cultivar: 'NEO700 I2X', bags: 3 }], [], [],
+    )
+    const r = recorteDaSelecao(s, daCarga('10'), (c) => c.carga)
+    expect(r.produtos[0].semTsi).toBe(true)
+    expect(r.produtos[0].aProduzir).toBe(7)
+  })
+
+  it('empate de data nao depende da ordem de entrada quando ha desempate', () => {
+    const d = (c: AgC) => c.carga ?? ''
+    const a = agc({ id: 'a', carga: '10', data: '2026-09-10', bags: 30 })
+    const b = agc({ id: 'b', carga: '20', data: '2026-09-10', bags: 30 })
+    const s1 = saldosExpedicao([a, b], [], pa(40), [], null, d)
+    const s2 = saldosExpedicao([b, a], [], pa(40), [], null, d)
+    const cob = (s: typeof s1) =>
+      Object.fromEntries(s[0].caminhoes.map((c) => [c.caminhao.carga, c.coberto]))
+    expect(cob(s1)).toEqual(cob(s2))
+    expect(cob(s1)).toEqual({ '10': 30, '20': 10 })
+  })
+
+  it('cargasAgendadas agrupa datas, clientes e status, e ignora quem nao tem carga', () => {
+    const cargas = cargasAgendadas([
+      { carga: '20', data: '2026-09-18', bags: 10, cliente: 'FAZENDA A', statusCarga: 'Em carga' },
+      { carga: '20', data: '2026-09-17', bags: 5, cliente: 'FAZENDA B', statusCarga: 'Em carga' },
+      { carga: '9', data: '2026-09-17', bags: 7, cliente: 'FAZENDA C', statusCarga: 'Agendado' },
+      { carga: null, data: '2026-09-17', bags: 99, cliente: 'X', statusCarga: null },
+    ])
+    expect(cargas.map((c) => c.carga)).toEqual(['9', '20'])
+    const c20 = cargas.find((c) => c.carga === '20')!
+    expect(c20.datas).toEqual(['2026-09-17', '2026-09-18'])
+    expect(c20.clientes).toEqual(['FAZENDA A', 'FAZENDA B'])
+    expect(c20.bags).toBe(15)
+    expect(c20.linhas).toBe(2)
+  })
+
+  it('carga com dois status devolve os dois, sem escolher calado', () => {
+    const cargas = cargasAgendadas([
+      { carga: '7', data: '2026-09-17', bags: 1, cliente: null, statusCarga: 'Em carga' },
+      { carga: '7', data: '2026-09-17', bags: 1, cliente: null, statusCarga: 'Carregado' },
+    ])
+    expect(cargas[0].status).toEqual(['Em carga', 'Carregado'])
   })
 })

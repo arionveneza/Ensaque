@@ -684,6 +684,39 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    dia do caminhão; nenhum bag contado duas vezes — a soma das datas é o descoberto do
    produto; dia que não aparece não tem falta. Recurso `expedicao` (ver/importar): PCP
    e Logística importam, Direção vê.
+   **Recorte por CARGA** (19/09/2026, pedido do Arion: "selecionar as cargas e ver a demanda
+   daquelas cargas apenas, não o geral — que aí eu consigo dar prioridade nos materiais não
+   produzidos"; decisões dele: seleciona pelo número da carga, e o estoque **continua
+   reservado para as cargas anteriores**). A regra que estrutura tudo: **a seleção NÃO entra
+   em `filtrados`**. Todo filtro da tela é aplicado ANTES da fila e quem sai devolve o
+   estoque que consumia — se a carga entrasse ali, marcar a 822 mostraria o estoque inteiro
+   livre para ela, ignorando as cargas de ontem. Então a fila roda com o período inteiro e a
+   seleção só recorta o que se soma, pelo mesmo mecanismo do "por tipo de venda":
+   `recorteDaSelecao(saldos, incluir, cargaDe)` e `faltaPorProduto(saldos, incluir?)` recebem
+   um predicado sobre `c.caminhao`; `resumoDoGrupo` virou o motor comum dos dois recortes.
+   Três coisas que a crítica do desenho achou e entraram junto: (1) **desempate estável na
+   mesma data** — `alocarFila` ordenava só por data e, no empate, quem levava o estoque era
+   a ordem em que o Postgres devolveu as linhas (invisível somado por produto, veredito quando
+   se olha uma carga, e trocava de dono a cada reimportação); a tela passa
+   `carga|identificador` como chave, o padrão vazio preserva o de sempre; (2)
+   **`AlocacaoCaminhao.cobertoEstoque`** separa o coberto por estoque físico do coberto por
+   ordem que ainda não rodou — "coberto" pela produção programada é justamente o que precisa ir
+   para a máquina, e sumia da lista; a coluna **A produzir** = pedem − tem hoje; (3)
+   `SaldoExpedicao.producao` guarda as ordens abertas da combinação (já eram calculadas e
+   se perdiam) para a coluna "Já programado · para quando" e **Sem ordem** (a produzir −
+   programado: o que abrir hoje). O cartão "Cargas selecionadas · o que a máquina precisa
+   entregar" ordena por Sem ordem, depois pelo caminhão mais próximo; mostra para onde o
+   estoque foi antes da seleção (`ItemRecorte.antes`: outras cargas × linhas sem carga, o que
+   a fila serviu antes do PRIMEIRO caminhão da seleção — explicação, nunca conta); SEM TSI sai
+   marcado "lote de semente" porque semente branca não passa pela máquina; a situação do
+   PRODUTO inteiro fica numa coluna rotulada, nunca tinge a linha (mentiria nas duas pontas).
+   Seletor em lista com busca (32 cargas viram parede em chip), montado sobre `filtrados`
+   — carga marcada que os filtros tiraram aparece como aviso, não como recorte vazio. A
+   **carga saiu da busca livre**: buscar "822" filtrava ANTES da fila e dava a resposta oposta
+   do recorte, na mesma tela. Dado de 17/09: 647 linhas vivas, só 104 com carga (32 cargas),
+   543 sem carga = 82% dos bags — continuam na fila e o cartão do recorte diz isso. Achado de
+   passagem: `soTransferencia` não entrava em `temFiltro`/`limparFiltros` (o botão "Limpar
+   filtros" não aparecia); corrigido junto com `cargaSel`.
    **Filial do pedido e transferência de saldo** (13/09/2026, pedido do Arion: "para pedido
    de outra filial é necessário solicitar a transferência de saldo em estoque"). O relatório
    de agendados tem coluna FILIAL, mas ela vem **vazia** (289/289 em 10/09); a filial só existe

@@ -7,10 +7,12 @@ import * as g from '@/dados/api-gestao'
 import type { AgendamentoBanco } from '@/dados/api-gestao'
 import {
   agendadoPorTipo,
+  cargasAgendadas,
   converterAgendados,
   ehRelatorioAgendados,
   faltaPorProduto,
   normalizaLinhasXlsx,
+  recorteDaSelecao,
   resumoPorTipoVenda,
   saldosExpedicao,
   situacaoSaldo,
@@ -79,6 +81,17 @@ export default function Expedicao() {
   const [fEmbalagem, setFEmbalagem] = useState('')
   const [busca, setBusca] = useState('')
   const [soTransferencia, setSoTransferencia] = useState(false)
+  /**
+   * Recorte por CARGA (19/09/2026, pedido do Arion: "selecionar as cargas e
+   * ver a demanda daquelas cargas apenas"). NÃO entra em `filtrados`: se
+   * entrasse, as outras cargas sairiam da fila e devolveriam o estoque que
+   * já consumiram — a carga escolhida ficaria verde por engano. A fila
+   * continua com todo o período; a seleção só recorta o que se soma.
+   */
+  const [cargaSel, setCargaSel] = useState<Set<string>>(new Set())
+  const [painelCargas, setPainelCargas] = useState(false)
+  const [buscaCarga, setBuscaCarga] = useState('')
+  const [soSelecao, setSoSelecao] = useState(false)
 
   const recarregar = useCallback(async () => {
     const [a, l, e, o, f] = await Promise.all([
@@ -144,7 +157,11 @@ export default function Expedicao() {
         if (soTransferencia && !transferencia(a).precisa) return false
         if (busca.trim()) {
           const q = busca.trim().toLowerCase()
-          const alvo = `${a.cliente ?? ''} ${a.pedido ?? ''} ${a.carga ?? ''} ${a.identificador} ${a.cidade ?? ''} ${a.estado ?? ''} ${transferencia(a).filial ?? ''}`.toLowerCase()
+          // a CARGA saiu daqui de propósito (19/09/2026): buscar por carga
+          // filtrava ANTES da fila e devolvia o estoque das outras — dois
+          // jeitos de "filtrar por carga" com respostas opostas na mesma
+          // tela. Para carga existe o recorte, que não mexe na conta.
+          const alvo = `${a.cliente ?? ''} ${a.pedido ?? ''} ${a.identificador} ${a.cidade ?? ''} ${a.estado ?? ''} ${transferencia(a).filial ?? ''}`.toLowerCase()
           if (!alvo.includes(q)) return false
         }
         return true
@@ -194,8 +211,37 @@ export default function Expedicao() {
             iniciada: jaIniciada(o.status_efetivo as StatusEfetivo),
           })),
         new Date().toISOString().slice(0, 10),
+        // desempate estável entre caminhões do MESMO dia: sem ele quem leva o
+        // estoque é a ordem em que o banco devolveu as linhas, e o veredito de
+        // uma carga mudava a cada reimportação (19/09/2026)
+        (a) => `${a.carga ?? ''}|${a.identificador}`,
       ),
     [filtrados, lotes, estoquePa, ordens],
+  )
+
+  /** As cargas montadas que estão na fila do período — o que dá para recortar. */
+  const cargas = useMemo(
+    () =>
+      cargasAgendadas(
+        filtrados.map((a) => ({
+          carga: a.carga, data: a.data, bags: a.bags,
+          cliente: a.cliente, statusCarga: a.status_carga,
+        })),
+      ),
+    [filtrados],
+  )
+  /** Linhas sem carga: seguem disputando o estoque na fila, mas não dá para marcá-las. */
+  const semCarga = useMemo(() => {
+    const linhas = filtrados.filter((a) => (a.carga ?? '').trim() === '')
+    return { linhas: linhas.length, bags: linhas.reduce((t, a) => t + a.bags, 0) }
+  }, [filtrados])
+
+  const temSelecao = cargaSel.size > 0
+  const naSelecao = useCallback((a: AgendamentoBanco) => cargaSel.has((a.carga ?? '').trim()), [cargaSel])
+  /** Marcada mas fora do período/filtros atuais — senão o recorte fica vazio sem explicação. */
+  const selecaoForaDoPeriodo = useMemo(
+    () => [...cargaSel].filter((c) => !cargas.some((x) => x.carga === c)),
+    [cargaSel, cargas],
   )
 
   const porTipo = useMemo(() => resumoPorTipoVenda(saldos, (a) => a.cooperado), [saldos])
@@ -209,11 +255,42 @@ export default function Expedicao() {
   )
 
   /** Falta por produto × data (16/09/2026): a mesma fila, item nas linhas e as datas do período nas colunas. */
-  const faltaProdutos = useMemo(() => faltaPorProduto(saldos), [saldos])
-  /** Todas as datas com caminhão no período filtrado (colunas da grade), sem data primeiro. */
+  const faltaProdutos = useMemo(
+    () => faltaPorProduto(saldos, temSelecao ? naSelecao : undefined),
+    [saldos, temSelecao, naSelecao],
+  )
+  /** Todas as datas com caminhão no recorte em vista (colunas da grade), sem data primeiro. */
   const datasDoPeriodo = useMemo(
-    () => [...new Set(saldos.flatMap((s) => s.caminhoes.map((c) => c.data ?? '')))].sort(),
-    [saldos],
+    () =>
+      [
+        ...new Set(
+          saldos.flatMap((s) =>
+            s.caminhoes
+              .filter((c) => !temSelecao || naSelecao(c.caminhao))
+              .map((c) => c.data ?? ''),
+          ),
+        ),
+      ].sort(),
+    [saldos, temSelecao, naSelecao],
+  )
+  /** A lista que vai para a produção: o que estas cargas pedem e ainda não existe. */
+  const recorte = useMemo(
+    () => (temSelecao ? recorteDaSelecao(saldos, naSelecao, (a) => a.carga) : null),
+    [saldos, temSelecao, naSelecao],
+  )
+  /** O denominador honesto: tudo que está disputando o estoque no período. */
+  const bagsNaFila = useMemo(() => filtrados.reduce((t, a) => t + a.bags, 0), [filtrados])
+  const cargasVisiveis = useMemo(() => {
+    const q = buscaCarga.trim().toLowerCase()
+    if (!q) return cargas
+    return cargas.filter((c) =>
+      (c.carga + " " + c.clientes.join(" ") + " " + c.status.join(" ")).toLowerCase().includes(q),
+    )
+  }, [cargas, buscaCarga])
+  /** Com o recorte ligado, a lista do fim pode mostrar só o que foi marcado. */
+  const listaVisivel = useMemo(
+    () => (temSelecao && soSelecao ? filtrados.filter(naSelecao) : filtrados),
+    [filtrados, temSelecao, soSelecao, naSelecao],
   )
 
   const faltas = saldos.filter((s) => situacaoSaldo(s) === 'falta')
@@ -232,7 +309,11 @@ export default function Expedicao() {
   const temFiltro =
     !!(de || ate || fCultivar || fTratamento || fEmbalagem || busca.trim()) ||
     tipoSel.size !== tiposExistentes.length ||
-    statusSel.size !== statusExistentes.length
+    statusSel.size !== statusExistentes.length ||
+    // faltavam os dois (achado de 19/09/2026): com só um deles ligado o botão
+    // "Limpar filtros" não aparecia, e o recorte ficava ativo e invisível
+    soTransferencia ||
+    temSelecao
 
   function limparFiltros() {
     setDe('')
@@ -243,6 +324,9 @@ export default function Expedicao() {
     setBusca('')
     setTipoSel(new Set(tiposExistentes))
     setStatusSel(new Set(statusExistentes))
+    setSoTransferencia(false)
+    setCargaSel(new Set())
+    setSoSelecao(false)
   }
 
   const alternar = (setter: Dispatch<SetStateAction<Set<string>>>, valor: string) =>
@@ -364,7 +448,7 @@ export default function Expedicao() {
                 </select>
               </label>
               <label className="min-w-44 flex-1 text-xs text-stone-500">
-                Cliente, pedido, carga, cidade…
+                Cliente, pedido, cidade…
                 <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="buscar" className={`${CAMPO} mt-1 block w-full`} />
               </label>
               {temFiltro && <Botao onClick={limparFiltros}>Limpar filtros</Botao>}
@@ -401,7 +485,216 @@ export default function Expedicao() {
             </div>
           </Cartao>
 
+          {/* ---------------- recorte por carga (19/09/2026) ---------------- */}
+          <Cartao
+            titulo="Recorte por carga"
+            className="mb-5"
+            acoes={
+              <div className="flex flex-wrap items-center gap-2">
+                {temSelecao && (
+                  <Botao onClick={() => { setCargaSel(new Set()); setSoSelecao(false) }}>Limpar recorte</Botao>
+                )}
+                <Botao
+                  variante={painelCargas ? 'normal' : 'primario'}
+                  onClick={() => setPainelCargas((v) => !v)}
+                  disabled={cargas.length === 0}
+                >
+                  {painelCargas ? 'Fechar lista' : temSelecao ? 'Trocar cargas' : 'Escolher cargas'}
+                </Botao>
+              </div>
+            }
+          >
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              A fila <b>não muda</b>: as cargas que vêm antes continuam pegando o estoque primeiro.
+              Aqui você vê só a fatia destas cargas — é o que precisa sair da máquina para elas.
+            </p>
+            {temSelecao ? (
+              <p className="mt-2 text-sm">
+                <b>{cargaSel.size} carga(s) marcada(s)</b> · {inteiro(recorte?.agendado ?? 0)} bg
+                {" de "}{inteiro(bagsNaFila)} bg na fila do período
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
+                {cargas.length === 0
+                  ? 'Nenhuma carga montada no período filtrado — só demanda sem caminhão.'
+                  : 'Nenhuma carga marcada: a tela está mostrando o período inteiro.'}
+              </p>
+            )}
+            {selecaoForaDoPeriodo.length > 0 && (
+              <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+                {selecaoForaDoPeriodo.length} carga(s) marcada(s) estão fora dos filtros atuais
+                {' ('}{selecaoForaDoPeriodo.join(', ')}{')'} — limpe o período para vê-las.
+              </p>
+            )}
+            {painelCargas && (
+              <div className="mt-3 rounded-lg border border-stone-200 p-2 dark:border-stone-700">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    value={buscaCarga}
+                    onChange={(e) => setBuscaCarga(e.target.value)}
+                    placeholder="buscar carga, cliente, status…"
+                    className={`${CAMPO} w-60`}
+                  />
+                  <Botao onClick={() => setCargaSel(new Set(cargasVisiveis.map((c) => c.carga)))}>
+                    Marcar as visíveis
+                  </Botao>
+                  <Botao onClick={() => setCargaSel(new Set())}>Nenhuma</Botao>
+                  <span className="text-xs text-stone-400">
+                    {cargasVisiveis.length} de {cargas.length} cargas
+                  </span>
+                </div>
+                <div className="mt-2 max-h-80 overflow-y-auto">
+                  {cargasVisiveis.map((c) => (
+                    <label
+                      key={c.carga}
+                      className="flex cursor-pointer items-center gap-2 border-t border-stone-100 px-1 py-2 text-sm hover:bg-stone-50 dark:border-stone-800/60 dark:hover:bg-stone-800/40"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={cargaSel.has(c.carga)}
+                        onChange={() => alternar(setCargaSel, c.carga)}
+                        className="h-4 w-4 shrink-0"
+                      />
+                      <span className="num-tabular w-12 shrink-0 font-medium">{c.carga}</span>
+                      <span className="w-24 shrink-0 text-xs text-stone-500">
+                        {c.datas.map((d) => diaCurto(d)).join(' e ') || 'sem data'}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs">
+                        {c.clientes[0] ?? '—'}
+                        {c.clientes.length > 1 && ` +${c.clientes.length - 1}`}
+                      </span>
+                      <span className="num-tabular w-16 shrink-0 text-right text-xs">{inteiro(c.bags)} bg</span>
+                      <span className="hidden w-36 shrink-0 text-right text-xs text-stone-500 sm:block">
+                        {c.status.join(' / ') || '—'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {semCarga.linhas > 0 && (
+              <p className="mt-2 text-xs text-stone-400">
+                {semCarga.linhas} linha(s) ({inteiro(semCarga.bags)} bg) ainda não têm carga montada —
+                não dá para marcá-las, mas elas continuam disputando o estoque na fila.
+              </p>
+            )}
+          </Cartao>
+
+          {/* -------- o que a máquina precisa entregar para as cargas marcadas -------- */}
+          {recorte && (
+            <Cartao titulo="Cargas selecionadas · o que a máquina precisa entregar" className="mb-5">
+              {recorte.produtos.length === 0 ? (
+                <Vazio>As cargas marcadas não estão nos filtros atuais.</Vazio>
+              ) : (
+                <>
+                  <Tabela cabecalho={[
+                    'Cultivar', 'Tratamento',
+                    { texto: 'Emb.', className: 'hidden lg:table-cell' },
+                    'Precisa até', '#Pedem', '#Tem hoje', '#A produzir', '#Sem ordem',
+                    { texto: '#Não sai no dia', className: 'hidden lg:table-cell' },
+                    { texto: 'Já programado', className: 'hidden lg:table-cell' },
+                    { texto: 'Produto inteiro', className: 'hidden lg:table-cell' },
+                  ]}>
+                    {recorte.produtos.map((p) => (
+                      <tr
+                        key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`}
+                        className="border-t border-stone-100 dark:border-stone-800/60"
+                      >
+                        <td className="px-2 py-1.5 font-medium">{p.cultivar}</td>
+                        <td className="px-2 py-1.5">
+                          {p.semTsi ? 'SEM TSI' : p.tratamento}
+                          {p.semTsi && (
+                            <Tag cor="info" className="ml-1">lote de semente</Tag>
+                          )}
+                        </td>
+                        <td className="hidden px-2 py-1.5 text-xs lg:table-cell">{p.embalagem}</td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">
+                          {p.precisaAte ? diaCurto(p.precisaAte) : 'sem data'}
+                        </td>
+                        <td className="num-tabular px-2 py-1.5 text-right">{inteiro(p.agendado)}</td>
+                        <td
+                          className="num-tabular px-2 py-1.5 text-right"
+                          title={
+                            p.antes.outrasCargas + p.antes.semCarga > 0
+                              ? `Antes destas cargas a fila entregou ${inteiro(p.antes.outrasCargas)} bg a outras cargas e ${inteiro(p.antes.semCarga)} bg a linhas sem carga.`
+                              : undefined
+                          }
+                        >
+                          {inteiro(p.temHoje)}
+                        </td>
+                        <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                          {p.aProduzir > 0 ? (
+                            <span className="text-amber-700 dark:text-amber-400">{inteiro(p.aProduzir)}</span>
+                          ) : (
+                            <span className="text-green-700 dark:text-green-400">0</span>
+                          )}
+                        </td>
+                        <td className="num-tabular px-2 py-1.5 text-right font-semibold">
+                          {p.semOrdem > 0 ? (
+                            <span className="text-red-700 dark:text-red-400">{inteiro(p.semOrdem)}</span>
+                            ) : (<span className="text-stone-400">—</span>)}
+                        </td>
+                        <td className="hidden num-tabular px-2 py-1.5 text-right lg:table-cell">
+                          {p.descoberto > 0 ? inteiro(p.descoberto) : '—'}
+                        </td>
+                        <td className="hidden px-2 py-1.5 text-xs lg:table-cell">
+                          {p.programado > 0
+                            ? `${inteiro(p.programado)} bg · ${p.programadoAte ? diaCurto(p.programadoAte) : 'sem dia'}${p.rodando ? ' · rodando' : ''}`
+                            : '—'}
+                        </td>
+                        <td className="hidden px-2 py-1.5 lg:table-cell">
+                          <Tag
+                            cor={
+                              p.situacao === 'falta' ? 'perigo'
+                                : p.situacao === 'adiantar' ? 'alerta'
+                                : p.situacao === 'aguardando-producao' ? 'info' : 'ok'
+                            }
+                          >
+                            {p.situacao === 'falta' ? 'falta'
+                              : p.situacao === 'adiantar' ? 'adiantar'
+                              : p.situacao === 'aguardando-producao' ? 'aguardando produção' : 'atende'}
+                          </Tag>
+                        </td>
+                      </tr>
+                    ))}
+                  </Tabela>
+                  <p className="mt-3 text-sm">
+                    <b>{inteiro(recorte.aProduzir)} bags</b> a produzir para estas cargas
+                    {recorte.produtos.some((p) => p.semOrdem > 0) && (
+                      <>
+                        {", sendo "}
+                        <b className="text-red-700 dark:text-red-400">
+                          {inteiro(recorte.produtos.reduce((t, p) => t + p.semOrdem, 0))} bg sem nenhuma ordem aberta
+                        </b>
+                      </>
+                    )}
+                    .
+                  </p>
+                  {recorte.produtos.some((p) => p.antes.outrasCargas + p.antes.semCarga > 0) && (
+                    <p className="mt-1 text-xs text-stone-500">
+                      Em alguns produtos o estoque foi para quem vem antes na fila:{" "}
+                      {inteiro(recorte.produtos.reduce((t, p) => t + p.antes.outrasCargas, 0))} bg para outras
+                      cargas e {inteiro(recorte.produtos.reduce((t, p) => t + p.antes.semCarga, 0))} bg para
+                      linhas sem carga. Passe o mouse em "Tem hoje" para ver produto a produto.
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-stone-500">
+                    <b>A produzir</b> = o que estas cargas pedem menos o que já está no galpão para elas.
+                    {" "}<b>Sem ordem</b> = nem ordem aberta existe — é o que abrir hoje.
+                    {" "}<b>Não sai no dia</b> = nem com o programado a fila fecha no prazo.
+                    {" "}Já programado e Produto inteiro olham o produto todo, não só estas cargas.
+                  </p>
+                </>
+              )}
+            </Cartao>
+          )}
+
           {/* ---------------- o veredito ---------------- */}
+          {temSelecao && (faltas.length > 0 || precisamAdiantar.length > 0 || aguardando.length > 0) && (
+            <p className="mb-2 text-xs uppercase tracking-wide text-stone-500">
+              Abaixo, o total do período — todas as cargas
+            </p>
+          )}
           {faltas.length > 0 && (
             <div className="mb-5">
               <Aviso gravidade="bloqueio">
@@ -450,7 +743,7 @@ export default function Expedicao() {
           <Cartao
             titulo={`Quando vai faltar · ${
               de && ate ? `${diaCurto(de)} a ${diaCurto(ate)}` : de ? `a partir de ${diaCurto(de)}` : ate ? `até ${diaCurto(ate)}` : 'todas as datas'
-            }`}
+            }${temSelecao ? ' · só as cargas marcadas' : ''}`}
             className="mb-5"
           >
             {saldos.length === 0 ? (
@@ -667,8 +960,18 @@ export default function Expedicao() {
           </Cartao>
 
           {/* ---------------- agendamentos ---------------- */}
-          <Cartao titulo={`Agendamentos (${filtrados.length} de ${agendamentos.length})`} className="mb-5">
-            {filtrados.length === 0 ? (
+          <Cartao
+            titulo={`Agendamentos (${listaVisivel.length} de ${agendamentos.length})`}
+            className="mb-5"
+            acoes={
+              temSelecao ? (
+                <Chip ativo={soSelecao} onClick={() => setSoSelecao((v) => !v)}>
+                  só as cargas marcadas ({filtrados.filter(naSelecao).length})
+                </Chip>
+              ) : undefined
+            }
+          >
+            {listaVisivel.length === 0 ? (
               <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
             ) : (
               <Tabela cabecalho={[
@@ -683,13 +986,21 @@ export default function Expedicao() {
                 { texto: 'Carga', className: 'hidden lg:table-cell' },
                 '',
               ]}>
-                {[...filtrados]
+                {[...listaVisivel]
                   .sort((a, b) => (a.data ?? '').localeCompare(b.data ?? '') || (a.cliente ?? '').localeCompare(b.cliente ?? ''))
                   .map((a) => {
                     const al = alocacao.get(a.id)
                     const tr = transferencia(a)
+                    // com recorte ligado e a lista inteira à vista, a linha marcada
+                    // ganha destaque: dá para ver, nas vizinhas, quem vem antes dela
+                    const marcada = temSelecao && naSelecao(a)
                     return (
-                      <tr key={a.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <tr
+                        key={a.id}
+                        className={`border-t border-stone-100 dark:border-stone-800/60 ${
+                          marcada ? 'border-l-2 border-l-green-600 bg-green-50/60 dark:bg-green-950/20' : ''
+                        }`}
+                      >
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           {a.data ? diaCurto(a.data) : (
                             <span className="text-amber-600 dark:text-amber-400">sem data</span>

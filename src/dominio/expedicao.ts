@@ -456,6 +456,14 @@ export interface AlocacaoCaminhao<T> {
   data: string | null
   bags: number
   coberto: number
+  /**
+   * A parte do coberto que JÁ EXISTE no galpão: só o estoque físico,
+   * repartido na ordem da fila (19/09/2026). O resto do coberto depende de
+   * ordem que ainda não rodou — e é exatamente isso que precisa ir para a
+   * máquina. Sem separar os dois, um produto "coberto" pela produção
+   * programada some da lista de prioridade.
+   */
+  cobertoEstoque: number
   descoberto: number
 }
 
@@ -488,6 +496,14 @@ export interface SaldoExpedicao<T extends CarregamentoLinha = CarregamentoLinha>
    * resolveria os dois. SEM TSI: Σ descoberto = max(0, −saldo).
    */
   caminhoes: AlocacaoCaminhao<T>[]
+  /**
+   * As ordens abertas desta combinação (19/09/2026) — já eram calculadas
+   * para a linha do tempo e se perdiam. Servem para o recorte por carga
+   * dizer "já tem ordem para isso, programada para tal dia", em vez de
+   * mandar abrir ordem duplicada. Vazio em SEM TSI: semente branca não
+   * passa pela máquina.
+   */
+  producao: { bags: number; dataProg: string | null; iniciada: boolean }[]
 }
 
 /**
@@ -500,17 +516,31 @@ function alocarFila<T extends CarregamentoLinha>(
   fila: T[],
   estoque: number,
   garantidaAte: (dia: string | null) => number,
+  desempate: (c: T) => string = () => '',
 ): { pior: number; caminhoes: AlocacaoCaminhao<T>[] } {
-  const ordenada = [...fila].sort((a, b) => (a.data ?? '').localeCompare(b.data ?? ''))
+  /**
+   * Desempate na MESMA data (19/09/2026): sem ele, quem leva o estoque é a
+   * ordem em que o Postgres devolveu as linhas — invisível enquanto tudo
+   * era somado por produto, mas veredito na tela quando se olha uma carga
+   * só, e capaz de trocar de dono a cada reimportação. O padrão vazio
+   * preserva o comportamento de quem não passa nada.
+   */
+  const ordenada = [...fila].sort(
+    (a, b) => (a.data ?? '').localeCompare(b.data ?? '') || desempate(a).localeCompare(desempate(b)),
+  )
   const caminhoes: AlocacaoCaminhao<T>[] = []
   let demanda = 0
   let pior = 0
   for (const c of ordenada) {
     const garantida = estoque + garantidaAte(c.data)
     const coberto = arred2(Math.min(c.bags, Math.max(0, garantida - demanda)))
+    const cobertoEstoque = arred2(Math.min(c.bags, Math.max(0, estoque - demanda)))
     demanda += c.bags
     pior = Math.max(pior, demanda - garantida)
-    caminhoes.push({ caminhao: c, data: c.data, bags: c.bags, coberto, descoberto: arred2(c.bags - coberto) })
+    caminhoes.push({
+      caminhao: c, data: c.data, bags: c.bags, coberto, cobertoEstoque,
+      descoberto: arred2(c.bags - coberto),
+    })
   }
   return { pior, caminhoes }
 }
@@ -540,6 +570,8 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
   estoquePa: EstoqueTratado[],
   producao: ProducaoPrevista[],
   hoje?: string | null,
+  /** Chave de desempate entre caminhões da MESMA data — ver alocarFila. */
+  desempate?: (c: T) => string,
 ): SaldoExpedicao<T>[] {
   // SEM TSI agrega por cultivar (o estoque é um pool só); tratado, pela tripla
   const chave = (c: { cultivar: string; tratamento: string; embalagem: string }) =>
@@ -563,6 +595,7 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
         saldo: 0,
         semTsi: c.tratamento === SEM_TSI,
         caminhoes: [],
+        producao: [],
       } satisfies SaldoExpedicao<T>)
     atual.agendado += c.bags
     linhas.set(k, atual)
@@ -585,7 +618,7 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
       // branca não passa pela produção: a fila só vê o estoque (deficitPrazo
       // continua 0 — `saldo` já diz a falta), mas cada caminhão ganha a sua
       // cobertura pra visão por tipo de venda
-      s.caminhoes = alocarFila(fila.get(k) ?? [], s.estoque, () => 0).caminhoes
+      s.caminhoes = alocarFila(fila.get(k) ?? [], s.estoque, () => 0, desempate).caminhoes
     } else {
       // tratamento normalizado nos dois lados: `FTZ60+VIC` na receita e
       // `FTZ60 + VIC` no relatório são o mesmo produto (12/09/2026)
@@ -623,9 +656,14 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
           )
           .reduce((a, p) => a + p.bags, 0)
 
-      const { pior, caminhoes } = alocarFila(fila.get(k) ?? [], s.estoque, garantidaAte)
+      const { pior, caminhoes } = alocarFila(fila.get(k) ?? [], s.estoque, garantidaAte, desempate)
       s.deficitPrazo = arred2(Math.max(0, pior))
       s.caminhoes = caminhoes
+      s.producao = daCombinacao.map((p) => ({
+        bags: p.bags,
+        dataProg: p.dataProg,
+        iniciada: p.iniciada === true,
+      }))
     }
     s.saldo = arred2(s.estoque + s.producaoPrevista - s.agendado)
     s.agendado = arred2(s.agendado)
@@ -685,11 +723,18 @@ export interface FaltaPorProduto {
  * vezes — a soma das datas é o descoberto da linha consolidada. Só entram
  * produtos com falta em alguma data; do maior descoberto para o menor.
  */
-export function faltaPorProduto<T extends CarregamentoLinha>(saldos: SaldoExpedicao<T>[]): FaltaPorProduto[] {
+export function faltaPorProduto<T extends CarregamentoLinha>(
+  saldos: SaldoExpedicao<T>[],
+  incluir?: (c: T) => boolean,
+): FaltaPorProduto[] {
   const out: FaltaPorProduto[] = []
   for (const s of saldos) {
     const porData = new Map<string, FaltaNaData>()
     for (const c of s.caminhoes) {
+      // recorte por carga (19/09/2026): a fila já decidiu a cobertura lá em
+      // cima, com TODOS os caminhões do período. Aqui só se escolhe quais
+      // entram na soma — o estoque segue reservado para quem vem antes.
+      if (incluir && !incluir(c.caminhao)) continue
       const k = c.data ?? ''
       const d = porData.get(k) ?? { data: c.data, caminhoes: 0, agendado: 0, descoberto: 0 }
       d.caminhoes++
@@ -736,33 +781,50 @@ export function resumoPorTipoVenda<T extends CarregamentoLinha>(
   saldos: SaldoExpedicao<T>[],
   ehCooperado: (c: T) => boolean,
 ): { cooperado: LadoTipoVenda; outras: LadoTipoVenda } {
-  const novo = (): LadoTipoVenda => ({ agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [] })
-  const r = { cooperado: novo(), outras: novo() }
+  return {
+    cooperado: resumoDoGrupo(saldos, (c) => ehCooperado(c)),
+    outras: resumoDoGrupo(saldos, (c) => !ehCooperado(c)),
+  }
+}
+
+/**
+ * Um recorte qualquer da fila já decidida: soma agendado, coberto e
+ * descoberto dos caminhões que o predicado aceita, e lista os produtos em
+ * que ESSE recorte ficou descoberto.
+ *
+ * É o motor do "por tipo de venda" e, desde 19/09/2026, do filtro por CARGA
+ * da tela (pedido do Arion: "selecionar as cargas e ver a demanda daquelas
+ * cargas apenas"). A propriedade que faz isso não mentir: a alocação vem de
+ * cima, de uma fila só com TODOS os caminhões do período — recortar aqui
+ * nunca devolve ao recorte o estoque que os caminhões de fora já levaram.
+ * Somar todos os recortes de uma partição dá exatamente a linha consolidada.
+ */
+export function resumoDoGrupo<T extends CarregamentoLinha>(
+  saldos: SaldoExpedicao<T>[],
+  incluir: (c: T) => boolean,
+): LadoTipoVenda {
+  const r: LadoTipoVenda = { agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [] }
   for (const s of saldos) {
-    const faltaDoLado = { cooperado: 0, outras: 0 }
+    let falta = 0
     for (const c of s.caminhoes) {
-      const lado = ehCooperado(c.caminhao) ? 'cooperado' : 'outras'
-      r[lado].agendado += c.bags
-      r[lado].coberto += c.coberto
-      r[lado].descoberto += c.descoberto
-      r[lado].caminhoes++
-      faltaDoLado[lado] += c.descoberto
+      if (!incluir(c.caminhao)) continue
+      r.agendado += c.bags
+      r.coberto += c.coberto
+      r.descoberto += c.descoberto
+      r.caminhoes++
+      falta += c.descoberto
     }
-    for (const lado of ['cooperado', 'outras'] as const) {
-      if (faltaDoLado[lado] > 0) {
-        r[lado].produtosEmFalta.push({
-          cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem,
-          descoberto: arred2(faltaDoLado[lado]),
-        })
-      }
+    if (falta > 0) {
+      r.produtosEmFalta.push({
+        cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem,
+        descoberto: arred2(falta),
+      })
     }
   }
-  for (const lado of [r.cooperado, r.outras]) {
-    lado.agendado = arred2(lado.agendado)
-    lado.coberto = arred2(lado.coberto)
-    lado.descoberto = arred2(lado.descoberto)
-    lado.produtosEmFalta.sort((a, b) => b.descoberto - a.descoberto)
-  }
+  r.agendado = arred2(r.agendado)
+  r.coberto = arred2(r.coberto)
+  r.descoberto = arred2(r.descoberto)
+  r.produtosEmFalta.sort((a, b) => b.descoberto - a.descoberto)
   return r
 }
 
@@ -778,4 +840,188 @@ export function agendadoPorTipo<T extends CarregamentoLinha>(
     else outras += c.bags
   }
   return { cooperado: arred2(cooperado), outras: arred2(outras) }
+}
+
+// ================================================================
+// Recorte por CARGA (19/09/2026)
+// ================================================================
+
+/**
+ * Pedido do Arion: "selecionar as cargas e ver a demanda daquelas cargas
+ * apenas, para dar prioridade nos materiais não produzidos".
+ *
+ * A regra que mantém isso honesto: a fila NÃO é recalculada. A alocação
+ * vem de saldosExpedicao, com TODOS os caminhões do período disputando o
+ * estoque em ordem de data — recortar aqui nunca devolve à seleção o que
+ * os caminhões de fora já levaram. É a mesma mecânica do "por tipo de
+ * venda" (12/09/2026), com outro predicado.
+ */
+
+/** O mínimo que uma linha agendada precisa ter para virar item do seletor. */
+export interface LinhaComCarga {
+  carga: string | null
+  data: string | null
+  bags: number
+  cliente?: string | null
+  statusCarga?: string | null
+}
+
+export interface CargaAgendada {
+  carga: string
+  /** Uma carga pode cruzar dias; todas as datas, em ordem. */
+  datas: string[]
+  /** Distintos, na ordem em que apareceram — 29 das 32 cargas atendem mais de um cliente. */
+  clientes: string[]
+  /** Distintos: nada garante um status só por carga, e escolher um calado esconderia divergência. */
+  status: string[]
+  linhas: number
+  bags: number
+}
+
+/**
+ * Agrupa os agendamentos pelas cargas montadas, para o seletor da tela.
+ * Linha sem carga fica de fora da LISTA (o caminhão dela ainda não existe),
+ * mas segue na fila consumindo estoque — é 82% dos bags hoje, e a tela
+ * precisa dizer isso em algum lugar.
+ *
+ * Ordena por data e, no empate, pelo número da carga, que chega como texto
+ * (localeCompare numérico: "9" antes de "10").
+ */
+export function cargasAgendadas<T extends LinhaComCarga>(linhas: T[]): CargaAgendada[] {
+  const por = new Map<string, CargaAgendada>()
+  for (const l of linhas) {
+    const carga = (l.carga ?? '').trim()
+    if (!carga) continue
+    const atual = por.get(carga) ?? { carga, datas: [], clientes: [], status: [], linhas: 0, bags: 0 }
+    atual.linhas++
+    atual.bags += l.bags
+    if (l.data != null && !atual.datas.includes(l.data)) atual.datas.push(l.data)
+    const cli = (l.cliente ?? '').trim()
+    if (cli && !atual.clientes.includes(cli)) atual.clientes.push(cli)
+    const st = (l.statusCarga ?? '').trim()
+    if (st && !atual.status.includes(st)) atual.status.push(st)
+    por.set(carga, atual)
+  }
+  for (const c of por.values()) {
+    c.datas.sort()
+    c.bags = arred2(c.bags)
+  }
+  return [...por.values()].sort(
+    (a, b) =>
+      (a.datas[0] ?? '').localeCompare(b.datas[0] ?? '') ||
+      a.carga.localeCompare(b.carga, 'pt-BR', { numeric: true }),
+  )
+}
+
+export interface ItemRecorte {
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  semTsi: boolean
+  /** Bags que ESTAS cargas pedem deste produto. */
+  agendado: number
+  /** Do agendado, o que já existe no galpão — estoque físico, na ordem da fila. */
+  temHoje: number
+  /** agendado − temHoje: o que a máquina ainda tem que entregar. É a coluna que decide. */
+  aProduzir: number
+  /** Ordens abertas do produto que ainda podem cobrir isso (do produto inteiro, não da seleção). */
+  programado: number
+  /** Menor dia programado entre essas ordens; null quando nenhuma tem dia. */
+  programadoAte: string | null
+  /** Alguma ordem do produto já está rodando. */
+  rodando: boolean
+  /** max(0, aProduzir − programado): o que não tem nem ordem aberta. */
+  semOrdem: number
+  /** A fila diz que nem com o programado dá tempo para estes caminhões. */
+  descoberto: number
+  /** O caminhão mais próximo desta seleção que pede o produto. */
+  precisaAte: string | null
+  /** Cargas da seleção que pedem este produto. */
+  cargas: string[]
+  /** Situação do PRODUTO inteiro (todas as cargas) — a tela rotula como tal. */
+  situacao: SituacaoSaldo
+  /**
+   * O que a fila entregou ANTES do primeiro caminhão desta seleção, para a
+   * tela poder responder "para onde foi o estoque". Aproximação explicativa
+   * quando a seleção se espalha por várias datas — nunca entra em conta.
+   */
+  antes: { outrasCargas: number; semCarga: number }
+}
+
+export interface Recorte {
+  produtos: ItemRecorte[]
+  agendado: number
+  temHoje: number
+  aProduzir: number
+  descoberto: number
+  /** Quantos agendamentos entraram no recorte. */
+  linhas: number
+}
+
+/**
+ * A lista que vai para a produção: por produto, o que estas cargas pedem,
+ * o que já existe e o que falta fazer. Ordena pelo que não tem nem ordem
+ * aberta, depois pelo caminhão mais próximo.
+ */
+export function recorteDaSelecao<T extends CarregamentoLinha>(
+  saldos: SaldoExpedicao<T>[],
+  incluir: (c: T) => boolean,
+  cargaDe: (c: T) => string | null,
+): Recorte {
+  const produtos: ItemRecorte[] = []
+  for (const s of saldos) {
+    const meus = s.caminhoes.filter((c) => incluir(c.caminhao))
+    if (meus.length === 0) continue
+
+    // o que a fila serviu antes do primeiro caminhão desta seleção
+    const primeiro = s.caminhoes.findIndex((c) => incluir(c.caminhao))
+    const antes = { outrasCargas: 0, semCarga: 0 }
+    for (const c of s.caminhoes.slice(0, primeiro)) {
+      const temCarga = (cargaDe(c.caminhao) ?? '').trim() !== ''
+      antes[temCarga ? 'outrasCargas' : 'semCarga'] += c.bags
+    }
+
+    const agendado = arred2(meus.reduce((t, c) => t + c.bags, 0))
+    const temHoje = arred2(meus.reduce((t, c) => t + c.cobertoEstoque, 0))
+    const aProduzir = arred2(Math.max(0, agendado - temHoje))
+    const programado = arred2(s.producao.reduce((t, p) => t + p.bags, 0))
+    const dias = s.producao.map((p) => p.dataProg).filter((d): d is string => d != null).sort()
+    const cargas: string[] = []
+    for (const c of meus) {
+      const k = (cargaDe(c.caminhao) ?? '').trim()
+      if (k && !cargas.includes(k)) cargas.push(k)
+    }
+    produtos.push({
+      cultivar: s.cultivar,
+      tratamento: s.tratamento,
+      embalagem: s.embalagem,
+      semTsi: s.semTsi,
+      agendado,
+      temHoje,
+      aProduzir,
+      programado,
+      programadoAte: dias[0] ?? null,
+      rodando: s.producao.some((p) => p.iniciada),
+      semOrdem: arred2(Math.max(0, aProduzir - programado)),
+      descoberto: arred2(meus.reduce((t, c) => t + c.descoberto, 0)),
+      precisaAte: meus.map((c) => c.data).filter((d): d is string => d != null).sort()[0] ?? null,
+      cargas: cargas.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })),
+      situacao: situacaoSaldo(s),
+      antes: { outrasCargas: arred2(antes.outrasCargas), semCarga: arred2(antes.semCarga) },
+    })
+  }
+  produtos.sort(
+    (a, b) =>
+      b.semOrdem - a.semOrdem ||
+      (a.precisaAte ?? '9999').localeCompare(b.precisaAte ?? '9999') ||
+      b.aProduzir - a.aProduzir,
+  )
+  return {
+    produtos,
+    agendado: arred2(produtos.reduce((t, p) => t + p.agendado, 0)),
+    temHoje: arred2(produtos.reduce((t, p) => t + p.temHoje, 0)),
+    aProduzir: arred2(produtos.reduce((t, p) => t + p.aProduzir, 0)),
+    descoberto: arred2(produtos.reduce((t, p) => t + p.descoberto, 0)),
+    linhas: saldos.reduce((t, s) => t + s.caminhoes.filter((c) => incluir(c.caminhao)).length, 0),
+  }
 }
