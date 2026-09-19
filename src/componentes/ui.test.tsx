@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import {
-  Aviso, Tag, Vazio, corDoStatus, diaCurto, diaSemana, inteiro, n, somaDias,
+  Aviso, Tabela, Tag, Vazio, corDoStatus, diaCurto, diaSemana, inteiro, n, somaDias,
 } from './ui'
 
 describe('formatacao numerica em pt-BR', () => {
@@ -84,5 +84,22 @@ describe('componentes', () => {
     expect(bloqueio.firstElementChild?.className).not.toBe(
       alerta.firstElementChild?.className,
     )
+  })
+})
+
+describe('Tabela', () => {
+  it('rodape vai num tfoot, fora do tbody', () => {
+    const { container } = render(
+      <Tabela cabecalho={['A', '#B']} rodape={<tr><td>TOTAL</td><td>9</td></tr>}>
+        <tr><td>x</td><td>1</td></tr>
+      </Tabela>,
+    )
+    expect(container.querySelector('tfoot')?.textContent).toContain('TOTAL')
+    expect(container.querySelector('tbody')?.textContent).not.toContain('TOTAL')
+  })
+
+  it('sem rodape nao ha tfoot', () => {
+    const { container } = render(<Tabela cabecalho={['A']}><tr><td>x</td></tr></Tabela>)
+    expect(container.querySelector('tfoot')).toBeNull()
   })
 })

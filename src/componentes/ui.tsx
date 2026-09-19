@@ -244,10 +244,12 @@ export type ColunaTabela =
   | { texto: string; className?: string; onClick?: () => void; ordem?: 'asc' | 'desc' }
 
 export function Tabela({
-  cabecalho, children, larguraFixa = false,
+  cabecalho, children, larguraFixa = false, rodape,
 }: {
   cabecalho: ColunaTabela[]
   children: ReactNode
+  /** Linha(s) de total — vai num <tfoot>; `children` cai dentro do <tbody>. */
+  rodape?: ReactNode
   /**
    * table-layout: fixed — pra várias tabelas SEPARADAS na mesma tela
    * (ex.: uma por lote, empilhadas) manterem as mesmas larguras de coluna.
@@ -295,6 +297,7 @@ export function Tabela({
             </tr>
           </thead>
           <tbody>{children}</tbody>
+          {rodape && <tfoot>{rodape}</tfoot>}
         </table>
       </div>
       {/* dica visual de que há mais coluna fora da tela — só no celular,

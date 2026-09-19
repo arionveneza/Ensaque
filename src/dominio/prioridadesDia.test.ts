@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  alternarNaFaixa,
   faixaDe,
   listaAposArraste,
   moverNaFaixa,
@@ -62,5 +63,13 @@ describe('arraste na faixa', () => {
 
   it('remover tira da faixa', () => {
     expect(semDaFaixa(['a', 'b', 'c'], 'b')).toEqual(['a', 'c'])
+  })
+})
+
+describe('alternar na faixa (botao prioridade)', () => {
+  it('fora entra no fim, dentro sai, e ida-e-volta devolve a faixa original', () => {
+    expect(alternarNaFaixa(['a', 'b'], 'c')).toEqual(['a', 'b', 'c'])
+    expect(alternarNaFaixa(['a', 'b', 'c'], 'b')).toEqual(['a', 'c'])
+    expect(alternarNaFaixa(alternarNaFaixa(['a', 'b'], 'c'), 'c')).toEqual(['a', 'b'])
   })
 })

@@ -1115,6 +1115,20 @@ export interface ConferenciaLinha {
   ts: string
 }
 
+/**
+ * Conferência de UMA ordem (19/09/2026): a Programação abre o detalhe de
+ * uma por vez — não precisa da tabela inteira, que cresce com a safra.
+ */
+export async function conferenciaDaOrdem(ordemId: string): Promise<ConferenciaLinha | null> {
+  const { data, error } = await supabase
+    .from('ordem_conferencias')
+    .select('ordem_id, bags_contados, observacao, ts')
+    .eq('ordem_id', ordemId)
+    .maybeSingle()
+  erro('conferência da ordem', error)
+  return (data ?? null) as ConferenciaLinha | null
+}
+
 export async function listarConferencias(): Promise<ConferenciaLinha[]> {
   const { data, error } = await supabase
     .from('ordem_conferencias')

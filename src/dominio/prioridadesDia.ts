@@ -61,3 +61,7 @@ export function moverNaFaixa(atual: string[], ordemId: string, delta: -1 | 1): s
 
 export const semDaFaixa = (atual: string[], ordemId: string): string[] =>
   atual.filter((id) => id !== ordemId)
+
+/** Botão "prioridade": fora da faixa → entra no fim; dentro → sai. O mesmo clique no cartão e na lista. */
+export const alternarNaFaixa = (atual: string[], ordemId: string): string[] =>
+  atual.includes(ordemId) ? semDaFaixa(atual, ordemId) : [...atual, ordemId]

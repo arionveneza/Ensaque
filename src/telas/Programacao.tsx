@@ -22,7 +22,11 @@ import {
   type TurnosDoDia,
 } from '@/dominio/programacao'
 import { useRealtime } from '@/dados/useRealtime'
-import { faixaDe, listaAposArraste, moverNaFaixa, semDaFaixa } from '@/dominio/prioridadesDia'
+import { alternarNaFaixa, faixaDe, listaAposArraste, moverNaFaixa, semDaFaixa } from '@/dominio/prioridadesDia'
+import { alternarOrdenacao, type Ordenacao } from '@/dominio/ordenacao'
+import { ehConcluida, exibicaoDoDia, type CampoQuadro } from '@/dominio/quadroDoDia'
+import ModalOrdem from './ModalOrdem'
+import { ListaMaquinaDia } from './ProgramacaoLista'
 import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
@@ -95,6 +99,27 @@ export default function Programacao() {
   /** Cartão "Programado por tratamento": a semana à vista ou só o dia selecionado. */
   const [recorteTratamento, setRecorteTratamento] = useState<'semana' | 'dia'>('semana')
 
+  /**
+   * Quadro do dia em LISTA por máquina (19/09/2026, pedido do Arion: "a tela
+   * de programação está ruim de olhar… quase como um Excel"). Abre SEMPRE na
+   * lista — decisão dele, por isso não persiste; os cartões ficam atrás do
+   * botão, para arrastar, ▲▼ e a faixa de prioridades.
+   */
+  const [modoQuadro, setModoQuadro] = useState<'lista' | 'cartoes'>('lista')
+  /** Ordenação da lista — UMA para todas as máquinas, como no Excel; só visão, o seq não muda. */
+  const [ordenacaoLista, setOrdenacaoLista] = useState<Ordenacao<CampoQuadro>>(null)
+  /**
+   * Detalhe da ordem (ModalOrdem) aberto a partir da lista. Motivos e
+   * produtos já vinham do carregarCadastros e eram descartados; embalagens
+   * e a conferência DA ORDEM entram só no clique (a carga inicial roda a
+   * cada semana navegada — não é lugar de buscar o que raramente se usa).
+   */
+  const [motivos, setMotivos] = useState<api.LinhaMotivo[]>([])
+  const [produtos, setProdutos] = useState<api.LinhaProduto[]>([])
+  const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[] | null>(null)
+  const [ordemAberta, setOrdemAberta] = useState<{ ordem: api.LinhaOrdem; conferencia: g.ConferenciaLinha | null } | null>(null)
+  const [abrindoId, setAbrindoId] = useState<string | null>(null)
+
   const dias = useMemo(
     () => Array.from({ length: 7 }, (_, i) => somaDias(inicio, i)),
     [inicio],
@@ -141,6 +166,8 @@ export default function Programacao() {
       .then(([c, lista, poolLista, cal, atrasadasLista]) => {
         if (!vivo) return
         setMaquinas(c.maquinas)
+        setMotivos(c.motivos)
+        setProdutos(c.produtos)
         setOrdens(lista)
         setPool(poolLista)
         setCalendario(cal)
@@ -313,6 +340,95 @@ export default function Programacao() {
   const dicaOcupacao = (o: ReturnType<typeof ocupacaoCelula>) =>
     `${o.ordens} ordem(ns) · ${o.trocas} troca(s) de tratamento · ${o.setupMin} min de setup · ` +
     `${n(o.horas, 1)} h de ${n(o.cap, 1)} h`
+
+  /** Linha "X t · Y h de Z h · P%" do cartão da máquina — a mesma na lista. */
+  const resumoOcupacao = (o: ReturnType<typeof ocupacaoCelula>) => (
+    <p className="num-tabular mb-3 text-xs text-stone-500">
+      {o.cap <= 0 ? (
+        <span className="font-medium text-amber-700 dark:text-amber-400">
+          Dia sem produção{o.ton > 0 && ` — ${n(o.ton, 1)} t ainda programadas aqui`}
+        </span>
+      ) : (
+        <span title={dicaOcupacao(o)}>
+          {n(o.ton, 1)} t · {n(o.horas, 1)} h de {n(o.cap, 1)} h · {n(o.pct, 0)}% de ocupação
+          {o.setupMin > 0 && ` (${o.setupMin} min de setup)`} ·{' '}
+          {rotuloTurnos(turnosDoDia(diaSel))}
+        </span>
+      )}
+    </p>
+  )
+
+  /** "Otimizar sequência" — no cartão e na lista (não é arraste; o PCP usa no tablet). */
+  const botaoOtimizar = (lista: OrdemVisao[]) =>
+    podeProgramar && lista.length > 1 ? (
+      <Botao
+        titulo="Agrupa receitas iguais para reduzir trocas, mantendo urgentes na frente"
+        onClick={() =>
+          comErro(async () => {
+            const fila = lista
+              .filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
+              .map((x) => programaveis.find((p) => p.id === x.id)!)
+              .filter(Boolean)
+            await g.aplicarAtribuicoes(otimizarSequencia(fila))
+          })
+        }
+      >
+        Otimizar sequência
+      </Botao>
+    ) : undefined
+
+  /** Botão "prioridade" (16/09/2026) — o mesmo clique no cartão e na lista. */
+  const alternarPrioridadeDia = (maq: string, dia: string, lista: OrdemVisao[], ord: OrdemVisao) => {
+    const ids = faixaDe(lista.filter((x) => !ehConcluida(x.status_efetivo))).map((x) => x.id)
+    return comErro(() => g.definirPrioridadesDia(maq, dia, alternarNaFaixa(ids, ord.id)))
+  }
+
+  /** O PainelMover, com os mesmos fechos, nos dois modos. */
+  const painelMoverDe = (ord: OrdemVisao, maq: string) => (
+    <PainelMover
+      maquinas={maquinas}
+      dias={dias}
+      atual={{ maq, dia: diaSel }}
+      onFechar={() => setMovendo(null)}
+      onMover={(m2, d2, inicio) => {
+        setMovendo(null)
+        comErro(() => mover(ord.id, m2, d2, inicio ? 0 : null))
+      }}
+      onPool={() => {
+        setMovendo(null)
+        comErro(() => desprogramar(ord.id))
+      }}
+    />
+  )
+
+  /** Trocar de modo zera o que era do outro: painel de mover aberto e estados de arraste. */
+  const trocarModoQuadro = (md: 'lista' | 'cartoes') => {
+    setModoQuadro(md)
+    setMovendo(null)
+    setArrastando(null)
+    setAlvo(null)
+    setAlvoFaixa(null)
+    setArrastandoDaFaixa(false)
+  }
+
+  async function abrirOrdem(id: string) {
+    setAbrindoId(id)
+    setErro(null)
+    try {
+      const [o, cf, emb] = await Promise.all([
+        api.carregarOrdemPorId(id),
+        g.conferenciaDaOrdem(id),
+        embalagens ?? g.listarEmbalagens(),
+      ])
+      if (!o) throw new Error('Ordem não encontrada.')
+      setEmbalagens(emb)
+      setOrdemAberta({ ordem: o, conferencia: cf })
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAbrindoId(null)
+    }
+  }
 
   async function comErro(fn: () => Promise<void>) {
     try {
@@ -645,7 +761,9 @@ export default function Programacao() {
         className="mb-5"
       >
         <p className="mb-2 text-xs text-stone-500">
-          Arraste uma ordem do quadro abaixo sobre qualquer célula para mudá-la de dia ou de máquina.
+          {modoQuadro === 'cartoes'
+            ? 'Arraste uma ordem do quadro abaixo sobre qualquer célula para mudá-la de dia ou de máquina.'
+            : 'Clique num dia para ver a fila dele na lista abaixo; para arrastar, abra os cartões.'}
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -913,7 +1031,58 @@ export default function Programacao() {
         </div>
       )}
 
-      {/* -------- quadro do dia -------- */}
+      {/* -------- quadro do dia: lista (padrão) ou cartões (19/09/2026) -------- */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-stone-500 dark:text-stone-400">
+          Quadro de {diaSemana(diaSel)} {diaCurto(diaSel)}
+          {modoQuadro === 'lista' && podeProgramar && ' — para arrastar ou reordenar com as setas, abra os cartões'}
+        </span>
+        <div className="flex items-center gap-1 text-xs">
+          {(['lista', 'cartoes'] as const).map((md) => (
+            <button
+              key={md}
+              type="button"
+              onClick={() => trocarModoQuadro(md)}
+              className={`rounded-md border px-2 py-1 ${
+                modoQuadro === md
+                  ? 'border-green-600 bg-green-50 font-medium text-green-800 dark:bg-green-950 dark:text-green-300'
+                  : 'border-stone-300 text-stone-600 dark:border-stone-700 dark:text-stone-300'
+              }`}
+            >
+              {md === 'lista' ? 'lista' : 'cartões'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {modoQuadro === 'lista' && (
+        <div className="mb-5 space-y-4">
+          {maquinas.map((m) => {
+            const lista = celula(m.id, diaSel)
+            return (
+              <ListaMaquinaDia
+                key={m.id}
+                titulo={`${m.nome} · ${diaSemana(diaSel)} ${diaCurto(diaSel)}`}
+                acoes={botaoOtimizar(lista)}
+                resumo={resumoOcupacao(ocupacaoCelula(m.id, diaSel))}
+                fila={lista}
+                visivel={visivel}
+                filtroAtivo={filtroStatus.size > 0}
+                onLimparFiltro={() => setFiltroStatus(new Set())}
+                ordenacao={ordenacaoLista}
+                onOrdenar={(c) => setOrdenacaoLista((a) => alternarOrdenacao(a, c))}
+                podeProgramar={podeProgramar}
+                onAbrir={abrirOrdem}
+                abrindoId={abrindoId}
+                onPrioridade={(ord) => alternarPrioridadeDia(m.id, diaSel, lista, ord)}
+                movendoId={movendo}
+                onAlternarMover={(ord) => setMovendo(movendo === ord.id ? null : ord.id)}
+                painelMover={(ord) => painelMoverDe(ord, m.id)}
+              />
+            )
+          })}
+        </div>
+      )}
+      {modoQuadro === 'cartoes' && (
       <div className={`mb-5 grid gap-4 sm:grid-cols-2 ${maquinas.length >= 3 ? 'xl:grid-cols-3' : ''}`}>
         {maquinas.map((m) => {
           const lista = celula(m.id, diaSel)
@@ -936,72 +1105,30 @@ export default function Programacao() {
            * mais forte que uma prioridade arbitrária, e é por isso que não
            * reintroduz a ambiguidade das setas (cada uma só troca com o
            * vizinho do PRÓPRIO grupo, nunca com um item de outro status).
+           * A regra vive em `exibicaoDoDia` (domínio) desde 19/09/2026 —
+           * a lista usa a mesma.
            */
-          const rodando = lista.filter(
-            (x) => x.status_efetivo === 'Em producao' || x.status_efetivo === 'Parada',
-          )
-          const pronto = lista.filter((x) => x.status_efetivo === 'Pronto para produzir')
-          const aguardando = lista.filter((x) => x.status_efetivo === 'Aguardando lote')
-          // Programada (11/08/2026): tem máquina/dia mas o PCP ainda não
-          // confirmou — sem grupo próprio ela sumia da célula (nenhum dos
-          // outros filtros bate), mesmo com lista.length > 0
-          const programada = lista.filter((x) => x.status_efetivo === 'Programada')
-          const concluidas = lista.filter((x) =>
-            ['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo),
-          )
-          const exibicao = [...rodando, ...pronto, ...aguardando, ...programada, ...concluidas]
-          const inicioConcluidas = exibicao.length - concluidas.length
+          const { exibicao, inicioConcluidas, grupos } = exibicaoDoDia(lista)
+          const concluidas = grupos.concluidas
           const grupoMovelDe = (x: OrdemVisao) =>
             x.status_efetivo === 'Pronto para produzir'
-              ? pronto
+              ? grupos.pronto
               : x.status_efetivo === 'Aguardando lote'
-                ? aguardando
+                ? grupos.aguardando
                 : x.status_efetivo === 'Programada'
-                  ? programada
+                  ? grupos.programada
                   : []
           return (
             <Cartao
               key={m.id}
               titulo={`${m.nome} · ${diaSemana(diaSel)} ${diaCurto(diaSel)}`}
-              acoes={
-                podeProgramar && lista.length > 1 ? (
-                  <Botao
-                    titulo="Agrupa receitas iguais para reduzir trocas, mantendo urgentes na frente"
-                    onClick={() =>
-                      comErro(async () => {
-                        const fila = lista
-                          .filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
-                          .map((x) => programaveis.find((p) => p.id === x.id)!)
-                          .filter(Boolean)
-                        await g.aplicarAtribuicoes(otimizarSequencia(fila))
-                      })
-                    }
-                  >
-                    Otimizar sequência
-                  </Botao>
-                ) : undefined
-              }
+              acoes={botaoOtimizar(lista)}
             >
-              <p className="num-tabular mb-3 text-xs text-stone-500">
-                {o.cap <= 0 ? (
-                  <span className="font-medium text-amber-700 dark:text-amber-400">
-                    Dia sem produção{o.ton > 0 && ` — ${n(o.ton, 1)} t ainda programadas aqui`}
-                  </span>
-                ) : (
-                  <span title={dicaOcupacao(o)}>
-                    {n(o.ton, 1)} t · {n(o.horas, 1)} h de {n(o.cap, 1)} h · {n(o.pct, 0)}% de
-                    ocupação
-                    {o.setupMin > 0 && ` (${o.setupMin} min de setup)`} ·{' '}
-                    {rotuloTurnos(turnosDoDia(diaSel))}
-                  </span>
-                )}
-              </p>
+              {resumoOcupacao(o)}
 
               {/* -------- prioridades do dia (16/09/2026) -------- */}
               {(() => {
-                const faixa = faixaDe(
-                  lista.filter((x) => !['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo)),
-                )
+                const faixa = faixaDe(lista.filter((x) => !ehConcluida(x.status_efetivo)))
                 const ids = faixa.map((x) => x.id)
                 const naFaixa = alvoFaixa?.maq === m.id && alvoFaixa?.dia === diaSel
                 const gravar = (novos: string[]) =>
@@ -1280,13 +1407,7 @@ export default function Programacao() {
                           >
                             <button
                               tabIndex={movivel ? 0 : -1}
-                              onClick={() => {
-                                const ids = faixaDe(
-                                  lista.filter((x) => !['Finalizada', 'Qualidade apontada', 'Apontada'].includes(x.status_efetivo)),
-                                ).map((x) => x.id)
-                                const novos = ord.prioridade_dia != null ? semDaFaixa(ids, ord.id) : [...ids, ord.id]
-                                comErro(() => g.definirPrioridadesDia(m.id, diaSel, novos))
-                              }}
+                              onClick={() => alternarPrioridadeDia(m.id, diaSel, lista, ord)}
                               title={
                                 ord.prioridade_dia != null
                                   ? 'Tirar da faixa de prioridades do dia'
@@ -1359,22 +1480,7 @@ export default function Programacao() {
                             </div>
                           </div>
                         </div>
-                        {movendo === ord.id && (
-                          <PainelMover
-                            maquinas={maquinas}
-                            dias={dias}
-                            atual={{ maq: m.id, dia: diaSel }}
-                            onFechar={() => setMovendo(null)}
-                            onMover={(maq, dia, inicio) => {
-                              setMovendo(null)
-                              comErro(() => mover(ord.id, maq, dia, inicio ? 0 : null))
-                            }}
-                            onPool={() => {
-                              setMovendo(null)
-                              comErro(() => desprogramar(ord.id))
-                            }}
-                          />
-                        )}
+                        {movendo === ord.id && painelMoverDe(ord, m.id)}
                         {naCelula && alvo?.pos === idx + 1 && <LinhaDeInsercao />}
                       </div>
                     )
@@ -1385,6 +1491,7 @@ export default function Programacao() {
           )
         })}
       </div>
+      )}
 
       {/* -------- pool -------- */}
       <div
@@ -1465,6 +1572,28 @@ export default function Programacao() {
           )}
         </Cartao>
       </div>
+
+      {ordemAberta && (
+        <ModalOrdem
+          ordem={ordemAberta.ordem}
+          produtos={produtos}
+          motivos={motivos}
+          podeApontar={permitido('execucao', 'apontar')}
+          agora={Date.now()}
+          capacidadeTh={maquinas.find((m) => m.id === ordemAberta.ordem.maquina_id)?.capacidade_th}
+          conferencia={ordemAberta.conferencia}
+          embalagens={embalagens ?? []}
+          onFechar={() => setOrdemAberta(null)}
+          onMudou={async () => {
+            await recarregar()
+            const [o, cf] = await Promise.all([
+              api.carregarOrdemPorId(ordemAberta.ordem.id),
+              g.conferenciaDaOrdem(ordemAberta.ordem.id),
+            ])
+            if (o) setOrdemAberta({ ordem: o, conferencia: cf })
+          }}
+        />
+      )}
 
       {previa && (
         <PreviaCascata

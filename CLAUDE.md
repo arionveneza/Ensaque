@@ -666,6 +666,36 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    padrão") — à esquerda do número ela empurrava o texto só nas linhas priorizadas.
    Armadilha do arraste: o Chrome não dispara `dragend` quando o nó de origem some do DOM
    (realtime remonta a faixa), então TODO `onDragStart` zera `arrastandoDaFaixa`.
+   **Quadro do dia em LISTA por máquina** (19/09/2026, pedido do Arion: "a tela de
+   programação está ruim de olhar, tem como colocar uma visão em lista, por máquina? onde eu
+   possa classificar por cultivar, tratamento e tonelada? […] Quase como um Excel"). O quadro
+   **abre sempre em lista** (`modoQuadro`, sem persistir — decisão dele): uma `Tabela` por
+   máquina com as ordens do dia selecionado, o MESMO recorte dos cartões — Seq (a posição de
+   exibição que o cartão mostra, `posicoesDeExibicao`, calculada da fila padrão e nunca do
+   índice da tabela ordenada), nº (clicável → `ModalOrdem`; a Programação passou a guardar
+   `motivos`/`produtos` do `carregarCadastros` que já buscava e descartava, e busca embalagens
+   + a conferência **da ordem** — `conferenciaDaOrdem`, uma linha — só no clique), cultivar,
+   tratamento, emb./lote (`hidden lg:table-cell`, sub-linha no tablet), bags, peso, expedição
+   (vermelha quando `data_prog > data_expedicao`), urgente/normal em coluna própria, status
+   com a vaga fixa `w-8` do P{n}, e os botões prioridade/mover dos cartões (`alternarNaFaixa`;
+   o `PainelMover` abre numa linha extra). Os cartões ficam atrás do botão "cartões" — único
+   lugar com arrastar, ▲▼ e a faixa Prioridades do dia. **Ordenar pelo cabeçalho é só visão**
+   (`ordenarQuadroDoDia` em `src/dominio/quadroDoDia.ts` sobre `src/dominio/ordenacao.ts`:
+   pt-BR numérico, empate pelo nº sempre asc; um estado só para todas as máquinas, como no
+   Excel; ciclo asc→desc→padrão): o `seq` gravado não muda — por isso a lista **não tem ▲▼**,
+   "subir" uma linha numa tabela ordenada por cultivar seria a ambiguidade das setas com
+   filtro. `exibicaoDoDia` (rodando → pronto → aguardando → programada → concluídas; status
+   desconhecido cai em programada, nunca some) saiu do JSX do cartão para o domínio e vale nos
+   dois modos. Total (bags · t) no `<tfoot>` — `Tabela` ganhou `rodape`, porque `children` cai
+   dentro do `<tbody>`. Linhas do painel de mover e do total somam colSpan 12 em `lg` e 10
+   abaixo (`<td hidden lg:table-cell colSpan=2>`, como em Ordens) — um `colSpan` único cria
+   coluna-fantasma no tablet. As tabelas por máquina usam **`larguraFixa`** com largura em
+   toda coluna de conteúdo previsível (Cultivar e Tratamento ficam com o que sobra): são
+   tabelas SEPARADAS empilhadas, e sem `table-fixed` Bags/Peso da TSI 1 não caíam embaixo dos
+   da TSI 2 — o mesmo achado de 26/08/2026 da Logística, pego pela revisão adversarial.
+   Teste jsdom `ProgramacaoLista.test.tsx` é a conferência estrutural (a tela exige login e o
+   preview não a vê montada); o componente puro foi montado no dev server com dados falsos
+   para conferir 1280/1024/768 px.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.
