@@ -144,14 +144,16 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   Família nova = uma linha em `FAMILIAS_TSI`. `compararTratamentos` = família → **menos itens
   na receita primeiro** (a base antes das derivações: "o FTZ60 + RCoMoNi + Lli tem mais itens
   que o FTZ60, então deveria vir depois") → nome. É a ordem da **Otimizar sequência**
-  (`otimizarSequencia(fila, itensPorReceita)`: famílias com mais ordens primeiro, dentro da
+  (`otimizarSequencia(fila, itensPorReceita)`: entre famílias, **a de base com menos itens
+  primeiro** — FTZ60 (5) antes de FTZ ELITE (6), empate pela que tem mais ordens —, dentro da
   família por itens, dentro da receita por cultivar; sem `receitaNome` cada receita é a própria
   família e o resultado é o de antes) e da coluna Tratamento da lista do quadro do dia. A
-  Programação carrega `listarReceitas()` uma vez para contar os itens. **A fronteira
-  urgente → normal move a FAMÍLIA comum aos dois lados, sem mexer na ordem interna** (achado
-  do Arion no quadro de 19/09: tudo urgente e uma FTZ60 normal no fim — a FTZ60 urgente era
-  colada na fronteira DEPOIS de FTZ60 + ARV/+ VIC para economizar uma troca, passando por cima
-  do "base primeiro"); só sem `receitaNome` a receita comum encosta na fronteira como antes.
+  Programação carrega `listarReceitas()` uma vez para contar os itens. **Com famílias, a
+  fronteira urgente → normal NÃO reordena nada** (achados do Arion no quadro de 19/09: tudo
+  urgente e uma FTZ60 normal no fim — a regra antiga colava a FTZ60 urgente na fronteira
+  DEPOIS de + ARV/+ VIC, e depois a família FTZ60 inteira depois da FTZ ELITE, para economizar
+  uma troca; "por que o FTZ ELITE está antes do FTZ60?"); só sem `receitaNome` a receita comum
+  encosta na fronteira como antes.
 - **A receita NÃO define o tanque** (decisão de 06/08/2026): ela é só **produto + dose**. A
   distribuição varia de ordem para ordem, então quem informa o destino de cada produto é o
   **operador**, ao preparar a ordem, antes dos pesos (tabela `ordem_produtos`).

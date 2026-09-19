@@ -1,3 +1,4 @@
+import { porNome } from './ordenacao'
 import { compararTratamentos, familiaDoTratamento } from './tratamentos'
 
 /**
@@ -364,10 +365,11 @@ export function autoProgramar(
  * `familiaDoTratamento` pelo `receitaNome`) e, dentro da família, a de
  * MENOS itens vem primeiro — a base antes das derivações ("o FTZ60 +
  * RCoMoNi + Lli tem mais itens que o FTZ60, então deveria vir depois"),
- * pela contagem em `itensPorReceita` (sem ela, pelo nome). Entre famílias,
- * a que tem mais ordens vai na frente (a regra "bloco maior primeiro" de
- * sempre, um nível acima). Sem `receitaNome`, cada receita é a própria
- * família e o resultado é o de antes.
+ * pela contagem em `itensPorReceita` (sem ela, pelo nome). Entre famílias, o
+ * MESMO princípio: a família cuja base tem menos itens vai na frente (FTZ60,
+ * 5 itens, antes de FTZ ELITE, 6 — "por que o FTZ ELITE está antes do
+ * FTZ60?"), empate pela que tem mais ordens. Sem `receitaNome`, cada
+ * receita é a própria família e o resultado é o de antes.
  */
 export function otimizarSequencia(
   fila: OrdemProgramavel[],
@@ -404,8 +406,16 @@ export function otimizarSequencia(
     const porFamilia = new Map<string, typeof receitas>()
     for (const rc of receitas) porFamilia.set(rc.familia, [...(porFamilia.get(rc.familia) ?? []), rc])
     const total = (rs: typeof receitas) => rs.reduce((t, rc) => t + rc.ordens.length, 0)
+    // a base da família = a receita com menos itens; sem contagem, infinito
+    const menorItens = (rs: typeof receitas) =>
+      rs.reduce((m, rc) => Math.min(m, rc.itens ?? Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY)
     return [...porFamilia.values()]
-      .sort((a, b) => total(b) - total(a))
+      .sort((a, b) => {
+        const ia = menorItens(a)
+        const ib = menorItens(b)
+        if (ia !== ib) return ia < ib ? -1 : 1
+        return total(b) - total(a) || porNome(a[0].familia, b[0].familia)
+      })
       .flatMap((rs) =>
         [...rs]
           .sort((a, b) =>
@@ -420,21 +430,20 @@ export function otimizarSequencia(
 
   const bu = blocos(urgentes)
   const bn = blocos(normais)
-  // Família comum aos dois lados: fecha as urgentes e abre as normais — SEM
-  // mexer na ordem interna (base primeiro). A versão anterior arrancava o
-  // bloco da receita casada e o colava na fronteira para economizar uma
-  // troca, e com isso a FTZ60 (base) saía DEPOIS de FTZ60 + ARV e FTZ60 +
-  // VIC — exatamente o que o Arion pediu que não acontecesse (19/09/2026).
-  // Sem receitaNome cada receita é a própria família, e o resultado é o de
-  // sempre: a receita comum encosta na fronteira e a troca some.
-  const fam = (b: OrdemProgramavel[]) =>
-    b[0].receitaNome ? familiaDoTratamento(b[0].receitaNome) : b[0].receitaId
+  // Receita comum aos dois lados encosta na fronteira urgente → normal (a
+  // troca some) — SÓ no modo legado, sem receitaNome. Com famílias, a
+  // fronteira NÃO reordena nada: primeiro ela jogava a FTZ60 (base) pra
+  // depois de + ARV e + VIC, depois jogava a família FTZ60 inteira pra
+  // depois da FTZ ELITE — as duas vezes contra o "menos itens primeiro" que
+  // o Arion pediu (19/09/2026). Uma troca a menos não paga a ordem quebrada.
+  const legado = !fila.some((o) => o.receitaNome)
+  const fam = (b: OrdemProgramavel[]) => b[0].receitaId
   const tiraFamilia = (bs: OrdemProgramavel[][], f: string) => {
     const g = bs.filter((x) => fam(x) === f)
     for (const x of g) bs.splice(bs.indexOf(x), 1)
     return g
   }
-  const comum = bu.find((b) => bn.some((n) => fam(n) === fam(b)))
+  const comum = legado ? bu.find((b) => bn.some((n) => fam(n) === fam(b))) : undefined
   if (comum) {
     const f = fam(comum)
     bu.push(...tiraFamilia(bu, f))
