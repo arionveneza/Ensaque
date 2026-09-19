@@ -3,6 +3,9 @@
 > 📋 **Retomando o projeto?** Comece por **[PENDENCIAS.md](PENDENCIAS.md)** — traz o estado
 > atual, o que falta (com as densidades reais das FISPQ em primeiro lugar) e as armadilhas
 > já descobertas.
+>
+> 💻 **Em outro computador?** **[docs/novo-computador.md](docs/novo-computador.md)** — clonar,
+> o `.env.local` (a única coisa que não vem no clone) e a regra do `git pull` entre as máquinas.
 
 Aplicação de execução de produção (MES enxuto) para o tratamento industrial de sementes da
 **Sementes Veneza**. Substitui a planilha `TSI 2025`.
