@@ -261,6 +261,21 @@ describe('otimizar sequencia', () => {
     expect(otimizarSequencia(fila, itens).map((a) => a.ordemId)).toEqual(['u3', 'u1', 'u2', 'n1', 'n2', 'n3'])
   })
 
+  it('a fronteira nao passa por cima do "base primeiro": FTZ60 fica antes de + ARV e + VIC mesmo casando com uma normal', () => {
+    // caso real do quadro de 19/09/2026: tudo urgente, uma FTZ60 normal no
+    // fim — a FTZ60 urgente era jogada pra depois das derivações só pra
+    // encostar na normal
+    const itens = new Map([['r-elite', 6], ['r-ftz60', 5], ['r-arv', 6], ['r-vic', 6]])
+    const fila = [
+      ord({ id: 'e1', receitaId: 'r-elite', receitaNome: 'FTZ ELITE', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'fa', receitaId: 'r-arv', receitaNome: 'FTZ60 + ARV', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'fv', receitaId: 'r-vic', receitaNome: 'FTZ60 + VIC', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'f0', receitaId: 'r-ftz60', receitaNome: 'FTZ60', prioridade: 'Urgente', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'n0', receitaId: 'r-ftz60', receitaNome: 'FTZ60', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+    ]
+    expect(otimizarSequencia(fila, itens).map((a) => a.ordemId)).toEqual(['e1', 'f0', 'fa', 'fv', 'n0'])
+  })
+
   it('sem nome nem contagem, cada receita e a propria familia e o resultado e o de antes', () => {
     const fila = [
       ord({ id: 'a', receitaId: 'R1', maquinaId: 'TSI1', dataProg: DIAS[0] }),

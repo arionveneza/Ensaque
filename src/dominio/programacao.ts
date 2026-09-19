@@ -420,11 +420,13 @@ export function otimizarSequencia(
 
   const bu = blocos(urgentes)
   const bn = blocos(normais)
-  // receita comum aos dois lados: última das urgentes e primeira das normais.
-  // A FAMÍLIA vai junto (revisão de 19/09/2026): arrancar só o bloco da
-  // receita partia a família em dois pedaços separados por famílias inteiras
-  // — sem economizar setup nenhum, porque o setup só olha a receita e cada
-  // bloco continua contíguo dos dois jeitos.
+  // Família comum aos dois lados: fecha as urgentes e abre as normais — SEM
+  // mexer na ordem interna (base primeiro). A versão anterior arrancava o
+  // bloco da receita casada e o colava na fronteira para economizar uma
+  // troca, e com isso a FTZ60 (base) saía DEPOIS de FTZ60 + ARV e FTZ60 +
+  // VIC — exatamente o que o Arion pediu que não acontecesse (19/09/2026).
+  // Sem receitaNome cada receita é a própria família, e o resultado é o de
+  // sempre: a receita comum encosta na fronteira e a troca some.
   const fam = (b: OrdemProgramavel[]) =>
     b[0].receitaNome ? familiaDoTratamento(b[0].receitaNome) : b[0].receitaId
   const tiraFamilia = (bs: OrdemProgramavel[][], f: string) => {
@@ -432,13 +434,11 @@ export function otimizarSequencia(
     for (const x of g) bs.splice(bs.indexOf(x), 1)
     return g
   }
-  const iu = bu.findIndex((b) => bn.some((n) => n[0].receitaId === b[0].receitaId))
-  if (iu >= 0) {
-    const [b] = bu.splice(iu, 1)
-    bu.push(...tiraFamilia(bu, fam(b)), b)
-    const jn = bn.findIndex((n) => n[0].receitaId === b[0].receitaId)
-    const [n] = bn.splice(jn, 1)
-    bn.unshift(n, ...tiraFamilia(bn, fam(n)))
+  const comum = bu.find((b) => bn.some((n) => fam(n) === fam(b)))
+  if (comum) {
+    const f = fam(comum)
+    bu.push(...tiraFamilia(bu, f))
+    bn.unshift(...tiraFamilia(bn, f))
   }
 
   return [...bu.flat(), ...bn.flat()].map((o, i) => ({
