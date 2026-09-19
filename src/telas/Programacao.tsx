@@ -1205,15 +1205,6 @@ export default function Programacao() {
                           }`}
                         >
                           <span className="w-5 text-xs text-stone-400">{displayIdx + 1}</span>
-                          {/* já está na faixa de prioridades do dia (16/09/2026) */}
-                          {ord.prioridade_dia != null && (
-                            <span
-                              className="inline-block rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
-                              title="Está na faixa de prioridades do dia"
-                            >
-                              P{ord.prioridade_dia}
-                            </span>
-                          )}
                           {/* min-w-40: no celular, sem largura mínima o texto
                               identificador espremia até ficar ilegível quando
                               tags+mover+setas competiam pela mesma linha */}
@@ -1259,6 +1250,22 @@ export default function Programacao() {
                                 {ord.prioridade === 'Urgente' && <Tag cor="perigo">urgente</Tag>}
                               </div>
                             )}
+                            {/* P1/P2… da faixa de prioridades do dia (16/09/2026) fica
+                                AQUI, numa vaga fixa colada ao status, em toda linha
+                                (vazia quando a ordem não está na faixa). Nasceu à
+                                esquerda do número e empurrava o texto só nas linhas
+                                priorizadas — pedido do Arion, 19/09/2026: "coloque ao
+                                lado direito do card, para não perder o padrão". */}
+                            <span className="inline-block w-8 shrink-0 text-center">
+                              {ord.prioridade_dia != null && (
+                                <span
+                                  className="inline-block rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                                  title="Está na faixa de prioridades do dia"
+                                >
+                                  P{ord.prioridade_dia}
+                                </span>
+                              )}
+                            </span>
                             <Tag cor={corDoStatus(ord.status_efetivo)} className="min-w-36 text-center">
                               {ord.status_efetivo}
                             </Tag>

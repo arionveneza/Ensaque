@@ -658,6 +658,9 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    faixa é destaque, não tira da fila); `v_ordens.prioridade_dia` expõe a posição. Soltar uma
    ordem DA faixa na fila da MESMA célula só a tira da faixa — não mexe no seq; soltar em outra
    máquina/dia move a ordem (e o gatilho derruba a prioridade). Solta no pool, desprograma.
+   No cartão da fila, a marca `P1`/`P2` fica na **coluna da direita, numa vaga fixa colada ao
+   status** (19/09/2026, pedido do Arion: "coloque ao lado direito do card, para não perder o
+   padrão") — à esquerda do número ela empurrava o texto só nas linhas priorizadas.
    Armadilha do arraste: o Chrome não dispara `dragend` quando o nó de origem some do DOM
    (realtime remonta a faixa), então TODO `onDragStart` zera `arrastandoDaFaixa`.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
