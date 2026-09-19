@@ -36,6 +36,8 @@ export interface PropsListaMaquinaDia {
   /** Ordenação DESTA máquina (cada tabela tem a sua — pedido do Arion). */
   ordenacao: Ordenacao<CampoQuadro>
   onOrdenar: (campo: CampoQuadro) => void
+  /** Nº de itens por receita — a coluna Tratamento ordena por família e base antes das derivações. */
+  itensPorReceita?: ReadonlyMap<string, number>
   podeProgramar: boolean
   /** Ação ordens/priorizar — o botão "urgente". */
   podeMarcarUrgente: boolean
@@ -60,12 +62,12 @@ const COLUNAS_SO_LG = 2
 const BOTAO = 'rounded border px-3 py-2 text-xs uppercase tracking-wide lg:px-1.5 lg:py-0.5 lg:text-[10px]'
 
 export function ListaMaquinaDia({
-  titulo, acoes, resumo, fila, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar,
+  titulo, acoes, resumo, fila, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar, itensPorReceita,
   podeProgramar, podeMarcarUrgente, onAbrir, abrindoId, onPrioridade, onAlternarUrgente,
   posicaoNoGrupo, onSubir, onDescer, movendoId, onAlternarMover, painelMover,
 }: PropsListaMaquinaDia) {
   const posicao = posicoesDeExibicao(fila)
-  const linhas = ordenarQuadroDoDia(fila, ordenacao).filter(visivel)
+  const linhas = ordenarQuadroDoDia(fila, ordenacao, itensPorReceita).filter(visivel)
   const seta = (c: CampoQuadro) => (ordenacao?.campo === c ? ordenacao.dir : undefined)
   const col = (texto: string, campo: CampoQuadro, className?: string) => ({
     texto, className, onClick: () => onOrdenar(campo), ordem: seta(campo),
@@ -136,8 +138,11 @@ export function ListaMaquinaDia({
             const urgente = ord.prioridade === 'Urgente'
             return (
               <Fragment key={ord.id}>
+                {/* já produzida: fundo verde (pedido do Arion, 19/09/2026), não apagada */}
                 <tr
-                  className={`border-t border-stone-100 dark:border-stone-800/60 ${concluida ? 'opacity-70' : ''}`}
+                  className={`border-t border-stone-100 dark:border-stone-800/60 ${
+                    concluida ? 'bg-green-50 dark:bg-green-950/30' : ''
+                  }`}
                   data-ordem={ord.id}
                 >
                   <td className="num-tabular px-2 py-1.5 text-right align-middle text-stone-400">

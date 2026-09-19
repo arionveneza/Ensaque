@@ -1,3 +1,5 @@
+import { compararTratamentos, familiaDoTratamento } from './tratamentos'
+
 /**
  * Programação e ocupação.
  *
@@ -28,6 +30,12 @@ export interface OrdemProgramavel {
    * a cadeia de setup dá um valor na célula e outro no checklist.
    */
   numero?: string
+  /**
+   * Nome da receita (código do comercial) — só para a otimização de
+   * sequência agrupar por FAMÍLIA de tratamento (19/09/2026). Sem ele, cada
+   * receita é a própria família.
+   */
+  receitaNome?: string
   /**
    * A produção já tocou a ordem: não se move, mas continua ocupando a
    * capacidade e a numeração do dia dela. Entra na carga da célula (setup
@@ -350,12 +358,29 @@ export function autoProgramar(
  * botão não tirava nada dos 320 min da TSI 1). A fronteira urgente → normal
  * também é aproveitada: se alguma receita aparece dos dois lados, ela fecha
  * as urgentes e abre as normais, e essa troca some.
+ *
+ * Famílias (19/09/2026, pedido do Arion): as receitas ficam agrupadas por
+ * FAMÍLIA de tratamento (V&P, Dermacor, Standak, FTZ60, FTZ Elite —
+ * `familiaDoTratamento` pelo `receitaNome`) e, dentro da família, a de
+ * MENOS itens vem primeiro — a base antes das derivações ("o FTZ60 +
+ * RCoMoNi + Lli tem mais itens que o FTZ60, então deveria vir depois"),
+ * pela contagem em `itensPorReceita` (sem ela, pelo nome). Entre famílias,
+ * a que tem mais ordens vai na frente (a regra "bloco maior primeiro" de
+ * sempre, um nível acima). Sem `receitaNome`, cada receita é a própria
+ * família e o resultado é o de antes.
  */
-export function otimizarSequencia(fila: OrdemProgramavel[]): Atribuicao[] {
+export function otimizarSequencia(
+  fila: OrdemProgramavel[],
+  itensPorReceita?: ReadonlyMap<string, number>,
+): Atribuicao[] {
   const urgentes = fila.filter((o) => o.prioridade === 'Urgente')
   const normais = fila.filter((o) => o.prioridade !== 'Urgente')
 
-  /** Blocos por receita (maiores primeiro); dentro do bloco, por cultivar (maiores primeiro). */
+  /**
+   * Blocos por receita, agrupados por família (famílias com mais ordens
+   * primeiro; dentro da família, menos itens primeiro); dentro da receita,
+   * por cultivar (maiores primeiro).
+   */
   const blocos = (lista: OrdemProgramavel[]): OrdemProgramavel[][] => {
     const porReceita = new Map<string, Map<string, OrdemProgramavel[]>>()
     for (const o of lista) {
@@ -365,9 +390,32 @@ export function otimizarSequencia(fila: OrdemProgramavel[]): Atribuicao[] {
       r.set(o.cultivar, c)
       porReceita.set(o.receitaId, r)
     }
-    return [...porReceita.values()]
-      .map((r) => [...r.values()].sort((a, b) => b.length - a.length).flat())
-      .sort((a, b) => b.length - a.length)
+    const receitas = [...porReceita.entries()].map(([receitaId, r]) => {
+      const ordens = [...r.values()].sort((a, b) => b.length - a.length).flat()
+      const nome = ordens[0]?.receitaNome
+      return {
+        receitaId,
+        nome,
+        familia: nome ? familiaDoTratamento(nome) : receitaId,
+        itens: itensPorReceita?.get(receitaId) ?? null,
+        ordens,
+      }
+    })
+    const porFamilia = new Map<string, typeof receitas>()
+    for (const rc of receitas) porFamilia.set(rc.familia, [...(porFamilia.get(rc.familia) ?? []), rc])
+    const total = (rs: typeof receitas) => rs.reduce((t, rc) => t + rc.ordens.length, 0)
+    return [...porFamilia.values()]
+      .sort((a, b) => total(b) - total(a))
+      .flatMap((rs) =>
+        [...rs]
+          .sort((a, b) =>
+            compararTratamentos(
+              { nome: a.nome ?? a.receitaId, itens: a.itens },
+              { nome: b.nome ?? b.receitaId, itens: b.itens },
+            ),
+          )
+          .map((rc) => rc.ordens),
+      )
   }
 
   const bu = blocos(urgentes)

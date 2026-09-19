@@ -136,6 +136,18 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   - volume (L) = dose × peso_semente_kg / 1000 (informativo, só ml/kg)
 - Nome da receita = **código do comercial** (FTZ60, V&P, DER + LMT, FTZ ELITE…) — língua única
   entre comercial e produção, sem tabela de-para.
+- **Famílias de tratamento** (19/09/2026, pedido do Arion: "V&P e suas derivações, onde V&P é
+  a base; Dermacor; Standak; FTZ60; FTZ Elite"): `src/dominio/tratamentos.ts` —
+  `familiaDoTratamento(nome)` reconhece a família pelo COMEÇO do nome normalizado
+  (`FAMILIAS_TSI`: V&P/VEP, DER/DERMACOR, STDK/STANDAK, FTZ ELITE, FTZ60 — cobre "FTZ 60 S" e
+  "STANDAK TOP"); fora delas, o primeiro segmento antes do "+" é a família (FTZ80, SEM TSI).
+  Família nova = uma linha em `FAMILIAS_TSI`. `compararTratamentos` = família → **menos itens
+  na receita primeiro** (a base antes das derivações: "o FTZ60 + RCoMoNi + Lli tem mais itens
+  que o FTZ60, então deveria vir depois") → nome. É a ordem da **Otimizar sequência**
+  (`otimizarSequencia(fila, itensPorReceita)`: famílias com mais ordens primeiro, dentro da
+  família por itens, dentro da receita por cultivar; sem `receitaNome` cada receita é a própria
+  família e o resultado é o de antes) e da coluna Tratamento da lista do quadro do dia. A
+  Programação carrega `listarReceitas()` uma vez para contar os itens.
 - **A receita NÃO define o tanque** (decisão de 06/08/2026): ela é só **produto + dose**. A
   distribuição varia de ordem para ordem, então quem informa o destino de cada produto é o
   **operador**, ao preparar a ordem, antes dos pesos (tabela `ordem_produtos`).
@@ -681,7 +693,10 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    o `PainelMover` abre numa linha extra). Os cartões ficam atrás do botão "cartões" — único
    lugar com arrastar, ▲▼ e a faixa Prioridades do dia. **Ordenar pelo cabeçalho é só visão**
    (`ordenarQuadroDoDia` em `src/dominio/quadroDoDia.ts` sobre `src/dominio/ordenacao.ts`:
-   pt-BR numérico, empate pelo nº sempre asc; ciclo asc→desc→padrão; **por máquina** — a 1ª
+   pt-BR numérico, empate pelo nº sempre asc; ciclo asc→desc→padrão; **as já produzidas
+   (Finalizada/Qualidade apontada/Apontada) NÃO entram na ordenação** — ficam no fim, na ordem
+   da fila, com fundo verde ("quando classificar, não mexer nas ordens que já foram
+   produzidas"); Tratamento ordena por família e nº de itens (§1 Famílias); **por máquina** — a 1ª
    versão tinha um estado só e "quando eu classifico uma, a de baixo classifica também";
    Expedição com sem-data sempre no fim, Status na ordem do ciclo de vida): o `seq` gravado
    não muda. **A lista tem as mesmas ações do cartão** (2ª rodada, pedido dele: "as mesmas

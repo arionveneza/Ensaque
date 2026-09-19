@@ -4,12 +4,13 @@ import { ehConcluida, exibicaoDoDia, grupoMovel, ordenarQuadroDoDia, posicoesDeE
 const o = (
   id: string,
   status_efetivo: string,
-  extra: Partial<{ cultivar: string; receita_nome: string; bags: number; peso_t: number; data_expedicao: string | null }> = {},
+  extra: Partial<{ cultivar: string; receita_id: string; receita_nome: string; bags: number; peso_t: number; data_expedicao: string | null }> = {},
 ) => ({
   id,
   numero: id,
   status_efetivo,
   cultivar: 'NEO680 IPRO',
+  receita_id: 'r-ftz60',
   receita_nome: 'FTZ60',
   bags: 10,
   peso_t: 8.5,
@@ -78,15 +79,16 @@ describe('ordenarQuadroDoDia', () => {
     expect(ordenarQuadroDoDia(fila, null).map((x) => x.id)).toEqual(['3', '6', '5', '4', '1', '2', '7'])
   })
 
-  it('por cultivar mistura concluidas e ativas (Excel puro), numerico em pt-BR, empate pelo numero', () => {
+  it('por cultivar ordena SO as ativas; as ja produzidas ficam no fim, na ordem da fila', () => {
     const lista = [
-      o('20', 'Finalizada', { cultivar: 'NEO1000 IPRO' }),
+      o('20', 'Finalizada', { cultivar: '0000 IPRO' }),
       o('3', 'Em producao', { cultivar: 'O790 IPRO' }),
       o('10', 'Programada', { cultivar: 'NEO680 IPRO' }),
       o('9', 'Programada', { cultivar: 'NEO680 IPRO' }),
+      o('30', 'Apontada', { cultivar: '0001 IPRO' }),
     ]
-    expect(ordenarQuadroDoDia(lista, { campo: 'cultivar', dir: 'asc' }).map((x) => x.id)).toEqual(['9', '10', '20', '3'])
-    expect(ordenarQuadroDoDia(lista, { campo: 'cultivar', dir: 'desc' }).map((x) => x.id)).toEqual(['3', '20', '9', '10'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'cultivar', dir: 'asc' }).map((x) => x.id)).toEqual(['9', '10', '3', '20', '30'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'cultivar', dir: 'desc' }).map((x) => x.id)).toEqual(['3', '9', '10', '20', '30'])
   })
 
   it('por peso desc, empate pelo numero em asc', () => {
@@ -94,31 +96,34 @@ describe('ordenarQuadroDoDia', () => {
     expect(ordenarQuadroDoDia(lista, { campo: 'peso', dir: 'desc' }).map((x) => x.id)).toEqual(['c', 'a', 'b'])
   })
 
-  it('tratamento usa o nome da receita; bags e numerico', () => {
+  it('tratamento: por familia, base (menos itens) antes das derivacoes; bags e numerico', () => {
+    const itens = new Map([['r-vic', 6], ['r-ftz60', 5], ['r-der', 4], ['r-lli', 8]])
     const lista = [
-      o('1', 'Programada', { receita_nome: 'V&P', bags: 3 }),
-      o('2', 'Programada', { receita_nome: 'DER + LMT', bags: 25 }),
-      o('3', 'Programada', { receita_nome: 'FTZ60', bags: 9 }),
+      o('1', 'Programada', { receita_id: 'r-lli', receita_nome: 'FTZ60 + RCoMoNi + Lli', bags: 3 }),
+      o('2', 'Programada', { receita_id: 'r-der', receita_nome: 'DER + LMT', bags: 25 }),
+      o('3', 'Programada', { receita_id: 'r-vic', receita_nome: 'FTZ60 + VIC', bags: 9 }),
+      o('4', 'Programada', { receita_id: 'r-ftz60', receita_nome: 'FTZ60', bags: 1 }),
     ]
-    expect(ordenarQuadroDoDia(lista, { campo: 'tratamento', dir: 'asc' }).map((x) => x.id)).toEqual(['2', '3', '1'])
-    expect(ordenarQuadroDoDia(lista, { campo: 'bags', dir: 'asc' }).map((x) => x.id)).toEqual(['1', '3', '2'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'tratamento', dir: 'asc' }, itens).map((x) => x.id)).toEqual(['2', '4', '3', '1'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'bags', dir: 'asc' }).map((x) => x.id)).toEqual(['4', '1', '3', '2'])
   })
 
-  it('expedicao: por data, e quem nao tem data fica no fim em asc E em desc', () => {
+  it('expedicao: por data, quem nao tem data no fim das ativas, e as produzidas depois', () => {
     const lista = [
       o('semB', 'Programada'),
+      o('fim', 'Finalizada', { data_expedicao: '2026-09-10' }),
       o('21', 'Programada', { data_expedicao: '2026-09-21' }),
       o('semA', 'Programada'),
       o('18', 'Programada', { data_expedicao: '2026-09-18' }),
     ]
-    expect(ordenarQuadroDoDia(lista, { campo: 'expedicao', dir: 'asc' }).map((x) => x.id)).toEqual(['18', '21', 'semA', 'semB'])
-    expect(ordenarQuadroDoDia(lista, { campo: 'expedicao', dir: 'desc' }).map((x) => x.id)).toEqual(['21', '18', 'semA', 'semB'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'expedicao', dir: 'asc' }).map((x) => x.id)).toEqual(['18', '21', 'semA', 'semB', 'fim'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'expedicao', dir: 'desc' }).map((x) => x.id)).toEqual(['21', '18', 'semA', 'semB', 'fim'])
   })
 
-  it('status: na ordem do ciclo de vida, nao alfabetica; desconhecido por ultimo', () => {
+  it('status: na ordem do ciclo de vida, nao alfabetica; desconhecido por ultimo entre as ativas', () => {
     const lista = [o('f', 'Finalizada'), o('x', 'Zzz'), o('e', 'Em producao'), o('p', 'Programada'), o('a', 'Aguardando lote')]
-    expect(ordenarQuadroDoDia(lista, { campo: 'status', dir: 'asc' }).map((x) => x.id)).toEqual(['p', 'a', 'e', 'f', 'x'])
-    expect(ordenarQuadroDoDia(lista, { campo: 'status', dir: 'desc' }).map((x) => x.id)).toEqual(['x', 'f', 'e', 'a', 'p'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'status', dir: 'asc' }).map((x) => x.id)).toEqual(['p', 'a', 'e', 'x', 'f'])
+    expect(ordenarQuadroDoDia(lista, { campo: 'status', dir: 'desc' }).map((x) => x.id)).toEqual(['x', 'e', 'a', 'p', 'f'])
   })
 
   it('nao altera a fila recebida', () => {

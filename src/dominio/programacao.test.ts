@@ -218,6 +218,42 @@ describe('otimizar sequencia', () => {
     expect(nova[nova.length - 2].id).toBe('143226')
   })
 
+  it('dentro da familia, a receita com menos itens vai na frente (base antes das derivacoes)', () => {
+    // 19/09/2026: "o FTZ60 + RCoMoNi + Lli tem mais itens que o FTZ60, então
+    // deveria vir depois, assim como o FTZ60 + VIC"
+    const itens = new Map([['r-lli', 8], ['r-ftz60', 5], ['r-vic', 6]])
+    const fila = [
+      ord({ id: 'a', receitaId: 'r-lli', receitaNome: 'FTZ60 + RCoMoNi + Lli', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'b', receitaId: 'r-vic', receitaNome: 'FTZ60 + VIC', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'c', receitaId: 'r-ftz60', receitaNome: 'FTZ60', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'd', receitaId: 'r-lli', receitaNome: 'FTZ60 + RCoMoNi + Lli', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+    ]
+    expect(otimizarSequencia(fila, itens).map((a) => a.ordemId)).toEqual(['c', 'b', 'a', 'd'])
+  })
+
+  it('familias ficam juntas: a com mais ordens primeiro, e a base de cada uma abre a familia', () => {
+    const itens = new Map([['r-vp', 5], ['r-vp-raiz', 6], ['r-ftz60', 5], ['r-vic', 6], ['r-der', 4]])
+    const fila = [
+      ord({ id: 'v1', receitaId: 'r-vp-raiz', receitaNome: 'V&P + RAIZ', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'f1', receitaId: 'r-vic', receitaNome: 'FTZ60 + VIC', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'd1', receitaId: 'r-der', receitaNome: 'DER + LMT', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'f2', receitaId: 'r-ftz60', receitaNome: 'FTZ60', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'v2', receitaId: 'r-vp', receitaNome: 'V&P', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'f3', receitaId: 'r-vic', receitaNome: 'FTZ60 + VIC', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+    ]
+    // FTZ60 (3 ordens) → V&P (2) → Dermacor (1); dentro: base primeiro
+    expect(otimizarSequencia(fila, itens).map((a) => a.ordemId)).toEqual(['f2', 'f1', 'f3', 'v2', 'v1', 'd1'])
+  })
+
+  it('sem nome nem contagem, cada receita e a propria familia e o resultado e o de antes', () => {
+    const fila = [
+      ord({ id: 'a', receitaId: 'R1', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'b', receitaId: 'R2', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'c', receitaId: 'R2', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+    ]
+    expect(otimizarSequencia(fila).map((a) => a.ordemId)).toEqual(['b', 'c', 'a'])
+  })
+
   it('renumera a sequencia de 1 a n', () => {
     const fila = [
       ord({ maquinaId: 'TSI1', dataProg: DIAS[0] }),

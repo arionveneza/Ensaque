@@ -4,6 +4,7 @@
  * ordenação da visão em lista. Puro — vale para os cartões e para a lista.
  */
 import { ordenarPor, porNome, porNumero, type Ordenacao } from './ordenacao'
+import { compararTratamentos } from './tratamentos'
 
 export const STATUS_CONCLUIDOS = ['Finalizada', 'Qualidade apontada', 'Apontada'] as const
 
@@ -26,6 +27,7 @@ export interface OrdemDoQuadro {
   id: string
   numero: string
   cultivar: string
+  receita_id: string
   receita_nome: string
   bags: number
   peso_t: number
@@ -104,28 +106,37 @@ export function posicoesDeExibicao<T extends { id: string; status_efetivo: strin
 /**
  * Linhas da lista: nulo = a exibição padrão dos cartões; senão pelo campo,
  * com empate pelo nº da ordem (pt-BR numérico). SÓ VISÃO — o seq não muda.
- * Expedição: quem não tem data fica SEMPRE no fim, em asc e em desc (data
- * é o que se procura; "sem data" não é "a maior"). Status: na ordem do
- * ciclo de vida, não alfabética.
+ * - As já produzidas (concluídas) NÃO entram na ordenação: ficam sempre no
+ *   fim, na ordem da fila ("quando classificar, não mexer nas ordens que já
+ *   foram produzidas" — Arion, 19/09/2026).
+ * - Expedição: quem não tem data fica sempre no fim das ativas, em asc e em
+ *   desc (data é o que se procura; "sem data" não é "a maior").
+ * - Status: na ordem do ciclo de vida, não alfabética.
+ * - Tratamento: por família, base antes das derivações (menos itens na
+ *   receita primeiro — `itensPorReceita`), depois nome.
  */
 export function ordenarQuadroDoDia<T extends OrdemDoQuadro>(
   fila: readonly T[],
   ordenacao: Ordenacao<CampoQuadro>,
+  itensPorReceita?: ReadonlyMap<string, number>,
 ): T[] {
   if (!ordenacao) return exibicaoDoDia(fila).exibicao
+  const ativas = fila.filter((x) => !ehConcluida(x.status_efetivo))
+  const concluidas = fila.filter((x) => ehConcluida(x.status_efetivo))
   const porNumeroDaOrdem = (a: T, b: T) => porNome(a.numero, b.numero)
+  const tratamentoDe = (x: T) => ({ nome: x.receita_nome, itens: itensPorReceita?.get(x.receita_id) ?? null })
   const comparadores = {
     cultivar: (a: T, b: T) => porNome(a.cultivar, b.cultivar),
-    tratamento: (a: T, b: T) => porNome(a.receita_nome, b.receita_nome),
+    tratamento: (a: T, b: T) => compararTratamentos(tratamentoDe(a), tratamentoDe(b)),
     bags: (a: T, b: T) => porNumero(a.bags, b.bags),
     peso: (a: T, b: T) => porNumero(a.peso_t, b.peso_t),
     expedicao: (a: T, b: T) => (a.data_expedicao ?? '').localeCompare(b.data_expedicao ?? ''),
     status: (a: T, b: T) => porNumero(posNoCiclo(a.status_efetivo), posNoCiclo(b.status_efetivo)),
   }
   if (ordenacao.campo === 'expedicao') {
-    const comData = fila.filter((x) => x.data_expedicao)
-    const semData = [...fila.filter((x) => !x.data_expedicao)].sort(porNumeroDaOrdem)
-    return [...ordenarPor(comData, ordenacao, comparadores, porNumeroDaOrdem), ...semData]
+    const comData = ativas.filter((x) => x.data_expedicao)
+    const semData = [...ativas.filter((x) => !x.data_expedicao)].sort(porNumeroDaOrdem)
+    return [...ordenarPor(comData, ordenacao, comparadores, porNumeroDaOrdem), ...semData, ...concluidas]
   }
-  return ordenarPor(fila, ordenacao, comparadores, porNumeroDaOrdem)
+  return [...ordenarPor(ativas, ordenacao, comparadores, porNumeroDaOrdem), ...concluidas]
 }

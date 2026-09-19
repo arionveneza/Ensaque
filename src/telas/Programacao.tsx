@@ -128,6 +128,12 @@ export default function Programacao() {
   const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[] | null>(null)
   const [ordemAberta, setOrdemAberta] = useState<{ ordem: api.LinhaOrdem; conferencia: g.ConferenciaLinha | null } | null>(null)
   const [abrindoId, setAbrindoId] = useState<string | null>(null)
+  /**
+   * Nº de itens de cada receita (19/09/2026): a otimização de sequência e a
+   * coluna Tratamento da lista põem a base antes das derivações. Carregado
+   * uma vez, junto dos cadastros — receita não muda no meio do dia.
+   */
+  const [itensPorReceita, setItensPorReceita] = useState<Map<string, number>>(new Map())
 
   const dias = useMemo(
     () => Array.from({ length: 7 }, (_, i) => somaDias(inicio, i)),
@@ -171,12 +177,14 @@ export default function Programacao() {
       g.listarPool(),
       g.listarDiasProducao(janela.de, janela.ate),
       g.listarOrdensAtrasadas(diaDeProducao(new Date())),
+      g.listarReceitas(),
     ])
-      .then(([c, lista, poolLista, cal, atrasadasLista]) => {
+      .then(([c, lista, poolLista, cal, atrasadasLista, receitas]) => {
         if (!vivo) return
         setMaquinas(c.maquinas)
         setMotivos(c.motivos)
         setProdutos(c.produtos)
+        setItensPorReceita(new Map(receitas.map((r) => [r.id, r.receita_itens.length])))
         setOrdens(lista)
         setPool(poolLista)
         setCalendario(cal)
@@ -228,6 +236,7 @@ export default function Programacao() {
       numero: o.numero,
       cultivar: o.cultivar,
       receitaId: o.receita_id,
+      receitaNome: o.receita_nome,
       prioridade: o.prioridade,
       pesoT: o.peso_t,
       // explícito, não "!== 'Aguardando lote'": Programada (11/08/2026,
@@ -384,7 +393,7 @@ export default function Programacao() {
               .map((x) => programaveis.find((p) => p.id === x.id)!)
               .filter(Boolean)
             semOrdenacao(maq)
-            await g.aplicarAtribuicoes(otimizarSequencia(fila))
+            await g.aplicarAtribuicoes(otimizarSequencia(fila, itensPorReceita))
           })
         }
       >
@@ -1112,6 +1121,7 @@ export default function Programacao() {
                 onLimparFiltro={() => setFiltroStatus(new Set())}
                 ordenacao={ordenacaoPorMaquina[m.id] ?? null}
                 onOrdenar={(c) => ordenarMaquina(m.id, c)}
+                itensPorReceita={itensPorReceita}
                 podeProgramar={podeProgramar}
                 podeMarcarUrgente={podeMarcarUrgente}
                 onAbrir={abrirOrdem}

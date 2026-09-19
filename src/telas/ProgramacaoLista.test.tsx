@@ -37,7 +37,8 @@ const fila: OrdemVisao[] = [
   ordem({ id: 'C', seq: 3, status_efetivo: 'Em producao', cultivar: '0820 IPRO', reprogramacoes: 2, data_prog_original: '2026-09-17' }),
   ordem({ id: 'D', seq: 4, status_efetivo: 'Programada', cultivar: 'NEO680 IPRO' }),
   ordem({ id: 'F', seq: 5, status_efetivo: 'Programada', cultivar: 'NEO680 IPRO', data_expedicao: '2026-09-25' }),
-  ordem({ id: 'E', seq: 6, status_efetivo: 'Finalizada', cultivar: 'SS NEO700 I2X', bags: 5, peso_t: 4 }),
+  // cultivar "0000" de propósito: se a ordenação mexesse nas já produzidas, a E iria pro topo
+  ordem({ id: 'E', seq: 6, status_efetivo: 'Finalizada', cultivar: '0000 IPRO', bags: 5, peso_t: 4 }),
 ]
 
 function montar(extra: Partial<PropsListaMaquinaDia> = {}) {
@@ -89,16 +90,16 @@ describe('ListaMaquinaDia', () => {
     expect(linhas().map((l) => `${l.id}:${l.seq}`)).toEqual(['C:1', 'A:2', 'B:3', 'D:4', 'F:5', 'E:6'])
   })
 
-  it('ordenar por cultivar reordena as linhas mas NAO renumera a fila', () => {
+  it('ordenar por cultivar reordena as linhas mas NAO renumera a fila nem mexe na ja produzida', () => {
     const { linhas } = montar({ ordenacao: { campo: 'cultivar', dir: 'asc' } })
-    // 0820 < NEO680 (D, F pelo nº) < NEO1000 < O790 < SS NEO700 (numérico, pt-BR)
+    // 0820 < NEO680 (D, F pelo nº) < NEO1000 < O790 (numérico, pt-BR); a E (Finalizada, "0000") fica no fim
     expect(linhas().map((l) => `${l.id}:${l.seq}`)).toEqual(['C:1', 'D:4', 'F:5', 'B:3', 'A:2', 'E:6'])
   })
 
-  it('concluida fica apagada; urgente e normal; P1 na vaga do status', () => {
+  it('concluida fica com fundo verde; urgente e normal; P1 na vaga do status', () => {
     const { linhas } = montar()
-    expect(linhas().find((l) => l.id === 'E')?.classes).toContain('opacity-70')
-    expect(linhas().find((l) => l.id === 'A')?.classes).not.toContain('opacity-70')
+    expect(linhas().find((l) => l.id === 'E')?.classes).toContain('bg-green-50')
+    expect(linhas().find((l) => l.id === 'A')?.classes).not.toContain('bg-green-50')
     expect(screen.getAllByText('urgente')).toHaveLength(1 + 6) // a Tag da A + o botão de cada linha
     expect(screen.getAllByText('normal')).toHaveLength(5)
     expect(screen.getByText('P1')).toBeInTheDocument()
