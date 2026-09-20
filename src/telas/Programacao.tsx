@@ -537,10 +537,10 @@ export default function Programacao() {
    */
   const otimizar = (lista: OrdemVisao[], maq: string, semStatus: boolean) =>
     comErro(async () => {
-      const fila = lista
-        .filter((x) => !jaIniciada(x.status_efetivo as StatusEfetivo))
-        .map((x) => programaveis.find((p) => p.id === x.id)!)
-        .filter(Boolean)
+      // a iniciada entra JUNTO (não filtrada aqui): otimizarSequencia precisa
+      // ver o seq dela pra não atropelar a posição ao renumerar as demais —
+      // ela mesma nunca sai como atribuição (nunca candidata a mover).
+      const fila = lista.map((x) => programaveis.find((p) => p.id === x.id)!).filter(Boolean)
       semOrdenacao(maq)
       setFilaSemStatus((a) => ({ ...a, [maq]: semStatus }))
       await g.aplicarAtribuicoes(otimizarSequencia(fila, itensPorReceita))

@@ -293,6 +293,22 @@ describe('otimizar sequencia', () => {
     ]
     expect(otimizarSequencia(fila).map((a) => a.seq)).toEqual([1, 2, 3])
   })
+
+  it('pula os seq ja ocupados por ordem iniciada; ela nunca sai na atribuicao', () => {
+    // achado do Arion, 20/09/2026: renumerar 1..n do zero colidia com quem
+    // já tinha tocado a produção e ficou parado na posição dela — duas FTZ60
+    // vizinhas na fila real calculavam o setup contra a iniciada intrusa, não
+    // uma contra a outra, e mostravam 40 min (troca) em vez de 20 (mesmo).
+    const fila = [
+      ord({ id: 'a', receitaId: 'R1', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'x', receitaId: 'R9', maquinaId: 'TSI1', dataProg: DIAS[0], seq: 2, iniciada: true }),
+      ord({ id: 'b', receitaId: 'R1', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+      ord({ id: 'c', receitaId: 'R1', maquinaId: 'TSI1', dataProg: DIAS[0] }),
+    ]
+    const nova = otimizarSequencia(fila)
+    expect(nova.map((a) => a.ordemId)).toEqual(['a', 'b', 'c']) // 'x' (iniciada) nunca e candidata
+    expect(nova.map((a) => a.seq)).toEqual([1, 3, 4]) // pula o 2, ocupado pela iniciada
+  })
 })
 
 describe('rebalancear o dia', () => {

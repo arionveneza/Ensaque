@@ -375,8 +375,18 @@ export function otimizarSequencia(
   fila: OrdemProgramavel[],
   itensPorReceita?: ReadonlyMap<string, number>,
 ): Atribuicao[] {
-  const urgentes = fila.filter((o) => o.prioridade === 'Urgente')
-  const normais = fila.filter((o) => o.prioridade !== 'Urgente')
+  // ordem iniciada nunca é candidata a mover (o seq dela fica intacto), mas
+  // CONTINUA ocupando a posição no dia — reordenar as demais do zero (i+1)
+  // colidia com esses números (achado do Arion, 20/09/2026: FTZ60 vizinhas
+  // mostrando setup de troca porque cada uma calculava contra a iniciada que
+  // sobrou na posição dela, não contra a outra FTZ60). As movíveis pulam os
+  // números já ocupados por iniciadas, preservando a ordem relativa entre si.
+  const movidas = fila.filter((o) => !o.iniciada)
+  const ocupados = new Set(
+    fila.filter((o) => o.iniciada && o.seq != null).map((o) => o.seq as number),
+  )
+  const urgentes = movidas.filter((o) => o.prioridade === 'Urgente')
+  const normais = movidas.filter((o) => o.prioridade !== 'Urgente')
 
   /**
    * Blocos por receita, agrupados por família (famílias com mais ordens
@@ -450,11 +460,16 @@ export function otimizarSequencia(
     bn.unshift(...tiraFamilia(bn, f))
   }
 
-  return [...bu.flat(), ...bn.flat()].map((o, i) => ({
+  let proximo = 1
+  const proximaLivre = (): number => {
+    while (ocupados.has(proximo)) proximo++
+    return proximo++
+  }
+  return [...bu.flat(), ...bn.flat()].map((o) => ({
     ordemId: o.id,
     maquinaId: o.maquinaId!,
     dia: o.dataProg!,
-    seq: i + 1,
+    seq: proximaLivre(),
   }))
 }
 

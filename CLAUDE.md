@@ -786,6 +786,28 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    banco: zero receitas com nome duplicado e zero pares realmente vizinhos na fila com
    nome igual e `receita_id` diferente nos últimos 14 dias — o cálculo bate. Aviso de
    texto abaixo do toggle, só quando `porStatus`, apontando pra "pela sequência".
+   **"Otimizar sequência" colidia com ordem já iniciada** (20/09/2026, achado do Arion
+   junto com o anterior — "o botão não funciona, continua mostrando ordens de mesmo
+   tratamento com setup de 40"). Esse era um bug de verdade, não confusão de tela:
+   `otimizarSequencia` (`src/dominio/programacao.ts`) renumerava a fila inteira de 1 a n
+   do zero, mas o chamador (`otimizar()`, Programacao.tsx) já filtrava a `iniciada` ANTES
+   de passar a fila pra função — ela ficava fora da renumeração, mas seguia gravada no
+   banco com o seq ANTIGO. Se a iniciada estava na posição 6 e a renumeração das outras
+   também passava pelo 6, colidiam — duas ordens na mesma posição, e cada uma passava a
+   calcular o setup contra a intrusa errada, não contra a vizinha real de mesmo
+   tratamento (achado direto em produção, TSI1/20-09: `ordem_reprogramacoes` mostrou uma
+   cascata limpa às 10h15, depois um "mover" manual às 10h35 pousando a 150067 em cima da
+   149768 sem checar colisão, e uma renumeração posterior — sem rastro na tabela, porque
+   o gatilho só loga mudança de dia/máquina, não de seq puro — que empilhou mais três
+   nas mesmas posições da 149836/149791/149768/149813). Corrigido nas DUAS pontas:
+   `otimizar()` passa a fila INTEIRA (com a iniciada) pra `otimizarSequencia`, que separa
+   movível de iniciada internamente, calcula os números já ocupados pela iniciada e pula
+   esses valores ao numerar as demais (`proximaLivre`) — a iniciada nunca sai como
+   atribuição (seq dela intocado), mas o número que ela ocupa não é mais reusado. Vale
+   também pra "Otimizar sem status" (mesma função). **Não auditado ainda**: se o mesmo
+   "renumera do zero sem olhar quem já está na célula" existe em Encaixar/Programar
+   automaticamente/Rebalancear — é o próximo lugar a checar se a colisão aparecer de novo
+   fora do Otimizar sequência.
    **Cartão "Ordens sem caminhão até X"** (19/09/2026, pedido do Arion: "uma maneira de ver
    quais ordens estão programadas mas não irão atender nenhuma agenda dentro de um dia que eu
    vou escolher em um calendário"; decisão dele: **= não há agendamento desse produto com data
