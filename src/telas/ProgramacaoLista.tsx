@@ -148,6 +148,13 @@ export function ListaMaquinaDia({
           </button>
         ))}
       </div>
+      {porStatus && linhas.length > 0 && (
+        <p className="mb-2 text-xs text-stone-500 dark:text-stone-400">
+          A coluna Setup segue a sequência real de produção — em "por status" a vizinha na
+          tela nem sempre é a vizinha real da fila. Troque para "pela sequência" para ver
+          os vizinhos de verdade.
+        </p>
+      )}
       {fila.length === 0 ? (
         <Vazio>Nenhuma ordem programada.</Vazio>
       ) : linhas.length === 0 ? (

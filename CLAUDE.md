@@ -777,7 +777,15 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    anterior). Só na lista, como a coluna Tempo (a mesma regra de "por ordem, não nos
    cartões"). Informativo, igual já era em Execução/Painel: não soma ao Tempo nem ao
    planejado — o setup real é apontado como parada Planejada. Total no rodapé soma só as
-   ordens visíveis (respeita o filtro de status).
+   ordens visíveis (respeita o filtro de status). **"Por status" confunde a leitura**
+   (achado do Arion no mesmo dia, com print: "para 2 tratamentos iguais... temos setup de
+   40 min p cada ordem" — parecia errado). Não é: o cálculo sempre olha o vizinho REAL na
+   sequência gravada (igual Execução/Painel), nunca a linha vizinha na TELA — e "por
+   status" (o modo padrão) agrupa por status, então a vizinha visual quase nunca é a
+   vizinha real (o mesmo problema que já valia pras setas ▲▼ nesse modo). Conferido no
+   banco: zero receitas com nome duplicado e zero pares realmente vizinhos na fila com
+   nome igual e `receita_id` diferente nos últimos 14 dias — o cálculo bate. Aviso de
+   texto abaixo do toggle, só quando `porStatus`, apontando pra "pela sequência".
    **Cartão "Ordens sem caminhão até X"** (19/09/2026, pedido do Arion: "uma maneira de ver
    quais ordens estão programadas mas não irão atender nenhuma agenda dentro de um dia que eu
    vou escolher em um calendário"; decisão dele: **= não há agendamento desse produto com data

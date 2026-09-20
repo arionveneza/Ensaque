@@ -106,6 +106,14 @@ describe('ListaMaquinaDia', () => {
     expect(props.onAlternarPorStatus).toHaveBeenCalled()
   })
 
+  it('aviso do Setup so aparece "por status" (onde a vizinha na tela nao e a vizinha real)', () => {
+    montar()
+    expect(screen.getByText(/segue a sequência real/)).toBeInTheDocument()
+    montar({ porStatus: false })
+    // a 2ª montagem (pela sequência) não repete o aviso; só a 1ª (por status) o mostrou
+    expect(screen.getAllByText(/segue a sequência real/)).toHaveLength(1)
+  })
+
   it('ordenar por cultivar reordena as linhas mas NAO renumera a fila nem mexe na ja produzida', () => {
     const { linhas } = montar({ ordenacao: { campo: 'cultivar', dir: 'asc' } })
     // 0820 < NEO680 (D, F pelo nº) < NEO1000 < O790 (numérico, pt-BR); a E (Finalizada, "0000") fica no fim
