@@ -7,6 +7,8 @@ import {
   ehRelatorioMontagemCarga,
   bagsProduzidosSemApontar,
   cargasAgendadas,
+  chaveProduto,
+  classificarCargas,
   faltaPorProduto,
   ordenarFaltaPorProduto,
   recorteDaSelecao,
@@ -19,6 +21,7 @@ import {
   transferenciaDe,
   type CarregamentoLinha,
   type FaltaPorProduto,
+  type ProducaoPrevista,
 } from './expedicao'
 import type { Linha as LinhaXlsx } from './importacao/simpleagro'
 
@@ -1049,5 +1052,308 @@ describe('ordenarFaltaPorProduto (19/09/2026)', () => {
     expect(saida).not.toBe(entrada)
     expect(id(entrada)).toEqual(antes)
     expect(id(saida)).toEqual(['A | X | BG5M', 'B | X | BG5M'])
+  })
+})
+
+describe('cargas: o que da para atender (19/09/2026)', () => {
+  type AgC = CarregamentoLinha & { id: string; carga: string | null }
+  const agc = (over: Partial<AgC> = {}): AgC => ({
+    id: 'x', carga: null, cultivar: 'NEO700 I2X', tratamento: 'FTZ60',
+    embalagem: 'BG5M', bags: 10, data: '2026-09-10', ...over,
+  })
+  const pa = (bags: number) => [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags }]
+  const prod = (bags: number, dataProg: string | null, over: Partial<ProducaoPrevista> = {}): ProducaoPrevista => ({
+    cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M', bags, dataProg, ...over,
+  })
+  const cargaDe = (c: AgC) => c.carga
+
+  it('cobertoPlanejado reparte estoque + toda ordem aberta na ordem da fila', () => {
+    // estoque 5 + ordem de 15 sem dia = 20 planejados para três caminhões de 10
+    const s = saldosExpedicao(
+      [agc({ id: 'a', data: '2026-09-08' }), agc({ id: 'b', data: '2026-09-10' }), agc({ id: 'c', data: '2026-09-12' })],
+      [], pa(5), [prod(15, null)], '2026-09-01',
+    )
+    expect(s[0].caminhoes.map((c) => c.cobertoPlanejado)).toEqual([10, 10, 0])
+    // ordem sem dia não garante nada: coberto é só o estoque
+    expect(s[0].caminhoes.map((c) => c.coberto)).toEqual([5, 0, 0])
+    expect(s[0].caminhoes.map((c) => c.cobertoEstoque)).toEqual([5, 0, 0])
+  })
+
+  it('invariante: cobertoEstoque <= coberto <= cobertoPlanejado <= bags, com ordem de todo tipo', () => {
+    const s = saldosExpedicao(
+      [
+        agc({ id: 'a', data: null, bags: 7 }),
+        agc({ id: 'b', data: '2026-09-10', bags: 12 }),
+        agc({ id: 'c', data: '2026-09-15', bags: 20 }),
+        agc({ id: 'd', data: '2026-09-15', bags: 5 }),
+      ],
+      [], pa(6),
+      [
+        prod(4, '2026-09-20', { iniciada: true }), // iniciada com data futura
+        prod(8, '2026-09-09'), // antes dos caminhões
+        prod(9, '2026-09-18'), // depois de todos
+        prod(3, null), // sem dia
+        prod(5, '2026-09-01'), // vencida (hoje é 05/09)
+      ],
+      '2026-09-05',
+    )
+    for (const c of s[0].caminhoes) {
+      expect(c.cobertoEstoque).toBeLessThanOrEqual(c.coberto)
+      expect(c.coberto).toBeLessThanOrEqual(c.cobertoPlanejado)
+      expect(c.cobertoPlanejado).toBeLessThanOrEqual(c.bags)
+    }
+    const somaPlanejado = s[0].caminhoes.reduce((t, c) => t + c.cobertoPlanejado, 0)
+    expect(somaPlanejado).toBe(Math.min(s[0].agendado, s[0].estoque + s[0].producaoPrevista))
+    // estoque 6 + ordens 29 = 35 planejados; agendado 44
+    expect(somaPlanejado).toBe(35)
+  })
+
+  it('SEM TSI: cobertoPlanejado e o proprio cobertoEstoque (semente branca nao tem ordem)', () => {
+    const s = saldosExpedicao(
+      [agc({ id: 'a', tratamento: 'SEM TSI', bags: 10 })],
+      // o distrator tem receita SEM TSI de propósito (existe: receita sem
+      // produto): é ela que uma regressão do ramo branca somaria
+      [{ cultivar: 'NEO700 I2X', bags: 4 }], [], [prod(50, '2026-09-09', { tratamento: 'SEM TSI' })],
+    )
+    expect(s[0].caminhoes[0].cobertoPlanejado).toBe(4)
+    expect(s[0].caminhoes[0].cobertoEstoque).toBe(4)
+  })
+
+  it('tres cargas: atende, planejada (fora do prazo) e falta planejar', () => {
+    // estoque 10 cobre a carga 1; a ordem de 10 sem dia planeja a carga 2
+    // (fora do prazo, porque sem dia não garante); a carga 3 não tem nada
+    const linhas = [
+      agc({ id: 'a', carga: '1', data: '2026-09-08' }),
+      agc({ id: 'b', carga: '2', data: '2026-09-10' }),
+      agc({ id: 'c', carga: '3', data: '2026-09-12' }),
+    ]
+    const s = saldosExpedicao(linhas, [], pa(10), [prod(10, null, { numero: '200' })], '2026-09-01')
+    const r = classificarCargas(s, cargasAgendadas(linhas), cargaDe)
+    expect(r.map((c) => [c.carga, c.situacao, c.foraDoPrazo, c.ordemForaDoPrazo, c.caminhaoSemData])).toEqual([
+      ['1', 'atende', false, false, false], ['2', 'planejada', true, true, false], ['3', 'falta-planejar', false, false, false],
+    ])
+    expect(r[1]).toMatchObject({ estoque: 0, garantido: 0, planejado: 10, semOrdem: 0, bagsSemDePara: 0 })
+    expect(r[1].produtos[0].ordensForaDoPrazo.map((o) => o.numero)).toEqual(['200'])
+    expect(r[1].produtos[0].ordensNoPrazo).toEqual([])
+    expect(r[2]).toMatchObject({ semOrdem: 10, semLote: 0 })
+    expect(r[2].produtos[0]).toMatchObject({ bags: 10, estoque: 0, garantido: 0, planejado: 0, falta: 10, ateQuando: '2026-09-12' })
+    // carga atendida: nenhum caminhão descoberto, nenhuma ordem fora do prazo
+    expect(r[0].produtos[0]).toMatchObject({ ateQuando: null, caminhaoSemData: false, ordensForaDoPrazo: [] })
+  })
+
+  it('foraDoPrazo: so quando a ordem nao esta garantida ate a data do caminhao', () => {
+    const caso = (dataProg: string | null, iniciada: boolean, dataCaminhao: string | null) => {
+      const linhas = [agc({ id: 'a', carga: '1', data: dataCaminhao })]
+      const s = saldosExpedicao(linhas, [], [], [prod(10, dataProg, { iniciada })], '2026-09-05')
+      const [c] = classificarCargas(s, cargasAgendadas(linhas), cargaDe, { hoje: '2026-09-05' })
+      return [c.situacao, c.foraDoPrazo, c.ordemForaDoPrazo, c.caminhaoSemData, c.produtos[0].ordensForaDoPrazo.length]
+    }
+    expect(caso('2026-09-09', false, '2026-09-10')).toEqual(['planejada', false, false, false, 0]) // no prazo
+    expect(caso('2026-09-11', false, '2026-09-10')).toEqual(['planejada', true, true, false, 1]) // depois do caminhão
+    expect(caso(null, false, '2026-09-10')).toEqual(['planejada', true, true, false, 1]) // sem dia
+    expect(caso('2026-09-01', false, '2026-09-10')).toEqual(['planejada', true, true, false, 1]) // vencida
+    expect(caso('2026-09-30', true, '2026-09-10')).toEqual(['planejada', false, false, false, 0]) // iniciada, data futura
+    // caminhão sem data: só iniciada garante — e a carga diz que o problema é a data do caminhão, não a ordem
+    expect(caso('2026-09-09', false, null)).toEqual(['planejada', true, false, true, 1])
+  })
+
+  it('ordensNoPrazo x ordensForaDoPrazo: a iniciada nao e apontada como fora do prazo', () => {
+    // o caso da revisão: ordem 100 rodando (5 bg) + ordem 200 sem dia (10 bg),
+    // carga de 15 — a 1ª versão listava as duas como "fora do prazo"
+    const linhas = [agc({ id: 'a', carga: '1', data: '2026-09-20', bags: 15 })]
+    const s = saldosExpedicao(
+      linhas, [], [],
+      [prod(5, '2026-09-25', { iniciada: true, numero: '100' }), prod(10, null, { numero: '200' })],
+      '2026-09-19',
+    )
+    const [c] = classificarCargas(s, cargasAgendadas(linhas), cargaDe, { hoje: '2026-09-19' })
+    expect(c).toMatchObject({ situacao: 'planejada', foraDoPrazo: true })
+    expect(c.produtos[0].ordensNoPrazo.map((o) => o.numero)).toEqual(['100'])
+    expect(c.produtos[0].ordensForaDoPrazo.map((o) => o.numero)).toEqual(['200'])
+    expect(c.produtos[0].ordens).toHaveLength(2)
+  })
+
+  it('a regua e o primeiro caminhao DESCOBERTO: caminhao coberto por estoque nao entra nela', () => {
+    // caso da revisão: caminhões de 10 bg em 10/09 e 20/09, estoque 10 (cobre o
+    // 1º inteiro), ordem A 5 bg em 15/09 e B 5 bg em 25/09. A chega a tempo do
+    // único caminhão descoberto (20/09); só B está fora do prazo — com o 1º
+    // caminhão da carga como régua, A saía "fora do prazo" apontando um
+    // caminhão sem problema nenhum
+    const linhas2 = [agc({ id: 'a', carga: '1', data: '2026-09-10' }), agc({ id: 'b', carga: '1', data: '2026-09-20' })]
+    const s2 = saldosExpedicao(linhas2, [], pa(10), [prod(5, '2026-09-15', { numero: 'A' }), prod(5, '2026-09-25', { numero: 'B' })], '2026-09-05')
+    const [c2] = classificarCargas(s2, cargasAgendadas(linhas2), cargaDe, { hoje: '2026-09-05' })
+    expect(c2).toMatchObject({ situacao: 'planejada', foraDoPrazo: true, ordemForaDoPrazo: true, garantido: 15, planejado: 20 })
+    expect(c2.produtos[0].ateQuando).toBe('2026-09-20')
+    expect(c2.produtos[0].ordensNoPrazo.map((o) => o.numero)).toEqual(['A'])
+    expect(c2.produtos[0].ordensForaDoPrazo.map((o) => o.numero)).toEqual(['B'])
+
+    // sem estoque, caminhões de 5 bg em 10 e 20/09 e uma ordem de 10 bg em 15/09:
+    // o 1º caminhão já está descoberto, e a ordem não chega para ele
+    const linhas = [agc({ id: 'a', carga: '1', data: '2026-09-10', bags: 5 }), agc({ id: 'b', carga: '1', data: '2026-09-20', bags: 5 })]
+    const s = saldosExpedicao(linhas, [], [], [prod(10, '2026-09-15', { numero: '300' })], '2026-09-01')
+    const [c] = classificarCargas(s, cargasAgendadas(linhas), cargaDe, { hoje: '2026-09-01' })
+    expect(c).toMatchObject({ situacao: 'planejada', foraDoPrazo: true, garantido: 5, planejado: 10 })
+    expect(c.produtos[0].ateQuando).toBe('2026-09-10')
+    expect(c.produtos[0].ordensForaDoPrazo.map((o) => o.numero)).toEqual(['300'])
+  })
+
+  it('carga mista (um produto com data, outro sem): as duas etiquetas saem por produto, nao por carga', () => {
+    // caso da revisão: NEO700 em 10/09 coberto por estoque; NEO680 sem DATA
+    // AGENDADA e com ordem 400 programada para amanhã. A ordem não tem culpa: o
+    // agendamento é que não tem data — só ordem iniciada garante
+    const linhas = [
+      agc({ id: 'a', carga: '1', data: '2026-09-10' }),
+      agc({ id: 'b', carga: '1', data: null, cultivar: 'NEO680 IPRO' }),
+    ]
+    const s = saldosExpedicao(
+      linhas, [], pa(10),
+      [prod(10, '2026-09-06', { numero: '400', cultivar: 'NEO680 IPRO' })], '2026-09-05',
+    )
+    const [c] = classificarCargas(s, cargasAgendadas(linhas), cargaDe, { hoje: '2026-09-05' })
+    expect(c).toMatchObject({ situacao: 'planejada', foraDoPrazo: true, ordemForaDoPrazo: false, caminhaoSemData: true })
+    const neo680 = c.produtos.find((p) => p.cultivar === 'NEO680 IPRO')!
+    expect(neo680).toMatchObject({ caminhaoSemData: true, ateQuando: null })
+    expect(neo680.ordensForaDoPrazo.map((o) => o.numero)).toEqual(['400'])
+    expect(c.produtos.find((p) => p.cultivar === 'NEO700 I2X')).toMatchObject({ caminhaoSemData: false, ordensForaDoPrazo: [] })
+  })
+
+  it('o recorte por carga isenta embalagem sem de-para como o cartao: nada de "40 bg sem ordem"', () => {
+    const conhecida = (e: string) => e === 'BG5M' || e === 'MEIOBAG'
+    const linhas = [agc({ id: 'a', carga: '1', embalagem: 'BB1M', bags: 40 }), agc({ id: 'b', carga: '1', bags: 10 })]
+    const s = saldosExpedicao(linhas, [], pa(10), [])
+    const r = recorteDaSelecao(s, (c) => c.carga === '1', cargaDe, conhecida)
+    const bb1m = r.produtos.find((p) => p.embalagem === 'BB1M')!
+    expect(bb1m).toMatchObject({ semDePara: true, agendado: 40, aProduzir: 0, semOrdem: 0, descoberto: 0 })
+    expect(r).toMatchObject({ aProduzir: 0, descoberto: 0, bagsSemDePara: 40 })
+    // e bate com o cartão de cargas
+    const [c] = classificarCargas(s, cargasAgendadas(linhas), cargaDe, { embalagemConhecida: conhecida })
+    expect(c).toMatchObject({ situacao: 'atende', semOrdem: 0, bagsSemDePara: 40 })
+    // sem o predicado, continua como sempre foi
+    expect(recorteDaSelecao(s, (x) => x.carga === '1', cargaDe).produtos.find((p) => p.embalagem === 'BB1M')).toMatchObject({ semDePara: false, semOrdem: 40 })
+  })
+
+  it('a carga anterior leva o planejado primeiro: 15 de ordem para duas cargas de 10', () => {
+    const linhas = [agc({ id: 'a', carga: '1', data: '2026-09-08' }), agc({ id: 'b', carga: '2', data: '2026-09-10' })]
+    const s = saldosExpedicao(linhas, [], [], [prod(15, '2026-09-07')], '2026-09-01')
+    const r = classificarCargas(s, cargasAgendadas(linhas), cargaDe)
+    expect(r.map((c) => [c.carga, c.situacao, c.planejado, c.semOrdem])).toEqual([
+      ['1', 'planejada', 10, 0], ['2', 'falta-planejar', 5, 5],
+    ])
+  })
+
+  it('particao: bags e garantido batem com a carga agendada e com resumoDoGrupo, estoque com o recorte', () => {
+    const linhas = [
+      agc({ id: 'a', carga: '1', data: '2026-09-08', bags: 40 }),
+      agc({ id: 'b', carga: null, data: '2026-09-09', bags: 30 }),
+      agc({ id: 'c', carga: '2', data: '2026-09-10', bags: 60 }),
+      agc({ id: 'd', carga: '2', data: '2026-09-10', bags: 5, tratamento: 'SEM TSI' }),
+    ]
+    const s = saldosExpedicao(
+      linhas, [{ cultivar: 'NEO700 I2X', bags: 2 }], pa(50), [prod(30, '2026-09-09')], '2026-09-01',
+      (c) => c.carga ?? '',
+    )
+    const cargas = cargasAgendadas(linhas)
+    const r = classificarCargas(s, cargas, cargaDe)
+    expect(r).toHaveLength(2)
+    for (const c of r) {
+      const ag = cargas.find((x) => x.carga === c.carga)!
+      expect(c.produtos.reduce((t, p) => t + p.bags, 0)).toBe(ag.bags)
+      expect(c.garantido).toBe(resumoDoGrupo(s, (x) => x.carga === c.carga).coberto)
+      expect(c.estoque).toBe(recorteDaSelecao(s, (x) => x.carga === c.carga, cargaDe).temHoje)
+    }
+    // por produto: cargas + sem carga = a consolidada
+    const ftz = s.find((x) => !x.semTsi)!
+    const somaCargas = r.reduce((t, c) => t + (c.produtos.find((p) => !p.semTsi)?.planejado ?? 0), 0)
+    const semCarga = ftz.caminhoes.filter((c) => !c.caminhao.carga).reduce((t, c) => t + c.cobertoPlanejado, 0)
+    expect(somaCargas + semCarga).toBe(Math.min(ftz.agendado, ftz.estoque + ftz.producaoPrevista))
+    // a carga 2 tem os dois produtos: o tratado com 10 garantidos e a branca com 2
+    const c2 = r.find((c) => c.carga === '2')!
+    expect(c2).toMatchObject({ garantido: 12, estoque: 2, situacao: 'falta-planejar', semOrdem: 50, semLote: 3 })
+  })
+
+  it('recorte.semOrdem e da selecao: a 2a carga de 10 com 15 de ordem fica com 5 sem ordem', () => {
+    const linhas = [agc({ id: 'a', carga: '1', data: '2026-09-08' }), agc({ id: 'b', carga: '2', data: '2026-09-10' })]
+    const s = saldosExpedicao(linhas, [], [], [prod(15, '2026-09-07')], '2026-09-01')
+    const r = recorteDaSelecao(s, (c) => c.carga === '2', cargaDe)
+    expect(r.produtos[0].planejado).toBe(5)
+    expect(r.produtos[0].semOrdem).toBe(5) // antes: max(0, 10 − 15) = 0, a ordem contada duas vezes
+    expect(r.produtos[0].programado).toBe(15) // o produto inteiro continua informado
+    expect(recorteDaSelecao(s, (c) => c.carga === '1', cargaDe).produtos[0].semOrdem).toBe(0)
+  })
+
+  it('SEM TSI sem lote sai em semLote, nunca em semOrdem; a embalagem e a da carga, nao a do periodo', () => {
+    const linhas = [
+      agc({ id: 'a', carga: '1', tratamento: 'SEM TSI', bags: 10 }),
+      agc({ id: 'b', carga: '2', tratamento: 'SEM TSI', embalagem: 'MEIOBAG', bags: 1, data: '2026-09-11' }),
+    ]
+    const s = saldosExpedicao(linhas, [{ cultivar: 'NEO700 I2X', bags: 3 }], [], [])
+    expect(s[0].embalagem).toBe('BG5M + MEIOBAG') // a consolidada junta o cultivar inteiro
+    const [c1, c2] = classificarCargas(s, cargasAgendadas(linhas), cargaDe)
+    expect(c1).toMatchObject({ situacao: 'falta-planejar', semLote: 7, semOrdem: 0, foraDoPrazo: false })
+    expect(c1.produtos[0].semTsi).toBe(true)
+    expect(c1.produtos[0].embalagem).toBe('BG5M') // só o que ESTA carga pede
+    expect(c2.produtos[0].embalagem).toBe('MEIOBAG')
+  })
+
+  it('embalagem sem de-para fica fora da conta: nao vira falta nem sem ordem', () => {
+    const conhecida = (e: string) => e === 'BG5M' || e === 'MEIOBAG'
+    // 40 bg em BB1M (sem de-para) + 10 bg BG5M com estoque 10: a carga atende o
+    // que dá para avaliar, e os 40 saem etiquetados, não como "sem ordem"
+    const linhas = [
+      agc({ id: 'a', carga: '1', embalagem: 'BB1M', bags: 40 }),
+      agc({ id: 'b', carga: '1', bags: 10 }),
+      agc({ id: 'c', carga: '2', embalagem: 'BB1M', bags: 7, data: '2026-09-11' }),
+    ]
+    const s = saldosExpedicao(linhas, [], pa(10), [])
+    const [c1, c2] = classificarCargas(s, cargasAgendadas(linhas), cargaDe, { embalagemConhecida: conhecida })
+    expect(c1).toMatchObject({ situacao: 'atende', bagsSemDePara: 40, semOrdem: 0, semLote: 0 })
+    const bb1m = c1.produtos.find((p) => p.embalagem === 'BB1M')!
+    expect(bb1m).toMatchObject({ semDePara: true, bags: 40, falta: 0 })
+    // carga só de embalagem desconhecida: não dá para avaliar
+    expect(c2).toMatchObject({ situacao: 'sem-de-para', bagsSemDePara: 7, semOrdem: 0, foraDoPrazo: false })
+    // sem o predicado, tudo é conhecido e o BB1M vira falta como qualquer outro
+    expect(classificarCargas(s, cargasAgendadas(linhas), cargaDe)[0]).toMatchObject({ situacao: 'falta-planejar', semOrdem: 40 })
+  })
+
+  it('produtos em falta primeiro; saida na ordem das cargas; nao muta os saldos', () => {
+    const linhas = [
+      agc({ id: 'a', carga: '9', data: '2026-09-10', bags: 10 }),
+      agc({ id: 'b', carga: '9', data: '2026-09-10', bags: 4, cultivar: 'NEO680 IPRO' }),
+      agc({ id: 'c', carga: '10', data: '2026-09-08', bags: 1 }),
+    ]
+    const s = saldosExpedicao(linhas, [], pa(11), [])
+    const cargas = cargasAgendadas(linhas)
+    const antes = JSON.stringify(s)
+    const r = classificarCargas(s, cargas, cargaDe)
+    expect(JSON.stringify(s)).toBe(antes)
+    expect(r.map((c) => c.carga)).toEqual(['10', '9'])
+    const c9 = r.find((c) => c.carga === '9')!
+    expect(c9.produtos.map((p) => [p.cultivar, p.falta])).toEqual([['NEO680 IPRO', 4], ['NEO700 I2X', 0]])
+    expect(c9.situacao).toBe('falta-planejar')
+    expect(r.find((c) => c.carga === '10')!.situacao).toBe('atende')
+  })
+
+  it('carga que a fila nao conhece conta como sem nada', () => {
+    const s = saldosExpedicao([agc({ id: 'a', carga: '1' })], [], pa(10), [])
+    const [c] = classificarCargas(s, [{ carga: '99', datas: [], clientes: [], status: [], linhas: 1, bags: 8 }], cargaDe)
+    expect(c).toMatchObject({ situacao: 'falta-planejar', planejado: 0, produtos: [], caminhaoSemData: false })
+  })
+
+  it('arred2: 0,3 + 0,6 fecha com 0,9 e a carga atende', () => {
+    const linhas = [agc({ id: 'a', carga: '1', bags: 0.3 }), agc({ id: 'b', carga: '1', bags: 0.6 })]
+    const s = saldosExpedicao(linhas, [], pa(0.9), [])
+    const [c] = classificarCargas(s, cargasAgendadas(linhas), cargaDe)
+    expect(c.situacao).toBe('atende')
+  })
+
+  it('chaveProduto: normaliza cultivar e tratamento, embalagem estrita, SEM TSI so pelo cultivar', () => {
+    expect(chaveProduto({ cultivar: 'neo700  i2x', tratamento: 'ftz60+vic', embalagem: 'BG5M' }))
+      .toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60 + VIC', embalagem: 'BG5M' }))
+    expect(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M' }))
+      .not.toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'MEIOBAG' }))
+    expect(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M' }))
+      .toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'sem tsi', embalagem: 'MEIOBAG' }))
+    expect(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M' }))
+      .not.toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M' }))
   })
 })

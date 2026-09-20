@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as api from '@/dados/api'
 import * as g from '@/dados/api-gestao'
-import type { OrdemVisao } from '@/dados/api-gestao'
+import type { AgendamentoBanco, OrdemVisao } from '@/dados/api-gestao'
 import { diaDeProducao } from '@/dominio/calculos'
 import {
   autoProgramar,
@@ -25,13 +25,14 @@ import { useRealtime } from '@/dados/useRealtime'
 import { alternarNaFaixa, faixaDe, listaAposArraste, moverNaFaixa, semDaFaixa } from '@/dominio/prioridadesDia'
 import { alternarOrdenacao, type Ordenacao } from '@/dominio/ordenacao'
 import { ehConcluida, exibicaoDoDia, grupoMovel, type CampoQuadro } from '@/dominio/quadroDoDia'
+import { ordensSemAgenda } from '@/dominio/ordensSemAgenda'
 import ModalOrdem from './ModalOrdem'
 import { ListaMaquinaDia } from './ProgramacaoLista'
 import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tag, Vazio,
+  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
   corDoStatus, diaCurto, diaSemana, n, somaDias,
 } from '@/componentes/ui'
 
@@ -142,6 +143,29 @@ export default function Programacao() {
    * uma vez, junto dos cadastros — receita não muda no meio do dia.
    */
   const [itensPorReceita, setItensPorReceita] = useState<Map<string, number>>(new Map())
+  /**
+   * Ordens sem caminhão até X (19/09/2026): os agendamentos da Expedição,
+   * carregados uma vez e por realtime próprio — fora do `recarregar` da semana,
+   * que já faz quatro consultas a cada navegação. `null` = ainda não carregou;
+   * `false` = a consulta falhou (a lista NÃO diz "todas sem caminhão" — diz que
+   * não sabe).
+   */
+  const [agendamentos, setAgendamentos] = useState<AgendamentoBanco[]>([])
+  const [agendamentosOk, setAgendamentosOk] = useState<boolean | null>(null)
+  /** Até que dia procurar caminhão; vazio = o fim da semana à vista. */
+  const [ateAgenda, setAteAgenda] = useState('')
+  /**
+   * Ordens programadas entre HOJE − 14 e o começo da janela — o mesmo horizonte
+   * para trás que a semana atual enxerga, seja qual for a semana à vista (a
+   * janela começa 14 dias antes dela). Sem isto o cartão "Ordens sem caminhão"
+   * dizia "todas têm caminhão" calado sobre as ordens desta semana, e a ordem
+   * iniciada com dia passado (que não é "atrasada": status cru ≠ Programada)
+   * entrava ou não na conta conforme a semana navegada (achados da revisão de
+   * 19/09/2026).
+   */
+  const [ordensAntesDaJanela, setOrdensAntesDaJanela] = useState<OrdemVisao[]>([])
+  /** Cadastro de embalagens lido? null = ainda não; false = falhou (SC10/SC20 podem vazar para a lista). */
+  const [embalagensOk, setEmbalagensOk] = useState<boolean | null>(null)
 
   const dias = useMemo(
     () => Array.from({ length: 7 }, (_, i) => somaDias(inicio, i)),
@@ -161,16 +185,19 @@ export default function Programacao() {
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const [lista, poolLista, cal, atrasadasLista] = await Promise.all([
+      const hoje = diaDeProducao(new Date())
+      const [lista, poolLista, cal, atrasadasLista, antesDaJanela] = await Promise.all([
         g.listarOrdens(janela.de, janela.ate),
         g.listarPool(),
         g.listarDiasProducao(janela.de, janela.ate),
-        g.listarOrdensAtrasadas(diaDeProducao(new Date())),
+        g.listarOrdensAtrasadas(hoje),
+        janela.de > somaDias(hoje, -14) ? g.listarOrdens(somaDias(hoje, -14), somaDias(janela.de, -1)) : Promise.resolve([]),
       ])
       setOrdens(lista)
       setPool(poolLista)
       setCalendario(cal)
       setAtrasadas(atrasadasLista)
+      setOrdensAntesDaJanela(antesDaJanela)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -179,14 +206,16 @@ export default function Programacao() {
   useEffect(() => {
     let vivo = true
     setCarregando(true)
+    const hoje = diaDeProducao(new Date())
     Promise.all([
       api.carregarCadastros(),
       g.listarOrdens(janela.de, janela.ate),
       g.listarPool(),
       g.listarDiasProducao(janela.de, janela.ate),
-      g.listarOrdensAtrasadas(diaDeProducao(new Date())),
+      g.listarOrdensAtrasadas(hoje),
+      janela.de > somaDias(hoje, -14) ? g.listarOrdens(somaDias(hoje, -14), somaDias(janela.de, -1)) : Promise.resolve([]),
     ])
-      .then(([c, lista, poolLista, cal, atrasadasLista]) => {
+      .then(([c, lista, poolLista, cal, atrasadasLista, antesDaJanela]) => {
         if (!vivo) return
         setMaquinas(c.maquinas)
         setMotivos(c.motivos)
@@ -195,6 +224,7 @@ export default function Programacao() {
         setPool(poolLista)
         setCalendario(cal)
         setAtrasadas(atrasadasLista)
+        setOrdensAntesDaJanela(antesDaJanela)
       })
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
@@ -213,12 +243,34 @@ export default function Programacao() {
         if (vivo) setItensPorReceita(new Map(rs.map((r) => [r.id, r.receita_itens.length])))
       })
       .catch(() => {})
+    // embalagens: o cartão "Ordens sem caminhão" precisa saber quais são de peso
+    // fixo (SC10/SC20, fora dos ERPs) — antes só carregavam ao abrir uma ordem
+    g.listarEmbalagens()
+      .then((es) => {
+        if (!vivo) return
+        setEmbalagens(es)
+        setEmbalagensOk(true)
+      })
+      .catch(() => vivo && setEmbalagensOk(false))
     return () => {
       vivo = false
     }
   }, [])
 
   useRealtime(['ordens', 'lotes_semente', 'dias_producao', 'ordem_prioridades_dia'], recarregar)
+
+  const recarregarAgendamentos = useCallback(() => {
+    g.listarAgendamentos()
+      .then((a) => {
+        setAgendamentos(a)
+        setAgendamentosOk(true)
+      })
+      .catch(() => setAgendamentosOk(false))
+  }, [])
+  useEffect(() => {
+    recarregarAgendamentos()
+  }, [recarregarAgendamentos])
+  useRealtime(['agendamentos'], recarregarAgendamentos)
 
   /** Turnos que o dia roda. Sem exceção cadastrada, roda os dois. */
   const turnosDoDia = useCallback(
@@ -390,6 +442,29 @@ export default function Programacao() {
     )
     return { linhas, total: linhas.reduce((a, l) => a + l.pesoT, 0) }
   }, [ordens, recorteTratamento, diaSel, dias])
+
+  /**
+   * Ordens sem caminhão até X (19/09/2026): a janela carregada mais as
+   * atrasadas (o domínio deduplica), contra os agendamentos da Expedição.
+   */
+  const ateAgendaEfetivo = ateAgenda || dias[6]
+  /** Embalagens de peso fixo (SC10/SC20): fora dos ERPs, nunca têm agendamento — saem da conta. */
+  const embalagensForaDosErps = useMemo(
+    () => new Set((embalagens ?? []).filter((e) => (e.peso_fixo_kg ?? 0) > 0).map((e) => e.codigo)),
+    [embalagens],
+  )
+  const semAgenda = useMemo(
+    () =>
+      ordensSemAgenda(
+        [...ordens, ...ordensAntesDaJanela, ...atrasadas],
+        agendamentos.map((a) => ({
+          cultivar: a.cultivar, tratamento: a.tratamento, embalagem: a.embalagem, data: a.data, bags: a.bags,
+        })),
+        ateAgendaEfetivo,
+        { foraDosErps: (e) => embalagensForaDosErps.has(e) },
+      ),
+    [ordens, ordensAntesDaJanela, atrasadas, agendamentos, ateAgendaEfetivo, embalagensForaDosErps],
+  )
 
   const dicaOcupacao = (o: ReturnType<typeof ocupacaoCelula>) =>
     `${o.ordens} ordem(ns) · ${o.trocas} troca(s) de tratamento · ${o.setupMin} min de setup · ` +
@@ -1106,6 +1181,120 @@ export default function Programacao() {
               </tfoot>
             </table>
           </div>
+        )}
+      </Cartao>
+
+      {/* -------- ordens sem caminhão até X (Arion, 19/09/2026) -------- */}
+      <Cartao
+        titulo={`Ordens sem caminhão até ${diaCurto(ateAgendaEfetivo)}${agendamentosOk && agendamentos.length > 0 ? ` (${semAgenda.semAgenda.length})` : ''}`}
+        className="mb-5"
+        acoes={
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex items-center gap-1 text-stone-500">
+              Até
+              <input
+                type="date"
+                value={ateAgendaEfetivo}
+                onChange={(e) => setAteAgenda(e.target.value)}
+                className="rounded-md border border-stone-300 px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-800"
+              />
+            </label>
+            {ateAgenda && <Botao onClick={() => setAteAgenda('')}>fim da semana</Botao>}
+          </div>
+        }
+      >
+        {agendamentosOk === null || embalagensOk === null ? (
+          <p className="text-sm text-stone-500">Carregando agendamentos e embalagens…</p>
+        ) : agendamentosOk === false ? (
+          <Aviso gravidade="alerta">
+            Não foi possível ler os agendamentos da Expedição — sem eles não dá para dizer quem tem caminhão.
+          </Aviso>
+        ) : agendamentos.length === 0 ? (
+          <Vazio>Nenhum agendamento importado. Importe o relatório de pedidos agendados na Expedição.</Vazio>
+        ) : semAgenda.avaliadas === 0 ? (
+          <Vazio>Nenhuma ordem programada (com máquina e dia) até {diaCurto(ateAgendaEfetivo)}.</Vazio>
+        ) : semAgenda.semAgenda.length === 0 ? (
+          <Aviso gravidade="ok">
+            Todas as {semAgenda.avaliadas} ordens programadas até {diaCurto(ateAgendaEfetivo)} têm caminhão agendado.
+          </Aviso>
+        ) : (
+          <>
+            <Tabela cabecalho={[
+              'Ordem', 'Máquina', 'Dia', 'Cultivar', 'Tratamento',
+              { texto: 'Emb.', className: 'hidden lg:table-cell' },
+              '#Bags', 'Status', 'Próxima agenda',
+            ]}>
+              {semAgenda.semAgenda.map(({ ordem: o, proximaAgenda, bagsNaProximaAgenda, agendadoDepois }) => (
+                <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => abrirOrdem(o.id)}
+                      disabled={abrindoId === o.id}
+                      className="num-tabular font-medium underline-offset-2 hover:underline disabled:opacity-50"
+                      title="Abrir a ordem"
+                    >
+                      {o.numero}
+                    </button>
+                    {o.prioridade === 'Urgente' && <Tag cor="perigo" className="ml-1">urgente</Tag>}
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {maquinas.find((m) => m.id === o.maquina_id)?.nome ?? o.maquina_id}
+                  </td>
+                  <td
+                    className={`num-tabular px-2 py-1.5 whitespace-nowrap ${
+                      o.data_prog && o.data_prog < diaDeProducao(new Date()) ? 'font-medium text-red-700 dark:text-red-400' : ''
+                    }`}
+                    title={o.data_prog && o.data_prog < diaDeProducao(new Date()) ? 'Atrasada: o dia já passou' : undefined}
+                  >
+                    {diaCurto(o.data_prog)}
+                  </td>
+                  <td className="px-2 py-1.5 font-medium">{o.cultivar}</td>
+                  <td className="px-2 py-1.5">{o.receita_nome}</td>
+                  <td className="hidden px-2 py-1.5 text-xs lg:table-cell">{o.embalagem}</td>
+                  <td className="num-tabular px-2 py-1.5 text-right">{n(o.bags, 0)}</td>
+                  <td className="px-2 py-1.5"><Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag></td>
+                  <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+                    {proximaAgenda ? (
+                      <span title={`${n(agendadoDepois, 0)} bg agendados no total depois de ${diaCurto(ateAgendaEfetivo)}`}>
+                        {diaCurto(proximaAgenda)} · {n(bagsNaProximaAgenda, 0)} bg
+                        {agendadoDepois > bagsNaProximaAgenda && (
+                          <span className="text-stone-400"> (+{n(agendadoDepois - bagsNaProximaAgenda, 0)} depois)</span>
+                        )}
+                      </span>
+                    ) : <Tag cor="alerta">nenhuma</Tag>}
+                  </td>
+                </tr>
+              ))}
+            </Tabela>
+            <p className="mt-3 text-xs text-stone-500">
+              {semAgenda.semAgenda.length} de {semAgenda.avaliadas} ordens programadas até {diaCurto(ateAgendaEfetivo)} não
+              têm caminhão agendado do mesmo produto (cultivar + tratamento + embalagem; semente branca só pelo cultivar)
+              até essa data. Agendamento sem data conta como caminhão. Entram as ordens com máquina e dia até a data,
+              ainda não finalizadas e no balanço; o pool (sem máquina) fica de fora.
+              {' '}<b>Próxima agenda</b> = o primeiro caminhão do produto depois da data, com os bags dessa data
+              (e quantos mais vêm depois).
+              {ateAgendaEfetivo > janela.ate && (
+                <b className="text-amber-700 dark:text-amber-400">
+                  {' '}A data passa da janela carregada: ordens programadas depois de {diaCurto(janela.ate)} não
+                  estão na conta.
+                </b>
+              )}
+            </p>
+          </>
+        )}
+        {embalagensOk === false && (
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            Não deu para ler o cadastro de embalagens: ordem em SC10/SC20 (fora dos ERPs) pode aparecer aqui por
+            engano. Recarregue a página.
+          </p>
+        )}
+        {agendamentosOk && semAgenda.foraDosErps.length > 0 && (
+          <p className="mt-2 text-xs text-stone-500">
+            {semAgenda.foraDosErps.length} ordem(ns) em embalagem de peso fixo ficam fora da conta
+            {' ('}{semAgenda.foraDosErps.map((o) => `${o.numero} · ${o.embalagem}`).join(', ')}{')'}:
+            pedido de SC10/SC20 não existe na SimpleAgro, então nunca teria agendamento.
+          </p>
         )}
       </Cartao>
 

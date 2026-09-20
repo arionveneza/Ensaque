@@ -737,6 +737,57 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    toneladas, horas com setup e nº de ordens **não finalizadas** — finalizada é a que a
    produção já informou a quantidade produzida), em destaque âmbar; o cartão usa o mesmo
    resumo.
+   **Cartão "Ordens sem caminhão até X"** (19/09/2026, pedido do Arion: "uma maneira de ver
+   quais ordens estão programadas mas não irão atender nenhuma agenda dentro de um dia que eu
+   vou escolher em um calendário"; decisão dele: **= não há agendamento desse produto com data
+   até X**). É o COMPLEMENTO da fila da Expedição — lá se pergunta "que caminhão fica sem
+   produto", aqui "que ordem não tem caminhão" — e por isso mora em domínio próprio,
+   `src/dominio/ordensSemAgenda.ts` (puro, testado), não na fila. **Entra** a ordem com
+   máquina E dia ≤ X (o corte é obrigatório: sem ele toda ordem futura viraria ruído), não
+   concluída (`ehConcluida`), não excluída e no balanço (`fora_balanco` é sacaria); Em
+   produção/Parada/Aguardando lote/Pronto entram, o pool fica de fora, as atrasadas entram
+   (a tela passa janela + atrasadas e o domínio deduplica por id). **Tem caminhão** = existe
+   agendamento do mesmo `chaveProduto` (exportada de `expedicao.ts`: cultivar normalizado +
+   `normalizaTratamento` + embalagem ESTRITA; SEM TSI só pelo cultivar) com `data ≤ X` **ou
+   sem data** (prazo desconhecido é demanda, nunca "nunca" — a mesma leitura da fila). Não se
+   confere quantidade: ordem de 40 bags com caminhão de 2 "tem caminhão"; falta/sobra é da
+   Expedição. `proximaAgenda`/`agendadoDepois` = o primeiro caminhão do produto depois de X.
+   Na tela, `<input type="date">` no cartão (vazio = fim da semana à vista, `dias[6]`; botão
+   "fim da semana" volta), agendamentos em **estado, efeito e `useRealtime(['agendamentos'])`
+   PRÓPRIOS** — fora do `recarregar` da semana, que já faz 4 consultas por navegação; falha de
+   leitura vira aviso ("não sei"), nunca "todas sem caminhão"; tabela com nº clicável
+   (`abrirOrdem`), máquina, dia (vermelho se atrasada), cultivar, tratamento, emb., bags,
+   status e "Próxima agenda" (Tag "nenhuma"); legenda avisa quando X passa de `janela.ate`
+   (ordens além da janela não estão carregadas). Sem gate de permissão: a RLS de
+   `agendamentos` já deixa qualquer perfil logado ler. **Achados da revisão adversarial**
+   (mesmo dia): (1) **SC10/SC20 saem da conta** — embalagem de peso fixo vive fora dos ERPs
+   (§1), nenhum agendamento jamais casaria e a ordem seria "sem caminhão" para sempre, o
+   mesmo alarme falso que o painel de demanda isenta: `ordensSemAgenda(…, { foraDosErps })`
+   devolve essas ordens em `foraDosErps` (fora de `avaliadas`), a tela carrega
+   `listarEmbalagens()` junto das receitas para saber quais são de peso fixo e mostra uma
+   nota com elas; (2) **`ordensAntesDaJanela`**: a janela da Programação começa 14 dias antes
+   da semana à vista, então com a semana 3+ à frente as ordens entre hoje e `janela.de` não
+   estavam em lista nenhuma (nem em `atrasadas`, que só traz `data_prog < hoje`) e o cartão
+   dizia "todas têm caminhão" calado — `recarregar` e o efeito inicial buscam
+   `listarOrdens(hoje, janela.de − 1)` quando `janela.de > hoje`; (3) **"Próxima agenda" com
+   os bags DA data** (`bagsNaProximaAgenda`), não a soma de tudo que vem depois — a soma
+   ("+N depois") fica ao lado, em cinza: é a mesma leitura errada do "faltam 6 e 23" da
+   Expedição; (4) `listarAgendamentos` devolve `[]` para qualquer erro cuja mensagem cite a
+   tabela, então o título só mostra a contagem quando há agendamento carregado. **Rodada 2**
+   (mesmo dia): (5) `entraNaAvaliacao` só olhava `status_efetivo`, e a `v_ordens` NUNCA emite
+   `Excluida` nele — a excluída sai da view como Programada/Aguardando/Pronto; a guarda real
+   está nos filtros das consultas (`listarOrdens` faz `.neq('status', 'Excluida')`), então
+   `OrdemAvaliavel` ganhou `status?` (o CRU) e a checagem passou a olhar os dois — cinto e
+   suspensório para um chamador futuro que não filtre; (6) **`embalagensOk`**: entre a
+   resposta das ordens/agendamentos e a de `listarEmbalagens()` (ou se ela falhar), o Set de
+   fora-dos-ERPs ficava vazio e a ordem em SC10/SC20 aparecia como "sem caminhão" por um
+   instante — ou pra sempre, se a leitura falhar. O cartão espera as duas ("Carregando
+   agendamentos e embalagens…") e avisa se `embalagensOk === false`; (7)
+   `ordensAntesDaJanela` cobria só `[hoje, janela.de)`, mas uma ordem **já iniciada** com
+   `data_prog < hoje` (a que cruza a virada às 03:00 e continua rodando) não é "atrasada"
+   (status cru ≠ Programada) e ficava fora de toda fonte com a semana 2+ à frente — a janela
+   passou a `[hoje − 14, janela.de)`, o mesmo horizonte para trás que a semana atual já
+   enxerga.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.
@@ -861,6 +912,78 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Qualidade apontada); quando cobrem o que falta, a etiqueta vira **"produzido · falta
    apontar"** em vez de "aguardando produção", e o aviso diz o caminho: apontar no AGROTIS e
    subir o saldo do SAP de novo.
+   **Cartão "Cargas · o que dá para atender"** (19/09/2026, pedido do Arion: "do volume que
+   possui número de ordem de carregamento, quais têm todos os materiais produzidos
+   (planejados, aguardando produção etc.) e qual não tem nada planejado — quais cargas consigo
+   atender na totalidade, quais já estão com todo material planejado e quais falta planejar";
+   decisão dele: **planejado = qualquer ordem aberta do produto**, mesmo sem dia ou depois do
+   caminhão). A fila ganhou o **terceiro nível** `AlocacaoCaminhao.cobertoPlanejado` = estoque
+   + Σ TODAS as ordens abertas do produto, repartido na mesma ordem (`alocarFila` recebe
+   `producaoTotal`; SEM TSI passa 0 e o nível vira o próprio `cobertoEstoque`); por construção
+   `cobertoEstoque ≤ coberto ≤ cobertoPlanejado ≤ bags`. `classificarCargas(saldos, cargas,
+   cargaDe)` lê os três níveis carga a carga — **nada é recalculado**, o estoque e as ordens
+   continuam reservados às cargas anteriores (mesma mecânica do "por tipo de venda"):
+   `atende` (estoque físico cobre a carga inteira — "atende" continua reservado a estoque no
+   SAP), `planejada` (estoque + qualquer ordem aberta cobre; **`foraDoPrazo`** quando o
+   garantido até a data, `coberto`, não fecha: ordem sem dia, atrasada ou depois do caminhão;
+   caminhão sem data só conta iniciada) ou `falta-planejar` (sobra `semOrdem` no tratado ou
+   `semLote` na branca), com `produtos: ProdutoDaCarga[]` em falta primeiro. `cargas` e
+   `saldos` precisam vir do MESMO `filtrados`: `carga.bags` é o denominador, e carga que a fila
+   não conhece conta como sem nada. Comparações com `arred2` (0,3 + 0,6 fecha com 0,9).
+   **O que a revisão adversarial acrescentou** (mesmo dia): (1) **embalagem sem de-para fica
+   FORA da conta** — `classificarCargas(…, { hoje, embalagemConhecida })`; tratado em embalagem
+   que o app não conhece nunca casa estoque nem ordem, então `ProdutoDaCarga.semDePara` tira
+   os bags do denominador (`falta` 0, `CargaClassificada.bagsSemDePara`) e a carga só de
+   embalagem desconhecida sai como 4ª situação **`sem-de-para`** — a 1ª versão a punha em
+   "falta planejar · N bg sem ordem", contra a regra "sem de-para não vira falta falsa"; (2)
+   **a situação é da PARTE da carga que passou pelos filtros**: `cargas` e `saldos` vêm de
+   `filtrados`, então filtro de cultivar/tratamento/tipo/status corta a carga e "atende agora"
+   valia só para a fatia — a linha ganha etiqueta **"parte da carga"** (`bagsTotaisPorCarga`,
+   de `agendamentos` sem filtro, mostra "X de Y" na tabela e no seletor) e a legenda avisa
+   quando há filtro de produto ativo (`temFiltroDeProduto`); (3) **`ordensForaDoPrazo`**: a
+   célula "O que falta" listava TODAS as ordens do produto sob "dependem de ordem fora do
+   prazo", inclusive a que já rodava — agora o domínio parte `ordens` em `ordensNoPrazo` ×
+   `ordensForaDoPrazo` pela MESMA régua da fila (`iniciada`, ou programada de `hoje` até
+   `ateQuando`, a data do PRIMEIRO caminhão da carga para o produto — a mais exigente; com o
+   último como régua, uma ordem entre dois caminhões saía "no prazo" e a lista ficava vazia
+   numa carga `foraDoPrazo`) e a tela lista só as fora do prazo, com dia; (4) **`caminhaoSemData`**: carga sem data nenhuma só conta ordem
+   iniciada, e o `foraDoPrazo` é da data do agendamento, não da ordem — a etiqueta diz
+   "caminhão sem data"; (5) `ProdutoDaCarga.embalagem` sai das linhas DA CARGA, não da
+   união do cultivar no período (`s.embalagem` da consolidada é "BG5M + MEIOBAG"); (6) chip
+   condicional ("ordem fora do prazo", "sem de-para") que some com o contador zerado deixava
+   a lista vazia sem chip aceso — `filtroEfetivo` cai em "todas". **Rodada 2** (mesmo dia,
+   achados mais finos): (7) **`ateQuando` é por CAMINHÃO DESCOBERTO, não por carga**: um
+   produto pedido em duas datas da mesma carga tinha UMA régua (a mais cedo), e uma ordem
+   que servia ao 2º caminhão — coberto integralmente por estoque no 1º — saía "fora do
+   prazo" apontando o caminhão errado; agora `ateQuando` é a data do primeiro caminhão que
+   `s.caminhoes` (na ordem da fila) não cobre inteiro, e só ele entra na régua de
+   `ordensNoPrazo`/`ordensForaDoPrazo` — carga sem caminhão descoberto não aponta ordem
+   nenhuma; (8) **carga mista (um produto com data, outro sem)**: `caminhaoSemData` virou
+   flag POR PRODUTO (não por carga) — o produto sem data tinha `ateQuando` null e toda ordem
+   não iniciada virava "fora do prazo" citando uma ordem que roda amanhã, sem culpa
+   nenhuma; a carga agora carrega **dois** motivos independentes, `ordemForaDoPrazo` e
+   `caminhaoSemData` (uma carga pode ter os dois, cada produto pelo seu); (9)
+   `recorteDaSelecao` ganhou o mesmo `embalagemConhecida` do cartão — sem ele, a mesma
+   carga saía "atende agora" no cartão novo e "40 bg sem ordem aberta" ao clicar
+   "recortar" (o botão leva à mesma tela): `ItemRecorte.semDePara` zera
+   aProduzir/semOrdem/descoberto e soma em `Recorte.bagsSemDePara`; (10) o teste do ramo
+   SEM TSI usava uma ordem distratora com receita FTZ60 (nunca casaria de propósito nem
+   sem a proteção) — corrigido para `SEM TSI`, que é o caso real (existe receita SEM
+   TSI/sem produto) que uma regressão somaria.
+   **Efeito colateral corrigido de propósito**: `ItemRecorte.semOrdem` era `aProduzir −
+   programado` com o programado do produto INTEIRO — duas cargas do mesmo produto achavam que
+   a mesma ordem era de cada uma (15 de ordem para duas cargas de 10 dava "0 sem ordem" nas
+   duas); agora é `agendado − planejado` (Σ `cobertoPlanejado` da seleção, campo novo
+   `ItemRecorte.planejado`) e bate com o cartão novo; `programado`/`ordens` continuam
+   informando o produto inteiro. Na tela: cartão entre Filtros e "Recorte por carga", chips
+   exclusivos (todas · atendem agora · tudo planejado · falta planejar · ordem fora do prazo)
+   com o total de bags sem ordem/sem lote, `Tabela` Carga · Data(s) · Cliente · Bags ("X de
+   Y" quando o período corta a carga, total por `cargasAgendadas(agendamentos)`) · Situação
+   (Tag + "ordem fora do prazo") · O que falta (`FaltaDaCarga`: produto · falta · sem
+   ordem/sem lote, "embalagem sem de-para" etiquetada; na planejada fora do prazo, quanto
+   depende de ordem fora do prazo e `ordensCurto`) · Status carga · botão **recortar** (marca
+   só aquela carga no recorte, fecha o painel); o seletor de cargas mostra a situação ao lado
+   de cada linha (`TagSituacaoCarga`).
    **Filial do pedido e transferência de saldo** (13/09/2026, pedido do Arion: "para pedido
    de outra filial é necessário solicitar a transferência de saldo em estoque"). O relatório
    de agendados tem coluna FILIAL, mas ela vem **vazia** (289/289 em 10/09); a filial só existe

@@ -9,6 +9,7 @@ import {
   agendadoPorTipo,
   bagsProduzidosSemApontar,
   cargasAgendadas,
+  classificarCargas,
   converterAgendados,
   ehRelatorioAgendados,
   faltaPorProduto,
@@ -21,9 +22,11 @@ import {
   transferenciaDe,
   SEM_TSI,
   type AlocacaoCaminhao,
+  type CargaClassificada,
   type CriterioFalta,
   type LadoTipoVenda,
   type OrdemPrevista,
+  type SituacaoCarga,
 } from '@/dominio/expedicao'
 import { EMBALAGEM_DEPARA } from '@/dominio/importacao/simpleagro'
 import { jaIniciada } from '@/dominio/status'
@@ -98,6 +101,8 @@ export default function Expedicao() {
   const [painelCargas, setPainelCargas] = useState(false)
   const [buscaCarga, setBuscaCarga] = useState('')
   const [soSelecao, setSoSelecao] = useState(false)
+  /** Chip do cartão "Cargas · o que dá para atender" (19/09/2026): uma situação por vez. */
+  const [filtroCarga, setFiltroCarga] = useState<'todas' | SituacaoCarga | 'fora-prazo'>('todas')
 
   const recarregar = useCallback(async () => {
     const [a, l, e, o, f] = await Promise.all([
@@ -284,8 +289,77 @@ export default function Expedicao() {
   )
   /** A lista que vai para a produção: o que estas cargas pedem e ainda não existe. */
   const recorte = useMemo(
-    () => (temSelecao ? recorteDaSelecao(saldos, naSelecao, (a) => a.carga) : null),
+    () =>
+      temSelecao
+        ? recorteDaSelecao(saldos, naSelecao, (a) => a.carga, (e) => EMBALAGENS_APP.has(e))
+        : null,
     [saldos, temSelecao, naSelecao],
+  )
+  /**
+   * Cargas · o que dá para atender (19/09/2026, pedido do Arion: "quais cargas
+   * consigo atender na totalidade, quais já estão com todo material planejado
+   * e quais falta planejar"). Cada carga montada classificada pela MESMA fila:
+   * `cargas` e `saldos` vêm os dois de `filtrados`, como classificarCargas exige, e
+   * o estoque continua reservado às cargas anteriores.
+   */
+  const cargasClassificadas = useMemo(
+    () =>
+      classificarCargas(saldos, cargas, (a) => a.carga, {
+        hoje: new Date().toISOString().slice(0, 10),
+        // embalagem sem de-para nunca casa com estoque nem ordem: fica fora da
+        // conta e etiquetada, como na consolidada — nunca "sem ordem"
+        embalagemConhecida: (e) => EMBALAGENS_APP.has(e),
+      }),
+    [saldos, cargas],
+  )
+  /** Bags da carga em TODAS as datas: quando o período corta a carga, a tabela diz "X de Y". */
+  const bagsTotaisPorCarga = useMemo(
+    () =>
+      new Map(
+        cargasAgendadas(agendamentos.map((a) => ({ carga: a.carga, data: a.data, bags: a.bags })))
+          .map((c) => [c.carga, c.bags]),
+      ),
+    [agendamentos],
+  )
+  const placarCargas = useMemo(() => {
+    const p = {
+      atende: 0, planejada: 0, faltaPlanejar: 0, semDePara: 0, foraDoPrazo: 0,
+      semOrdem: 0, semLote: 0, bagsSemDePara: 0,
+    }
+    for (const c of cargasClassificadas) {
+      if (c.situacao === 'atende') p.atende++
+      else if (c.situacao === 'planejada') p.planejada++
+      else if (c.situacao === 'sem-de-para') p.semDePara++
+      else p.faltaPlanejar++
+      if (c.foraDoPrazo) p.foraDoPrazo++
+      p.semOrdem += c.semOrdem
+      p.semLote += c.semLote
+      p.bagsSemDePara += c.bagsSemDePara
+    }
+    return p
+  }, [cargasClassificadas])
+  /**
+   * Os chips condicionais ("ordem fora do prazo", "embalagem sem de-para")
+   * somem quando o contador zera — o filtro escolhido não pode sobreviver a
+   * isso com a lista vazia e nenhum chip aceso (achado da revisão): cai em
+   * "todas".
+   */
+  const filtroEfetivo =
+    (filtroCarga === 'fora-prazo' && placarCargas.foraDoPrazo === 0) ||
+    (filtroCarga === 'sem-de-para' && placarCargas.semDePara === 0)
+      ? 'todas'
+      : filtroCarga
+  const cargasFiltradas = useMemo(
+    () =>
+      filtroEfetivo === 'todas' ? cargasClassificadas
+        : filtroEfetivo === 'fora-prazo' ? cargasClassificadas.filter((c) => c.foraDoPrazo)
+        : cargasClassificadas.filter((c) => c.situacao === filtroEfetivo),
+    [cargasClassificadas, filtroEfetivo],
+  )
+  /** Para o seletor de cargas mostrar a situação ao lado de cada uma. */
+  const classificacaoDe = useMemo(
+    () => new Map(cargasClassificadas.map((c) => [c.carga, c])),
+    [cargasClassificadas],
   )
   /** O denominador honesto: tudo que está disputando o estoque no período. */
   const bagsNaFila = useMemo(() => filtrados.reduce((t, a) => t + a.bags, 0), [filtrados])
@@ -315,6 +389,12 @@ export default function Expedicao() {
     [agendamentos],
   )
 
+  /** Filtros que cortam PARTE de uma carga (o período só corta a carga que cruza a data). */
+  const temFiltroDeProduto =
+    !!(fCultivar || fTratamento || fEmbalagem || busca.trim()) ||
+    tipoSel.size !== tiposExistentes.length ||
+    statusSel.size !== statusExistentes.length ||
+    soTransferencia
   const temFiltro =
     !!(de || ate || fCultivar || fTratamento || fEmbalagem || busca.trim()) ||
     tipoSel.size !== tiposExistentes.length ||
@@ -494,6 +574,149 @@ export default function Expedicao() {
             </div>
           </Cartao>
 
+          {/* -------- cargas: o que dá para atender (19/09/2026) -------- */}
+          <Cartao titulo={`Cargas · o que dá para atender (${cargasClassificadas.length})`} className="mb-5">
+            {cargasClassificadas.length === 0 ? (
+              <Vazio>Nenhuma carga montada no período filtrado — só demanda sem caminhão.</Vazio>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip ativo={filtroEfetivo === 'todas'} onClick={() => setFiltroCarga('todas')}>
+                    todas ({cargasClassificadas.length})
+                  </Chip>
+                  <Chip ativo={filtroEfetivo === 'atende'} onClick={() => setFiltroCarga('atende')}>
+                    atendem agora ({placarCargas.atende})
+                  </Chip>
+                  <Chip ativo={filtroEfetivo === 'planejada'} onClick={() => setFiltroCarga('planejada')}>
+                    tudo planejado ({placarCargas.planejada})
+                  </Chip>
+                  <Chip ativo={filtroEfetivo === 'falta-planejar'} onClick={() => setFiltroCarga('falta-planejar')}>
+                    falta planejar ({placarCargas.faltaPlanejar})
+                  </Chip>
+                  {placarCargas.foraDoPrazo > 0 && (
+                    <Chip ativo={filtroEfetivo === 'fora-prazo'} onClick={() => setFiltroCarga('fora-prazo')}>
+                      ordem fora do prazo ({placarCargas.foraDoPrazo})
+                    </Chip>
+                  )}
+                  {placarCargas.semDePara > 0 && (
+                    <Chip ativo={filtroEfetivo === 'sem-de-para'} onClick={() => setFiltroCarga('sem-de-para')}>
+                      embalagem sem de-para ({placarCargas.semDePara})
+                    </Chip>
+                  )}
+                  <span className="ml-auto text-xs text-stone-500 dark:text-stone-400">
+                    {placarCargas.semOrdem > 0 && (
+                      <b className="text-red-700 dark:text-red-400">{inteiro(placarCargas.semOrdem)} bg sem ordem</b>
+                    )}
+                    {placarCargas.semOrdem > 0 && placarCargas.semLote > 0 && ' · '}
+                    {placarCargas.semLote > 0 && (
+                      <b className="text-red-700 dark:text-red-400">{inteiro(placarCargas.semLote)} bg sem lote</b>
+                    )}
+                    {placarCargas.semOrdem === 0 && placarCargas.semLote === 0 && 'tudo tem ordem ou lote'}
+                    {placarCargas.bagsSemDePara > 0 && (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        {' · '}{inteiro(placarCargas.bagsSemDePara)} bg em embalagem sem de-para (fora da conta)
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {cargasFiltradas.length === 0 ? (
+                  <p className="mt-3 text-sm text-stone-500">Nenhuma carga nesta situação.</p>
+                ) : (
+                  <div className="mt-3">
+                    <Tabela cabecalho={[
+                      'Carga', 'Data(s)', 'Cliente', '#Bags', 'Situação', 'O que falta',
+                      { texto: 'Status carga', className: 'hidden lg:table-cell' },
+                      '',
+                    ]}>
+                      {cargasFiltradas.map((c) => {
+                        const total = bagsTotaisPorCarga.get(c.carga) ?? c.bags
+                        const marcada = temSelecao && cargaSel.has(c.carga)
+                        return (
+                          <tr
+                            key={c.carga}
+                            className={`border-t border-stone-100 align-top dark:border-stone-800/60 ${
+                              marcada ? 'border-l-2 border-l-green-600 bg-green-50/60 dark:bg-green-950/20' : ''
+                            }`}
+                          >
+                            <td className="num-tabular px-2 py-1.5 font-medium">{c.carga}</td>
+                            <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+                              {c.datas.map((d) => diaCurto(d)).join(' e ') || 'sem data'}
+                            </td>
+                            <td className="px-2 py-1.5 text-xs">
+                              {c.clientes[0] ?? '—'}
+                              {c.clientes.length > 1 && ` +${c.clientes.length - 1}`}
+                            </td>
+                            <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+                              {inteiro(c.bags)}
+                              {total > c.bags && <span className="text-xs text-stone-400"> de {inteiro(total)}</span>}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <span className="inline-flex flex-wrap gap-1">
+                                <TagSituacaoCarga situacao={c.situacao} />
+                                {c.ordemForaDoPrazo && (
+                                  <span title="Parte depende de ordem sem dia, atrasada ou programada para depois do caminhão.">
+                                    <Tag cor="alerta">ordem fora do prazo</Tag>
+                                  </span>
+                                )}
+                                {c.caminhaoSemData && (
+                                  <span title="Agendamento sem data: só ordem já iniciada garante. O problema é a data do agendamento, não a ordem.">
+                                    <Tag cor="alerta">caminhão sem data</Tag>
+                                  </span>
+                                )}
+                                {c.bagsSemDePara > 0 && c.situacao !== 'sem-de-para' && (
+                                  <Tag cor="alerta">{inteiro(c.bagsSemDePara)} bg sem de-para</Tag>
+                                )}
+                                {total > c.bags && (
+                                  <span title={`A carga tem ${inteiro(total)} bg no total; os filtros deixaram ${inteiro(c.bags)}. A situação é só desta parte.`}>
+                                    <Tag cor="neutro">parte da carga</Tag>
+                                  </span>
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-xs"><FaltaDaCarga carga={c} /></td>
+                            <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">
+                              {c.status.join(' / ') || '—'}
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              <Botao
+                                onClick={() => {
+                                  setCargaSel(new Set([c.carga]))
+                                  setPainelCargas(false)
+                                  setSoSelecao(false)
+                                }}
+                                titulo="Recortar só esta carga: o que a máquina precisa entregar para ela"
+                              >
+                                {marcada && cargaSel.size === 1 ? 'recortada' : 'recortar'}
+                              </Botao>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </Tabela>
+                  </div>
+                )}
+                <p className="mt-3 text-xs text-stone-500">
+                  <b>Atende agora</b> = o estoque físico do SAP cobre tudo o que a carga pede.
+                  {' '}<b>Tudo planejado</b> = o que falta no estoque tem ordem aberta — qualquer uma, mesmo sem
+                  dia ou com dia depois do caminhão (aí a carga leva <b>ordem fora do prazo</b>; agendamento sem
+                  data só conta ordem já iniciada, e a etiqueta diz <b>caminhão sem data</b> — uma carga pode ter
+                  as duas, cada produto pelo seu motivo).
+                  {' '}<b>Falta planejar</b> = sobra bag sem ordem (tratado) ou sem lote (semente branca).
+                  {' '}<b>Embalagem sem de-para</b> = o app não conhece a embalagem, estoque e ordem nunca casam:
+                  fica fora da conta, nunca vira falta.
+                  {' '}A fila é uma só: as cargas de antes pegam o estoque e as ordens primeiro. Só as cargas do
+                  período filtrado entram; linha sem carga não aparece aqui, mas continua na fila.
+                  {temFiltroDeProduto && (
+                    <b className="text-amber-700 dark:text-amber-400">
+                      {' '}Há filtro de produto, tipo, status ou busca ativo: a situação é da PARTE da carga que
+                      passou por ele (etiqueta "parte da carga", com X de Y bags) — não da carga inteira.
+                    </b>
+                  )}
+                </p>
+              </>
+            )}
+          </Cartao>
+
           {/* ---------------- recorte por carga (19/09/2026) ---------------- */}
           <Cartao
             titulo="Recorte por carga"
@@ -572,7 +795,25 @@ export default function Expedicao() {
                         {c.clientes[0] ?? '—'}
                         {c.clientes.length > 1 && ` +${c.clientes.length - 1}`}
                       </span>
-                      <span className="num-tabular w-16 shrink-0 text-right text-xs">{inteiro(c.bags)} bg</span>
+                      <span className="num-tabular w-24 shrink-0 text-right text-xs">
+                        {inteiro(c.bags)}
+                        {(bagsTotaisPorCarga.get(c.carga) ?? c.bags) > c.bags && (
+                          <span className="text-stone-400"> de {inteiro(bagsTotaisPorCarga.get(c.carga) ?? c.bags)}</span>
+                        )}
+                        {' bg'}
+                      </span>
+                      <span
+                        className="hidden w-28 shrink-0 md:block"
+                        title={
+                          (bagsTotaisPorCarga.get(c.carga) ?? c.bags) > c.bags
+                            ? 'Situação da PARTE da carga que passou pelos filtros, não da carga inteira.'
+                            : undefined
+                        }
+                      >
+                        {classificacaoDe.has(c.carga) && (
+                          <TagSituacaoCarga situacao={classificacaoDe.get(c.carga)!.situacao} />
+                        )}
+                      </span>
                       <span className="hidden w-36 shrink-0 text-right text-xs text-stone-500 sm:block">
                         {c.status.join(' / ') || '—'}
                       </span>
@@ -615,6 +856,9 @@ export default function Expedicao() {
                           {p.semTsi && (
                             <Tag cor="info" className="ml-1">lote de semente</Tag>
                           )}
+                          {p.semDePara && (
+                            <Tag cor="alerta" className="ml-1">embalagem sem de-para</Tag>
+                          )}
                         </td>
                         <td className="hidden px-2 py-1.5 text-xs lg:table-cell">{p.embalagem}</td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
@@ -632,7 +876,9 @@ export default function Expedicao() {
                           {inteiro(p.temHoje)}
                         </td>
                         <td className="num-tabular px-2 py-1.5 text-right font-semibold">
-                          {p.aProduzir > 0 ? (
+                          {p.semDePara ? (
+                            <span className="text-stone-400">—</span>
+                          ) : p.aProduzir > 0 ? (
                             <span className="text-amber-700 dark:text-amber-400">{inteiro(p.aProduzir)}</span>
                           ) : (
                             <span className="text-green-700 dark:text-green-400">0</span>
@@ -650,17 +896,21 @@ export default function Expedicao() {
                           {p.ordens.length === 0 ? '—' : <OrdensDaLinha ordens={p.ordens} />}
                         </td>
                         <td className="hidden px-2 py-1.5 lg:table-cell">
-                          <Tag
-                            cor={
-                              p.situacao === 'falta' ? 'perigo'
-                                : p.situacao === 'adiantar' ? 'alerta'
-                                : p.situacao === 'aguardando-producao' ? 'info' : 'ok'
-                            }
-                          >
-                            {p.situacao === 'falta' ? 'falta'
-                              : p.situacao === 'adiantar' ? 'adiantar'
-                              : p.situacao === 'aguardando-producao' ? 'aguardando produção' : 'atende'}
-                          </Tag>
+                          {p.semDePara ? (
+                            <Tag cor="alerta">sem de-para</Tag>
+                          ) : (
+                            <Tag
+                              cor={
+                                p.situacao === 'falta' ? 'perigo'
+                                  : p.situacao === 'adiantar' ? 'alerta'
+                                  : p.situacao === 'aguardando-producao' ? 'info' : 'ok'
+                              }
+                            >
+                              {p.situacao === 'falta' ? 'falta'
+                                : p.situacao === 'adiantar' ? 'adiantar'
+                                : p.situacao === 'aguardando-producao' ? 'aguardando produção' : 'atende'}
+                            </Tag>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -671,9 +921,14 @@ export default function Expedicao() {
                       <>
                         {", sendo "}
                         <b className="text-red-700 dark:text-red-400">
-                          {inteiro(recorte.produtos.reduce((t, p) => t + p.semOrdem, 0))} bg sem nenhuma ordem aberta
+                          {inteiro(recorte.produtos.reduce((t, p) => t + p.semOrdem, 0))} bg sem ordem aberta que sobre para elas
                         </b>
                       </>
+                    )}
+                    {recorte.bagsSemDePara > 0 && (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        {' · '}{inteiro(recorte.bagsSemDePara)} bg em embalagem sem de-para ficam fora da conta
+                      </span>
                     )}
                     .
                   </p>
@@ -687,7 +942,7 @@ export default function Expedicao() {
                   )}
                   <p className="mt-1 text-xs text-stone-500">
                     <b>A produzir</b> = o que estas cargas pedem menos o que já está no galpão para elas.
-                    {" "}<b>Sem ordem</b> = nem ordem aberta existe — é o que abrir hoje.
+                    {" "}<b>Sem ordem</b> = nem ordem aberta sobra para estas cargas (as de antes na fila levam as ordens primeiro) — é o que abrir hoje.
                     {" "}<b>Não sai no dia</b> = nem com o programado a fila fecha no prazo.
                     {" "}Já programado e Produto inteiro olham o produto todo, não só estas cargas.
                   </p>
@@ -1167,6 +1422,62 @@ function OrdensDaLinha({ ordens }: { ordens: OrdemPrevista[] }) {
           </span>
           {' · '}{o.status ?? '—'}{' · '}{inteiro(o.bags)} bg
           {o.dataProg ? ` · ${diaCurto(o.dataProg)}` : ' · sem dia'}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** A etiqueta dos três níveis do cartão "Cargas · o que dá para atender" (19/09/2026). */
+function TagSituacaoCarga({ situacao }: { situacao: SituacaoCarga }) {
+  if (situacao === 'atende') return <Tag cor="ok">atende agora</Tag>
+  if (situacao === 'planejada') return <Tag cor="info">tudo planejado</Tag>
+  if (situacao === 'sem-de-para') return <Tag cor="alerta">embalagem sem de-para</Tag>
+  return <Tag cor="perigo">falta planejar</Tag>
+}
+
+/**
+ * O que falta na carga, produto a produto: o sem ordem / sem lote e, na
+ * carga planejada fora do prazo, quanto depende de ordem que não está
+ * garantida até o caminhão — com as ordens do produto, para achar qual.
+ */
+function FaltaDaCarga({ carga }: { carga: CargaClassificada }) {
+  const emFalta = carga.produtos.filter((p) => p.falta > 0)
+  const semDePara = carga.produtos.filter((p) => p.semDePara)
+  const foraDoPrazo = carga.foraDoPrazo
+    ? carga.produtos.filter((p) => !p.semDePara && p.falta <= 0 && p.garantido < p.bags)
+    : []
+  if (emFalta.length === 0 && foraDoPrazo.length === 0 && semDePara.length === 0) {
+    return <span className="text-stone-400">—</span>
+  }
+  return (
+    <ul className="space-y-0.5">
+      {emFalta.map((p) => (
+        <li key={`f|${p.cultivar}|${p.tratamento}|${p.embalagem}`}>
+          <span className="font-medium">{p.cultivar}</span> · {p.semTsi ? SEM_TSI : p.tratamento} · {p.embalagem}
+          {' · '}
+          <b className="text-red-700 dark:text-red-400">
+            {inteiro(p.falta)} bg {p.semTsi ? 'sem lote' : 'sem ordem'}
+          </b>
+        </li>
+      ))}
+      {foraDoPrazo.map((p) => (
+        <li key={`p|${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="text-amber-800 dark:text-amber-300">
+          <span className="font-medium">{p.cultivar}</span> · {p.tratamento} · {p.embalagem}
+          {' · '}{inteiro(p.bags - p.garantido)} bg{' '}
+          {p.caminhaoSemData
+            ? 'dependem de ordem ainda não iniciada (o agendamento não tem data — só ordem iniciada garante)'
+            : `dependem de ordem fora do prazo${p.ateQuando ? ` (caminhão ${diaCurto(p.ateQuando)})` : ''}`}
+          {/* só as ordens que NÃO estão garantidas — a 1ª versão listava todas, inclusive a que já rodava */}
+          {p.ordensForaDoPrazo.length > 0 && <OrdensDaLinha ordens={p.ordensForaDoPrazo} />}
+        </li>
+      ))}
+      {semDePara.map((p) => (
+        <li key={`d|${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="text-amber-800 dark:text-amber-300">
+          <span className="font-medium">{p.cultivar}</span> · {p.tratamento} · {p.embalagem}
+          {' · '}{inteiro(p.bags)} bg
+          <Tag cor="alerta" className="ml-1">embalagem sem de-para</Tag>
+          {' '}— fora da conta
         </li>
       ))}
     </ul>
