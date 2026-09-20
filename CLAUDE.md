@@ -824,7 +824,11 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    dos dois falta, o Set fica vazio e nada acende. A marca é a MESMA fila que o cartão já
    filtra por `entraNaAvaliacao`/`ateAgendaEfetivo`, então uma ordem só acende nos dias em
    que está de fato "sem caminhão até X" — navegar a semana e trocar `diaSel` não precisa de
-   nenhum recorte a mais.
+   nenhum recorte a mais. **Padronização visual** (20/09/2026, pedido do Arion): a etiqueta
+   "urgente" fica À ESQUERDA do número (padrão da coluna Ordem nas outras telas) e o Status
+   ganha `min-w-36 text-center`, a mesma largura fixa da etiqueta de status usada nos cartões
+   e na lista do quadro do dia — sem isso "Programada" e "Pronto para produzir" tinham
+   larguras diferentes e a coluna ficava serrilhada.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.

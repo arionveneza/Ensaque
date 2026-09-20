@@ -1241,6 +1241,7 @@ export default function Programacao() {
               {semAgenda.semAgenda.map(({ ordem: o, proximaAgenda, bagsNaProximaAgenda, agendadoDepois }) => (
                 <tr key={o.id} className="border-t border-stone-100 dark:border-stone-800/60">
                   <td className="px-2 py-1.5 whitespace-nowrap">
+                    {o.prioridade === 'Urgente' && <Tag cor="perigo" className="mr-1">urgente</Tag>}
                     <button
                       type="button"
                       onClick={() => abrirOrdem(o.id)}
@@ -1250,7 +1251,6 @@ export default function Programacao() {
                     >
                       {o.numero}
                     </button>
-                    {o.prioridade === 'Urgente' && <Tag cor="perigo" className="ml-1">urgente</Tag>}
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     {maquinas.find((m) => m.id === o.maquina_id)?.nome ?? o.maquina_id}
@@ -1267,7 +1267,11 @@ export default function Programacao() {
                   <td className="px-2 py-1.5">{o.receita_nome}</td>
                   <td className="hidden px-2 py-1.5 text-xs lg:table-cell">{o.embalagem}</td>
                   <td className="num-tabular px-2 py-1.5 text-right">{n(o.bags, 0)}</td>
-                  <td className="px-2 py-1.5"><Tag cor={corDoStatus(o.status_efetivo)}>{o.status_efetivo}</Tag></td>
+                  <td className="px-2 py-1.5">
+                    <Tag cor={corDoStatus(o.status_efetivo)} className="min-w-36 text-center">
+                      {o.status_efetivo}
+                    </Tag>
+                  </td>
                   <td className="px-2 py-1.5 text-xs whitespace-nowrap">
                     {proximaAgenda ? (
                       <span title={`${n(agendadoDepois, 0)} bg agendados no total depois de ${diaCurto(ateAgendaEfetivo)}`}>
