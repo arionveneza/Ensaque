@@ -527,6 +527,20 @@ saldo = pedidos_APROVADOS − estoque_PA − ordens_abertas
   Estoque × Planejado mostra "N mult." em azul (`text-sky-600`) do lado do "N coop."
   (âmbar) já existente, nas colunas #Pedido e #Aguardando — mesmo texto de tooltip,
   cor diferente pra distinguir os dois de relance.
+  **Regressão da própria migração, corrigida no mesmo dia** (achado do Arion: "muito
+  material apontado está entrando como programado" — caso real O790 IPRO · V&P + RF +
+  Lli, `ordens_abertas` contando 54 que já eram estoque). A migração acima recriou o
+  CTE `abe` copiando SÓ de `pedido-cooperado.sql` (24/08) — sem notar que DUAS
+  migrações POSTERIORES já tinham corrigido esse mesmo CTE: `ordem-fora-do-estoque.sql`
+  (`and not o.fora_balanco`) e `exclusao-vira-status.sql` (`status not in
+  ('Apontada','Excluida')`). `create or replace view` reescreve a definição INTEIRA —
+  recriar a partir da migração "mais parecida" em vez da MAIS RECENTE reverte
+  silenciosamente qualquer correção no meio do caminho. Corrigido por
+  `balanco-demanda-corrige-regressao.sql` (aplicada), que restaura o filtro completo
+  (`status not in ('Apontada','Excluida') and not o.fora_balanco`) mantendo as colunas
+  de multiplicador. **Regra pra próxima vez**: antes de `create or replace view` numa
+  view já existente, `grep -rl nome_da_view supabase/` e usar a versão do arquivo com a
+  data MAIS RECENTE como base — nunca a do arquivo tematicamente mais parecido.
 
 ---
 
