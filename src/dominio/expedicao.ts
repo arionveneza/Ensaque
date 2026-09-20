@@ -240,6 +240,8 @@ export interface AgendamentoConvertido {
   tipoVenda: string
   /** `tipoVenda` contém COOPERADO — mesma regra do import de pedidos. */
   cooperado: boolean
+  /** Idem para MULTIPLICADOR (pedido do Arion, 20/09/2026). */
+  multiplicador: boolean
   cliente: string
   cidade: string | null
   estado: string | null
@@ -269,6 +271,7 @@ export interface ResumoAgendados {
   porStatusEntrega: Record<string, number>
   porStatusCarga: Record<string, number>
   bagsCooperado: number
+  bagsMultiplicador: number
   bagsOutras: number
   identificadorRepetido: number
   /**
@@ -333,6 +336,7 @@ export function converterAgendados(rows: Linha[]): {
     porStatusEntrega: {},
     porStatusCarga: {},
     bagsCooperado: 0,
+    bagsMultiplicador: 0,
     bagsOutras: 0,
     identificadorRepetido: 0,
     finalizados: 0,
@@ -366,8 +370,10 @@ export function converterAgendados(rows: Linha[]): {
 
     const tipoVenda = txt(r[iTipo])
     const cooperado = normaliza(tipoVenda).includes('COOPERADO')
+    const multiplicador = normaliza(tipoVenda).includes('MULTIPLICADOR')
     resumo.porTipoVenda[tipoVenda || '(vazio)'] = (resumo.porTipoVenda[tipoVenda || '(vazio)'] ?? 0) + 1
     if (cooperado) resumo.bagsCooperado += bags
+    else if (multiplicador) resumo.bagsMultiplicador += bags
     else resumo.bagsOutras += bags
 
     resumo.porStatusEntrega[statusEntrega] = (resumo.porStatusEntrega[statusEntrega] ?? 0) + 1
@@ -384,6 +390,7 @@ export function converterAgendados(rows: Linha[]): {
       filial: iFilial >= 0 ? normalizaFilial(r[iFilial]) : null,
       tipoVenda,
       cooperado,
+      multiplicador,
       cliente: txt(r[iCliente]),
       cidade: opcional(iCidade, r),
       estado: opcional(iEstado, r),
@@ -898,6 +905,19 @@ export interface LadoTipoVenda {
    * um só nos caminhões do grupo. Em falta primeiro, depois os maiores.
    */
   produtos: ProdutoDoLado[]
+  /**
+   * Cargas (número) que têm algum caminhão neste grupo (20/09/2026, pedido
+   * do Arion: "colocar as cargas que tem este tipo de venda também") — maior
+   * agendado primeiro. Caminhão sem número de carga não entra (não é "uma
+   * carga" pra listar).
+   */
+  cargas: CargaDoLado[]
+}
+
+export interface CargaDoLado {
+  carga: string
+  /** Soma dos bags agendados desta carga, só na parte que cai neste grupo. */
+  agendado: number
 }
 
 export interface ProdutoDoLado {
@@ -918,13 +938,15 @@ export interface ProdutoDoLado {
  * estoque é contado duas vezes, e cooperado no fim da fila absorve o
  * descoberto exatamente como a data manda.
  */
-export function resumoPorTipoVenda<T extends CarregamentoLinha>(
+export function resumoPorTipoVenda<T extends CarregamentoLinha & { carga?: string | null }>(
   saldos: SaldoExpedicao<T>[],
   ehCooperado: (c: T) => boolean,
-): { cooperado: LadoTipoVenda; outras: LadoTipoVenda } {
+  ehMultiplicador: (c: T) => boolean,
+): { cooperado: LadoTipoVenda; multiplicador: LadoTipoVenda; outras: LadoTipoVenda } {
   return {
     cooperado: resumoDoGrupo(saldos, (c) => ehCooperado(c)),
-    outras: resumoDoGrupo(saldos, (c) => !ehCooperado(c)),
+    multiplicador: resumoDoGrupo(saldos, (c) => ehMultiplicador(c)),
+    outras: resumoDoGrupo(saldos, (c) => !ehCooperado(c) && !ehMultiplicador(c)),
   }
 }
 
@@ -940,11 +962,14 @@ export function resumoPorTipoVenda<T extends CarregamentoLinha>(
  * nunca devolve ao recorte o estoque que os caminhões de fora já levaram.
  * Somar todos os recortes de uma partição dá exatamente a linha consolidada.
  */
-export function resumoDoGrupo<T extends CarregamentoLinha>(
+export function resumoDoGrupo<T extends CarregamentoLinha & { carga?: string | null }>(
   saldos: SaldoExpedicao<T>[],
   incluir: (c: T) => boolean,
 ): LadoTipoVenda {
-  const r: LadoTipoVenda = { agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [], produtos: [] }
+  const r: LadoTipoVenda = {
+    agendado: 0, coberto: 0, descoberto: 0, caminhoes: 0, produtosEmFalta: [], produtos: [], cargas: [],
+  }
+  const porCarga = new Map<string, number>()
   for (const s of saldos) {
     const p: ProdutoDoLado = {
       cultivar: s.cultivar, tratamento: s.tratamento, embalagem: s.embalagem,
@@ -956,6 +981,8 @@ export function resumoDoGrupo<T extends CarregamentoLinha>(
       p.coberto += c.coberto
       p.descoberto += c.descoberto
       p.caminhoes++
+      const carga = c.caminhao.carga
+      if (carga) porCarga.set(carga, (porCarga.get(carga) ?? 0) + c.bags)
     }
     if (p.caminhoes === 0) continue
     p.agendado = arred2(p.agendado)
@@ -980,6 +1007,9 @@ export function resumoDoGrupo<T extends CarregamentoLinha>(
   r.produtos.sort(
     (a, b) => b.descoberto - a.descoberto || b.agendado - a.agendado || a.cultivar.localeCompare(b.cultivar),
   )
+  r.cargas = [...porCarga.entries()]
+    .map(([carga, agendado]) => ({ carga, agendado: arred2(agendado) }))
+    .sort((a, b) => b.agendado - a.agendado || a.carga.localeCompare(b.carga))
   return r
 }
 

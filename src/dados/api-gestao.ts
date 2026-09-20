@@ -652,6 +652,8 @@ export interface AgendamentoBanco {
   filial: string | null
   tipo_venda: string
   cooperado: boolean
+  /** Idem para VENDA MULTIPLICADOR (migração agendamento-multiplicador.sql). */
+  multiplicador: boolean
   cliente: string | null
   cidade: string | null
   estado: string | null

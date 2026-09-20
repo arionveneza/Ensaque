@@ -1138,6 +1138,30 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    (na tela e na importação de agendados) enquanto o Pedidos Analítico não foi importado —
    **a filial só aparece depois de reimportar o Pedidos Analítico na aba Ordens** (a carga
    anterior não tem `pedidos_filial`).
+   **VENDA MULTIPLICADOR como terceiro grupo, com as cargas de cada lado** (20/09/2026,
+   pedido do Arion: "na área de cooperado e multiplicador, colocar as cargas que tem este
+   tipo de venda também"). O cartão "Por tipo de venda" tinha só COOPERADO × OUTRAS; agora
+   são três colunas (`lg:grid-cols-3`) — COOPERADO (roxo) · MULTIPLICADOR (`cor="info"`,
+   azul — mesma cor do "N mult." da tela Ordens) · OUTRAS (o resto, nem cooperado nem
+   multiplicador). Mesmo desenho do cooperado, ponta a ponta: coluna
+   `agendamentos.multiplicador` (migração `agendamento-multiplicador.sql` — SEM view aqui,
+   `listarAgendamentos` lê a tabela direto, então não tem o risco do `security_invoker`),
+   `converterAgendados` marca por "inclui" na coluna TIPO VENDA
+   (`normaliza(...).includes('MULTIPLICADOR')`), e como o import de agendados **não agrega**
+   linhas (cada linha do relatório vira seu próprio registro — diferente do import de
+   pedidos, que funde por chave), não precisou de nenhuma mudança de chave: só adicionar o
+   campo. `resumoPorTipoVenda(saldos, ehCooperado, ehMultiplicador)` ganhou o 2º predicado
+   (breaking change assumido — só tem os dois call sites da própria tela) e devolve
+   `{ cooperado, multiplicador, outras }`; "outras" = nem um nem outro. **Cargas do
+   grupo** (`LadoTipoVenda.cargas: { carga, agendado }[]`, dentro de `resumoDoGrupo` — o
+   motor comum dos três lados e do recorte por carga): soma os bags por número de carga
+   **só nos caminhões que o grupo já inclui** (mesmo mecanismo dos produtos — a fila
+   decidiu, aqui só soma), maior primeiro; caminhão sem número de carga entra no total do
+   grupo mas não vira uma linha de carga (não é "uma carga" pra listar). Exige
+   `resumoDoGrupo`/`resumoPorTipoVenda` aceitarem `T extends CarregamentoLinha & { carga?:
+   string | null }` — mudança aditiva, os outros usos (recorte por carga) já passavam
+   objetos com `carga`. Na tela, dentro de cada `PainelLado`: bloco "Cargas (N)" com um
+   chip por carga ("822 · 40 bg"), só informativo — não filtra nem leva ao recorte.
 6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
    tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`) SEPARADA de
    `lotes_semente` de propósito: a base de produção assume semente branca. **A unidade é

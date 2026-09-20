@@ -576,6 +576,19 @@ describe('conversao dos pedidos agendados', () => {
     expect(resumo.porTipoVenda['VENDA BONIFICAÇÃO']).toBe(1)
   })
 
+  it('multiplicador so em VENDA MULTIPLICADOR, independente de cooperado', () => {
+    const tipos = ['VENDA PRODUCAO', 'venda multiplicador', 'VENDA MULTIPLICADOR', 'VENDA COOPERADO']
+    const { linhas, resumo } = converterAgendados([
+      CAB_AGEND,
+      ...tipos.map((t, i) => linhaAg({ IDENTIFICADOR: `ID-${i}`, 'TIPO VENDA': t, 'QTD AGENDADA': 10 })),
+    ])
+    expect(linhas.map((l) => l.multiplicador)).toEqual([false, true, true, false])
+    expect(linhas.map((l) => l.cooperado)).toEqual([false, false, false, true])
+    expect(resumo.bagsMultiplicador).toBe(20)
+    expect(resumo.bagsCooperado).toBe(10)
+    expect(resumo.bagsOutras).toBe(10)
+  })
+
   it('Date com hora vira o dia pelos componentes UTC do xlsx (nunca getDate local)', () => {
     const { linhas } = converterAgendados([
       CAB_AGEND,
@@ -642,9 +655,9 @@ describe('conversao dos pedidos agendados', () => {
 })
 
 describe('alocacao por caminhao e visao por tipo de venda', () => {
-  type Ag = CarregamentoLinha & { id: string; cooperado: boolean }
+  type Ag = CarregamentoLinha & { id: string; cooperado: boolean; multiplicador: boolean; carga?: string | null }
   const ag = (over: Partial<Ag> = {}): Ag => ({
-    id: 'x', cooperado: false, cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M',
+    id: 'x', cooperado: false, multiplicador: false, cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M',
     bags: 10, data: '2026-09-10', ...over,
   })
 
@@ -763,7 +776,7 @@ describe('alocacao por caminhao e visao por tipo de venda', () => {
       ],
       [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
     )
-    const t = resumoPorTipoVenda(r, (c) => c.cooperado)
+    const t = resumoPorTipoVenda(r, (c) => c.cooperado, (c) => c.multiplicador)
     expect(t.outras).toMatchObject({ agendado: 10, coberto: 10, descoberto: 0, caminhoes: 1 })
     expect(t.outras.produtosEmFalta).toEqual([])
     expect(t.cooperado).toMatchObject({ agendado: 10, coberto: 2, descoberto: 8, caminhoes: 1 })
@@ -809,9 +822,52 @@ describe('alocacao por caminhao e visao por tipo de venda', () => {
       ],
       [{ cultivar: 'NEO700 I2X', bags: 12 }], [], [],
     )
-    const t = resumoPorTipoVenda(r, (c) => c.cooperado)
+    const t = resumoPorTipoVenda(r, (c) => c.cooperado, (c) => c.multiplicador)
     expect(t.cooperado.descoberto).toBe(0)
     expect(t.outras.descoberto).toBe(8)
+  })
+
+  it('multiplicador e um terceiro grupo independente de cooperado e outras', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 'outras', data: '2026-09-10' }),
+        ag({ id: 'coop', cooperado: true, data: '2026-09-11' }),
+        ag({ id: 'mult', multiplicador: true, data: '2026-09-12' }),
+      ],
+      [{ cultivar: 'NEO700 I2X', bags: 30 }], [], [],
+    )
+    const t = resumoPorTipoVenda(r, (c) => c.cooperado, (c) => c.multiplicador)
+    expect(t.outras).toMatchObject({ agendado: 10, caminhoes: 1 })
+    expect(t.cooperado).toMatchObject({ agendado: 10, caminhoes: 1 })
+    expect(t.multiplicador).toMatchObject({ agendado: 10, caminhoes: 1 })
+    // soma dos tres grupos = consolidado, nenhum bag em dois grupos ao mesmo tempo
+    expect(t.cooperado.agendado + t.multiplicador.agendado + t.outras.agendado).toBe(r[0].agendado)
+  })
+
+  it('cargas do grupo: soma por numero de carga, so quem tem carga, maior primeiro', () => {
+    const r = saldosExpedicao(
+      [
+        ag({ id: 'a', cooperado: true, carga: '100', bags: 6, data: '2026-09-10' }),
+        // mesma carga, outro caminhao/produto do MESMO grupo: soma na mesma carga
+        ag({ id: 'b', cooperado: true, carga: '100', cultivar: 'OUTRO', bags: 4, data: '2026-09-10' }),
+        ag({ id: 'c', cooperado: true, carga: '200', bags: 20, data: '2026-09-11' }),
+        // sem carga: nao entra na lista de cargas, mas conta no agendado do grupo
+        ag({ id: 'd', cooperado: true, carga: null, bags: 3, data: '2026-09-12' }),
+        // outro grupo: nao entra nas cargas do cooperado
+        ag({ id: 'e', cooperado: false, carga: '300', bags: 5, data: '2026-09-10' }),
+      ],
+      [
+        { cultivar: 'NEO700 I2X', bags: 100 },
+        { cultivar: 'OUTRO', bags: 100 },
+      ],
+      [], [],
+    )
+    const t = resumoPorTipoVenda(r, (c) => c.cooperado, (c) => c.multiplicador)
+    expect(t.cooperado.cargas).toEqual([
+      { carga: '200', agendado: 20 },
+      { carga: '100', agendado: 10 },
+    ])
+    expect(t.outras.cargas).toEqual([{ carga: '300', agendado: 5 }])
   })
 })
 

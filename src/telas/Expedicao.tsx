@@ -257,7 +257,10 @@ export default function Expedicao() {
     [cargaSel, cargas],
   )
 
-  const porTipo = useMemo(() => resumoPorTipoVenda(saldos, (a) => a.cooperado), [saldos])
+  const porTipo = useMemo(
+    () => resumoPorTipoVenda(saldos, (a) => a.cooperado, (a) => a.multiplicador),
+    [saldos],
+  )
   /** Cobertura de cada agendamento, pela fila consolidada do produto dele. */
   const alocacao = useMemo(
     () =>
@@ -445,7 +448,7 @@ export default function Expedicao() {
       await g.substituirAgendamentos(
         linhas.map((l) => ({
           identificador: l.identificador, pedido: l.pedido || null, filial: l.filial, tipo_venda: l.tipoVenda,
-          cooperado: l.cooperado, cliente: l.cliente || null, cidade: l.cidade, estado: l.estado,
+          cooperado: l.cooperado, multiplicador: l.multiplicador, cliente: l.cliente || null, cidade: l.cidade, estado: l.estado,
           cultivar: l.cultivar, categoria: l.categoria, tratamento: l.tratamento,
           embalagem: l.embalagem, qtd_pedido: l.qtdPedido, bags: l.bags,
           status_entrega: l.statusEntrega, carga: l.carga, status_carga: l.statusCarga,
@@ -464,7 +467,8 @@ export default function Expedicao() {
       if (embDesc.length > 0) avisos.push(`embalagem sem de-para: ${embDesc.join(', ')}`)
       setMsg(
         `${resumo.aproveitadas} agendamento(s) importados (substituição total): ` +
-          `${inteiro(resumo.bagsCooperado)} bg cooperado · ${inteiro(resumo.bagsOutras)} bg outras` +
+          `${inteiro(resumo.bagsCooperado)} bg cooperado · ${inteiro(resumo.bagsMultiplicador)} bg multiplicador · ` +
+          `${inteiro(resumo.bagsOutras)} bg outras` +
           (status ? ` · status: ${status}` : '') +
           (avisos.length ? `. Atenção: ${avisos.join(' · ')}.` : '.'),
       )
@@ -1253,8 +1257,9 @@ export default function Expedicao() {
 
           {/* ---------------- por tipo de venda ---------------- */}
           <Cartao titulo="Por tipo de venda" className="mb-5">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <PainelLado titulo="VENDA COOPERADO" lado={porTipo.cooperado} cor="roxo" />
+              <PainelLado titulo="VENDA MULTIPLICADOR" lado={porTipo.multiplicador} cor="info" />
               <PainelLado titulo="OUTRAS VENDAS" lado={porTipo.outras} cor="neutro" />
             </div>
             <p className="mt-3 text-xs text-stone-500">
@@ -1561,6 +1566,25 @@ function PainelLado({ titulo, lado, cor }: { titulo: string; lado: LadoTipoVenda
       )}
       {lado.produtos.length > 0 && lado.descoberto === 0 && (
         <p className="mt-2 text-xs text-green-700 dark:text-green-400">Tudo coberto na data.</p>
+      )}
+      {/* cargas deste tipo de venda (20/09/2026, pedido do Arion) — só
+          informativo: caminhão sem número de carga não entra aqui. */}
+      {lado.cargas.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-stone-500">
+            Cargas ({lado.cargas.length})
+          </p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {lado.cargas.map((c) => (
+              <span
+                key={c.carga}
+                className="whitespace-nowrap rounded-full border border-stone-300 px-2 py-0.5 text-xs text-stone-600 dark:border-stone-700 dark:text-stone-300"
+              >
+                {c.carga} · {inteiro(c.agendado)} bg
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
