@@ -674,14 +674,37 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    da ordem, para tablet), com ▲▼ e ✕. Tabela própria `ordem_prioridades_dia` (migração
    `prioridades-do-dia.sql`; coluna em `ordens` esbarraria no `fn_ordens_por_acao`), escrita
    SÓ pela RPC `definir_prioridades_dia(maquina, dia, uuid[])`, que regrava a faixa inteira
-   de uma vez (exige `programacao/editar`). **A prioridade é da célula**: gatilho apaga a linha
-   quando a ordem muda de máquina/dia ou conclui. A ordem continua na fila com o seu `seq` (a
-   faixa é destaque, não tira da fila); `v_ordens.prioridade_dia` expõe a posição. Soltar uma
-   ordem DA faixa na fila da MESMA célula só a tira da faixa — não mexe no seq; soltar em outra
-   máquina/dia move a ordem (e o gatilho derruba a prioridade). Solta no pool, desprograma.
+   de uma vez (exige `programacao/editar`). **A prioridade é da célula, mas ACOMPANHA a ordem
+   quando ela muda de máquina/dia** (revisto 20/09/2026 — ver abaixo); só cai de vez quando a
+   ordem conclui. A ordem continua na fila com o seu `seq` (a faixa é destaque, não tira da
+   fila); `v_ordens.prioridade_dia` expõe a posição. Soltar uma ordem DA faixa na fila da MESMA
+   célula só a tira da faixa — não mexe no seq. Solta no pool, desprograma (some da faixa: não
+   há célula pra levar).
    No cartão da fila, a marca `P1`/`P2` fica na **coluna da direita, numa vaga fixa colada ao
    status** (19/09/2026, pedido do Arion: "coloque ao lado direito do card, para não perder o
    padrão") — à esquerda do número ela empurrava o texto só nas linhas priorizadas.
+   **A prioridade acompanha o move** (20/09/2026, pedido do Arion: "quando eu mudo a máquina ou
+   dia, a prioridade da ordem some e eu preciso colocar novamente"). Até aqui o gatilho
+   `fn_prioridade_dia_cai` APAGAVA a linha de `ordem_prioridades_dia` sempre que
+   `maquina_id`/`data_prog` mudava — regra de 16/09, "a prioridade é da célula". Perguntado se
+   isso deveria valer só no arraste manual, sempre (inclusive na Reprogramação em cascata, que
+   move dezenas de ordens de uma vez) ou continuar caindo, a decisão dele foi **sempre,
+   inclusive na cascata**. Migração `prioridade-dia-acompanha-move.sql`: o gatilho, em vez de
+   apagar, MOVE a mesma linha (mesma PK `ordem_id`) pro FIM da fila da célula nova — nunca na
+   frente do que já estava lá, então uma reprogramação em massa não empurra a ordem movida por
+   cima de prioridades que o PCP já tinha organizado no dia de destino. Só cai de vez quando a
+   ordem vai pro pool (sem célula pra levar) ou conclui — igual a antes. `reprogramar`/
+   `aplicarAtribuicoes` (`api-gestao.ts`) fazem UM `update` por ordem, sequencial, mesmo na
+   cascata — nunca em lote —, então mesmo várias ordens priorizadas convergindo pro mesmo dia
+   novo entram uma de cada vez, sem corrida. A célula de ORIGEM pode abrir um buraco na
+   numeração ao perder um membro (P1, P3 sem o P2) — só visível no selo pequeno da fila normal
+   (`P{ord.prioridade_dia}`, valor cru; a faixa em si numera pelo índice do array, sempre
+   densa, e não é afetada): `fn_prioridade_dia_renumerar(maquina, dia)` reordena 1..n a célula
+   de origem depois de qualquer saída (movida ou concluída) — verificada contra dado real numa
+   transação com rollback (sem tocar nada de verdade): 1,3,7 vira 1,2,3 preservando a ordem
+   relativa, e tirar o do meio fecha o buraco de novo. Puramente no banco — nenhuma linha de
+   front mudou, porque a tela já lê `prioridade_dia` de `v_ordens`/realtime sem supor que ele
+   só pode desaparecer, nunca mudar de valor.
    Armadilha do arraste: o Chrome não dispara `dragend` quando o nó de origem some do DOM
    (realtime remonta a faixa), então TODO `onDragStart` zera `arrastandoDaFaixa`.
    **Quadro do dia em LISTA por máquina** (19/09/2026, pedido do Arion: "a tela de
