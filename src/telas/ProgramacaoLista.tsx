@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from 'react'
 import type { OrdemVisao } from '@/dados/api-gestao'
 import { Cartao, Tabela, Tag, Vazio, corDoStatus, diaCurto, n } from '@/componentes/ui'
 import { tempoPlanejadoS } from '@/dominio/calculos'
+import { setupPrevistoDaOrdem, type Setup } from '@/dominio/programacao'
 import { ehConcluida, ordenarQuadroDoDia, posicoesDeExibicao, type CampoQuadro } from '@/dominio/quadroDoDia'
 import type { Ordenacao } from '@/dominio/ordenacao'
 import { jaIniciada } from '@/dominio/status'
@@ -37,6 +38,8 @@ export interface PropsListaMaquinaDia {
   fila: OrdemVisao[]
   /** t/h da máquina — dá o tempo planejado de cada ordem (0 = sem capacidade). */
   capacidadeTh: number
+  /** Minutos de setup do cadastro da máquina (mesmo tratamento / troca) — para a coluna Setup. */
+  setup: Setup
   /** Filtro de status do quadro (o mesmo dos cartões). */
   visivel: (o: OrdemVisao) => boolean
   filtroAtivo: boolean
@@ -77,7 +80,7 @@ export interface PropsListaMaquinaDia {
 }
 
 /** Colunas visíveis fora de `lg` (Emb. e Lote somem) — as linhas especiais precisam somar isto. */
-const COLUNAS_SEMPRE = 11
+const COLUNAS_SEMPRE = 12
 const COLUNAS_SO_LG = 2
 
 const BOTAO = 'rounded border px-3 py-2 text-xs uppercase tracking-wide lg:px-1.5 lg:py-0.5 lg:text-[10px]'
@@ -90,7 +93,7 @@ const hm = (segundos: number): string => {
 }
 
 export function ListaMaquinaDia({
-  titulo, acoes, resumo, fila, capacidadeTh, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar,
+  titulo, acoes, resumo, fila, capacidadeTh, setup, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar,
   itensPorReceita, porStatus, onAlternarPorStatus, podeProgramar, podeMarcarUrgente,
   semCaminhaoIds, semCaminhaoAte, onAbrir, abrindoId,
   onPrioridade, onAlternarUrgente, posicaoNoGrupo, onSubir, onDescer, movendoId, onAlternarMover, painelMover,
@@ -102,8 +105,16 @@ export function ListaMaquinaDia({
     texto, className, onClick: () => onOrdenar(campo), ordem: seta(campo),
   })
   const tempo = (pesoT: number) => (capacidadeTh > 0 ? hm(tempoPlanejadoS(pesoT, capacidadeTh)) : '—')
+  // setup previsto por ordem: olha a fila INTEIRA (não `linhas`, que pode
+  // estar filtrada/ordenada pra exibição) — o anterior real na sequência
+  // gravada, igual Execução/Painel. Informativo: não soma ao Tempo.
+  const paraSetup = (o: OrdemVisao) => ({ id: o.id, receitaId: o.receita_id, dataProg: o.data_prog, seq: o.seq })
+  const filaSetup = fila.map(paraSetup)
+  const setupMinDe = (ord: OrdemVisao) => setupPrevistoDaOrdem(paraSetup(ord), filaSetup, setup)
+  const setupTexto = (min: number) => (min > 0 ? `${min} min` : '—')
   const totBags = linhas.reduce((a, o) => a + o.bags, 0)
   const totT = linhas.reduce((a, o) => a + o.peso_t, 0)
+  const totSetup = linhas.reduce((a, o) => a + setupMinDe(o), 0)
   const setasTravadas = ordenacao != null || filtroAtivo
   const dicaSetas = ordenacao != null
     ? 'Volte à ordem padrão (clique de novo no cabeçalho) para reordenar com as setas'
@@ -166,6 +177,7 @@ export function ListaMaquinaDia({
             col('#Bags', 'bags', 'w-20'),
             col('#Peso', 'peso', 'w-20'),
             { texto: '#Tempo', className: 'w-16' },
+            { texto: 'Setup', className: 'w-16' },
             col('Expedição', 'expedicao', 'w-24'),
             { texto: 'Urgente', className: 'w-20' },
             col('Status', 'status', 'w-52'),
@@ -181,6 +193,7 @@ export function ListaMaquinaDia({
               <td className="num-tabular px-2 py-1.5 text-right font-semibold">{n(totBags, 0)}</td>
               <td className="num-tabular px-2 py-1.5 text-right font-semibold whitespace-nowrap">{n(totT, 1)} t</td>
               <td className="num-tabular px-2 py-1.5 text-right font-semibold whitespace-nowrap">{tempo(totT)}</td>
+              <td className="num-tabular px-2 py-1.5 text-right font-semibold whitespace-nowrap">{setupTexto(totSetup)}</td>
               <td colSpan={4} />
             </tr>
           }
@@ -250,6 +263,12 @@ export function ListaMaquinaDia({
                     title={`Tempo planejado desta ordem: ${n(ord.peso_t, 1)} t ÷ ${n(capacidadeTh, 1)} t/h (sem setup)`}
                   >
                     {tempo(ord.peso_t)}
+                  </td>
+                  <td
+                    className="num-tabular px-2 py-1.5 text-right align-middle whitespace-nowrap text-stone-600 dark:text-stone-300"
+                    title="Setup antes desta ordem, pela sequência gravada: 20 min quando o tratamento anterior é igual, 40 min quando troca (cadastro da máquina). Não soma ao Tempo planejado — o setup real é apontado como parada Planejada."
+                  >
+                    {setupTexto(setupMinDe(ord))}
                   </td>
                   <td
                     className={`num-tabular px-2 py-1.5 align-middle text-xs whitespace-nowrap ${

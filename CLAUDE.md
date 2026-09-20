@@ -768,6 +768,16 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    toneladas, horas com setup e nº de ordens **não finalizadas** — finalizada é a que a
    produção já informou a quantidade produzida), em destaque âmbar; o cartão usa o mesmo
    resumo.
+   **Coluna Setup na lista** (20/09/2026, pedido do Arion: "coloque o tempo de setup de cada
+   ordem, aqueles 20 e 40 minutos que falamos"). Ao lado de Tempo, reaproveita
+   `setupPrevistoDaOrdem` — o mesmo cálculo de Execução/Painel TV: olha o anterior real da
+   MESMA máquina/dia pela sequência GRAVADA em `fila`, nunca pela linha vizinha na tabela
+   quando ordenada por cabeçalho (cultivar, tratamento…) — "20 min" quando o tratamento
+   anterior é igual, "40 min" quando troca, "—" na primeira ordem do dia da máquina (sem
+   anterior). Só na lista, como a coluna Tempo (a mesma regra de "por ordem, não nos
+   cartões"). Informativo, igual já era em Execução/Painel: não soma ao Tempo nem ao
+   planejado — o setup real é apontado como parada Planejada. Total no rodapé soma só as
+   ordens visíveis (respeita o filtro de status).
    **Cartão "Ordens sem caminhão até X"** (19/09/2026, pedido do Arion: "uma maneira de ver
    quais ordens estão programadas mas não irão atender nenhuma agenda dentro de um dia que eu
    vou escolher em um calendário"; decisão dele: **= não há agendamento desse produto com data

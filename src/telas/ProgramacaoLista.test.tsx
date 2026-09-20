@@ -42,7 +42,7 @@ const fila: OrdemVisao[] = [
   ordem({ id: 'E', seq: 6, status_efetivo: 'Finalizada', cultivar: '0000 IPRO', bags: 5, peso_t: 4 }),
 ]
 
-const COL = { seq: 0, ordem: 1, tempo: 8, expedicao: 9, acoes: 12 }
+const COL = { seq: 0, ordem: 1, tempo: 8, setup: 9, expedicao: 10, acoes: 13 }
 
 function montar(extra: Partial<PropsListaMaquinaDia> = {}) {
   const { grupos } = exibicaoDoDia(fila)
@@ -51,6 +51,7 @@ function montar(extra: Partial<PropsListaMaquinaDia> = {}) {
     resumo: <p>resumo</p>,
     fila,
     capacidadeTh: 12,
+    setup: { mesmoMin: 20, trocaMin: 40 },
     visivel: () => true,
     filtroAtivo: false,
     onLimparFiltro: vi.fn(),
@@ -127,6 +128,19 @@ describe('ListaMaquinaDia', () => {
     expect(document.querySelector('tfoot')!.textContent).toContain('4h35') // 55,0 t ÷ 12 = 4,583 h
     montar({ capacidadeTh: 0 })
     expect(document.querySelectorAll<HTMLTableRowElement>('tr[data-ordem="A"]')[1].cells[COL.tempo].textContent).toBe('—')
+  })
+
+  it('setup previsto por ordem, pela sequencia gravada (nao pela exibicao); total soma so as visiveis', () => {
+    const { linha } = montar()
+    // A é a 1ª da fila (seq 1): sem anterior, sem setup
+    expect(linha('A').cells[COL.setup].textContent).toBe('—')
+    // as demais têm a mesma receita do anterior: 20 min (mesmoMin)
+    expect(linha('B').cells[COL.setup].textContent).toBe('20 min')
+    expect(linha('E').cells[COL.setup].textContent).toBe('20 min')
+    expect(document.querySelector('tfoot')!.textContent).toContain('100 min') // 0 + 20×5
+    // ordenar por cultivar não muda o setup de cada ordem (é da fila real, não da linha vizinha exibida)
+    const { linha: linhaOrdenada } = montar({ ordenacao: { campo: 'cultivar', dir: 'asc' } })
+    expect(linhaOrdenada('A').cells[COL.setup].textContent).toBe('—')
   })
 
   it('expedicao anterior ao dia programado sai em vermelho; sem expedicao e um traco', () => {

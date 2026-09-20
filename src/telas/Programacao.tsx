@@ -1411,6 +1411,7 @@ export default function Programacao() {
                 resumo={resumoOcupacao(o)}
                 fila={lista}
                 capacidadeTh={o.capacidadeTh}
+                setup={{ mesmoMin: m.setup_mesmo_min, trocaMin: m.setup_troca_min }}
                 porStatus={porStatus}
                 onAlternarPorStatus={() => setFilaSemStatus((a) => ({ ...a, [m.id]: !a[m.id] }))}
                 visivel={visivel}
