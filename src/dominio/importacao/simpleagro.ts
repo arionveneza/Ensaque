@@ -112,6 +112,8 @@ export interface PedidoConvertido {
    * como o `aprovado` já faz.
    */
   cooperado: boolean
+  /** Idem para VENDA MULTIPLICADOR (pedido do Arion, 20/09/2026) — mesmo desenho do `cooperado`. */
+  multiplicador: boolean
 }
 
 export interface ResumoPedidos {
@@ -137,6 +139,8 @@ export interface ResumoPedidos {
   porStatusFinanceiro: Record<string, number>
   /** Bags de VENDA COOPERADO entre as linhas aproveitadas (aprovado + aguardando). */
   bagsCooperado: number
+  /** Idem para VENDA MULTIPLICADOR. */
+  bagsMultiplicador: number
   /** Pedidos distintos (Número Pedido) com filial informada / sem ('0' ou vazia). */
   pedidosComFilial: number
   pedidosSemFilial: number
@@ -256,6 +260,7 @@ export function converterPedidos(
     porStatusFora: {},
     porStatusFinanceiro: {},
     bagsCooperado: 0,
+    bagsMultiplicador: 0,
     pedidosComFilial: 0,
     pedidosSemFilial: 0,
   }
@@ -316,7 +321,11 @@ export function converterPedidos(
     // grafia na origem não pode silenciosamente desligar o destaque
     const cooperado = iTipoVenda >= 0 && normaliza(txt(r[iTipoVenda])).includes('COOPERADO')
     if (cooperado) resumo.bagsCooperado += bags
-    const chave = [cultivar, tratamento, emb.codigo, aprovado ? 'A' : 'P', cooperado ? 'C' : 'N'].join('|')
+    const multiplicador = iTipoVenda >= 0 && normaliza(txt(r[iTipoVenda])).includes('MULTIPLICADOR')
+    if (multiplicador) resumo.bagsMultiplicador += bags
+    const chave = [
+      cultivar, tratamento, emb.codigo, aprovado ? 'A' : 'P', cooperado ? 'C' : 'N', multiplicador ? 'M' : 'X',
+    ].join('|')
 
     const atual = agregado.get(chave)
     if (atual) atual.bags += bags
@@ -328,6 +337,7 @@ export function converterPedidos(
         bags,
         aprovado,
         cooperado,
+        multiplicador,
       })
     resumo.aproveitadas++
   }

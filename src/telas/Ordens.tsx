@@ -1725,6 +1725,14 @@ function PainelDemanda({
                           {inteiro(b.pedido_cooperado ?? 0)} coop.
                         </div>
                       )}
+                      {(b.pedido_multiplicador ?? 0) > 0 && (
+                        <div
+                          className="whitespace-nowrap text-xs font-medium text-sky-600 dark:text-sky-400"
+                          title="Parcela do pedido aprovado que é VENDA MULTIPLICADOR (coluna Tipo Venda da SimpleAgro)"
+                        >
+                          {inteiro(b.pedido_multiplicador ?? 0)} mult.
+                        </div>
+                      )}
                     </td>
                     <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
                       {inteiro(b.pedido_pendente)}
@@ -1734,6 +1742,14 @@ function PainelDemanda({
                           title="Parcela do pedido aguardando liberação financeira que é VENDA COOPERADO"
                         >
                           {inteiro(b.pedido_cooperado_pendente ?? 0)} coop.
+                        </div>
+                      )}
+                      {(b.pedido_multiplicador_pendente ?? 0) > 0 && (
+                        <div
+                          className="whitespace-nowrap text-xs font-medium text-sky-600 dark:text-sky-400"
+                          title="Parcela do pedido aguardando liberação financeira que é VENDA MULTIPLICADOR"
+                        >
+                          {inteiro(b.pedido_multiplicador_pendente ?? 0)} mult.
                         </div>
                       )}
                     </td>

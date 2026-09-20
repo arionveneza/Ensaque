@@ -281,6 +281,46 @@ describe('conversao de pedidos', () => {
     expect(r.linhas[0].cooperado).toBe(false)
     expect(r.resumo.bagsCooperado).toBe(0)
   })
+
+  it('marca VENDA MULTIPLICADOR pela coluna Tipo Venda e separa em linha propria', () => {
+    const CAB_COM_TIPO = [...CAB_PEDIDOS, 'Tipo Venda']
+    const r = converterPedidos([
+      CAB_COM_TIPO,
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 80), 'VENDA DISTRIBUIDOR'],
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 15), 'VENDA MULTIPLICADOR'],
+    ])
+    expect(r.linhas).toHaveLength(2)
+    const mult = r.linhas.find((l) => l.multiplicador)
+    const normal = r.linhas.find((l) => !l.multiplicador)
+    expect(mult?.bags).toBe(15)
+    expect(normal?.bags).toBe(80)
+    expect(r.resumo.bagsMultiplicador).toBe(15)
+    expect(r.totalAprovado).toBe(95)
+  })
+
+  it('cooperado e multiplicador na mesma combinacao viram tres linhas distintas', () => {
+    const CAB_COM_TIPO = [...CAB_PEDIDOS, 'Tipo Venda']
+    const r = converterPedidos([
+      CAB_COM_TIPO,
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 50), 'VENDA DISTRIBUIDOR'],
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 20), 'VENDA COOPERADO'],
+      [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10), 'VENDA MULTIPLICADOR'],
+    ])
+    expect(r.linhas).toHaveLength(3)
+    expect(r.linhas.find((l) => l.cooperado)?.bags).toBe(20)
+    expect(r.linhas.find((l) => l.multiplicador)?.bags).toBe(10)
+    expect(r.linhas.find((l) => !l.cooperado && !l.multiplicador)?.bags).toBe(50)
+    expect(r.totalAprovado).toBe(80)
+  })
+
+  it('sem a coluna Tipo Venda (export antigo), nada vira multiplicador', () => {
+    const r = converterPedidos([
+      CAB_PEDIDOS,
+      pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10),
+    ])
+    expect(r.linhas[0].multiplicador).toBe(false)
+    expect(r.resumo.bagsMultiplicador).toBe(0)
+  })
 })
 
 describe('num: os tres formatos que as origens mandam', () => {

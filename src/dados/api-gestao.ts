@@ -718,6 +718,9 @@ export interface BalancoLinha {
   pedido_cooperado?: number
   /** Idem para o pedido aguardando liberação financeira — a maior parte do cooperado vive aqui. */
   pedido_cooperado_pendente?: number
+  /** Idem para VENDA MULTIPLICADOR — ausente até a migração pedido-multiplicador.sql rodar. */
+  pedido_multiplicador?: number
+  pedido_multiplicador_pendente?: number
 }
 
 /** Estoque de produto acabado (tratado) da carga vigente, linha a linha. */
@@ -817,18 +820,33 @@ export async function importarPedidos(
     bags: l.bags,
     aprovado: l.aprovado,
     cooperado: l.cooperado,
+    multiplicador: l.multiplicador,
   }))
-  // a coluna `cooperado` nasceu depois (migração pedido-cooperado.sql): na
-  // janela entre publicar o front e rodar o SQL, importa sem a marcação em
-  // vez de travar a carga do dia inteira
+  // as colunas `cooperado`/`multiplicador` nasceram depois (migrações
+  // pedido-cooperado.sql / pedido-multiplicador.sql): na janela entre
+  // publicar o front e rodar o SQL, importa sem a marcação em vez de travar
+  // a carga do dia inteira
   let comCooperado = true
+  let comMultiplicador = true
   for (let i = 0; i < registros.length; i += 500) {
     const fatia = registros.slice(i, i + 500)
-    const semCoop = () => fatia.map(({ cooperado: _c, ...resto }) => resto)
-    let { error } = await supabase.from('pedidos_venda').insert(comCooperado ? fatia : semCoop())
+    const monta = () =>
+      fatia.map((l) => {
+        const { cooperado, multiplicador, ...resto } = l
+        return {
+          ...resto,
+          ...(comCooperado ? { cooperado } : {}),
+          ...(comMultiplicador ? { multiplicador } : {}),
+        }
+      })
+    let { error } = await supabase.from('pedidos_venda').insert(monta())
     if (error && comCooperado && error.message.includes('cooperado')) {
       comCooperado = false
-      ;({ error } = await supabase.from('pedidos_venda').insert(semCoop()))
+      ;({ error } = await supabase.from('pedidos_venda').insert(monta()))
+    }
+    if (error && comMultiplicador && error.message.includes('multiplicador')) {
+      comMultiplicador = false
+      ;({ error } = await supabase.from('pedidos_venda').insert(monta()))
     }
     erro('inserir pedidos', error)
   }

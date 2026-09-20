@@ -508,6 +508,25 @@ saldo = pedidos_APROVADOS − estoque_PA − ordens_abertas
   quando o alvo inclui pendente.
 - Pedido de venda com código de tratamento **sem receita cadastrada** entra no balanço (a demanda
   existe), mas **não permite criar ordem** — a combinação é marcada "receita não cadastrada".
+- **VENDA MULTIPLICADOR destacada, igual VENDA COOPERADO** (20/09/2026, pedido do Arion: "o
+  tipo de venda cooperado fica destacado, temos que destacar também o tipo de venda
+  multiplicador"). Mesmo desenho ponta a ponta do `pedido-cooperado.sql`
+  (migração `pedido-multiplicador.sql`, aplicada): coluna `pedidos_venda.multiplicador`
+  (mesma regra por "inclui" na coluna L `Tipo Venda` — `normaliza(...).includes('MULTIPLICADOR')`,
+  case/acento não importam), `v_balanco_demanda` ganha `pedido_multiplicador`/
+  `pedido_multiplicador_pendente` no FIM do select (`create or replace view` só aceita
+  coluna nova ali) — **reaplicar `security_invoker = true` depois de recriar a view é
+  obrigatório** (é a mesma view do incidente de 12/09/2026). O importador
+  (`converterPedidos`) separa cooperado e multiplicador da mesma combinação em linhas
+  PRÓPRIAS na chave de agregação (`cooperado ? 'C' : 'N'` mais `multiplicador ? 'M' :
+  'X'`) — sem isso, uma linha cooperado e uma multiplicador do mesmo cultivar+tratamento+
+  embalagem se fundiriam numa só e uma das marcações se perderia. `importarPedidos`
+  grava com a mesma rede de segurança do cooperado: se a coluna `multiplicador` ainda
+  não existir no banco (janela entre publicar o front e rodar a migração), tenta de novo
+  sem ela em vez de travar a carga do dia inteira. Na tela de Ordens, o painel Demanda ×
+  Estoque × Planejado mostra "N mult." em azul (`text-sky-600`) do lado do "N coop."
+  (âmbar) já existente, nas colunas #Pedido e #Aguardando — mesmo texto de tooltip,
+  cor diferente pra distinguir os dois de relance.
 
 ---
 
