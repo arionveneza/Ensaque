@@ -2113,7 +2113,7 @@ function ModalProgramarDemanda({
     [lotes, cultivar],
   )
   /** Uma linha = uma ordem: lote, bags e, se quiser, destinação só dela. */
-  type LinhaLote = { loteId: string; bags: string; destinacao?: string }
+  type LinhaLote = { loteId: string; bags: string; destinacao?: string; busca?: string }
   const rascunho = useRascunho<{
     linhas: LinhaLote[]
     destinacao: string
@@ -2139,10 +2139,21 @@ function ModalProgramarDemanda({
   const semDestinacao = validas.filter((l) => !destinacaoDe(l))
 
   const setLinhas = (novas: LinhaLote[]) => rascunho.definir({ linhas: novas })
-  const atualizarLinha = (i: number, campo: 'loteId' | 'bags' | 'destinacao', valor: string) =>
+  const atualizarLinha = (i: number, campo: 'loteId' | 'bags' | 'destinacao' | 'busca', valor: string) =>
     setLinhas(linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
-  const adicionarLinha = () => setLinhas([...linhas, { loteId: '', bags: '', destinacao: '' }])
+  const adicionarLinha = () => setLinhas([...linhas, { loteId: '', bags: '', destinacao: '', busca: '' }])
   const removerLinha = (i: number) => setLinhas(linhas.filter((_, idx) => idx !== i))
+  // com várias dezenas de lotes do mesmo cultivar, o select puro obrigava a
+  // ler um por um (pedido do Arion, 20/09/2026) — o mesmo filtro de texto que
+  // "Nova ordem"/"Editar ordem" já tem, aqui por LINHA (cada linha pode
+  // procurar um lote diferente); o já escolhido nunca some da própria lista.
+  const lotesParaLinha = (l: LinhaLote) => {
+    const termo = (l.busca ?? '').trim().toLowerCase()
+    if (!termo) return lotesDoCultivar
+    return lotesDoCultivar.filter(
+      (lt) => lt.id === l.loteId || `${lt.id} ${lt.tratamento ?? ''}`.toLowerCase().includes(termo),
+    )
+  }
 
   async function confirmar() {
     if (!receita || validas.length === 0 || semDestinacao.length > 0) return
@@ -2225,54 +2236,65 @@ function ModalProgramarDemanda({
           </div>
         ) : (
           <>
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-3">
               {linhas.map((l, i) => {
+                const lotesFiltradosDaLinha = lotesParaLinha(l)
                 const lote = lotesDoCultivar.find((x) => x.id === l.loteId)
                 return (
-                  <div key={i} className="flex items-center gap-2">
-                    <select
-                      value={l.loteId}
-                      onChange={(e) => atualizarLinha(i, 'loteId', e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
-                    >
-                      <option value="">selecione o lote…</option>
-                      {lotesDoCultivar.map((lt) => (
-                        <option key={lt.id} value={lt.id}>
-                          {lt.id}{lt.bags_disp != null ? ` (${lt.bags_disp} disp.)` : ''}
-                        </option>
-                      ))}
-                    </select>
+                  <div key={i} className="space-y-1">
                     <input
-                      type="number"
-                      min={1}
-                      max={lote?.bags_disp ?? undefined}
-                      value={l.bags}
-                      onChange={(e) => atualizarLinha(i, 'bags', e.target.value)}
-                      placeholder="bags"
-                      className="w-24 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
+                      value={l.busca ?? ''}
+                      onChange={(e) => atualizarLinha(i, 'busca', e.target.value)}
+                      placeholder="filtrar por lote…"
+                      className="w-full rounded-lg border border-stone-300 px-3 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
                     />
-                    {/* destinação SÓ desta ordem — em branco herda a geral abaixo */}
-                    <input
-                      value={l.destinacao ?? ''}
-                      onChange={(e) => atualizarLinha(i, 'destinacao', e.target.value)}
-                      placeholder={destinacao.trim() ? `= ${destinacao.trim()}` : 'destinação'}
-                      title="Destinação desta ordem. Em branco, usa a destinação geral da leva."
-                      className={`w-40 rounded-lg border px-3 py-2 text-sm dark:bg-stone-800 ${
-                        l.loteId && Number(l.bags) > 0 && !destinacaoDe(l)
-                          ? 'border-red-400 dark:border-red-700'
-                          : 'border-stone-300 dark:border-stone-700'
-                      }`}
-                    />
-                    {linhas.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removerLinha(i)}
-                        title="Remover"
-                        className="px-1 text-lg leading-none text-stone-400 hover:text-red-600"
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={l.loteId}
+                        onChange={(e) => atualizarLinha(i, 'loteId', e.target.value)}
+                        className="min-w-0 flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
                       >
-                        ×
-                      </button>
-                    )}
+                        <option value="">
+                          {lotesFiltradosDaLinha.length === 0 ? 'nenhum lote nesse filtro' : 'selecione o lote…'}
+                        </option>
+                        {lotesFiltradosDaLinha.map((lt) => (
+                          <option key={lt.id} value={lt.id}>
+                            {lt.id}{lt.bags_disp != null ? ` (${lt.bags_disp} disp.)` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        max={lote?.bags_disp ?? undefined}
+                        value={l.bags}
+                        onChange={(e) => atualizarLinha(i, 'bags', e.target.value)}
+                        placeholder="bags"
+                        className="w-24 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
+                      />
+                      {/* destinação SÓ desta ordem — em branco herda a geral abaixo */}
+                      <input
+                        value={l.destinacao ?? ''}
+                        onChange={(e) => atualizarLinha(i, 'destinacao', e.target.value)}
+                        placeholder={destinacao.trim() ? `= ${destinacao.trim()}` : 'destinação'}
+                        title="Destinação desta ordem. Em branco, usa a destinação geral da leva."
+                        className={`w-40 rounded-lg border px-3 py-2 text-sm dark:bg-stone-800 ${
+                          l.loteId && Number(l.bags) > 0 && !destinacaoDe(l)
+                            ? 'border-red-400 dark:border-red-700'
+                            : 'border-stone-300 dark:border-stone-700'
+                        }`}
+                      />
+                      {linhas.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removerLinha(i)}
+                          title="Remover"
+                          className="px-1 text-lg leading-none text-stone-400 hover:text-red-600"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })}

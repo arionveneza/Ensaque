@@ -289,6 +289,14 @@ traço apagado quando vazia). **Filtro de status nasce com tudo marcado menos Ap
 a coluna SAP tem três vagas fixas (número · veredito `w-80` · ação); no painel de demanda,
 quatro (situação · aguardando · na fila · Programar) — caixa de tamanho fixo em toda linha
 é o padrão visual que o Arion pediu, e vale para os próximos cartões.
+**Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
+lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
+`lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro
+de texto (comentário de origem: "com centenas de lotes o select puro não dá"), só faltava
+aqui. Filtro **por LINHA** (`LinhaLote.busca`), não um só pra leva inteira — cada linha desta
+tela pode estar atrás de um lote diferente, igual já acontece com a `destinacao` por linha;
+o lote já escolhido nunca some da própria lista mesmo se não bater com o texto digitado
+(mesma trava do formulário irmão).
 
 ### Fluxo de execução em duas etapas (crítico — não simplificar)
 1. **Iniciar** apenas *abre* a ordem para preparação. **Não** inicia o cronômetro.
