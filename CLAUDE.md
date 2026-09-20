@@ -788,6 +788,20 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    (status cru ≠ Programada) e ficava fora de toda fonte com a semana 2+ à frente — a janela
    passou a `[hoje − 14, janela.de)`, o mesmo horizonte para trás que a semana atual já
    enxerga.
+   **Marca sutil no quadro do dia** (20/09/2026, pedido do Arion: "hoje tenho que ficar
+   comparando manualmente" entre este cartão e a fila da máquina). `Programacao.tsx` calcula
+   `semCaminhaoIds` (`Set` dos ids em `semAgenda.semAgenda`) e passa para os DOIS modos —
+   `ListaMaquinaDia` (prop nova) e os cartões (fila normal e faixa de prioridades) — que
+   mostram um pontinho âmbar ao lado do nº da ordem, com dica "Sem caminhão agendado até
+   dd/mm" no hover; **nunca troca a linha nem desabilita nada**: prioridade, mover, urgente
+   e ▲▼ continuam exatamente iguais, é só um sinal a mais pra olhar antes de decidir. Só
+   acende com resposta CONFIÁVEL — agendamentos **e** embalagens carregados (`agendamentosOk
+   && embalagensOk`, além de `agendamentos.length > 0`) — senão SC10/SC20 entrariam em
+   `semAgenda` por engano (a exceção da nota acima) e a marca mentiria; enquanto qualquer um
+   dos dois falta, o Set fica vazio e nada acende. A marca é a MESMA fila que o cartão já
+   filtra por `entraNaAvaliacao`/`ateAgendaEfetivo`, então uma ordem só acende nos dias em
+   que está de fato "sem caminhão até X" — navegar a semana e trocar `diaSel` não precisa de
+   nenhum recorte a mais.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.

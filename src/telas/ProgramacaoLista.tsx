@@ -52,6 +52,16 @@ export interface PropsListaMaquinaDia {
   podeProgramar: boolean
   /** Ação ordens/priorizar — o botão "urgente". */
   podeMarcarUrgente: boolean
+  /**
+   * Ids do cartão "Ordens sem caminhão até X" (20/09/2026, pedido do Arion:
+   * "tenho que ficar comparando manualmente" entre os dois cartões) — marca
+   * sutil ao lado do nº, nunca troca a linha nem trava prioridade/mover.
+   * Vazio quando o cartão ainda não tem uma resposta confiável (agendamentos
+   * não carregados) — nada é marcado por engano.
+   */
+  semCaminhaoIds: ReadonlySet<string>
+  /** A data escolhida no cartão — só para o texto da dica. */
+  semCaminhaoAte: string
   onAbrir: (id: string) => void
   abrindoId: string | null
   onPrioridade: (ord: OrdemVisao) => void
@@ -81,7 +91,8 @@ const hm = (segundos: number): string => {
 
 export function ListaMaquinaDia({
   titulo, acoes, resumo, fila, capacidadeTh, visivel, filtroAtivo, onLimparFiltro, ordenacao, onOrdenar,
-  itensPorReceita, porStatus, onAlternarPorStatus, podeProgramar, podeMarcarUrgente, onAbrir, abrindoId,
+  itensPorReceita, porStatus, onAlternarPorStatus, podeProgramar, podeMarcarUrgente,
+  semCaminhaoIds, semCaminhaoAte, onAbrir, abrindoId,
   onPrioridade, onAlternarUrgente, posicaoNoGrupo, onSubir, onDescer, movendoId, onAlternarMover, painelMover,
 }: PropsListaMaquinaDia) {
   const posicao = posicoesDeExibicao(fila, porStatus)
@@ -206,6 +217,14 @@ export function ListaMaquinaDia({
                       >
                         {ord.numero}
                       </button>
+                      {semCaminhaoIds.has(ord.id) && (
+                        <span
+                          className="ml-1 cursor-help text-amber-600 dark:text-amber-400"
+                          title={`Sem caminhão agendado até ${diaCurto(semCaminhaoAte)} (do cartão "Ordens sem caminhão")`}
+                        >
+                          ●
+                        </span>
+                      )}
                       {!!ord.reprogramacoes && ord.reprogramacoes > 0 && (
                         <span
                           className="ml-1 cursor-help text-xs font-normal text-amber-700 dark:text-amber-400"

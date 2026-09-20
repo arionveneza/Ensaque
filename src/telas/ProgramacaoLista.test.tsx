@@ -60,6 +60,8 @@ function montar(extra: Partial<PropsListaMaquinaDia> = {}) {
     onAlternarPorStatus: vi.fn(),
     podeProgramar: true,
     podeMarcarUrgente: true,
+    semCaminhaoIds: new Set(),
+    semCaminhaoAte: '2026-09-25',
     onAbrir: vi.fn(),
     abrindoId: null,
     onPrioridade: vi.fn(),
@@ -142,6 +144,18 @@ describe('ListaMaquinaDia', () => {
     expect(rodape.textContent).toContain('Total · 6 ordens')
     expect(rodape.textContent).toContain('65') // 20 + 10 + 10 + 10 + 10 + 5
     expect(rodape.textContent).toContain('55,0 t') // 17 + 8,5 × 4 + 4
+  })
+
+  it('marca sutil de "sem caminhao" so na ordem marcada; nao troca a linha nem trava acoes', () => {
+    const { linha } = montar({ semCaminhaoIds: new Set(['D']) })
+    expect(linha('D').textContent).toContain('●')
+    expect(linha('F').textContent).not.toContain('●')
+    const marca = linha('D').querySelector<HTMLElement>('[title*="Sem caminhão"]')!
+    expect(marca.title).toContain('25/09')
+    // as ações continuam ali, sem disabled/invisible por causa da marca
+    const acoesD = linha('D').cells[COL.acoes]
+    expect(acoesD.className).not.toContain('invisible')
+    expect([...acoesD.querySelectorAll('button')].some((b) => b.textContent === 'prioridade')).toBe(true)
   })
 
   it('clique no cabecalho ordena (inclusive Expedicao e Status); clique no numero abre a ordem', () => {

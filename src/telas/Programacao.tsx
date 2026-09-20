@@ -465,6 +465,20 @@ export default function Programacao() {
       ),
     [ordens, ordensAntesDaJanela, atrasadas, agendamentos, ateAgendaEfetivo, embalagensForaDosErps],
   )
+  /**
+   * Marca sutil no quadro do dia (20/09/2026, pedido do Arion: "hoje tenho
+   * que ficar comparando manualmente" entre o cartão de cima e a fila da
+   * máquina). Só marca com resposta CONFIÁVEL — agendamentos carregados e
+   * embalagens carregadas (sem elas, SC10/SC20 entrariam em `semAgenda` por
+   * engano e a marca mentiria) — vazio enquanto qualquer um dos dois falta.
+   */
+  const semCaminhaoIds = useMemo(
+    () =>
+      agendamentosOk && agendamentos.length > 0 && embalagensOk
+        ? new Set(semAgenda.semAgenda.map((x) => x.ordem.id))
+        : new Set<string>(),
+    [agendamentosOk, agendamentos.length, embalagensOk, semAgenda],
+  )
 
   const dicaOcupacao = (o: ReturnType<typeof ocupacaoCelula>) =>
     `${o.ordens} ordem(ns) · ${o.trocas} troca(s) de tratamento · ${o.setupMin} min de setup · ` +
@@ -1403,6 +1417,8 @@ export default function Programacao() {
                 itensPorReceita={itensPorReceita}
                 podeProgramar={podeProgramar}
                 podeMarcarUrgente={podeMarcarUrgente}
+                semCaminhaoIds={semCaminhaoIds}
+                semCaminhaoAte={ateAgendaEfetivo}
                 onAbrir={abrirOrdem}
                 abrindoId={abrindoId}
                 onPrioridade={(ord) => alternarPrioridadeDia(m.id, diaSel, lista, ord)}
@@ -1537,7 +1553,16 @@ export default function Programacao() {
                               </span>
                               <div className="min-w-40 flex-1">
                                 <p className="truncate font-medium">
-                                  {ord.numero} · {ord.cultivar}
+                                  {ord.numero}
+                                  {semCaminhaoIds.has(ord.id) && (
+                                    <span
+                                      className="ml-1 cursor-help text-amber-600 dark:text-amber-400"
+                                      title={`Sem caminhão agendado até ${diaCurto(ateAgendaEfetivo)} (do cartão "Ordens sem caminhão")`}
+                                    >
+                                      ●
+                                    </span>
+                                  )}
+                                  {' · '}{ord.cultivar}
                                 </p>
                                 <p className="truncate text-xs text-stone-500">
                                   {ord.receita_nome} · lote {ord.lote_id} · {n(ord.peso_t, 1)} t
@@ -1666,7 +1691,16 @@ export default function Programacao() {
                               tags+mover+setas competiam pela mesma linha */}
                           <div className="min-w-40 flex-1">
                             <p className="truncate font-medium">
-                              {ord.numero} · {ord.cultivar}
+                              {ord.numero}
+                              {semCaminhaoIds.has(ord.id) && (
+                                <span
+                                  className="ml-1 cursor-help text-amber-600 dark:text-amber-400"
+                                  title={`Sem caminhão agendado até ${diaCurto(ateAgendaEfetivo)} (do cartão "Ordens sem caminhão")`}
+                                >
+                                  ●
+                                </span>
+                              )}
+                              {' · '}{ord.cultivar}
                             </p>
                             <p className="truncate text-xs text-stone-500">
                               {ord.receita_nome} · lote {ord.lote_id} · {n(ord.peso_t, 1)} t
