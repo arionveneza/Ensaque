@@ -204,10 +204,22 @@ export function converterMontagemCarga(rows: Linha[]): {
 /**
  * Código do tratamento como a receita grava: caixa alta, sem acento, um
  * espaço de cada lado do "+" — `FTZ60+VIC`, `ftz60 + vic` e `FTZ60 + VIC`
- * são o mesmo tratamento.
+ * são o mesmo tratamento. **Letra e número colados ou não são o mesmo
+ * tratamento** (20/09/2026, pedido do Arion: "FTZ60 S é a mesma coisa de
+ * FTZ 60 S para todos os fins dentro do APP" — o saldo do SAP vinha com um
+ * espelho, o relatório de agendados com outro, e a Expedição achava "sem
+ * estoque" comparando `FTZ60 S` com `FTZ 60 S` como se fossem produtos
+ * diferentes): fecha o espaço entre uma letra e o dígito que vem logo
+ * depois (`FTZ 60` → `FTZ60`), sem mexer no espaço do OUTRO lado do número
+ * (`FTZ60 S` continua com o espaço antes do "S" — só a lacuna que causava o
+ * bug fecha).
  */
 export const normalizaTratamento = (s: string): string =>
-  normaliza(s).replace(/\s*\+\s*/g, ' + ').replace(/\s+/g, ' ').trim()
+  normaliza(s)
+    .replace(/([A-Z])\s+(?=\d)/g, '$1')
+    .replace(/\s*\+\s*/g, ' + ')
+    .replace(/\s+/g, ' ')
+    .trim()
 
 /** IDENTIFICADOR e TIPO VENDA não existem na montagem de carga — sem ambiguidade. */
 export const ehRelatorioAgendados = (rows: Linha[]): boolean => {
@@ -611,9 +623,14 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
   /** Chave de desempate entre caminhões da MESMA data — ver alocarFila. */
   desempate?: (c: T) => string,
 ): SaldoExpedicao<T>[] {
-  // SEM TSI agrega por cultivar (o estoque é um pool só); tratado, pela tripla
+  // SEM TSI agrega por cultivar (o estoque é um pool só); tratado, pela
+  // tripla — tratamento NORMALIZADO na própria chave (20/09/2026): sem
+  // isso, "FTZ60 S" e "FTZ 60 S" viravam DUAS linhas na tela em vez de uma
+  // só, cada uma vendo só a fatia do estoque que bateu com a sua grafia.
   const chave = (c: { cultivar: string; tratamento: string; embalagem: string }) =>
-    c.tratamento === SEM_TSI ? `${c.cultivar}|${SEM_TSI}` : `${c.cultivar}|${c.tratamento}|${c.embalagem}`
+    c.tratamento === SEM_TSI
+      ? `${c.cultivar}|${SEM_TSI}`
+      : `${c.cultivar}|${normalizaTratamento(c.tratamento)}|${c.embalagem}`
 
   const linhas = new Map<string, SaldoExpedicao<T>>()
   const embalagens = new Map<string, Set<string>>()
@@ -624,7 +641,10 @@ export function saldosExpedicao<T extends CarregamentoLinha>(
       linhas.get(k) ??
       ({
         cultivar: c.cultivar,
-        tratamento: c.tratamento,
+        // normalizado tambem na exibição: a primeira linha do grupo a
+        // chegar decide o rótulo, e sem normalizar aqui o rótulo mostrado
+        // dependia de qual grafia apareceu primeiro no arquivo
+        tratamento: c.tratamento === SEM_TSI ? c.tratamento : normalizaTratamento(c.tratamento),
         embalagem: c.embalagem,
         agendado: 0,
         estoque: 0,

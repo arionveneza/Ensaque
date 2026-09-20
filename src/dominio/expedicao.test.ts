@@ -190,6 +190,27 @@ describe('saldo dinamico da expedicao', () => {
     expect(r[0].embalagem).toBe('BG5M + MEIOBAG')
   })
 
+  it('tratado: duas grafias do mesmo tratamento viram UMA linha, e o estoque bate (19/09/2026, achado do Arion)', () => {
+    // caso real: agendado com "FTZ60 S" numa carga e "FTZ 60 S" noutra; o
+    // saldo do SAP grava "FTZ60 S" — antes do fix viravam DUAS linhas, cada
+    // uma vendo metade do estoque, e uma delas "sem saldo" por engano
+    const r = saldosExpedicao(
+      [
+        carreg({ tratamento: 'FTZ60 S', bags: 5 }),
+        carreg({ tratamento: 'FTZ 60 S', bags: 5 }),
+      ],
+      [],
+      [{ cultivar: 'NEO700 I2X', tratamento: 'FTZ60 S', embalagem: 'BG5M', bags: 10 }],
+      [],
+    )
+    expect(r).toHaveLength(1)
+    expect(r[0].tratamento).toBe('FTZ60 S')
+    expect(r[0].agendado).toBe(10)
+    expect(r[0].estoque).toBe(10)
+    expect(r[0].saldo).toBe(0)
+    expect(r[0].caminhoes.every((c) => c.descoberto === 0)).toBe(true)
+  })
+
   it('tratado: TODA a producao aberta conta no saldo (producao se adianta)', () => {
     const r = saldosExpedicao(
       [carreg({ tratamento: 'FTZ60', bags: 20 })],
@@ -454,6 +475,22 @@ describe('normalizaTratamento', () => {
     expect(normalizaTratamento('ftz60+vic')).toBe('FTZ60 + VIC')
     expect(normalizaTratamento('  FTZ60  +  VIC ')).toBe('FTZ60 + VIC')
     expect(normalizaTratamento('DER + LMT')).toBe('DER + LMT')
+  })
+
+  it('letra colada ou separada do numero e o mesmo tratamento (19/09/2026, achado do Arion)', () => {
+    // o caso real: o saldo do SAP trazia "FTZ60 S" e o relatorio de
+    // agendados "FTZ 60 S" — a Expedicao achava que nao tinha estoque
+    expect(normalizaTratamento('FTZ 60 S')).toBe(normalizaTratamento('FTZ60 S'))
+    expect(normalizaTratamento('FTZ60 S')).toBe('FTZ60 S')
+    // o espaco do OUTRO lado do numero (antes do S) nao pode sumir, senao
+    // "FTZ60S" (colado) virava indistinguivel de "FTZ60 S" (com produto a mais)
+    expect(normalizaTratamento('FTZ60 S')).not.toBe(normalizaTratamento('FTZ60S'))
+    // generaliza para qualquer numero, nao so 60 — mesma familia de bug
+    expect(normalizaTratamento('FTZ 80')).toBe('FTZ80')
+    // nao mexe onde nao tem numero nenhum
+    expect(normalizaTratamento('FTZ ELITE')).toBe('FTZ ELITE')
+    // compoe certo com o "+": "FTZ 60 + VIC" e "FTZ60+VIC" sao o mesmo
+    expect(normalizaTratamento('FTZ 60 + VIC')).toBe(normalizaTratamento('FTZ60+VIC'))
   })
 })
 
@@ -1355,5 +1392,9 @@ describe('cargas: o que da para atender (19/09/2026)', () => {
       .toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'sem tsi', embalagem: 'MEIOBAG' }))
     expect(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'SEM TSI', embalagem: 'BG5M' }))
       .not.toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M' }))
+    // FTZ60 S / FTZ 60 S (achado do Arion, 19/09/2026): mesma chave em
+    // qualquer tela que use chaveProduto (Cargas, Ordens sem caminhão)
+    expect(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60 S', embalagem: 'BG5M' }))
+      .toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ 60 S', embalagem: 'BG5M' }))
   })
 })

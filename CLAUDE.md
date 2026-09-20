@@ -853,7 +853,18 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    `read-excel-file` produz (`dia()` — `getDate()` local erraria), `TIPO VENDA` define
    `cooperado` pela mesma regra do import de pedidos (`normaliza(...).includes('COOPERADO')`),
    `TRATAMENTO` é código composto (`FTZ60 + VIC`) normalizado por `normalizaTratamento` (caixa,
-   acento, espaço em volta do `+`) nos dois lados do cruzamento. **Toda linha com quantidade
+   acento, espaço em volta do `+`, e — desde 19/09/2026 — o espaço entre letra e número:
+   "FTZ60 S" e "FTZ 60 S" são o mesmo tratamento) nos dois lados do cruzamento. **`FTZ60 S` ×
+   `FTZ 60 S`** (achado do Arion: "são a mesma coisa para todos os fins dentro do APP" — o
+   saldo do SAP trazia uma grafia, o relatório de agendados a outra, e a Expedição achava "sem
+   estoque" comparando as duas como produtos diferentes). `normalizaTratamento` fecha só a
+   lacuna entre a LETRA e o dígito que vem logo depois — o espaço do OUTRO lado do número
+   continua ("FTZ60 S" não vira "FTZ60S": são produtos diferentes) — e a chave de agrupamento
+   de `saldosExpedicao` passou a usar o tratamento NORMALIZADO, não o cru: sem isso, as duas
+   grafias viravam **duas linhas** na tela em vez de uma, cada uma vendo só a fatia do estoque
+   que bateu com a sua própria grafia (o mesmo bug, um nível acima). Como a mesma função
+   também é a base de `chaveProduto` (Expedição §"Cargas" e Programação §"Ordens sem
+   caminhão"), o fix vale nas duas telas sem tocar nelas. **Toda linha com quantidade
    entra, inclusive "Aguardando Estoque"** — é a demanda que precisa de estoque (status visível
    e filtrável) — **exceto STATUS ENTREGA = FINALIZADO/Finalizada ou STATUS CARGA = Finalizado**
    (15/09/2026: 182 linhas, 3.759 bags, tinham a carga finalizada com a entrega ainda
