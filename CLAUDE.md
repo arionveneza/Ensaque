@@ -1162,6 +1162,21 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    string | null }` — mudança aditiva, os outros usos (recorte por carga) já passavam
    objetos com `carga`. Na tela, dentro de cada `PainelLado`: bloco "Cargas (N)" com um
    chip por carga ("822 · 40 bg"), só informativo — não filtra nem leva ao recorte.
+   **Cultivar e Tratamento em colunas separadas, e ordenar por cultivar/tratamento no
+   consolidado** (21/09/2026, pedido do Arion). **"Quando vai faltar"**: a célula "Produto"
+   misturava cultivar (linha de cima) e tratamento (embaixo, trocando de lugar conforme o
+   chip "Ordenar por" ativo — código removido) numa coluna só; virou **Cultivar** e
+   **Tratamento** como colunas fixas e sempre nessa ordem, independente do chip escolhido
+   (que continua só mudando a ordem das LINHAS, como antes). SEM TSI agora sai como
+   `<Tag cor="neutro">`, igual já era em "Estoque × agendado" — antes era texto solto. O
+   rodapé "Total do dia" ganhou `colSpan={2}` pra cobrir as duas colunas novas e continuar
+   alinhado com as datas. **"Estoque × agendado"**: não tinha NENHUM jeito de reordenar
+   (sempre a ordem que `saldosExpedicao` devolve) — ganhou os mesmos chips "Ordenar por"
+   (padrão · cultivar · tratamento), motor novo `ordenarSaldos` (`src/dominio/expedicao.ts`,
+   testado) espelhando `ordenarFaltaPorProduto` ponta a ponta (mesmos comparadores, mesmo
+   desempate por embalagem) — função PRÓPRIA, não generalizada em cima da outra, porque
+   `FaltaPorProduto` e `SaldoExpedicao` têm formatos diferentes. 'padrão' devolve a lista
+   recebida sem tocar (nem uma cópia) — as outras duas sempre devolvem lista nova.
 6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
    tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`) SEPARADA de
    `lotes_semente` de propósito: a base de produção assume semente branca. **A unidade é

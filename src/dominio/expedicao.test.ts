@@ -11,6 +11,7 @@ import {
   classificarCargas,
   faltaPorProduto,
   ordenarFaltaPorProduto,
+  ordenarSaldos,
   recorteDaSelecao,
   resumoDoGrupo,
   normalizaLinhasXlsx,
@@ -1145,6 +1146,55 @@ describe('ordenarFaltaPorProduto (19/09/2026)', () => {
     expect(saida).not.toBe(entrada)
     expect(id(entrada)).toEqual(antes)
     expect(id(saida)).toEqual(['A | X | BG5M', 'B | X | BG5M'])
+  })
+})
+
+describe('ordenarSaldos (21/09/2026)', () => {
+  type Ag = CarregamentoLinha & { id: string }
+  const ag = (over: Partial<Ag> = {}): Ag => ({
+    id: 'x', cultivar: 'NEO700 I2X', tratamento: 'FTZ60', embalagem: 'BG5M',
+    bags: 10, data: '2026-09-10', ...over,
+  })
+  // tratamentos e cultivares embaralhados de propósito: o teste é da
+  // ordenação, não da ordem em que saldosExpedicao devolve as linhas
+  const base = saldosExpedicao(
+    [
+      ag({ id: 'a', cultivar: 'O790 IPRO', tratamento: 'V&P', embalagem: 'BG5M' }),
+      ag({ id: 'b', cultivar: 'NEO680 IPRO', tratamento: 'FTZ60', embalagem: 'MEIOBAG' }),
+      ag({ id: 'c', cultivar: 'NEO680 IPRO', tratamento: 'FTZ60', embalagem: 'BG5M' }),
+      ag({ id: 'd', cultivar: '0820 IPRO', tratamento: 'DER + LMT', embalagem: 'BG5M' }),
+    ],
+    [], [], [],
+  )
+  const id = (l: typeof base) => l.map((x) => `${x.cultivar} | ${x.tratamento} | ${x.embalagem}`)
+
+  it('padrao: preserva a ordem que a fila ja devolve', () => {
+    expect(ordenarSaldos(base, 'padrao')).toBe(base)
+  })
+
+  it('por cultivar: ordem numerica, depois tratamento e embalagem', () => {
+    expect(id(ordenarSaldos(base, 'cultivar'))).toEqual([
+      '0820 IPRO | DER + LMT | BG5M',
+      'NEO680 IPRO | FTZ60 | BG5M',
+      'NEO680 IPRO | FTZ60 | MEIOBAG',
+      'O790 IPRO | V&P | BG5M',
+    ])
+  })
+
+  it('por tratamento: agrupa o tratamento e desempata por cultivar e embalagem', () => {
+    expect(id(ordenarSaldos(base, 'tratamento'))).toEqual([
+      '0820 IPRO | DER + LMT | BG5M',
+      'NEO680 IPRO | FTZ60 | BG5M',
+      'NEO680 IPRO | FTZ60 | MEIOBAG',
+      'O790 IPRO | V&P | BG5M',
+    ])
+  })
+
+  it('nao altera a lista recebida e devolve lista nova quando ordena', () => {
+    const antes = id(base)
+    const saida = ordenarSaldos(base, 'cultivar')
+    expect(saida).not.toBe(base)
+    expect(id(base)).toEqual(antes)
   })
 })
 

@@ -886,6 +886,34 @@ export function ordenarFaltaPorProduto(lista: FaltaPorProduto[], criterio: Crite
   })
 }
 
+/** Como a tabela "Estoque × agendado" é ordenada (21/09/2026). */
+export type CriterioSaldo = 'padrao' | 'cultivar' | 'tratamento'
+
+/**
+ * Ordena a saída de `saldosExpedicao` sem recalcular nada (21/09/2026, pedido
+ * do Arion — mesma ideia do "Quando vai faltar"). 'padrao' preserva a ordem
+ * que a fila já devolve; 'cultivar' e 'tratamento' põem junto o que a
+ * máquina faz junto. Devolve lista nova; a recebida não muda.
+ */
+export function ordenarSaldos<T extends CarregamentoLinha>(
+  saldos: SaldoExpedicao<T>[],
+  criterio: CriterioSaldo,
+): SaldoExpedicao<T>[] {
+  if (criterio === 'padrao') return saldos
+  type Cmp = (a: SaldoExpedicao<T>, b: SaldoExpedicao<T>) => number
+  const cultivar: Cmp = (a, b) => porNome(a.cultivar, b.cultivar)
+  const tratamento: Cmp = (a, b) => porNome(a.tratamento, b.tratamento)
+  const embalagem: Cmp = (a, b) => porNome(a.embalagem, b.embalagem)
+  const chaves: Cmp[] = criterio === 'cultivar' ? [cultivar, tratamento, embalagem] : [tratamento, cultivar, embalagem]
+  return [...saldos].sort((a, b) => {
+    for (const c of chaves) {
+      const r = c(a, b)
+      if (r !== 0) return r
+    }
+    return 0
+  })
+}
+
 // ================================================================
 // Por tipo de venda: VENDA COOPERADO × OUTRAS (12/09/2026)
 // ================================================================

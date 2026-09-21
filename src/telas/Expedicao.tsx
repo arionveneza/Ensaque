@@ -15,6 +15,7 @@ import {
   faltaPorProduto,
   normalizaLinhasXlsx,
   ordenarFaltaPorProduto,
+  ordenarSaldos,
   recorteDaSelecao,
   resumoPorTipoVenda,
   saldosExpedicao,
@@ -24,6 +25,7 @@ import {
   type AlocacaoCaminhao,
   type CargaClassificada,
   type CriterioFalta,
+  type CriterioSaldo,
   type LadoTipoVenda,
   type OrdemPrevista,
   type SituacaoCarga,
@@ -98,6 +100,8 @@ export default function Expedicao() {
   const [cargaSel, setCargaSel] = useState<Set<string>>(new Set())
   /** Ordem da grade "Quando vai faltar" (19/09/2026): maior falta, cultivar ou tratamento. */
   const [ordemFalta, setOrdemFalta] = useState<CriterioFalta>('falta')
+  /** Ordem da tabela "Estoque × agendado" (21/09/2026): padrão, cultivar ou tratamento. */
+  const [ordemSaldos, setOrdemSaldos] = useState<CriterioSaldo>('padrao')
   const [painelCargas, setPainelCargas] = useState(false)
   const [buscaCarga, setBuscaCarga] = useState('')
   const [soSelecao, setSoSelecao] = useState(false)
@@ -276,6 +280,7 @@ export default function Expedicao() {
     [saldos, temSelecao, naSelecao],
   )
   const faltaOrdenada = useMemo(() => ordenarFaltaPorProduto(faltaProdutos, ordemFalta), [faltaProdutos, ordemFalta])
+  const saldosOrdenados = useMemo(() => ordenarSaldos(saldos, ordemSaldos), [saldos, ordemSaldos])
   /** Todas as datas com caminhão no recorte em vista (colunas da grade), sem data primeiro. */
   const datasDoPeriodo = useMemo(
     () =>
@@ -1046,7 +1051,8 @@ export default function Expedicao() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
-                      <th className="px-2 py-2">Produto</th>
+                      <th className="px-2 py-2">Cultivar</th>
+                      <th className="px-2 py-2">Tratamento</th>
                       {datasDoPeriodo.map((d) => (
                         <th key={d || 'sem-data'} className="num-tabular px-2 py-2 text-right whitespace-nowrap">
                           {d ? diaCurto(d) : 'sem data'}
@@ -1066,22 +1072,14 @@ export default function Expedicao() {
                             : 'text-sky-700 dark:text-sky-400'
                       return (
                         <tr key={`${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="border-t border-stone-100 dark:border-stone-800/60">
+                          <td className="px-2 py-2 font-medium">{p.cultivar}</td>
                           <td className="px-2 py-2">
-                            {/* a chave da ordenação vai em cima: agrupado por
-                                tratamento, é o tratamento que o olho percorre */}
-                            {ordemFalta === 'tratamento' ? (
-                              <>
-                                <p className="font-medium">{p.semTsi ? 'SEM TSI' : p.tratamento}</p>
-                                <p className="text-xs text-stone-500">
-                                  {p.cultivar}{p.semTsi ? '' : ` · ${p.embalagem}`}
-                                </p>
-                              </>
+                            {p.semTsi ? (
+                              <Tag cor="neutro">SEM TSI</Tag>
                             ) : (
                               <>
-                                <p className="font-medium">{p.cultivar}</p>
-                                <p className="text-xs text-stone-500">
-                                  {p.semTsi ? 'SEM TSI' : `${p.tratamento} · ${p.embalagem}`}
-                                </p>
+                                {p.tratamento}
+                                <span className="text-xs text-stone-500"> · {p.embalagem}</span>
                               </>
                             )}
                           </td>
@@ -1112,7 +1110,7 @@ export default function Expedicao() {
                       )
                     })}
                     <tr className="border-t border-stone-300 text-xs dark:border-stone-700">
-                      <td className="px-2 py-2 font-medium uppercase tracking-wide text-stone-500">Total do dia</td>
+                      <td colSpan={2} className="px-2 py-2 font-medium uppercase tracking-wide text-stone-500">Total do dia</td>
                       {datasDoPeriodo.map((d) => {
                         const t = faltaProdutos.reduce(
                           (acc, p) => acc + (p.datas.find((x) => (x.data ?? '') === d)?.descoberto ?? 0),
@@ -1144,6 +1142,24 @@ export default function Expedicao() {
           <Cartao
             titulo={`Estoque × agendado (${saldos.length} produtos)`}
             className="mb-5"
+            acoes={
+              saldos.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
+                  <span className="mr-0.5">Ordenar por</span>
+                  {(
+                    [
+                      ['padrao', 'padrão'],
+                      ['cultivar', 'cultivar'],
+                      ['tratamento', 'tratamento'],
+                    ] as [CriterioSaldo, string][]
+                  ).map(([c, rotulo]) => (
+                    <Chip key={c} ativo={ordemSaldos === c} onClick={() => setOrdemSaldos(c)}>
+                      {rotulo}
+                    </Chip>
+                  ))}
+                </div>
+              ) : undefined
+            }
           >
             {saldos.length === 0 ? (
               <Vazio>Nenhum agendamento passa pelos filtros.</Vazio>
@@ -1161,7 +1177,7 @@ export default function Expedicao() {
                   { texto: '#Descoberto', className: 'hidden lg:table-cell' },
                   '',
                 ]}>
-                  {saldos.map((s) => {
+                  {saldosOrdenados.map((s) => {
                     const situacao = situacaoSaldo(s)
                     const descoberto = s.caminhoes.reduce((t, c) => t + c.descoberto, 0)
                     const porTipoLinha = agendadoPorTipo(s, (a) => a.cooperado)
