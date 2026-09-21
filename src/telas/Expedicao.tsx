@@ -36,7 +36,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorMultiplo, Tabela, Tag, Vazio,
   diaCurto, inteiro,
 } from '@/componentes/ui'
 
@@ -85,9 +85,9 @@ export default function Expedicao() {
   const [ate, setAte] = useState('')
   const [tipoSel, setTipoSel] = useState<Set<string>>(new Set())
   const [statusSel, setStatusSel] = useState<Set<string>>(new Set())
-  const [fCultivar, setFCultivar] = useState('')
-  const [fTratamento, setFTratamento] = useState('')
-  const [fEmbalagem, setFEmbalagem] = useState('')
+  const [fCultivar, setFCultivar] = useState<string[]>([])
+  const [fTratamento, setFTratamento] = useState<string[]>([])
+  const [fEmbalagem, setFEmbalagem] = useState<string[]>([])
   const [busca, setBusca] = useState('')
   const [soTransferencia, setSoTransferencia] = useState(false)
   /**
@@ -166,9 +166,9 @@ export default function Expedicao() {
         if (ate && (a.data == null || a.data > ate)) return false
         if (tipoSel.size > 0 && !tipoSel.has(a.tipo_venda || '(sem tipo)')) return false
         if (statusSel.size > 0 && !statusSel.has(a.status_entrega)) return false
-        if (fCultivar && a.cultivar !== fCultivar) return false
-        if (fTratamento && a.tratamento !== fTratamento) return false
-        if (fEmbalagem && a.embalagem !== fEmbalagem) return false
+        if (fCultivar.length > 0 && !fCultivar.includes(a.cultivar)) return false
+        if (fTratamento.length > 0 && !fTratamento.includes(a.tratamento)) return false
+        if (fEmbalagem.length > 0 && !fEmbalagem.includes(a.embalagem)) return false
         if (soTransferencia && !transferencia(a).precisa) return false
         if (busca.trim()) {
           const q = busca.trim().toLowerCase()
@@ -399,12 +399,12 @@ export default function Expedicao() {
 
   /** Filtros que cortam PARTE de uma carga (o período só corta a carga que cruza a data). */
   const temFiltroDeProduto =
-    !!(fCultivar || fTratamento || fEmbalagem || busca.trim()) ||
+    fCultivar.length > 0 || fTratamento.length > 0 || fEmbalagem.length > 0 || !!busca.trim() ||
     tipoSel.size !== tiposExistentes.length ||
     statusSel.size !== statusExistentes.length ||
     soTransferencia
   const temFiltro =
-    !!(de || ate || fCultivar || fTratamento || fEmbalagem || busca.trim()) ||
+    !!(de || ate) || fCultivar.length > 0 || fTratamento.length > 0 || fEmbalagem.length > 0 || !!busca.trim() ||
     tipoSel.size !== tiposExistentes.length ||
     statusSel.size !== statusExistentes.length ||
     // faltavam os dois (achado de 19/09/2026): com só um deles ligado o botão
@@ -415,9 +415,9 @@ export default function Expedicao() {
   function limparFiltros() {
     setDe('')
     setAte('')
-    setFCultivar('')
-    setFTratamento('')
-    setFEmbalagem('')
+    setFCultivar([])
+    setFTratamento([])
+    setFEmbalagem([])
     setBusca('')
     setTipoSel(new Set(tiposExistentes))
     setStatusSel(new Set(statusExistentes))
@@ -524,27 +524,9 @@ export default function Expedicao() {
                 Até
                 <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className={`${CAMPO} mt-1 block`} />
               </label>
-              <label className="text-xs text-stone-500">
-                Cultivar
-                <select value={fCultivar} onChange={(e) => setFCultivar(e.target.value)} className={`${CAMPO} mt-1 block`}>
-                  <option value="">todos</option>
-                  {opcoes.cultivares.map((c) => <option key={c}>{c}</option>)}
-                </select>
-              </label>
-              <label className="text-xs text-stone-500">
-                Tratamento
-                <select value={fTratamento} onChange={(e) => setFTratamento(e.target.value)} className={`${CAMPO} mt-1 block`}>
-                  <option value="">todos</option>
-                  {opcoes.tratamentos.map((t) => <option key={t}>{t}</option>)}
-                </select>
-              </label>
-              <label className="text-xs text-stone-500">
-                Embalagem
-                <select value={fEmbalagem} onChange={(e) => setFEmbalagem(e.target.value)} className={`${CAMPO} mt-1 block`}>
-                  <option value="">todas</option>
-                  {opcoes.embalagens.map((e2) => <option key={e2}>{e2}</option>)}
-                </select>
-              </label>
+              <SeletorMultiplo rotulo="Cultivar" opcoes={opcoes.cultivares} selecionados={fCultivar} onMudar={setFCultivar} compacto={false} />
+              <SeletorMultiplo rotulo="Tratamento" opcoes={opcoes.tratamentos} selecionados={fTratamento} onMudar={setFTratamento} compacto={false} />
+              <SeletorMultiplo rotulo="Embalagem" opcoes={opcoes.embalagens} selecionados={fEmbalagem} onMudar={setFEmbalagem} compacto={false} />
               <label className="min-w-44 flex-1 text-xs text-stone-500">
                 Cliente, pedido, cidade…
                 <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="buscar" className={`${CAMPO} mt-1 block w-full`} />
@@ -1048,7 +1030,7 @@ export default function Expedicao() {
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500 dark:border-stone-800 dark:text-stone-400">
                       <th className="px-2 py-2">Cultivar</th>

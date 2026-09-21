@@ -1177,6 +1177,24 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    desempate por embalagem) — função PRÓPRIA, não generalizada em cima da outra, porque
    `FaltaPorProduto` e `SaldoExpedicao` têm formatos diferentes. 'padrão' devolve a lista
    recebida sem tocar (nem uma cópia) — as outras duas sempre devolvem lista nova.
+   **Fonte menor em "Quando vai faltar" e filtros de Cultivar/Tratamento/Embalagem em
+   múltipla escolha** (21/09/2026, pedido do Arion, com prints das duas telas). A tabela
+   "Quando vai faltar · todas as datas" passou de `text-sm` para `text-xs` (uma pastilha por
+   data por produto — com muitas datas a linha ficava larga demais para a tela). Os três
+   `<select>` de Cultivar/Tratamento/Embalagem no cartão Filtros eram single-choice; viraram
+   **`SeletorMultiplo`** — o dropdown com busca, teclado (↑↓/Espaço/Enter/Backspace/Escape) e
+   chips removíveis que a tela de Ordens já usava no filtro de Status e no painel de Demanda
+   (Cultivar/Tratamento). Em vez de duplicar, o componente saiu de `Ordens.tsx` (~170 linhas,
+   era local ali) para **`src/componentes/ui.tsx`**, exportado, e as duas telas passaram a
+   importar de lá — Ordens sem nenhuma mudança de comportamento. `fCultivar`/`fTratamento`/
+   `fEmbalagem` viraram `string[]` (era `string`), o filtro passou a `.includes()`, e
+   `temFiltroDeProduto`/`temFiltro` — que testavam `!!fCultivar` — ganharam `.length > 0`
+   explícito: array vazio é *truthy* em JS, então o `!!` teria marcado "tem filtro" o tempo
+   todo assim que os estados viraram array (pego antes de rodar, não em produção). `compacto=
+   {false}` (mesma altura do `CAMPO` da barra de filtros) para casar com os campos De/Até/
+   Cliente ao lado — o padrão `compacto=true` é só para a densidade do painel de Demanda em
+   Ordens. O botão já mostra o rótulo e a contagem ("Cultivar (2) ▾"), então a label visível
+   separada que envolvia cada `<select>` foi removida.
 6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
    tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`) SEPARADA de
    `lotes_semente` de propósito: a base de produção assume semente branca. **A unidade é

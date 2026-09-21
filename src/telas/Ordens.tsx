@@ -1,6 +1,6 @@
 ﻿import {
   Fragment, useCallback, useEffect, useMemo, useRef, useState,
-  type ChangeEvent, type KeyboardEvent,
+  type ChangeEvent,
 } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import * as api from '@/dados/api'
@@ -44,7 +44,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import { Destinacao } from '@/componentes/Destinacao'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorMultiplo, Tabela, Tag, Vazio,
   corDoStatus, diaCurto, enderecoLote, inteiro, n,
 } from '@/componentes/ui'
 
@@ -1195,176 +1195,6 @@ function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): numbe
  * texto, porque nome de tratamento/cultivar tem espaço no meio), Enter
  * também alterna, Backspace com a busca vazia apaga a última selecionada.
  */
-function SeletorMultiplo({
-  rotulo, opcoes, selecionados, onMudar, compacto = true,
-}: {
-  rotulo: string
-  opcoes: string[]
-  selecionados: string[]
-  onMudar: (s: string[]) => void
-  /** false = mesma altura/raio do CAMPO_FILTRO (barra de filtros de Ordens); true (padrão) mantém o tamanho compacto do painel de Demanda. */
-  compacto?: boolean
-}) {
-  const [aberto, setAberto] = useState(false)
-  const [busca, setBusca] = useState('')
-  const [destacado, setDestacado] = useState(0)
-  const ref = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
-  // ↑/↓ rola a lista (scrollIntoView) e o cursor do mouse, parado, passa a
-  // sobrepor um item DIFERENTE — o navegador dispara mouseenter mesmo sem o
-  // mouse se mexer, e o destaque "voltava pra cima do nada" no meio da
-  // navegação por teclado (achado do Arion, 18/08/2026). Só deixa o hover
-  // mudar o destaque depois de um mousemove de verdade.
-  const mouseAtivo = useRef(true)
-
-  const filtradas = useMemo(
-    () => opcoes.filter((o) => o.toLowerCase().includes(busca.trim().toLowerCase())),
-    [opcoes, busca],
-  )
-
-  useEffect(() => {
-    if (!aberto) return
-    const aoClicarFora = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false)
-    }
-    document.addEventListener('mousedown', aoClicarFora)
-    return () => document.removeEventListener('mousedown', aoClicarFora)
-  }, [aberto])
-
-  // a busca muda o tamanho da lista filtrada — o destaque não pode ficar
-  // apontando para um índice que não existe mais
-  useEffect(() => {
-    setDestacado((d) => Math.min(d, Math.max(0, filtradas.length - 1)))
-  }, [filtradas.length])
-
-  // ↑/↓ move o destaque mas a lista tem overflow-y-auto: sem isto, passar do
-  // que já está visível parecia travado — o destaque ia embora da tela e
-  // nada mostrava que a seta continuava funcionando
-  useEffect(() => {
-    if (!aberto) return
-    itemRefs.current[destacado]?.scrollIntoView({ block: 'nearest' })
-  }, [destacado, aberto])
-
-  function alternar(v: string) {
-    onMudar(selecionados.includes(v) ? selecionados.filter((s) => s !== v) : [...selecionados, v])
-  }
-
-  function aoTeclar(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      mouseAtivo.current = false
-      setDestacado((d) => Math.min(d + 1, filtradas.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      mouseAtivo.current = false
-      setDestacado((d) => Math.max(d - 1, 0))
-    } else if (e.key === ' ' && busca === '') {
-      e.preventDefault()
-      const alvo = filtradas[destacado]
-      if (alvo) alternar(alvo)
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const alvo = filtradas[destacado]
-      if (alvo) alternar(alvo)
-    } else if (e.key === 'Backspace' && busca === '' && selecionados.length > 0) {
-      onMudar(selecionados.slice(0, -1))
-    } else if (e.key === 'Escape') {
-      setAberto(false)
-    }
-  }
-
-  if (!aberto) {
-    return (
-      <button
-        type="button"
-        onClick={() => setAberto(true)}
-        className={`rounded-lg border ${compacto ? 'px-3 py-1.5 text-xs' : 'px-3 py-2 text-sm sm:py-1.5'} ${
-          selecionados.length > 0
-            ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
-            : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
-        }`}
-      >
-        {rotulo}{selecionados.length > 0 ? ` (${selecionados.length})` : ''} ▾
-      </button>
-    )
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      <div className="flex min-w-40 max-w-xs flex-wrap items-center gap-1 rounded-md border border-stone-800 px-2 py-1 text-xs dark:border-stone-200">
-        <span className="text-stone-500">{rotulo}</span>
-        {selecionados.map((s) => (
-          <span
-            key={s}
-            className="flex items-center gap-1 rounded bg-stone-800 px-1.5 py-0.5 text-white dark:bg-stone-200 dark:text-stone-900"
-          >
-            {s}
-            <button
-              type="button"
-              onClick={() => alternar(s)}
-              title="Remover"
-              className="leading-none"
-            >
-              ×
-            </button>
-          </span>
-        ))}
-        <input
-          ref={inputRef}
-          autoFocus
-          value={busca}
-          onChange={(e) => {
-            setBusca(e.target.value)
-            setDestacado(0)
-          }}
-          onKeyDown={aoTeclar}
-          placeholder={selecionados.length === 0 ? 'buscar…' : ''}
-          className="min-w-16 flex-1 bg-transparent outline-none"
-        />
-      </div>
-      <div
-        onMouseMove={() => { mouseAtivo.current = true }}
-        className="absolute z-20 mt-1 max-h-72 w-64 overflow-y-auto rounded-md border border-stone-300 bg-white p-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
-      >
-        {selecionados.length > 0 && (
-          <button
-            type="button"
-            onClick={() => onMudar([])}
-            className="mb-1 block w-full px-2 py-1 text-left text-xs text-stone-500 underline"
-          >
-            limpar seleção
-          </button>
-        )}
-        {filtradas.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-stone-400">nada encontrado</p>
-        ) : (
-          filtradas.map((o, i) => (
-            <button
-              key={o}
-              ref={(el) => { itemRefs.current[i] = el }}
-              type="button"
-              onClick={() => alternar(o)}
-              onMouseEnter={() => { if (mouseAtivo.current) setDestacado(i) }}
-              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm ${
-                i === destacado ? 'bg-stone-100 dark:bg-stone-800' : ''
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={selecionados.includes(o)}
-                readOnly
-                className="pointer-events-none"
-              />
-              {o}
-            </button>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
 /** Chave do rascunho de "Programar" — um por ITEM da fila, não por
  *  combinação: cooperado e não-cooperado da mesma combinação são duas
  *  entradas separadas, cada uma com seus próprios lotes escolhidos
