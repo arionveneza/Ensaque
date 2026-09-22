@@ -45,7 +45,31 @@ quando('conversao contra os arquivos reais de 28/07/2026', () => {
     // 288, não mais 247: combinação que mistura VENDA COOPERADO com outros
     // tipos de venda se divide em duas linhas (21/08/2026) — os totais de
     // bags acima não mudam
-    expect(r.linhas.length).toBe(288)
+    // 294, não mais 288 (21/09/2026): 6 combinações que só têm linha(s) com
+    // saldo residual zero (ordem já totalmente faturada) — antes eram
+    // descartadas por inteiro (`bags <= 0`); agora sobrevivem com bags=0 só
+    // pra carregar o `faturado`, senão um produto 100% entregue nunca
+    // aparecia com faturado nenhum. totalAprovado/totalPendente acima não
+    // mudam porque essas linhas entram com bags=0.
+    expect(r.linhas.length).toBe(294)
+  })
+
+  it('pedidos: 98 bags ja faturados sobrevivem mesmo com saldo residual zero', async () => {
+    const rows = await ler(ARQ_PEDIDOS)
+    const r = converterPedidos(rows)
+    const total = r.linhas.reduce((a, l) => a + l.faturado, 0)
+    expect(total).toBe(98)
+    // no arquivo de referência, os 98 bags já faturados são todos de linhas
+    // "Não Aprovado" (Status Financeiro) e nenhuma é cooperado/multiplicador
+    // — a combinação coop./mult. está coberta por teste sintético em
+    // simpleagro.test.ts, que não depende do que calhou de existir aqui
+    expect(r.linhas.filter((l) => l.aprovado).reduce((a, l) => a + l.faturado, 0)).toBe(0)
+    expect(r.linhas.filter((l) => !l.aprovado).reduce((a, l) => a + l.faturado, 0)).toBe(98)
+    expect(r.linhas.filter((l) => l.cooperado || l.multiplicador).reduce((a, l) => a + l.faturado, 0)).toBe(0)
+    // as 6 linhas recuperadas só pra carregar faturado (bags=0) não somam
+    // nada em totalAprovado/totalPendente — conferido aqui, não só na conta
+    // de cima, porque é a garantia de que o balanço ficou intocado
+    expect(r.linhas.filter((l) => l.bags === 0 && l.faturado > 0).length).toBe(6)
   })
 
   it('pedidos: VENDA COOPERADO marcado pela coluna Tipo Venda', async () => {

@@ -321,6 +321,107 @@ describe('conversao de pedidos', () => {
     expect(r.linhas[0].multiplicador).toBe(false)
     expect(r.resumo.bagsMultiplicador).toBe(0)
   })
+
+  describe('faturado (quanto ja foi invoiced, coluna QTD Faturada - Devolvida)', () => {
+    const CAB_FAT = [...CAB_PEDIDOS, 'Tipo Venda', 'QTD Faturada - Devolvida']
+
+    it('soma o faturado junto com bags, na mesma combinacao', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 80), 'VENDA DISTRIBUIDOR', 30],
+      ])
+      expect(r.linhas).toHaveLength(1)
+      expect(r.linhas[0].bags).toBe(80)
+      expect(r.linhas[0].faturado).toBe(30)
+    })
+
+    it('sem a coluna (export antigo), faturado fica zero sem quebrar bags', () => {
+      const r = converterPedidos([
+        CAB_PEDIDOS,
+        pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10),
+      ])
+      expect(r.linhas[0].bags).toBe(10)
+      expect(r.linhas[0].faturado).toBe(0)
+    })
+
+    it('divide entre cooperado e multiplicador, igual bags', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 50), 'VENDA DISTRIBUIDOR', 5],
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 20), 'VENDA COOPERADO', 8],
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 10), 'VENDA MULTIPLICADOR', 3],
+      ])
+      expect(r.linhas.find((l) => l.cooperado)?.faturado).toBe(8)
+      expect(r.linhas.find((l) => l.multiplicador)?.faturado).toBe(3)
+      expect(r.linhas.find((l) => !l.cooperado && !l.multiplicador)?.faturado).toBe(5)
+    })
+
+    it('saldo residual zero (ja totalmente faturado) sobrevive com bags=0, so pro faturado', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 0), 'VENDA DISTRIBUIDOR', 45],
+      ])
+      // achado no arquivo real, 21/09/2026: sem isto uma combinacao 100%
+      // entregue nunca aparecia com faturado nenhum — `Saldo a Faturar` so
+      // existe residual, e residual zero e o caso mais faturado de todos
+      expect(r.linhas).toHaveLength(1)
+      expect(r.linhas[0].bags).toBe(0)
+      expect(r.linhas[0].faturado).toBe(45)
+      // nao conta como combinacao "aproveitada" nem mexe no totalAprovado —
+      // o balanco de demanda fica exatamente como sem essa linha
+      expect(r.totalAprovado).toBe(0)
+      expect(r.resumo.aproveitadas).toBe(0)
+      expect(r.resumo.saldoZero).toBe(1)
+    })
+
+    it('saldo negativo (reajuste) tambem sobrevive so pro faturado, sem virar bags negativo', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', -12), 'VENDA DISTRIBUIDOR', 15],
+      ])
+      expect(r.linhas).toHaveLength(1)
+      expect(r.linhas[0].bags).toBe(0)
+      expect(r.linhas[0].faturado).toBe(15)
+    })
+
+    it('saldo zero SEM faturado continua descartado por inteiro, como antes', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 0), 'VENDA DISTRIBUIDOR', 0],
+      ])
+      expect(r.linhas).toHaveLength(0)
+    })
+
+    it('SEM TSI com faturado nao entra, mesmo com saldo residual zero', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'SEM TSI', 'BB5M', 0), 'VENDA DISTRIBUIDOR', 500],
+      ])
+      expect(r.linhas).toHaveLength(0)
+    })
+
+    it('status nao firme com faturado nao entra, mesmo com saldo residual zero', () => {
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Cancelado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 0), 'VENDA DISTRIBUIDOR', 500],
+      ])
+      expect(r.linhas).toHaveLength(0)
+    })
+
+    it('linha existente com bags positivo recebe o faturado de uma linha zerada depois', () => {
+      // a mesma combinacao pode ter mais de uma linha no relatorio real —
+      // uma ainda com saldo, outra ja totalmente faturada. As duas devem
+      // cair na MESMA chave e somar o faturado junto
+      const r = converterPedidos([
+        CAB_FAT,
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 40), 'VENDA DISTRIBUIDOR', 10],
+        [...pedido('Integrado', 'Aprovado', 'X - X', 'FTZ60', 'BB5M', 0), 'VENDA DISTRIBUIDOR', 25],
+      ])
+      expect(r.linhas).toHaveLength(1)
+      expect(r.linhas[0].bags).toBe(40)
+      expect(r.linhas[0].faturado).toBe(35)
+    })
+  })
 })
 
 describe('num: os tres formatos que as origens mandam', () => {

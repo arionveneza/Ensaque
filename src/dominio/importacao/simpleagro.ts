@@ -114,6 +114,18 @@ export interface PedidoConvertido {
   cooperado: boolean
   /** Idem para VENDA MULTIPLICADOR (pedido do Arion, 20/09/2026) — mesmo desenho do `cooperado`. */
   multiplicador: boolean
+  /**
+   * Quanto desta combinação JÁ FOI FATURADO — coluna `QTD Faturada - Devolvida`
+   * (pedido do Arion, 21/09/2026: "quanto já faturou de cooperado e
+   * multiplicador"). `Saldo a Faturar` é sempre líquido do faturado (nunca
+   * trouxe esse número); achado direto no arquivo real (docs/dados-exemplo):
+   * `Quantidade = Quantidade Faturada + Saldo a Faturar` é identidade exata
+   * em toda linha conferida (inclusive uma com saldo negativo por reajuste).
+   * Uso a versão líquida de devolução por ser a que a própria SimpleAgro já
+   * calcula — NÃO gated por `aprovado`: já foi visto faturamento em linha
+   * com Status Financeiro "Não Aprovado" no arquivo real.
+   */
+  faturado: number
 }
 
 export interface ResumoPedidos {
@@ -222,6 +234,11 @@ export const ehRelatorioPedidos = (rows: Linha[]): boolean => {
  *   (as colunas são achadas pelo NOME do cabeçalho; a letra varia por export)
  * - coluna H `Status Financeiro`: `Aprovado` entra no balanço
  * - coluna BW `Saldo a Faturar` = quantidade em bags (já líquida do faturado)
+ * - coluna BO `QTD Faturada - Devolvida` = quanto já foi faturado, líquido de
+ *   devolução, na MESMA unidade de `Saldo a Faturar` (nunca as colunas com
+ *   sufixo "SC" — sacas, outra unidade: no arquivo real `Quantidade SC` é
+ *   ~25× `Quantidade`, e `Quantidade = Quantidade Faturada + Saldo a
+ *   Faturar` bate exato sem o "SC")
  * - coluna AT `Tratamento` = código da receita; `SEM TSI` é excluído
  * - coluna AU `Embalagem`: BB5M→BG5M, BMB→MEIOBAG
  * - coluna AL `Produto` vem duplicado ("761 I2X - 761 I2X") → usar o 1º trecho
@@ -238,6 +255,8 @@ export function converterPedidos(
   const iTrat = ix('Tratamento')
   const iEmb = ix('Embalagem')
   const iSaldo = ix('Saldo a Faturar')
+  // ausente em export antigo: fica 0, não trava a carga (mesma rede do Tipo Venda)
+  const iFaturado = ix('QTD Faturada - Devolvida')
   // coluna L; export antigo sem ela só deixa de marcar cooperado, não trava
   const iTipoVenda = ix('Tipo Venda')
   // colunas B e D: filial e número do pedido, para a Expedição cruzar com os
@@ -276,6 +295,7 @@ export function converterPedidos(
     const statusRaw = txt(r[iStatus])
     const tratamento = txt(r[iTrat])
     const bags = num(r[iSaldo])
+    const faturado = iFaturado >= 0 ? num(r[iFaturado]) : 0
 
     if (!STATUS_FIRME.has(normaliza(statusRaw))) {
       resumo.foraStatus++
@@ -296,6 +316,33 @@ export function converterPedidos(
     }
     if (bags <= 0) {
       resumo.saldoZero++
+      // sem saldo residual (ordem já totalmente faturada, ou negativo por
+      // reajuste) não é o mesmo que "sem faturado": o que já saiu continua
+      // valendo pra essa leitura, mesmo sem sobrar demanda — só não entra
+      // em `bags`/saldo nem em nenhum outro resumo (mantém o balanço
+      // intacto; achado direto no arquivo real, 21/09/2026: TODA linha com
+      // faturamento tinha saldo residual zero, senão essa combinação nunca
+      // aparecia com faturado nenhum, mesmo 100% entregue).
+      if (faturado > 0) {
+        const embRaw = txt(r[iEmb])
+        const emb = EMBALAGEM_DEPARA[normaliza(embRaw)]
+        if (emb) {
+          const cultivar = normalizaCultivar(txt(r[iProduto]).split(' - ')[0])
+          const aprovado = normaliza(txt(r[iFin])) === FINANCEIRO_APROVADO
+          const cooperado = iTipoVenda >= 0 && normaliza(txt(r[iTipoVenda])).includes('COOPERADO')
+          const multiplicador = iTipoVenda >= 0 && normaliza(txt(r[iTipoVenda])).includes('MULTIPLICADOR')
+          const chave = [
+            cultivar, tratamento, emb.codigo, aprovado ? 'A' : 'P', cooperado ? 'C' : 'N', multiplicador ? 'M' : 'X',
+          ].join('|')
+          const atual = agregado.get(chave)
+          if (atual) atual.faturado += faturado
+          else
+            agregado.set(chave, {
+              cultivar, tratamento, embalagem: emb.codigo, bags: 0,
+              aprovado, cooperado, multiplicador, faturado,
+            })
+        }
+      }
       continue
     }
     const embRaw = txt(r[iEmb])
@@ -328,8 +375,10 @@ export function converterPedidos(
     ].join('|')
 
     const atual = agregado.get(chave)
-    if (atual) atual.bags += bags
-    else
+    if (atual) {
+      atual.bags += bags
+      atual.faturado += faturado
+    } else
       agregado.set(chave, {
         cultivar,
         tratamento,
@@ -338,6 +387,7 @@ export function converterPedidos(
         aprovado,
         cooperado,
         multiplicador,
+        faturado,
       })
     resumo.aproveitadas++
   }

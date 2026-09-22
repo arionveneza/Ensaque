@@ -1170,12 +1170,13 @@ function ModalRenumerar({
   )
 }
 
-type CampoOrdenacaoDemanda = 'pedido' | 'aguardando' | 'estoque' | 'planejado' | 'falta' | 'sobra'
+type CampoOrdenacaoDemanda = 'pedido' | 'faturado' | 'aguardando' | 'estoque' | 'planejado' | 'falta' | 'sobra'
 
 /** Valor bruto ou derivado de cada coluna numérica, para o clique no cabeçalho ordenar. */
 function valorCampoDemanda(b: BalancoLinha, campo: CampoOrdenacaoDemanda): number {
   switch (campo) {
     case 'pedido': return b.pedido_aprovado
+    case 'faturado': return b.faturado ?? 0
     case 'aguardando': return b.pedido_pendente
     case 'estoque': return b.estoque_pa
     case 'planejado': return b.ordens_abertas
@@ -1640,6 +1641,7 @@ function PainelDemanda({
               cabecalho={[
                 'Cultivar', 'Tratamento', 'Emb.',
                 { texto: '#Pedido', onClick: () => alternarOrdenacao('pedido'), ordem: setaOrdem('pedido') },
+                { texto: '#Faturado', onClick: () => alternarOrdenacao('faturado'), ordem: setaOrdem('faturado') },
                 { texto: '#Aguardando', onClick: () => alternarOrdenacao('aguardando'), ordem: setaOrdem('aguardando') },
                 { texto: '#Estoque', onClick: () => alternarOrdenacao('estoque'), ordem: setaOrdem('estoque') },
                 { texto: '#Planejado', onClick: () => alternarOrdenacao('planejado'), ordem: setaOrdem('planejado') },
@@ -1680,6 +1682,25 @@ function PainelDemanda({
                           title="Parcela do pedido aprovado que é VENDA MULTIPLICADOR (coluna Tipo Venda da SimpleAgro)"
                         >
                           {inteiro(b.pedido_multiplicador ?? 0)} mult.
+                        </div>
+                      )}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">
+                      {inteiro(b.faturado ?? 0)}
+                      {(b.faturado_cooperado ?? 0) > 0 && (
+                        <div
+                          className="whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400"
+                          title="Parcela já faturada que é VENDA COOPERADO (coluna QTD Faturada - Devolvida da SimpleAgro)"
+                        >
+                          {inteiro(b.faturado_cooperado ?? 0)} coop.
+                        </div>
+                      )}
+                      {(b.faturado_multiplicador ?? 0) > 0 && (
+                        <div
+                          className="whitespace-nowrap text-xs font-medium text-sky-600 dark:text-sky-400"
+                          title="Parcela já faturada que é VENDA MULTIPLICADOR (coluna QTD Faturada - Devolvida da SimpleAgro)"
+                        >
+                          {inteiro(b.faturado_multiplicador ?? 0)} mult.
                         </div>
                       )}
                     </td>

@@ -321,6 +321,49 @@ de sempre, aprovado e aguardando nunca se somam num total só — coluna própri
 (`aguardandoCoopMult = pedido_cooperado_pendente + pedido_multiplicador_pendente`),
 cor neutra (`text-stone-400`, igual "Aguardando" da aba Balanço), entre "A faturar ·
 coop./mult." e "A faturar · outros", com total no rodapé.
+**Coluna #Faturado na aba Balanço — quanto já foi faturado** (21/09/2026, pedido do
+Arion: "e preciso saber agora quanto ja faturou de cooperado e multiplicador"). Até aqui
+o Pedidos Analítico Resumido NUNCA trouxe essa informação: `Saldo a Faturar`, a única
+coluna usada, já vem **líquida do faturado** (§4) — não existia no sistema nenhum
+número de "quanto já saiu". Achado no arquivo real
+(`docs/dados-exemplo/pedidos-simpleagro-2026-07-28.xlsx`, no range de colunas **BE–BW**
+que o Arion apontou de cabeça): `Quantidade` (BE) é o pedido ORIGINAL, e `Quantidade =
+Quantidade Faturada (BK) + Saldo a Faturar (BW)` é identidade EXATA em toda linha
+conferida (inclusive uma com saldo negativo por reajuste, 3 = 15 + (−12)). Uso a coluna
+**`QTD Faturada - Devolvida`** (BO) — a mesma coisa, já líquida de devolução, porque é o
+número que a própria SimpleAgro já calcula. **Nunca usar coluna com sufixo "SC"** (sacas):
+é outra unidade — `Quantidade SC` soma 549.525 contra 22.007 de `Quantidade` no arquivo
+inteiro, ~25× maior; `Saldo a Faturar` está na escala de `Quantidade`, não de `Quantidade
+SC`. Faturamento **não é gated por `aprovado`**: o arquivo real tem linha com Status
+Financeiro "Não Aprovado" e faturado > 0 — é um fato independente da aprovação do saldo
+residual.
+- **Achado na mesma investigação, mais sério**: TODA linha com faturado > 0 no arquivo
+  de referência tinha `Saldo a Faturar` zero ou negativo (pedido 100% entregue, ou
+  reajustado pra baixo depois de faturado) — e o importador SEMPRE descartou por
+  inteiro qualquer linha com `bags (Saldo a Faturar) <= 0` (`resumo.saldoZero`), porque
+  pra demanda/balanço uma linha sem saldo residual não tem o que fazer. Isso significa
+  que, sem tratamento especial, **um produto 100% já faturado nunca apareceria com
+  faturado nenhum** — exatamente o caso que mais importa mostrar. Corrigido SEM tocar
+  no balanço: quando `bags <= 0` mas `faturado > 0`, a linha ainda resolve
+  cultivar/embalagem/aprovado/cooperado/multiplicador e entra em `agregado` com
+  **`bags: 0`** — soma só o faturado (na mesma chave de uma linha-irmã com saldo, se
+  houver). `pedido_aprovado`/`totalAprovado`/`totalPendente`/`saldo` ficam bit-a-bit
+  iguais a antes (somar 0 não muda nada); só `linhas.length` cresce (294 no arquivo de
+  referência, antes 288 — 6 combinações que só existiam por causa de faturado).
+  `resumo.saldoZero` continua contando a linha (não tem saldo mesmo); `resumo.aproveitadas`
+  NÃO conta (não é uma linha de demanda).
+- **Migração `pedido-faturado.sql`** (aplicada): `pedidos_venda.faturado` (numeric,
+  default 0) e `v_balanco_demanda` ganha `faturado`/`faturado_cooperado`/
+  `faturado_multiplicador` no FIM do select — base usada foi
+  `balanco-demanda-corrige-regressao.sql` (a versão MAIS RECENTE, conferida por `grep -rl
+  v_balanco_demanda supabase/`, não a tematicamente mais parecida — é a regra que essa
+  mesma view já ensinou a duras penas em 20/09). `importarPedidos` grava com a mesma rede
+  de segurança do cooperado/multiplicador (tenta de novo sem a coluna se a migração ainda
+  não rodou). **Carga antiga não tem faturado** — confirmado ao vivo (302 linhas, todas
+  zero): só populam a partir do PRÓXIMO upload do Pedidos Analítico.
+- Na tela: coluna **#Faturado** entre #Pedido e #Aguardando, mesmo desenho visual do
+  #Pedido (número total + sublinhas âmbar "N coop."/azul "N mult." quando > 0),
+  ordenável pelo cabeçalho como as demais.
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro
@@ -591,9 +634,15 @@ Regras de conversão (validadas contra arquivo real de 1.196 linhas):
 - **Coluna AT `Tratamento`** = código da receita. `SEM TSI` → **excluir** (não gera trabalho de TSI).
 - **Coluna AU `Embalagem`**: BB5M→BG5M, BMB→MEIOBAG.
 - **Coluna AL `Produto`** vem duplicado ("761 I2X - 761 I2X") → usar o trecho antes do " - ".
-- Saldo ≤ 0 → excluir. Agregar por combinação somando BW.
+- **Coluna BO `QTD Faturada - Devolvida`** = quanto já foi faturado, líquido de devolução,
+  na MESMA unidade de `Saldo a Faturar` (21/09/2026 — ver §6, "Coluna #Faturado"). NUNCA
+  usar coluna com sufixo "SC" (sacas, outra unidade — ~25× maior no arquivo real).
+- Saldo ≤ 0 → excluir **da demanda**, mas não do faturado: linha com saldo zerado/negativo
+  e faturado > 0 ainda entra, só que com bags=0 (produto 100% entregue continua tendo
+  faturado pra mostrar). Agregar por combinação somando BW (bags) e BO (faturado) juntos.
 - **Resultado esperado do arquivo de referência**: 1.018 bags aprovados, 4.674 aguardando,
-  247 combinações, 22 códigos sem receita cadastrada.
+  247 combinações, 22 códigos sem receita cadastrada, 98 bags já faturados (294 linhas
+  contando as só-faturado).
 
 ### Estoque e lotes — SimpleAgro, tela "Saldos"
 `https://sementesveneza.painel.simpleagro.com.br:3333/work/saldos` (escolher safra → Ir → Exportar)

@@ -723,6 +723,15 @@ export interface BalancoLinha {
   /** Idem para VENDA MULTIPLICADOR — ausente até a migração pedido-multiplicador.sql rodar. */
   pedido_multiplicador?: number
   pedido_multiplicador_pendente?: number
+  /**
+   * Quanto já foi faturado — ausente até a migração pedido-faturado.sql
+   * rodar. Independente de `pedido_aprovado`/`pedido_pendente`: `Saldo a
+   * Faturar` já vem líquido do faturado, então isto é a ÚNICA fonte de
+   * "quanto já saiu" no sistema (pedido do Arion, 21/09/2026).
+   */
+  faturado?: number
+  faturado_cooperado?: number
+  faturado_multiplicador?: number
 }
 
 /** Estoque de produto acabado (tratado) da carga vigente, linha a linha. */
@@ -823,22 +832,25 @@ export async function importarPedidos(
     aprovado: l.aprovado,
     cooperado: l.cooperado,
     multiplicador: l.multiplicador,
+    faturado: l.faturado,
   }))
-  // as colunas `cooperado`/`multiplicador` nasceram depois (migrações
-  // pedido-cooperado.sql / pedido-multiplicador.sql): na janela entre
-  // publicar o front e rodar o SQL, importa sem a marcação em vez de travar
-  // a carga do dia inteira
+  // as colunas `cooperado`/`multiplicador`/`faturado` nasceram depois
+  // (migrações pedido-cooperado.sql / pedido-multiplicador.sql /
+  // pedido-faturado.sql): na janela entre publicar o front e rodar o SQL,
+  // importa sem a marcação em vez de travar a carga do dia inteira
   let comCooperado = true
   let comMultiplicador = true
+  let comFaturado = true
   for (let i = 0; i < registros.length; i += 500) {
     const fatia = registros.slice(i, i + 500)
     const monta = () =>
       fatia.map((l) => {
-        const { cooperado, multiplicador, ...resto } = l
+        const { cooperado, multiplicador, faturado, ...resto } = l
         return {
           ...resto,
           ...(comCooperado ? { cooperado } : {}),
           ...(comMultiplicador ? { multiplicador } : {}),
+          ...(comFaturado ? { faturado } : {}),
         }
       })
     let { error } = await supabase.from('pedidos_venda').insert(monta())
@@ -848,6 +860,10 @@ export async function importarPedidos(
     }
     if (error && comMultiplicador && error.message.includes('multiplicador')) {
       comMultiplicador = false
+      ;({ error } = await supabase.from('pedidos_venda').insert(monta()))
+    }
+    if (error && comFaturado && error.message.includes('faturado')) {
+      comFaturado = false
       ;({ error } = await supabase.from('pedidos_venda').insert(monta()))
     }
     erro('inserir pedidos', error)
