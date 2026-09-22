@@ -289,6 +289,24 @@ traço apagado quando vazia). **Filtro de status nasce com tudo marcado menos Ap
 a coluna SAP tem três vagas fixas (número · veredito `w-80` · ação); no painel de demanda,
 quatro (situação · aguardando · na fila · Programar) — caixa de tamanho fixo em toda linha
 é o padrão visual que o Arion pediu, e vale para os próximos cartões.
+**Aba "Total a faturar · coop./mult."** (21/09/2026, pedido do Arion: "tem como colocar
+uma aba com o total a faturar de cada produto (cultivar e tratamento) onde o tipo de
+pedido é cooperado ou multiplicador?"). O painel Demanda × Estoque × Planejado ganhou um
+toggle Balanço/Total a faturar (mesmo estilo dos chips de situação, `abaDemanda`, estado
+local — não sobrevive à recarga, diferente do filtro/ordenação que já usa `useRascunho`,
+porque o padrão "abrir sempre no Balanço" é aceitável aqui). A aba nova agrega
+`v_balanco_demanda` por **cultivar + tratamento** (soma as embalagens — diferente da
+tabela Balanço, que fica por embalagem) e mostra só as combinações com pedido
+`pedido_cooperado` e/ou `pedido_multiplicador` (aprovado) ou suas parcelas `_pendente`
+maior que zero: Coop. · Mult. · Total a faturar · Aguardando, com rodapé somando as
+quatro colunas. **"A faturar" = só o pedido APROVADO** (`pedido_cooperado +
+pedido_multiplicador`) — a parcela `_pendente` (aguardando liberação financeira) aparece
+numa coluna separada, nunca somada ao total, mesma leitura do resto do painel ("Ag.
+aprovação" não é saldo). Uma combinação com pendente mas nenhum aprovado ainda entra na
+lista (total sai "—"/0, aguardando mostra o valor) — sumir seria esconder demanda real,
+o mesmo raciocínio da situação `aguardando` do Balanço. Cores herdadas do resto da tela:
+âmbar para coop., azul (`sky`) para mult. Ordenação fixa por total desc (sem coluna
+clicável — é um recorte para conferência rápida, não mais um grid a organizar).
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro

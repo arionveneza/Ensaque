@@ -1316,6 +1316,9 @@ function PainelDemanda({
     localStorage.setItem('tsi.demanda.oculta', v ? '1' : '0')
   }
 
+  /** Aba do painel: o balanço de sempre, ou o total a faturar de coop./mult. (pedido do Arion, 21/09/2026). */
+  const [abaDemanda, setAbaDemanda] = useState<'balanco' | 'faturar'>('balanco')
+
   const alternarOrdenacao = (campo: CampoOrdenacaoDemanda) =>
     rasc.definir({
       ordenacao:
@@ -1338,6 +1341,44 @@ function PainelDemanda({
   )
 
   const resumo = useMemo(() => resumoBalanco(balanco), [balanco])
+
+  /**
+   * Total a faturar (pedido APROVADO) de VENDA COOPERADO + VENDA MULTIPLICADOR, por
+   * cultivar + tratamento — soma das embalagens, sempre a partir do `balanco` inteiro
+   * (não do filtro de situação/cultivar/tratamento da aba Balanço: é uma leitura própria,
+   * não um recorte dela). Aguardando aprovação entra separado, nunca somado ao total —
+   * mesma leitura do resto do painel: "a faturar" é só o pedido já aprovado.
+   */
+  const porProdutoFaturar = useMemo(() => {
+    const mapa = new Map<string, {
+      cultivar: string
+      tratamento: string
+      coop: number
+      mult: number
+      total: number
+      pendente: number
+    }>()
+    for (const b of balanco) {
+      const coop = b.pedido_cooperado ?? 0
+      const mult = b.pedido_multiplicador ?? 0
+      const pendente = (b.pedido_cooperado_pendente ?? 0) + (b.pedido_multiplicador_pendente ?? 0)
+      if (coop === 0 && mult === 0 && pendente === 0) continue
+      const chave = `${b.cultivar} ${b.tratamento}`
+      const atual = mapa.get(chave) ?? {
+        cultivar: b.cultivar, tratamento: b.tratamento, coop: 0, mult: 0, total: 0, pendente: 0,
+      }
+      atual.coop += coop
+      atual.mult += mult
+      atual.total += coop + mult
+      atual.pendente += pendente
+      mapa.set(chave, atual)
+    }
+    return [...mapa.values()].sort((a, b) =>
+      b.total - a.total ||
+      b.pendente - a.pendente ||
+      a.cultivar.localeCompare(b.cultivar, 'pt-BR') ||
+      a.tratamento.localeCompare(b.tratamento, 'pt-BR'))
+  }, [balanco])
 
   const linhas = useMemo(() => {
     let lista =
@@ -1427,6 +1468,82 @@ function PainelDemanda({
         </Vazio>
       ) : (
         <>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setAbaDemanda('balanco')}
+              className={`rounded border px-2 py-1 text-xs ${
+                abaDemanda === 'balanco'
+                  ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                  : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+              }`}
+            >
+              Balanço
+            </button>
+            <button
+              type="button"
+              onClick={() => setAbaDemanda('faturar')}
+              className={`rounded border px-2 py-1 text-xs ${
+                abaDemanda === 'faturar'
+                  ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                  : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+              }`}
+            >
+              Total a faturar · coop./mult. {porProdutoFaturar.length > 0 && `(${porProdutoFaturar.length})`}
+            </button>
+          </div>
+
+          {abaDemanda === 'faturar' ? (
+            <>
+              <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
+                Pedido <b>aprovado</b> (a faturar) de <b className="text-amber-600 dark:text-amber-400">VENDA COOPERADO</b> e{' '}
+                <b className="text-sky-600 dark:text-sky-400">VENDA MULTIPLICADOR</b>, por cultivar e tratamento —
+                soma de todas as embalagens.
+              </p>
+              {porProdutoFaturar.length === 0 ? (
+                <Vazio>Nenhum pedido cooperado ou multiplicador nesta carga.</Vazio>
+              ) : (
+                <Tabela
+                  cabecalho={['Cultivar', 'Tratamento', '#Coop.', '#Mult.', '#Total a faturar', '#Aguardando']}
+                  rodape={
+                    <tr className="border-t border-stone-200 font-semibold dark:border-stone-800">
+                      <td className="px-2 py-1.5" colSpan={2}>Total</td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-amber-600 dark:text-amber-400">
+                        {inteiro(porProdutoFaturar.reduce((a, l) => a + l.coop, 0))}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-sky-600 dark:text-sky-400">
+                        {inteiro(porProdutoFaturar.reduce((a, l) => a + l.mult, 0))}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {inteiro(porProdutoFaturar.reduce((a, l) => a + l.total, 0))}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
+                        {inteiro(porProdutoFaturar.reduce((a, l) => a + l.pendente, 0))}
+                      </td>
+                    </tr>
+                  }
+                >
+                  {porProdutoFaturar.map((l, i) => (
+                    <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <td className="px-2 py-1.5">{l.cultivar}</td>
+                      <td className="px-2 py-1.5">{l.tratamento}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-amber-600 dark:text-amber-400">
+                        {l.coop > 0 ? inteiro(l.coop) : <span className="text-stone-300">—</span>}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-sky-600 dark:text-sky-400">
+                        {l.mult > 0 ? inteiro(l.mult) : <span className="text-stone-300">—</span>}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right font-semibold">{inteiro(l.total)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
+                        {l.pendente > 0 ? inteiro(l.pendente) : <span className="text-stone-300">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </Tabela>
+              )}
+            </>
+          ) : (
+          <>
           {/* totais: falta produzir vs vai sobrar */}
           <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Placar
@@ -1660,6 +1777,8 @@ function PainelDemanda({
             AGROTIS sai da conta e volta como estoque no próximo upload. Pedido aguardando
             aprovação financeira aparece, mas não cobre nada.
           </p>
+          </>
+          )}
         </>
       )}
     </Cartao>
