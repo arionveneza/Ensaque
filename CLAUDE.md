@@ -289,24 +289,32 @@ traço apagado quando vazia). **Filtro de status nasce com tudo marcado menos Ap
 a coluna SAP tem três vagas fixas (número · veredito `w-80` · ação); no painel de demanda,
 quatro (situação · aguardando · na fila · Programar) — caixa de tamanho fixo em toda linha
 é o padrão visual que o Arion pediu, e vale para os próximos cartões.
-**Aba "Total a faturar · coop./mult."** (21/09/2026, pedido do Arion: "tem como colocar
-uma aba com o total a faturar de cada produto (cultivar e tratamento) onde o tipo de
-pedido é cooperado ou multiplicador?"). O painel Demanda × Estoque × Planejado ganhou um
-toggle Balanço/Total a faturar (mesmo estilo dos chips de situação, `abaDemanda`, estado
-local — não sobrevive à recarga, diferente do filtro/ordenação que já usa `useRascunho`,
-porque o padrão "abrir sempre no Balanço" é aceitável aqui). A aba nova agrega
-`v_balanco_demanda` por **cultivar + tratamento** (soma as embalagens — diferente da
-tabela Balanço, que fica por embalagem) e mostra só as combinações com pedido
-`pedido_cooperado` e/ou `pedido_multiplicador` (aprovado) ou suas parcelas `_pendente`
-maior que zero: Coop. · Mult. · Total a faturar · Aguardando, com rodapé somando as
-quatro colunas. **"A faturar" = só o pedido APROVADO** (`pedido_cooperado +
-pedido_multiplicador`) — a parcela `_pendente` (aguardando liberação financeira) aparece
-numa coluna separada, nunca somada ao total, mesma leitura do resto do painel ("Ag.
-aprovação" não é saldo). Uma combinação com pendente mas nenhum aprovado ainda entra na
-lista (total sai "—"/0, aguardando mostra o valor) — sumir seria esconder demanda real,
-o mesmo raciocínio da situação `aguardando` do Balanço. Cores herdadas do resto da tela:
-âmbar para coop., azul (`sky`) para mult. Ordenação fixa por total desc (sem coluna
-clicável — é um recorte para conferência rápida, não mais um grid a organizar).
+**Aba "Em estoque · coop./mult. × outros"** (21/09/2026). Pedido original do Arion ("tem
+como colocar uma aba com o total a faturar de cada produto onde o tipo de pedido é
+cooperado ou multiplicador?") virou uma 1ª versão agregada por produto que ele achou
+vazia demais ("ficou só com o que tem saldo de estoque? não entendi") — na prática quase
+toda a demanda cooperado/multiplicador estava em `_pendente` (aguardando aprovação
+financeira), não em `pedido_cooperado`/`pedido_multiplicador` (aprovado), então a coluna
+Total saía "—" na maioria das linhas; nada a ver com estoque. Ele reformulou o pedido:
+"para os itens que tenho em estoque, quanto destes itens são de pedidos de cooperantes
+ou multiplicador, com saldo a entregar, e ao mesmo tempo saber quanto do item tenho a
+faturar e em estoque de outros tipos de pedidos" — **desta vez o corte é mesmo por
+estoque**, de propósito. O painel Demanda × Estoque × Planejado ganhou um toggle
+Balanço/aba nova (mesmo estilo dos chips de situação, `abaDemanda`, estado local — não
+sobrevive à recarga, diferente do filtro/ordenação que já usa `useRascunho`, porque o
+padrão "abrir sempre no Balanço" é aceitável aqui). A aba filtra `balanco` por
+`estoque_pa > 0` e mantém a granularidade de `v_balanco_demanda` (cultivar + tratamento
++ **embalagem**, igual à tabela Balanço — NÃO agregada por produto como a 1ª versão:
+estoque é físico, por embalagem, agregar misturaria bags diferentes), mostrando por
+linha: Estoque · A faturar coop./mult. (`pedido_cooperado + pedido_multiplicador`,
+aprovado) · A faturar outros (`pedido_aprovado` menos essa parcela), com rodapé somando
+as três. **"A faturar"/"saldo a entregar" = só o pedido APROVADO** — aguardando
+aprovação financeira fica de fora (não é saldo confirmado, não faz sentido chamar de "a
+entregar"); isso não mudou da 1ª versão, só o filtro por estoque que faltava. Item com
+estoque e pedido aprovado zerado nos dois lados entra mesmo assim, com "—"/"—" (estoque
+livre, informação válida). Cores herdadas do resto da tela: âmbar para coop./mult.
+Ordenação fixa por coop./mult. desc, depois estoque desc (sem coluna clicável — é um
+recorte para conferência rápida, não mais um grid a organizar).
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro
