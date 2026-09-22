@@ -1350,8 +1350,10 @@ function PainelDemanda({
    * do item tenho a faturar e em estoque de outros tipos de pedidos"). Mantém a
    * granularidade de `balanco` (cultivar+tratamento+embalagem, igual à aba Balanço) —
    * estoque é físico, por embalagem, então agrupar por produto misturaria bags
-   * diferentes. Aguardando aprovação fica de fora: "saldo a entregar" é o pedido já
-   * aprovado, não o que ainda depende do financeiro.
+   * diferentes. **A faturar** continua só o aprovado ("saldo a entregar" é o que já é
+   * venda confirmada); `aguardandoCoopMult` (21/09/2026, pedido do Arion: "coloque
+   * também o saldo que está aguardando") entra numa coluna À PARTE — igual à aba
+   * Balanço, aprovado e aguardando nunca se somam num total só.
    */
   const estoqueTipoPedido = useMemo(() => {
     return balanco
@@ -1365,6 +1367,7 @@ function PainelDemanda({
           estoque: b.estoque_pa,
           coopMult,
           outros: Math.max(0, b.pedido_aprovado - coopMult),
+          aguardandoCoopMult: (b.pedido_cooperado_pendente ?? 0) + (b.pedido_multiplicador_pendente ?? 0),
         }
       })
       .sort((a, b) =>
@@ -1499,7 +1502,10 @@ function PainelDemanda({
                 <Vazio>Nenhum item com estoque nesta carga.</Vazio>
               ) : (
                 <Tabela
-                  cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Estoque', '#A faturar · coop./mult.', '#A faturar · outros']}
+                  cabecalho={[
+                    'Cultivar', 'Tratamento', 'Emb.', '#Estoque',
+                    '#A faturar · coop./mult.', '#Aguardando · coop./mult.', '#A faturar · outros',
+                  ]}
                   rodape={
                     <tr className="border-t border-stone-200 font-semibold dark:border-stone-800">
                       <td className="px-2 py-1.5" colSpan={3}>Total</td>
@@ -1508,6 +1514,9 @@ function PainelDemanda({
                       </td>
                       <td className="num-tabular px-2 py-1.5 text-right text-amber-600 dark:text-amber-400">
                         {inteiro(estoqueTipoPedido.reduce((a, l) => a + l.coopMult, 0))}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
+                        {inteiro(estoqueTipoPedido.reduce((a, l) => a + l.aguardandoCoopMult, 0))}
                       </td>
                       <td className="num-tabular px-2 py-1.5 text-right">
                         {inteiro(estoqueTipoPedido.reduce((a, l) => a + l.outros, 0))}
@@ -1523,6 +1532,9 @@ function PainelDemanda({
                       <td className="num-tabular px-2 py-1.5 text-right font-semibold">{inteiro(l.estoque)}</td>
                       <td className="num-tabular px-2 py-1.5 text-right text-amber-600 dark:text-amber-400">
                         {l.coopMult > 0 ? inteiro(l.coopMult) : <span className="text-stone-300">—</span>}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right text-stone-400">
+                        {l.aguardandoCoopMult > 0 ? inteiro(l.aguardandoCoopMult) : <span className="text-stone-300">—</span>}
                       </td>
                       <td className="num-tabular px-2 py-1.5 text-right">
                         {l.outros > 0 ? inteiro(l.outros) : <span className="text-stone-300">—</span>}

@@ -314,7 +314,13 @@ entregar"); isso não mudou da 1ª versão, só o filtro por estoque que faltava
 estoque e pedido aprovado zerado nos dois lados entra mesmo assim, com "—"/"—" (estoque
 livre, informação válida). Cores herdadas do resto da tela: âmbar para coop./mult.
 Ordenação fixa por coop./mult. desc, depois estoque desc (sem coluna clicável — é um
-recorte para conferência rápida, não mais um grid a organizar).
+recorte para conferência rápida, não mais um grid a organizar). **Coluna Aguardando ·
+coop./mult.** (21/09/2026, pedido do Arion depois de confirmar "a faturar coop./mult. é
+só do que está aprovado?" — "coloque também o saldo que está aguardando"): mesma regra
+de sempre, aprovado e aguardando nunca se somam num total só — coluna própria
+(`aguardandoCoopMult = pedido_cooperado_pendente + pedido_multiplicador_pendente`),
+cor neutra (`text-stone-400`, igual "Aguardando" da aba Balanço), entre "A faturar ·
+coop./mult." e "A faturar · outros", com total no rodapé.
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro
