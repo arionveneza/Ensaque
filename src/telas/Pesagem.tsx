@@ -297,7 +297,11 @@ export default function Pesagem() {
             valor={`${resumo.legislacaoOk} ok · ${resumo.legislacaoAtencao} atenção · ${resumo.legislacaoExcesso} excesso`}
             cor={resumo.legislacaoExcesso > 0 ? 'perigo' : resumo.legislacaoAtencao > 0 ? 'alerta' : undefined}
           />
-          <Indicador rotulo="× Ordem" valor={`${resumo.ordemOk} ok · ${resumo.ordemDivergente} divergente`} cor={resumo.ordemDivergente > 0 ? 'perigo' : undefined} />
+          <Indicador
+            rotulo="× Ordem"
+            valor={`${resumo.ordemOk} ok · ${resumo.ordemDivergente} divergente${resumo.ordemSemInfo > 0 ? ` · ${resumo.ordemSemInfo} sem ordem` : ''}`}
+            cor={resumo.ordemDivergente > 0 ? 'perigo' : undefined}
+          />
           <Indicador
             rotulo="Liberado?"
             valor={`${resumo.liberadoSim} sim · ${resumo.liberadoNao} não · ${resumo.liberadoPendente} pend.`}
@@ -419,7 +423,15 @@ export default function Pesagem() {
                   <td className="px-2">
                     <span title={ROTULO_ORDEM[a.statusOrdem]}>
                       <Tag cor={COR_ORDEM[a.statusOrdem]} className="min-w-24 justify-center">
-                        {a.statusOrdem === 'AGUARDANDO' ? 'após pesar' : a.statusOrdem === 'OK' ? 'OK' : a.statusOrdem === 'DIVERGENTE_ACIMA' ? 'ACIMA' : 'ABAIXO'}
+                        {a.statusOrdem === 'AGUARDANDO'
+                          ? 'após pesar'
+                          : a.statusOrdem === 'SEM_ORDEM'
+                            ? 'sem ordem'
+                            : a.statusOrdem === 'OK'
+                              ? 'OK'
+                              : a.statusOrdem === 'DIVERGENTE_ACIMA'
+                                ? 'ACIMA'
+                                : 'ABAIXO'}
                       </Tag>
                     </span>
                   </td>
@@ -655,8 +667,11 @@ function ModalEtapa1({
   const pre = preConferencia({ taraKg, ordemKg, pbtMaxKg: tipo?.pbt_max_kg ?? null })
 
   const placaOk = placaValida(f.placa)
+  // peso da ordem é opcional (21/09/2026, pedido do Arion: "não permite salvar
+  // sem o peso da ordem, passe a permitir") — nem sempre está à mão na balança;
+  // a tara continua obrigatória, é o que define a capacidade líquida do veículo
   const podeSalvar =
-    !salvando && !!f.data && f.numeroOrdem.trim() !== '' && placaOk && !!tipo && taraKg != null && ordemKg != null
+    !salvando && !!f.data && f.numeroOrdem.trim() !== '' && placaOk && !!tipo && taraKg != null
 
   async function salvar() {
     setSalvando(true)
@@ -669,7 +684,7 @@ function ModalEtapa1({
         placa: normalizarPlaca(f.placa),
         tipo_veiculo_id: f.tipoId,
         peso_tara_kg: taraKg!,
-        peso_ordem_kg: ordemKg!,
+        peso_ordem_kg: ordemKg,
       }
       if (existente) await api.editarEtapa1(existente.id, existente.versao, e)
       else await api.criarPesagem(e, usuarioId)
@@ -849,7 +864,7 @@ function ModalEtapa2({
         <Linha rotulo="Placa" valor={<span className="font-mono">{p.placa}</span>} />
         <Linha rotulo="Tipo" valor={tipoNome} />
         <Linha rotulo="Tara" valor={`${inteiro(p.peso_tara_kg)} kg`} />
-        <Linha rotulo="Peso da ordem" valor={`${inteiro(p.peso_ordem_kg)} kg`} />
+        <Linha rotulo="Peso da ordem" valor={p.peso_ordem_kg == null ? 'não informado' : `${inteiro(p.peso_ordem_kg)} kg`} />
         <Linha rotulo="PBT aplicado" valor={`${inteiro(p.pbt_max_kg_aplicado)} kg`} />
         <div className="col-span-2 mt-1 flex items-center justify-between gap-3 sm:col-span-3">
           <span className="text-stone-500">Pré-conferência</span>

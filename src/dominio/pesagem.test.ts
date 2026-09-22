@@ -135,12 +135,47 @@ describe('fronteiras', () => {
     expect(caso(20000, 37500, 57000, 57500).fin.liberado).toBe('SIM')
   })
 
-  it('sem tara ou sem ordem e INCOMPLETO, sem dividir por zero', () => {
+  it('pre-conferencia sem tara ou sem ordem e INCOMPLETO, sem dividir por zero', () => {
     expect(preConferencia({ taraKg: null, ordemKg: 100, pbtMaxKg: 23000 }).podeCarregar).toBe('INCOMPLETO')
     expect(preConferencia({ taraKg: 9800, ordemKg: 0, pbtMaxKg: 23000 }).podeCarregar).toBe('INCOMPLETO')
-    const fin = conferenciaFinal({ taraKg: 9800, ordemKg: 0, pbtMaxKg: 23000, brutoKg: 20000, ...TOL })
-    expect(fin.liberado).toBe('PENDENTE')
-    expect(fin.diferencaPct).toBeNull()
+    expect(preConferencia({ taraKg: 9800, ordemKg: null, pbtMaxKg: 23000 }).podeCarregar).toBe('INCOMPLETO')
+    // mensagem não pede a tara de novo quando ela já foi informada
+    expect(preConferencia({ taraKg: 9800, ordemKg: null, pbtMaxKg: 23000 }).mensagem)
+      .toBe('Informar peso da ordem para conferir se cabe no veículo')
+  })
+
+  it('peso da ordem e opcional (21/09/2026): pesado sem ordem libera so pela legislacao', () => {
+    // pedido do Arion: "não permite salvar sem o peso da ordem, passe a
+    // permitir" — sem ordem, apos pesar, Liberado sai só pela legislação
+    const semOrdemLegislacaoOk = conferenciaFinal({
+      taraKg: 9800, ordemKg: null, pbtMaxKg: 23000, brutoKg: 20000, ...TOL,
+    })
+    expect(semOrdemLegislacaoOk.statusOrdem).toBe('SEM_ORDEM')
+    expect(semOrdemLegislacaoOk.statusLegislacao).toBe('OK')
+    expect(semOrdemLegislacaoOk.liquidoKg).toBe(10200)
+    expect(semOrdemLegislacaoOk.diferencaKg).toBeNull()
+    expect(semOrdemLegislacaoOk.diferencaPct).toBeNull()
+    // não fica PENDENTE pra sempre — resolve de verdade
+    expect(semOrdemLegislacaoOk.liberado).toBe('SIM')
+
+    // sem ordem NÃO significa "libera sempre" — legislação continua valendo
+    const semOrdemExcesso = conferenciaFinal({
+      taraKg: 9800, ordemKg: null, pbtMaxKg: 23000, brutoKg: 25000, ...TOL,
+    })
+    expect(semOrdemExcesso.statusLegislacao).toBe('EXCESSO')
+    expect(semOrdemExcesso.statusOrdem).toBe('SEM_ORDEM')
+    expect(semOrdemExcesso.liberado).toBe('NAO')
+
+    // ordem 0 é tratado igual a ordem ausente (o front já converte "0" em null)
+    expect(conferenciaFinal({ taraKg: 9800, ordemKg: 0, pbtMaxKg: 23000, brutoKg: 20000, ...TOL }).statusOrdem)
+      .toBe('SEM_ORDEM')
+
+    // sem bruto ainda, mesmo sem ordem, continua PENDENTE (não "resolve" antes de pesar)
+    const aindaNaoPesado = conferenciaFinal({
+      taraKg: 9800, ordemKg: null, pbtMaxKg: 23000, brutoKg: null, ...TOL,
+    })
+    expect(aindaNaoPesado.statusOrdem).toBe('AGUARDANDO')
+    expect(aindaNaoPesado.liberado).toBe('PENDENTE')
   })
 
   it('bruto menor ou igual a tara e invalido, nao "pendente de verdade"', () => {
@@ -175,20 +210,23 @@ describe('linha do banco', () => {
       base({ peso_bruto_final_kg: 74000 }), // OK, liquido 46000 = ordem, SIM
       base({ peso_bruto_final_kg: null }), // pendente
       base({ peso_tara_kg: 30000, peso_bruto_final_kg: null }), // 76.000 > 74.000: pre NAO, pendente
+      base({ peso_ordem_kg: null, peso_bruto_final_kg: 30000 }), // sem ordem, OK, SIM
     ].map((b) => ({ base: b, avaliada: avaliarPesagem(b, TOL) }))
     const r = resumoPesagens(linhas)
-    expect(r.registrados).toBe(4)
+    expect(r.registrados).toBe(5)
     expect(r.preSim).toBe(3)
     expect(r.preNao).toBe(1)
-    expect(r.pesados).toBe(2)
+    expect(r.pesados).toBe(3)
     expect(r.legislacaoAtencao).toBe(1)
-    expect(r.legislacaoOk).toBe(1)
+    expect(r.legislacaoOk).toBe(2)
     expect(r.ordemOk).toBe(1)
     expect(r.ordemDivergente).toBe(1)
-    expect(r.liberadoSim).toBe(1)
+    expect(r.ordemSemInfo).toBe(1)
+    expect(r.liberadoSim).toBe(2)
     expect(r.liberadoNao).toBe(1)
     expect(r.liberadoPendente).toBe(2)
-    expect(r.liquidoKg).toBe(48500 + 46000)
+    expect(r.liquidoKg).toBe(48500 + 46000 + 2000)
+    // a linha sem ordem não soma nada em ordemPesadaKg (nada pra somar)
     expect(r.ordemPesadaKg).toBe(46000 * 2)
   })
 })

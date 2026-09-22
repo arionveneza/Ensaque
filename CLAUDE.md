@@ -1460,6 +1460,29 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    placa, ordem, tipo, chips Liberado?), lista com etiquetas coloridas e PENDENTE em âmbar
    (caminhão no pátio) na frente, modal Etapa 1 com prévia ao vivo e rascunho, modal Etapa 2
    com prévia e justificativa, cartão Parâmetros (Gestor), export .xlsx com todas as colunas.
+   **Peso da ordem virou OPCIONAL** (21/09/2026, pedido do Arion: "não permite salvar sem o
+   peso da ordem, passe a permitir" — nem sempre esse peso está à mão na balança). A tara
+   continua obrigatória (define a capacidade líquida do veículo, sozinha). Sem tratamento
+   isso quebraria dois lugares, achados ANTES de mexer: (1) `status_ordem` caía no mesmo
+   balde de "ainda não pesou" que `AGUARDANDO`, então um caminhão pesado sem peso da ordem
+   ficava **PENDENTE pra sempre**, sem botão nenhum pra resolver; (2) o `CASE` de
+   `status_ordem` em `calc_pesagem` comparava `NULL` com `<=`/`>` (sempre "desconhecido" em
+   SQL, nunca `FALSE`) e caía pelo `ELSE` em `'DIVERGENTE_ABAIXO'` por engano —
+   `v_pesagens` reportaria "não liberado, abaixo da ordem" pra quem só não informou o peso.
+   **Novo status `SEM_ORDEM`** (`StatusOrdem`, igual dos dois lados — TS e `calc_pesagem`,
+   SQL) cobre exatamente isso: nunca é OK nem divergente, é só "não dá pra comparar".
+   **Decisão do Arion sobre o Liberado**: sem peso da ordem, ele sai **só pela legislação**
+   (`liberado = SIM` quando `statusLegislacao` é OK/ATENÇÃO e `statusOrdem` é OK **ou**
+   `SEM_ORDEM`) — o caminhão não fica refém de um dado que ninguém preencheu, mas a
+   legislação (PBT/tolerância) continua barrando normalmente. `peso_ordem_kg` vira
+   `number | null` em toda a cadeia (`PesagemBase`, `PesagemLinha`, `Etapa1`) e a coluna no
+   banco perde o `not null` (migração `pesagem-ordem-opcional.sql` — o `check (peso_ordem_kg
+   > 0)` não precisou mudar: `NULL` nunca viola um CHECK, só `FALSE` viola). Pré-conferência
+   (etapa 1) continua `INCOMPLETO` sem o peso da ordem — não dá pra saber se cabe no
+   veículo sem ele —, só a mensagem passou a distinguir "falta a tara" de "falta a ordem"
+   em vez de sempre pedir as duas. `resumoPesagens` ganhou `ordemSemInfo` (não conta como
+   `ordemDivergente` — informação ausente não é problema) e o cartão "× Ordem" mostra
+   "· N sem ordem" só quando > 0.
 6f. **Endereçamento planilha** (18/09/2026, pedido do Arion: "a planilha é dinâmica, tem como
    colocar uma aba dentro do app com o nome 'ENDEREÇAMENTO PLANILHA' e ir atualizando conforme
    ela atualiza ou um botão pra atualizar?"). Espelho de **leitura** da aba `Lote PA` da

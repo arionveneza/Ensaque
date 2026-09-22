@@ -24,7 +24,7 @@ const EPS = 1e-9
 
 export type PodeCarregar = 'INCOMPLETO' | 'SIM' | 'NAO'
 export type StatusLegislacao = 'AGUARDANDO' | 'OK' | 'ATENCAO' | 'EXCESSO'
-export type StatusOrdem = 'AGUARDANDO' | 'OK' | 'DIVERGENTE_ACIMA' | 'DIVERGENTE_ABAIXO'
+export type StatusOrdem = 'AGUARDANDO' | 'OK' | 'DIVERGENTE_ACIMA' | 'DIVERGENTE_ABAIXO' | 'SEM_ORDEM'
 export type Liberado = 'PENDENTE' | 'SIM' | 'NAO'
 
 export type CorTag = 'neutro' | 'ok' | 'alerta' | 'perigo' | 'info' | 'roxo'
@@ -58,12 +58,14 @@ export const ROTULO_ORDEM: Record<StatusOrdem, string> = {
   OK: 'Conforme ordem',
   DIVERGENTE_ACIMA: 'Acima da ordem',
   DIVERGENTE_ABAIXO: 'Abaixo da ordem',
+  SEM_ORDEM: 'Sem peso da ordem informado',
 }
 export const COR_ORDEM: Record<StatusOrdem, CorTag> = {
   AGUARDANDO: 'neutro',
   OK: 'ok',
   DIVERGENTE_ACIMA: 'perigo',
   DIVERGENTE_ABAIXO: 'perigo',
+  SEM_ORDEM: 'neutro',
 }
 
 export const ROTULO_LIBERADO: Record<Liberado, string> = {
@@ -119,13 +121,17 @@ export interface PreConferencia {
 
 export function preConferencia(e: EntradaPre): PreConferencia {
   const { taraKg, ordemKg, pbtMaxKg } = e
-  if (taraKg == null || ordemKg == null || pbtMaxKg == null || taraKg <= 0 || ordemKg <= 0) {
+  const temTara = taraKg != null && taraKg > 0
+  if (!temTara || ordemKg == null || pbtMaxKg == null || ordemKg <= 0) {
     return {
-      capacidadeLiquidaKg: pbtMaxKg != null && taraKg != null && taraKg > 0 ? pbtMaxKg - taraKg : null,
+      capacidadeLiquidaKg: pbtMaxKg != null && temTara ? pbtMaxKg - taraKg! : null,
       brutoPrevistoKg: null,
       excessoPrevistoKg: 0,
       podeCarregar: 'INCOMPLETO',
-      mensagem: ROTULO_PODE_CARREGAR.INCOMPLETO,
+      // peso da ordem é opcional pra salvar (21/09/2026) — sem ele não dá pra
+      // saber se cabe no veículo, mas a mensagem não deve pedir a tara de
+      // novo quando ela já foi informada
+      mensagem: temTara ? 'Informar peso da ordem para conferir se cabe no veículo' : ROTULO_PODE_CARREGAR.INCOMPLETO,
     }
   }
   const brutoPrevistoKg = taraKg + ordemKg
@@ -182,7 +188,13 @@ const AGUARDANDO: ConferenciaFinal = {
 export function conferenciaFinal(e: EntradaFinal): ConferenciaFinal {
   const { taraKg, ordemKg, pbtMaxKg, brutoKg, tolLegalPct, tolOrdemPct } = e
   const pbtComToleranciaKg = pbtMaxKg != null ? pbtMaxKg * (1 + tolLegalPct) : null
-  if (brutoKg == null || taraKg == null || ordemKg == null || pbtMaxKg == null || ordemKg <= 0) {
+  // peso da ordem é opcional pra salvar (21/09/2026, pedido do Arion) — só
+  // tara/PBT/bruto ainda travam em "aguardando pesagem". Sem ordem, a
+  // legislação segue sendo apurada normalmente; só a comparação × ordem
+  // fica de fora (`SEM_ORDEM`, abaixo), e o Liberado passa a valer só pela
+  // legislação — decisão dele: o caminhão não fica refém de um dado que
+  // ninguém preencheu.
+  if (brutoKg == null || taraKg == null || pbtMaxKg == null) {
     return { ...AGUARDANDO, pbtComToleranciaKg }
   }
   if (brutoKg <= taraKg) {
@@ -194,19 +206,22 @@ export function conferenciaFinal(e: EntradaFinal): ConferenciaFinal {
   }
   const liquidoKg = brutoKg - taraKg
   const excessoRealKg = Math.max(0, brutoKg - pbtMaxKg)
-  const diferencaKg = liquidoKg - ordemKg
-  const diferencaPct = diferencaKg / ordemKg
+  const temOrdem = ordemKg != null && ordemKg > 0
+  const diferencaKg = temOrdem ? liquidoKg - ordemKg! : null
+  const diferencaPct = temOrdem ? diferencaKg! / ordemKg! : null
 
   const statusLegislacao: StatusLegislacao =
     brutoKg <= pbtMaxKg ? 'OK' : brutoKg <= pbtComToleranciaKg! + EPS ? 'ATENCAO' : 'EXCESSO'
-  const statusOrdem: StatusOrdem =
-    Math.abs(diferencaKg) <= ordemKg * tolOrdemPct + EPS
+  const statusOrdem: StatusOrdem = !temOrdem
+    ? 'SEM_ORDEM'
+    : Math.abs(diferencaKg!) <= ordemKg! * tolOrdemPct + EPS
       ? 'OK'
-      : diferencaKg > 0
+      : diferencaKg! > 0
         ? 'DIVERGENTE_ACIMA'
         : 'DIVERGENTE_ABAIXO'
   const liberado: Liberado =
-    (statusLegislacao === 'OK' || statusLegislacao === 'ATENCAO') && statusOrdem === 'OK'
+    (statusLegislacao === 'OK' || statusLegislacao === 'ATENCAO') &&
+    (statusOrdem === 'OK' || statusOrdem === 'SEM_ORDEM')
       ? 'SIM'
       : 'NAO'
 
@@ -230,7 +245,8 @@ export function conferenciaFinal(e: EntradaFinal): ConferenciaFinal {
 /** O que a tabela `pesagens` guarda e o cálculo precisa. */
 export interface PesagemBase {
   peso_tara_kg: number
-  peso_ordem_kg: number
+  /** Opcional desde 21/09/2026 — nem sempre o peso da ordem está à mão na balança. */
+  peso_ordem_kg: number | null
   pbt_max_kg_aplicado: number
   peso_bruto_final_kg: number | null
   /** Congeladas quando o bruto entrou; nulas enquanto pendente. */
@@ -277,6 +293,8 @@ export interface ResumoPesagens {
   legislacaoExcesso: number
   ordemOk: number
   ordemDivergente: number
+  /** Pesado sem peso da ordem informado — não é divergência, é dado ausente. */
+  ordemSemInfo: number
   liberadoSim: number
   liberadoNao: number
   liberadoPendente: number
@@ -300,6 +318,7 @@ export function resumoPesagens(
     legislacaoExcesso: 0,
     ordemOk: 0,
     ordemDivergente: 0,
+    ordemSemInfo: 0,
     liberadoSim: 0,
     liberadoNao: 0,
     liberadoPendente: 0,
@@ -315,11 +334,12 @@ export function resumoPesagens(
     if (a.liquidoKg != null) {
       r.pesados++
       r.liquidoKg += a.liquidoKg
-      r.ordemPesadaKg += base.peso_ordem_kg
+      r.ordemPesadaKg += base.peso_ordem_kg ?? 0
       if (a.statusLegislacao === 'OK') r.legislacaoOk++
       if (a.statusLegislacao === 'ATENCAO') r.legislacaoAtencao++
       if (a.statusLegislacao === 'EXCESSO') r.legislacaoExcesso++
       if (a.statusOrdem === 'OK') r.ordemOk++
+      else if (a.statusOrdem === 'SEM_ORDEM') r.ordemSemInfo++
       else r.ordemDivergente++
     }
   }

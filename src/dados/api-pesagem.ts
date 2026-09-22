@@ -107,7 +107,8 @@ export interface PesagemLinha {
   placa: string
   tipo_veiculo_id: string
   peso_tara_kg: number
-  peso_ordem_kg: number
+  /** Opcional desde 21/09/2026 — nem sempre o peso da ordem está à mão na balança. */
+  peso_ordem_kg: number | null
   pbt_max_kg_aplicado: number
   peso_bruto_final_kg: number | null
   tol_legal_pct_aplicada: number | null
@@ -166,7 +167,7 @@ export interface Etapa1 {
   placa: string
   tipo_veiculo_id: string
   peso_tara_kg: number
-  peso_ordem_kg: number
+  peso_ordem_kg: number | null
 }
 
 export async function criarPesagem(e: Etapa1, usuarioId: string): Promise<PesagemLinha> {
