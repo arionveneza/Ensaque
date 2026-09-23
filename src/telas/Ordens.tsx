@@ -1446,6 +1446,66 @@ function PainelDemanda({
     { id: 'sem-receita', texto: `Sem receita (${semReceita})`, ativo: semReceita > 0 },
   ]
 
+  /**
+   * Exporta a aba ATIVA do painel (pedido do Arion, 22/09/2026: "eu quero
+   * um relatório do estoque futuro etc") — as três abas viram planilha pelo
+   * mesmo botão, sem triplicar UI: exporta o que está na tela.
+   */
+  function exportarDemanda() {
+    if (abaDemanda === 'faturar') {
+      exportarXlsx(
+        'estoque-coop-mult',
+        [
+          { titulo: 'Cultivar', largura: 18 }, { titulo: 'Tratamento', largura: 22 }, { titulo: 'Embalagem', largura: 12 },
+          { titulo: 'Estoque', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'A faturar coop./mult.', largura: 18, tipo: 'numero', casas: 0 },
+          { titulo: 'Aguardando coop./mult.', largura: 18, tipo: 'numero', casas: 0 },
+          { titulo: 'A faturar outros', largura: 14, tipo: 'numero', casas: 0 },
+        ],
+        estoqueTipoPedido.map((l) => [
+          l.cultivar, l.tratamento, l.embalagem, l.estoque, l.coopMult, l.aguardandoCoopMult, l.outros,
+        ]),
+      )
+    } else if (abaDemanda === 'futuro') {
+      exportarXlsx(
+        'estoque-futuro',
+        [
+          { titulo: 'Cultivar', largura: 18 }, { titulo: 'Tratamento', largura: 22 }, { titulo: 'Embalagem', largura: 12 },
+          { titulo: 'Estoque', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'Planejado', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: 'Estoque futuro', largura: 14, tipo: 'numero', casas: 0 },
+        ],
+        estoqueFuturo.map((l) => [l.cultivar, l.tratamento, l.embalagem, l.estoque, l.planejado, l.futuro]),
+      )
+    } else {
+      exportarXlsx(
+        'balanco-demanda',
+        [
+          { titulo: 'Cultivar', largura: 18 }, { titulo: 'Tratamento', largura: 22 }, { titulo: 'Embalagem', largura: 12 },
+          { titulo: 'Pedido', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'Pedido coop.', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: 'Pedido mult.', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: 'Faturado', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'Faturado coop.', largura: 14, tipo: 'numero', casas: 0 },
+          { titulo: 'Faturado mult.', largura: 14, tipo: 'numero', casas: 0 },
+          { titulo: 'Aguardando', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: 'Estoque', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'Planejado', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: 'Falta', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'Sobra', largura: 10, tipo: 'numero', casas: 0 },
+          { titulo: 'Situação', largura: 16 },
+        ],
+        linhas.map((b) => [
+          b.cultivar, b.tratamento, b.embalagem,
+          b.pedido_aprovado, b.pedido_cooperado ?? 0, b.pedido_multiplicador ?? 0,
+          b.faturado ?? 0, b.faturado_cooperado ?? 0, b.faturado_multiplicador ?? 0,
+          b.pedido_pendente, b.estoque_pa, b.ordens_abertas,
+          bagsFaltando(b), bagsSobrando(b), ROTULO_SITUACAO[situacaoDemanda(b)],
+        ]),
+      )
+    }
+  }
+
   // recolhido: só o título e a linha-resumo — a informação crítica continua à
   // vista. A fila e o modal ficam FORA deste if/else (única `return` no fim
   // da função) porque precisam aparecer mesmo com o painel recolhido — "Abrir"
@@ -1481,7 +1541,12 @@ function PainelDemanda({
   ) : (
     <Cartao
       titulo="Demanda × Estoque × Planejado"
-      acoes={<Botao onClick={alternar}>Ocultar</Botao>}
+      acoes={
+        <>
+          <Botao onClick={exportarDemanda} disabled={balanco.length === 0}>Exportar .xlsx</Botao>
+          <Botao onClick={alternar}>Ocultar</Botao>
+        </>
+      }
       className="mb-5"
     >
       {balanco.length === 0 ? (

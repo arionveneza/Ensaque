@@ -392,6 +392,15 @@ lote OU Pronto pra produzir juntas, de propósito (ele quer as duas), sem checar
 `lote_liberado_em`. `planejado_confirmado` é subconjunto de `ordens_abertas` por construção
 (mesma origem, um `FILTER` a mais) — a migração confere isso como invariante
 (`planejado_confirmado <= ordens_abertas` em toda linha, contra o banco de verdade).
+**Exportar .xlsx do painel** (22/09/2026, pedido do Arion: "eu quero um relatório do
+estoque futuro etc"): um botão só, ao lado de "Ocultar", que exporta a **aba ATIVA**
+(`exportarDemanda()` olha `abaDemanda`) — Balanço, Em estoque ou Estoque futuro viram
+planilha pelo mesmo botão, sem triplicar a interface; o nome do arquivo muda conforme a
+aba (`balanco-demanda`/`estoque-coop-mult`/`estoque-futuro`). Reaproveita as listas já
+memoizadas de cada aba (`linhas`/`estoqueTipoPedido`/`estoqueFuturo`) — nenhuma consulta
+nova. A planilha do Balanço leva as colunas coop./mult. de Pedido e Faturado separadas
+(não só o total), porque numa exportação — ao contrário da tela — não tem onde mostrar a
+sublinha âmbar/azul.
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro
