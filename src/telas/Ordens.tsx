@@ -1318,7 +1318,7 @@ function PainelDemanda({
   }
 
   /** Aba do painel: o balanço de sempre, ou o total a faturar de coop./mult. (pedido do Arion, 21/09/2026). */
-  const [abaDemanda, setAbaDemanda] = useState<'balanco' | 'faturar'>('balanco')
+  const [abaDemanda, setAbaDemanda] = useState<'balanco' | 'faturar' | 'futuro'>('balanco')
 
   const alternarOrdenacao = (campo: CampoOrdenacaoDemanda) =>
     rasc.definir({
@@ -1374,6 +1374,32 @@ function PainelDemanda({
       .sort((a, b) =>
         b.coopMult - a.coopMult ||
         b.estoque - a.estoque ||
+        a.cultivar.localeCompare(b.cultivar, 'pt-BR') ||
+        a.tratamento.localeCompare(b.tratamento, 'pt-BR'))
+  }, [balanco])
+
+  /**
+   * Estoque futuro = estoque do SAP + o que está planejado a produzir, MAS
+   * só contando ordem em `Aguardando lote`/`Pronto para produzir`/
+   * `Qualidade apontada` — pedido do Arion, 22/09/2026: "apenas o que já
+   * está com ordem" nesses três status (nunca Não programada/Programada,
+   * que ainda podem mudar de dia/máquina sem custo, nem Em produção/
+   * Parada/Finalizada, ainda em curso). `planejado_confirmado` já vem
+   * assim da view — aqui só soma com o estoque e filtra/ordena.
+   */
+  const estoqueFuturo = useMemo(() => {
+    return balanco
+      .filter((b) => b.estoque_pa > 0 || (b.planejado_confirmado ?? 0) > 0)
+      .map((b) => ({
+        cultivar: b.cultivar,
+        tratamento: b.tratamento,
+        embalagem: b.embalagem,
+        estoque: b.estoque_pa,
+        planejado: b.planejado_confirmado ?? 0,
+        futuro: b.estoque_pa + (b.planejado_confirmado ?? 0),
+      }))
+      .sort((a, b) =>
+        b.futuro - a.futuro ||
         a.cultivar.localeCompare(b.cultivar, 'pt-BR') ||
         a.tratamento.localeCompare(b.tratamento, 'pt-BR'))
   }, [balanco])
@@ -1489,6 +1515,17 @@ function PainelDemanda({
             >
               Em estoque · coop./mult. × outros {estoqueTipoPedido.length > 0 && `(${estoqueTipoPedido.length})`}
             </button>
+            <button
+              type="button"
+              onClick={() => setAbaDemanda('futuro')}
+              className={`rounded border px-2 py-1 text-xs ${
+                abaDemanda === 'futuro'
+                  ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                  : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+              }`}
+            >
+              Estoque futuro {estoqueFuturo.length > 0 && `(${estoqueFuturo.length})`}
+            </button>
           </div>
 
           {abaDemanda === 'faturar' ? (
@@ -1540,6 +1577,51 @@ function PainelDemanda({
                       <td className="num-tabular px-2 py-1.5 text-right">
                         {l.outros > 0 ? inteiro(l.outros) : <span className="text-stone-300">—</span>}
                       </td>
+                    </tr>
+                  ))}
+                </Tabela>
+              )}
+            </>
+          ) : abaDemanda === 'futuro' ? (
+            <>
+              <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
+                Estoque do SAP + o que está planejado a produzir — só contando ordem em{' '}
+                <b>Aguardando lote</b>, <b>Pronto para produzir</b> ou <b>Qualidade apontada</b>{' '}
+                (nunca Não programada/Programada, que ainda podem mudar sem custo, nem Em
+                produção/Parada/Finalizada, ainda em curso).
+              </p>
+              {estoqueFuturo.length === 0 ? (
+                <Vazio>Nenhum item com estoque ou planejado confirmado nesta carga.</Vazio>
+              ) : (
+                <Tabela
+                  cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Estoque', '#Planejado', '#Estoque futuro']}
+                  rodape={
+                    <tr className="border-t border-stone-200 font-semibold dark:border-stone-800">
+                      <td className="px-2 py-1.5" colSpan={3}>Total</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {inteiro(estoqueFuturo.reduce((a, l) => a + l.estoque, 0))}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {inteiro(estoqueFuturo.reduce((a, l) => a + l.planejado, 0))}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {inteiro(estoqueFuturo.reduce((a, l) => a + l.futuro, 0))}
+                      </td>
+                    </tr>
+                  }
+                >
+                  {estoqueFuturo.map((l, i) => (
+                    <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+                      <td className="px-2 py-1.5">{l.cultivar}</td>
+                      <td className="px-2 py-1.5">{l.tratamento}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5"><Emb codigo={l.embalagem} /></td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {l.estoque > 0 ? inteiro(l.estoque) : <span className="text-stone-300">—</span>}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">
+                        {l.planejado > 0 ? inteiro(l.planejado) : <span className="text-stone-300">—</span>}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right font-semibold">{inteiro(l.futuro)}</td>
                     </tr>
                   ))}
                 </Tabela>

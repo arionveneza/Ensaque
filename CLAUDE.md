@@ -364,6 +364,34 @@ residual.
 - Na tela: coluna **#Faturado** entre #Pedido e #Aguardando, mesmo desenho visual do
   #Pedido (número total + sublinhas âmbar "N coop."/azul "N mult." quando > 0),
   ordenável pelo cabeçalho como as demais.
+**Aba "Estoque futuro"** (22/09/2026, pedido do Arion: "preciso de um estoque futuro, o que
+tenho no SAP e o que eu tenho planejado a produzir. Mas apenas o que já esta com ordem em
+status aguardando lote, pronta pra produzir, qualidade apontada" — "apenas" foi lido ao pé
+da letra: nada de `Não programada`/`Programada` (ainda não é compromisso — o PCP reprograma
+sem custo) nem `Em produção`/`Parada`/`Finalizada` (produção em curso, número ainda pode
+mudar até a conferência de qualidade); `Qualidade apontada` entra porque já produziu e já
+passou na qualidade, só falta o AGROTIS pra virar estoque de verdade. Terceira aba do
+mesmo toggle (Balanço · Em estoque · **Estoque futuro**). Mostra Estoque (SAP) · Planejado
+(confirmado) · Estoque futuro (soma), por cultivar+tratamento+embalagem (como Em estoque —
+não colapsa por produto), ordenado por estoque futuro desc; entra quem tem estoque OU
+planejado (não os dois zerados).
+`v_balanco_demanda` ganha `planejado_confirmado` (migração `estoque-futuro.sql`, base a
+versão mais recente — `pedido-faturado.sql` — pela regra de sempre). **Aguardando lote/
+Pronto para produzir são status DERIVADOS**: nunca ficam na coluna `ordens.status` (o enum
+`status_ordem` nem tem esses dois valores — só existem em `v_ordens.status_efetivo`,
+calculado de `maquina_id`/`confirmada_em`/`lote_liberado_em`). Em vez de juntar com
+`v_ordens` — que tem um bug antigo já conhecido (achado em "Ordens sem caminhão", 19/09:
+`status_efetivo` nunca emite `'Excluida'`, porque `create or replace view` de uma migração
+posterior perdeu esse valor da lista de pass-through; os chamadores se defendem olhando o
+status cru também, mas a view em si nunca foi corrigida) — a CTE `abe` de
+`v_balanco_demanda` replica a MESMA lógica direto em cima de `ordens` cru, com a mesma
+exclusão de Excluida que ela já tinha (`where o.status not in ('Apontada','Excluida')`):
+`status = 'Qualidade apontada' or (status not in ('Em producao','Parada','Finalizada') and
+maquina_id is not null and confirmada_em is not null)` — a segunda condição cobre Aguardando
+lote OU Pronto pra produzir juntas, de propósito (ele quer as duas), sem checar
+`lote_liberado_em`. `planejado_confirmado` é subconjunto de `ordens_abertas` por construção
+(mesma origem, um `FILTER` a mais) — a migração confere isso como invariante
+(`planejado_confirmado <= ordens_abertas` em toda linha, contra o banco de verdade).
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro

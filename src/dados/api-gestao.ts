@@ -732,6 +732,15 @@ export interface BalancoLinha {
   faturado?: number
   faturado_cooperado?: number
   faturado_multiplicador?: number
+  /**
+   * Bags de ordens abertas em status `Aguardando lote`/`Pronto para
+   * produzir`/`Qualidade apontada` — subconjunto de `ordens_abertas`
+   * (nunca `Não programada`/`Programada`, que ainda podem mudar de
+   * dia/máquina sem custo, nem `Em produção`/`Parada`/`Finalizada`, ainda
+   * em curso). Base do "Estoque futuro" (pedido do Arion, 22/09/2026) —
+   * ausente até a migração estoque-futuro.sql rodar.
+   */
+  planejado_confirmado?: number
 }
 
 /** Estoque de produto acabado (tratado) da carga vigente, linha a linha. */
