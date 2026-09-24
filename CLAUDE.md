@@ -412,6 +412,25 @@ não há dupla contagem. A célula do Planejado diz "N apontado(s) após o saldo
 ordens no tooltip, a legenda da aba soma o total e o export ganhou a coluna. **O Balanço
 continua com o buraco (2)** de propósito — pedido era do Estoque futuro; lá a ordem apontada
 depois do saldo some das ordens abertas e o "falta produzir" fica maior até o próximo upload.
+**Seletor "Status no planejado"** (24/09/2026, pedido do Arion: "às vezes as ordens com status
+qualidade apontada já foram lançadas no SAP e o estoque dá problema" — contar de novo dobra o
+estoque). O planejado do Estoque futuro passou a ser **ordem a ordem** no front: `planejado_confirmado`
+da view é soma pronta e não separa status. `listarOrdensEstoqueFuturo(saldoCriadoEm)` (consulta
+PRÓPRIA — a lista geral `listarOrdens` não pagina e cortaria no limite de linhas do PostgREST):
+todas as abertas (status cru fora de Apontada/Excluida, fora do balanço excluídas) com o
+`status_efetivo`, mais as apontadas depois do último saldo com o status sintético
+**`STATUS_APONTADA_APOS_SALDO`** ("Apontada após o saldo" — ela também pode já estar no SAP se o
+AGROTIS sincronizou antes do clique no app, por isso é desmarcável). `calcularEstoqueFuturo(…, {
+ordens, statusPlanejado })` soma só os status marcados; com `ordens` o `planejado_confirmado` é
+ignorado (sem ela, cai nele — fallback). **`STATUS_PLANEJADO_PADRAO`** = Aguardando lote → Qualidade
+apontada + Apontada após o saldo (a mesma regra de antes); Não programada e Programada ficam
+desmarcadas mas selecionáveis. Seleção guardada no navegador (`useRascunho('ordens-futuro-status')`
+— escolha de trabalho, não pode voltar ao padrão a cada recarga do realtime), botão "status
+padrão" quando difere; **vazio = nenhum** (planejado zera e a tela avisa em vermelho), não
+"todos" como nos filtros — aqui "todos" incluiria as não confirmadas. Linha "Ordens por status"
+mostra bags e nº de ordens de cada status, riscado o que está desmarcado, pra ver o peso de cada
+um; o tooltip do Planejado lista as ordens (nº · status · bags) e o export ganhou a coluna
+"Ordens no planejado" com os status marcados no título.
 **Exportar .xlsx do painel** (22/09/2026, pedido do Arion: "eu quero um relatório do
 estoque futuro etc"): um botão só, ao lado de "Ocultar", que exporta a **aba ATIVA**
 (`exportarDemanda()` olha `abaDemanda`) — Balanço, Em estoque ou Estoque futuro viram

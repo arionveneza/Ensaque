@@ -4,6 +4,7 @@ import { diaDeProducao, duracaoParadaMaquinaS } from '@/dominio/calculos'
 import type {
   PedidoConvertido, PedidoFilial, EstoquePaConvertido, LoteConvertido,
 } from '@/dominio/importacao/simpleagro'
+import { STATUS_APONTADA_APOS_SALDO } from '@/dominio/estoqueFuturo'
 
 /** Consultas e comandos das telas de Programação, Lotes, Ordens, Qualidade, Indicadores e Cadastros. */
 
@@ -1067,9 +1068,11 @@ export async function listarMontagemCarga(): Promise<
   return { itens, criadaEm: carga.criada_em }
 }
 
-/** Ordem já lançada no AGROTIS que o saldo do SAP vigente ainda não traz. */
-export interface ApontadaAposSaldo {
+/** Ordem que pode entrar no planejado do Estoque futuro. */
+export interface OrdemEstoqueFuturo {
   numero: string
+  /** status_efetivo da v_ordens, ou STATUS_APONTADA_APOS_SALDO. */
+  status: string
   cultivar: string
   tratamento: string
   embalagem: string
@@ -1077,32 +1080,52 @@ export interface ApontadaAposSaldo {
 }
 
 /**
- * Ordens apontadas no AGROTIS DEPOIS do último upload do saldo do SAP
- * (24/09/2026, achado do Arion: "o planejado não está contando todas as
- * ordens"). Apontada sai do planejado, mas só entra no estoque no PRÓXIMO
- * upload — no meio ela sumia dos dois lados (154 bg no dia 24/09). Um
- * arquivo exportado antes do upload não tem como conter um apontamento
- * posterior, então somar estas nunca conta em dobro. Sem saldo nenhum
- * importado, devolve [] (não há "antes" pra comparar).
+ * Ordens candidatas ao planejado do Estoque futuro, cada uma com o seu status
+ * — a tela escolhe quais status contam (seletor, 24/09/2026: "às vezes a
+ * ordem em Qualidade apontada já foi lançada no SAP e o estoque dá
+ * problema"). Duas leituras:
+ * - todas as ABERTAS (status cru fora de Apontada/Excluida — a v_ordens
+ *   nunca emite Excluida no status_efetivo, então o filtro é no cru);
+ * - as APONTADAS no AGROTIS depois do último upload do saldo do SAP: saíram
+ *   das abertas e o saldo vigente ainda não as tem (154 bg no dia 24/09).
+ *   Sem saldo importado, não há "depois" — ficam de fora.
+ * Fora do balanço (sacaria) não entra. Consulta própria, não a lista geral da
+ * tela: essa não pagina e cortaria no limite de linhas do PostgREST.
  */
-export async function listarApontadasAposSaldo(saldoCriadoEm: string | null): Promise<ApontadaAposSaldo[]> {
-  if (!saldoCriadoEm) return []
-  const { data, error } = await supabase
-    .from('v_ordens')
-    .select('numero, cultivar, receita_nome, embalagem, bags')
-    .eq('status', 'Apontada')
-    .eq('fora_balanco', false)
-    .gt('agrotis_em', saldoCriadoEm)
-    .limit(2000)
-  erro('ler ordens apontadas depois do saldo', error)
-  return ((data ?? []) as { numero: string; cultivar: string; receita_nome: string; embalagem: string; bags: number }[])
-    .map((o) => ({
-      numero: o.numero,
-      cultivar: o.cultivar,
-      tratamento: o.receita_nome,
-      embalagem: o.embalagem,
-      bags: Number(o.bags),
-    }))
+export async function listarOrdensEstoqueFuturo(saldoCriadoEm: string | null): Promise<OrdemEstoqueFuturo[]> {
+  const campos = 'numero, status_efetivo, cultivar, receita_nome, embalagem, bags'
+  type Linha = { numero: string; status_efetivo: string; cultivar: string; receita_nome: string; embalagem: string; bags: number }
+  const [abertas, apontadas] = await Promise.all([
+    supabase
+      .from('v_ordens')
+      .select(campos)
+      .not('status', 'in', '("Apontada","Excluida")')
+      .eq('fora_balanco', false)
+      .limit(5000),
+    saldoCriadoEm
+      ? supabase
+          .from('v_ordens')
+          .select(campos)
+          .eq('status', 'Apontada')
+          .eq('fora_balanco', false)
+          .gt('agrotis_em', saldoCriadoEm)
+          .limit(5000)
+      : Promise.resolve({ data: [] as Linha[], error: null }),
+  ])
+  erro('ler ordens abertas do estoque futuro', abertas.error)
+  erro('ler ordens apontadas depois do saldo', apontadas.error)
+  const mapear = (o: Linha, status: string): OrdemEstoqueFuturo => ({
+    numero: o.numero,
+    status,
+    cultivar: o.cultivar,
+    tratamento: o.receita_nome,
+    embalagem: o.embalagem,
+    bags: Number(o.bags),
+  })
+  return [
+    ...((abertas.data ?? []) as Linha[]).map((o) => mapear(o, o.status_efetivo)),
+    ...((apontadas.data ?? []) as Linha[]).map((o) => mapear(o, STATUS_APONTADA_APOS_SALDO)),
+  ]
 }
 
 /**

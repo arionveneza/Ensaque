@@ -16,11 +16,15 @@
  * de-para ficam fora da conta, contadas no resumo: não existe estoque de
  * produto acabado para abater delas.
  *
- * O planejado é o `planejado_confirmado` da view (toda ordem confirmada, do
- * Aguardando lote à Qualidade apontada, inclusive em produção) MAIS as ordens
- * já apontadas no AGROTIS depois do último saldo do SAP — que saíram do
- * planejado e ainda não estão no saldo (24/09/2026: 154 bg sumiam dos dois
- * lados até o próximo upload).
+ * O planejado é ORDEM A ORDEM, pelos status que a tela marcar (24/09/2026,
+ * pedido do Arion: "às vezes a ordem em Qualidade apontada já foi lançada no
+ * SAP e o estoque dá problema" — contar ela de novo seria dobrar o estoque).
+ * Padrão (`STATUS_PLANEJADO_PADRAO`): toda ordem confirmada, do Aguardando
+ * lote à Qualidade apontada, inclusive em produção, mais as apontadas no
+ * AGROTIS depois do último saldo do SAP — que saíram do planejado e ainda não
+ * estão no saldo (154 bg sumiam dos dois lados até o próximo upload). Sem a
+ * lista de ordens, cai no `planejado_confirmado` da view (mesma regra, sem
+ * as apontadas).
  */
 
 import { chaveProduto, normalizaTratamento } from './expedicao'
@@ -43,9 +47,24 @@ export interface ItemCarregar {
   bags: number
 }
 
-/** Ordem apontada no AGROTIS depois do saldo do SAP vigente. */
-export interface ApontadaFutura {
+/** Grupo das ordens apontadas no AGROTIS depois do último saldo do SAP. */
+export const STATUS_APONTADA_APOS_SALDO = 'Apontada após o saldo'
+
+/** Os status que o seletor oferece, na ordem do ciclo de vida (valores do status_efetivo). */
+export const STATUS_PLANEJAVEIS = [
+  'Nao programada', 'Programada', 'Aguardando lote', 'Pronto para produzir',
+  'Em producao', 'Parada', 'Finalizada', 'Qualidade apontada', STATUS_APONTADA_APOS_SALDO,
+]
+
+/** Padrão: toda ordem confirmada até a Qualidade apontada + as apontadas depois do saldo. */
+export const STATUS_PLANEJADO_PADRAO = STATUS_PLANEJAVEIS.filter(
+  (st) => st !== 'Nao programada' && st !== 'Programada',
+)
+
+/** Ordem candidata ao planejado, com o status que decide se conta. */
+export interface OrdemPlanejavel {
   numero: string
+  status: string
   cultivar: string
   tratamento: string
   embalagem: string
@@ -66,12 +85,12 @@ export interface LinhaEstoqueFuturo {
   tratamento: string
   embalagem: string
   estoque: number
-  /** Ordens confirmadas + apontadas depois do saldo do SAP. */
+  /** Soma das ordens nos status marcados. */
   planejado: number
   /** Parte do planejado que já foi apontada depois do saldo (ainda fora do SAP). */
   apontadoPosSaldo: number
-  /** Nºs das ordens apontadas depois do saldo que entraram no planejado. */
-  ordensApontadas: string[]
+  /** Ordens que entraram no planejado (vazio quando veio da view). */
+  ordensPlanejadas: { numero: string; status: string; bags: number }[]
   aCarregar: number
   futuro: number
   /** Cargas que compõem o A carregar, por data (sem data primeiro). */
@@ -89,8 +108,12 @@ export interface ResumoEstoqueFuturo {
   semTsi: { itens: number; bags: number }
   /** Embalagem sem de-para no app — fora, sem onde casar. */
   embalagemDesconhecida: { itens: number; bags: number; codigos: string[] }
-  /** Ordens apontadas depois do saldo do SAP que entraram no planejado. */
-  apontadasPosSaldo: { itens: number; bags: number }
+  /**
+   * Bags por status de TODAS as ordens candidatas (marcadas ou não), já sem
+   * SEM TSI e embalagem sem de-para — pra tela mostrar quanto cada status
+   * pesa e o que ficou de fora.
+   */
+  planejadoPorStatus: Record<string, { itens: number; bags: number }>
 }
 
 const arred2 = (x: number) => Math.round(x * 100) / 100
@@ -107,8 +130,10 @@ export function calcularEstoqueFuturo(
     ate?: string
     /** Códigos de embalagem que o app conhece (BG5M, MEIOBAG…). */
     embalagensConhecidas: ReadonlySet<string>
-    /** Ordens apontadas no AGROTIS depois do último saldo do SAP. */
-    apontadasPosSaldo?: ApontadaFutura[]
+    /** Ordens candidatas ao planejado (abertas + apontadas depois do saldo). */
+    ordens?: OrdemPlanejavel[]
+    /** Status que contam; sem isto, conta `STATUS_PLANEJADO_PADRAO`. */
+    statusPlanejado?: ReadonlySet<string>
   },
 ): { linhas: LinhaEstoqueFuturo[]; resumo: ResumoEstoqueFuturo } {
   const ate = opcoes.ate || ''
@@ -119,7 +144,7 @@ export function calcularEstoqueFuturo(
     if (!l) {
       l = {
         chave, cultivar: p.cultivar, tratamento: p.tratamento, embalagem: p.embalagem,
-        estoque: 0, planejado: 0, apontadoPosSaldo: 0, ordensApontadas: [], aCarregar: 0, futuro: 0, cargas: [],
+        estoque: 0, planejado: 0, apontadoPosSaldo: 0, ordensPlanejadas: [], aCarregar: 0, futuro: 0, cargas: [],
       }
       mapa.set(chave, l)
     }
@@ -130,7 +155,8 @@ export function calcularEstoqueFuturo(
     if (normalizaTratamento(b.tratamento) === 'SEM TSI') continue
     const l = linhaDe(b)
     l.estoque = arred2(l.estoque + (b.estoque_pa || 0))
-    l.planejado = arred2(l.planejado + (b.planejado_confirmado ?? 0))
+    // com a lista de ordens o planejado sai dela (por status); sem, da view
+    if (!opcoes.ordens) l.planejado = arred2(l.planejado + (b.planejado_confirmado ?? 0))
   }
 
   const resumo: ResumoEstoqueFuturo = {
@@ -139,21 +165,25 @@ export function calcularEstoqueFuturo(
     depois: { itens: 0, bags: 0 },
     semTsi: { itens: 0, bags: 0 },
     embalagemDesconhecida: { itens: 0, bags: 0, codigos: [] },
-    apontadasPosSaldo: { itens: 0, bags: 0 },
+    planejadoPorStatus: {},
   }
 
   // mesmo recorte do balanço: sem SEM TSI e só embalagem com de-para (SC10/SC20
   // vivem fora dos ERPs e não têm saldo no SAP pra esperar)
-  for (const o of opcoes.apontadasPosSaldo ?? []) {
+  const marcados = opcoes.statusPlanejado ?? new Set(STATUS_PLANEJADO_PADRAO)
+  for (const o of opcoes.ordens ?? []) {
     const bags = Number(o.bags) || 0
     if (bags <= 0) continue
     if (normalizaTratamento(o.tratamento) === 'SEM TSI') continue
     if (!opcoes.embalagensConhecidas.has(o.embalagem)) continue
+    const porStatus = resumo.planejadoPorStatus[o.status] ?? { itens: 0, bags: 0 }
+    soma(porStatus, bags)
+    resumo.planejadoPorStatus[o.status] = porStatus
+    if (!marcados.has(o.status)) continue
     const l = linhaDe(o)
     l.planejado = arred2(l.planejado + bags)
-    l.apontadoPosSaldo = arred2(l.apontadoPosSaldo + bags)
-    l.ordensApontadas.push(o.numero)
-    soma(resumo.apontadasPosSaldo, bags)
+    if (o.status === STATUS_APONTADA_APOS_SALDO) l.apontadoPosSaldo = arred2(l.apontadoPosSaldo + bags)
+    l.ordensPlanejadas.push({ numero: o.numero, status: o.status, bags })
   }
 
   const cargasPorLinha = new Map<string, Map<string, CargaDoProduto>>()

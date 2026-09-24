@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { calcularEstoqueFuturo, type BalancoFuturo, type ItemCarregar } from './estoqueFuturo'
+import {
+  STATUS_APONTADA_APOS_SALDO, STATUS_PLANEJADO_PADRAO, calcularEstoqueFuturo,
+  type BalancoFuturo, type ItemCarregar, type OrdemPlanejavel,
+} from './estoqueFuturo'
 
 const EMB = new Set(['BG5M', 'MEIOBAG'])
 const bal = (c: Partial<BalancoFuturo> = {}): BalancoFuturo => ({
@@ -90,40 +93,78 @@ describe('estoque futuro — data da carga', () => {
   })
 })
 
-describe('estoque futuro — ordens apontadas depois do saldo do SAP', () => {
-  const ap = (c: Partial<{ numero: string; cultivar: string; tratamento: string; embalagem: string; bags: number }> = {}) => ({
-    numero: '152714', cultivar: 'O790 IPRO', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, ...c,
+describe('estoque futuro — planejado ordem a ordem, pelos status marcados', () => {
+  const ord = (c: Partial<OrdemPlanejavel> = {}): OrdemPlanejavel => ({
+    numero: '152714', status: 'Qualidade apontada', cultivar: 'O790 IPRO', tratamento: 'FTZ60',
+    embalagem: 'BG5M', bags: 20, ...c,
   })
-  const calcAp = (b: BalancoFuturo[], apontadas: ReturnType<typeof ap>[]) =>
-    calcularEstoqueFuturo(b, [], { embalagensConhecidas: EMB, apontadasPosSaldo: apontadas })
+  const calcOrd = (b: BalancoFuturo[], ordens: OrdemPlanejavel[], status?: string[]) =>
+    calcularEstoqueFuturo(b, [], {
+      embalagensConhecidas: EMB,
+      ordens,
+      statusPlanejado: status ? new Set(status) : undefined,
+    })
 
-  it('entram no planejado da linha (saíram do planejado e ainda não estão no saldo)', () => {
-    const { linhas, resumo } = calcAp([bal({ estoque_pa: 10, planejado_confirmado: 5 })], [ap(), ap({ numero: '152719', bags: 4 })])
-    expect(linhas[0]).toMatchObject({ estoque: 10, planejado: 29, apontadoPosSaldo: 24, futuro: 39 })
-    expect(linhas[0].ordensApontadas).toEqual(['152714', '152719'])
-    expect(resumo.apontadasPosSaldo).toEqual({ itens: 2, bags: 24 })
+  it('padrão: toda ordem confirmada até a Qualidade apontada + apontadas depois do saldo; fora Não programada/Programada', () => {
+    expect(STATUS_PLANEJADO_PADRAO).toEqual([
+      'Aguardando lote', 'Pronto para produzir', 'Em producao', 'Parada', 'Finalizada',
+      'Qualidade apontada', STATUS_APONTADA_APOS_SALDO,
+    ])
+    const { linhas } = calcOrd([], [
+      ord({ numero: '1', status: 'Aguardando lote', bags: 1 }),
+      ord({ numero: '2', status: 'Pronto para produzir', bags: 2 }),
+      ord({ numero: '3', status: 'Em producao', bags: 4 }),
+      ord({ numero: '4', status: 'Parada', bags: 8 }),
+      ord({ numero: '5', status: 'Finalizada', bags: 16 }),
+      ord({ numero: '6', status: 'Qualidade apontada', bags: 32 }),
+      ord({ numero: '7', status: STATUS_APONTADA_APOS_SALDO, bags: 64 }),
+      ord({ numero: '8', status: 'Programada', bags: 128 }),
+      ord({ numero: '9', status: 'Nao programada', bags: 256 }),
+    ])
+    expect(linhas[0].planejado).toBe(127)
+    expect(linhas[0].apontadoPosSaldo).toBe(64)
   })
 
-  it('produto só com ordem apontada (sem balanço) aparece', () => {
-    const { linhas } = calcAp([], [ap({ cultivar: 'NEO802 I2X', bags: 19 })])
-    expect(linhas).toEqual([expect.objectContaining({ cultivar: 'NEO802 I2X', planejado: 19, futuro: 19 })])
+  it('desmarcar Qualidade apontada tira essas ordens do planejado (já lançadas no SAP)', () => {
+    const b = [bal({ estoque_pa: 50, planejado_confirmado: 999 })]
+    const ordens = [ord({ numero: 'A', status: 'Aguardando lote', bags: 10 }), ord({ numero: 'Q', bags: 20 })]
+    const semQa = STATUS_PLANEJADO_PADRAO.filter((st) => st !== 'Qualidade apontada')
+    const { linhas, resumo } = calcOrd(b, ordens, semQa)
+    expect(linhas[0]).toMatchObject({ estoque: 50, planejado: 10, futuro: 60 })
+    expect(linhas[0].ordensPlanejadas).toEqual([{ numero: 'A', status: 'Aguardando lote', bags: 10 }])
+    // o resumo por status continua mostrando o que ficou de fora
+    expect(resumo.planejadoPorStatus['Qualidade apontada']).toEqual({ itens: 1, bags: 20 })
   })
 
-  it('casa pela chave normalizada (FTZ 60 = FTZ60)', () => {
-    const { linhas } = calcAp([bal({ estoque_pa: 10 })], [ap({ tratamento: 'FTZ 60', bags: 3 })])
-    expect(linhas).toHaveLength(1)
-    expect(linhas[0].planejado).toBe(3)
+  it('com a lista de ordens, o planejado_confirmado da view é ignorado (não soma duas vezes)', () => {
+    const { linhas } = calcOrd([bal({ planejado_confirmado: 999 })], [ord({ bags: 5 })])
+    expect(linhas[0].planejado).toBe(5)
   })
 
-  it('SEM TSI e embalagem fora dos ERPs (SC10) não entram', () => {
-    const { linhas, resumo } = calcAp([], [ap({ tratamento: 'SEM TSI' }), ap({ embalagem: 'SC10' })])
+  it('nenhum status marcado: planejado zera, e ordem só-planejada não cria linha', () => {
+    const { linhas, resumo } = calcOrd([bal({ estoque_pa: 7 })], [ord({ cultivar: 'NEO802 I2X' })], [])
+    expect(linhas).toEqual([expect.objectContaining({ cultivar: 'O790 IPRO', planejado: 0, futuro: 7 })])
+    expect(resumo.planejadoPorStatus['Qualidade apontada'].bags).toBe(20)
+  })
+
+  it('produto só com ordem (sem balanço) aparece; casa pela chave normalizada', () => {
+    const { linhas } = calcOrd([bal({ estoque_pa: 10 })], [
+      ord({ tratamento: 'FTZ 60', bags: 3 }),
+      ord({ numero: 'X', cultivar: 'NEO802 I2X', tratamento: 'DER + LMT', bags: 19 }),
+    ])
+    expect(linhas.find((l) => l.cultivar === 'O790 IPRO')?.planejado).toBe(3)
+    expect(linhas.find((l) => l.cultivar === 'NEO802 I2X')?.planejado).toBe(19)
+  })
+
+  it('SEM TSI e embalagem fora dos ERPs (SC10) não entram nem no resumo', () => {
+    const { linhas, resumo } = calcOrd([], [ord({ tratamento: 'SEM TSI' }), ord({ embalagem: 'SC10' })])
     expect(linhas).toHaveLength(0)
-    expect(resumo.apontadasPosSaldo.itens).toBe(0)
+    expect(resumo.planejadoPorStatus).toEqual({})
   })
 
-  it('sem a lista, o planejado é só o da view', () => {
+  it('sem a lista de ordens, cai no planejado_confirmado da view', () => {
     const { linhas } = calc([bal({ planejado_confirmado: 7 })], [])
-    expect(linhas[0]).toMatchObject({ planejado: 7, apontadoPosSaldo: 0, ordensApontadas: [] })
+    expect(linhas[0]).toMatchObject({ planejado: 7, apontadoPosSaldo: 0, ordensPlanejadas: [] })
   })
 })
 
