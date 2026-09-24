@@ -18,6 +18,17 @@ export const diaCurto = (iso: string | null): string =>
   !iso ? '—' : `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 
 /**
+ * "05/08" no ano corrente, "05/08/27" fora dele. Pra data que pode estar
+ * longe — a carga 888 da montagem veio com 2027 digitado na SimpleAgro e, só
+ * com dd/mm, parecia uma carga de setembro vencida.
+ */
+export const diaCurtoComAno = (iso: string | null, hoje = new Date()): string => {
+  if (!iso) return '—'
+  const ano = String(hoje.getFullYear())
+  return iso.slice(0, 4) === ano ? diaCurto(iso) : `${diaCurto(iso)}/${iso.slice(2, 4)}`
+}
+
+/**
  * "05/08 14:32" — timestamp do banco em horário local. O dia vai junto de
  * propósito: o turno 2 cruza a meia-noite, e só a hora seria ambígua.
  */

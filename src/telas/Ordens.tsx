@@ -21,6 +21,10 @@ import {
 import {
   converterOrdens, ehPlanilhaDeOrdens, type ResultadoOrdens,
 } from '@/dominio/importacao/ordens'
+import {
+  converterMontagemVsLotes, pareceMontagemVsLotes, type ResultadoMontagem,
+} from '@/dominio/importacao/montagemCarga'
+import { calcularEstoqueFuturo } from '@/dominio/estoqueFuturo'
 import { exportarXlsx, imprimirTabela } from '@/lib/exportar'
 import { limparRascunhoDe, temRascunho, useRascunho } from '@/lib/useRascunho'
 import { supabase } from '@/lib/supabase'
@@ -45,10 +49,17 @@ import { useAuth } from '@/auth/AuthProvider'
 import { Destinacao } from '@/componentes/Destinacao'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, SeletorMultiplo, Tabela, Tag, Vazio,
-  corDoStatus, diaCurto, enderecoLote, inteiro, n,
+  corDoStatus, dataHoraCurta, diaCurto, diaCurtoComAno, enderecoLote, inteiro, n,
 } from '@/componentes/ui'
 
 const SA_BASE = 'https://sementesveneza.painel.simpleagro.com.br:3333'
+
+/** Dia LOCAL de um timestamp do banco (aaaa-mm-dd) — pra dizer se duas cargas são do mesmo dia. */
+const diaLocalDe = (iso: string): string => {
+  const d = new Date(iso)
+  const p2 = (v: number) => String(v).padStart(2, '0')
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+}
 const SA_PEDIDOS = `${SA_BASE}/sales/relatorios/pedidos-analitico-resumido`
 const SA_SALDOS = `${SA_BASE}/work/saldos`
 
@@ -193,13 +204,39 @@ export default function Ordens() {
   const [previaSaldos, setPreviaSaldos] = useState<ResultadoSaldos | null>(null)
   const [previaSaldoSap, setPreviaSaldoSap] = useState<ResultadoSaldoSap | null>(null)
   const [previaOrdens, setPreviaOrdens] = useState<ResultadoOrdens | null>(null)
+  const [previaMontagem, setPreviaMontagem] = useState<ResultadoMontagem | null>(null)
+  /** Carga vigente da montagem de carga (o A carregar do Estoque futuro); null = nunca importada. */
+  const [montagem, setMontagem] = useState<Awaited<ReturnType<typeof g.listarMontagemCarga>>>(null)
+  /** Falha na última leitura da montagem — a tela mantém a anterior e avisa. */
+  const [montagemErro, setMontagemErro] = useState<string | null>(null)
+  /** Hora da última carga de saldo do SAP, pra comparar com a da montagem. */
+  const [saldoCriadoEm, setSaldoCriadoEm] = useState<string | null>(null)
+
+  /**
+   * Montagem e hora do saldo lidas À PARTE do resto: falha nelas não derruba a
+   * tela nem troca a montagem boa por "nunca importada" (a coluna A carregar
+   * zeraria em silêncio) — mantém o que já tinha e avisa (revisão adversarial,
+   * 24/09/2026). Nunca rejeita: entra num Promise.all com os outros.
+   */
+  const recarregarMontagem = useCallback(async () => {
+    try {
+      const [mc, sc] = await Promise.all([g.listarMontagemCarga(), g.dataUltimaCarga('estoque')])
+      setMontagem(mc)
+      setSaldoCriadoEm(sc)
+      setMontagemErro(null)
+    } catch (e) {
+      setMontagemErro(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
 
   const recarregar = useCallback(async () => {
-    const [o, b, cf] = await Promise.all([g.listarOrdens(), g.listarBalanco(), g.listarConferencias()])
+    const [o, b, cf] = await Promise.all([
+      g.listarOrdens(), g.listarBalanco(), g.listarConferencias(), recarregarMontagem(),
+    ])
     setOrdens(o)
     setBalanco(b)
     setConferencias(cf)
-  }, [])
+  }, [recarregarMontagem])
 
   useEffect(() => {
     let vivo = true
@@ -207,6 +244,7 @@ export default function Ordens() {
     Promise.all([
       g.listarOrdens(), g.listarLotes(), g.listarReceitas(),
       g.listarEmbalagens(), api.carregarCadastros(), g.listarBalanco(), g.listarConferencias(),
+      recarregarMontagem(),
     ])
       .then(([o, l, r, e, c, b, cf]) => {
         if (!vivo) return
@@ -217,10 +255,10 @@ export default function Ordens() {
       .catch((x) => vivo && setErro(x instanceof Error ? x.message : String(x)))
       .finally(() => vivo && setCarregando(false))
     return () => { vivo = false }
-  }, [])
+  }, [recarregarMontagem])
 
   useRealtime(
-    ['ordens', 'lotes_semente', 'pedidos_venda', 'estoque_pa', 'ordem_conferencias'],
+    ['ordens', 'lotes_semente', 'pedidos_venda', 'estoque_pa', 'ordem_conferencias', 'montagem_carga_itens'],
     recarregar,
   )
 
@@ -250,6 +288,7 @@ export default function Ordens() {
     if (!arquivo) return
     setErro(null); setMsg(null)
     setPreviaPedidos(null); setPreviaSaldos(null); setPreviaSaldoSap(null); setPreviaOrdens(null)
+    setPreviaMontagem(null)
     try {
       const rows = await linhasDoArquivo(arquivo)
 
@@ -259,6 +298,10 @@ export default function Ordens() {
         setPreviaSaldos(converterSaldos(rows))
       } else if (ehRelatorioSaldoSap(rows)) {
         setPreviaSaldoSap(converterSaldoSap(rows))
+      } else if (pareceMontagemVsLotes(rows)) {
+        // com coluna faltando o conversor lança "faltam as colunas X" — melhor
+        // que o erro genérico, ou que cair na prévia de planilha de ordens
+        setPreviaMontagem(converterMontagemVsLotes(rows))
       } else if (ehPlanilhaDeOrdens(rows)) {
         setPreviaOrdens(
           converterOrdens(rows, {
@@ -272,7 +315,8 @@ export default function Ordens() {
       } else {
         setErro(
           'Planilha não reconhecida. Esperado o "Pedidos Analítico Resumido", a exportação de ' +
-            '"Saldos" da SimpleAgro, o export de saldos do SAP, ou uma planilha de ordens com as ' +
+            '"Saldos" da SimpleAgro, o export de saldos do SAP, o "montagem carga vs lotes" da ' +
+            'SimpleAgro, ou uma planilha de ordens com as ' +
             'colunas Ordem, Lote, Tratamento, Embalagem e Bags.',
         )
       }
@@ -468,6 +512,10 @@ export default function Ordens() {
               <b>Saldos</b> — alimenta dois destinos: linhas com embalagem e tratamento{' '}
               <code>SEM TSI</code> viram lotes de semente; com tratamento real viram estoque de
               produto acabado. Pré-lote e granel são ignorados.
+            </li>
+            <li>
+              <b>Montagem carga vs lotes</b> — o que está em ordem de carregamento e ainda não
+              foi faturado; vira a coluna A carregar do Estoque futuro.
             </li>
             <li>
               <b>Planilha de ordens</b> (opcional, não vem da SimpleAgro) — cria várias ordens de
@@ -832,6 +880,135 @@ export default function Ordens() {
             </div>
           )}
 
+          {previaMontagem && (
+            <div className="mt-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
+              <h4 className="text-sm font-semibold">Montagem carga vs lotes — A carregar</h4>
+              <ul className="mt-2 space-y-1 text-sm text-stone-600 dark:text-stone-300">
+                <li>
+                  {previaMontagem.resumo.totalLinhas} linha(s) →{' '}
+                  <b>{previaMontagem.resumo.itens} item(ns) de agendamento</b>
+                  {previaMontagem.resumo.linhasDeLoteRepetidas > 0 && (
+                    <>
+                      {' '}({previaMontagem.resumo.linhasDeLoteRepetidas} linha(s) eram só mais um
+                      lote de um item já contado — a Qtd Agendada entra uma vez)
+                    </>
+                  )}
+                  {previaMontagem.resumo.linhasIgnoradas > 0 &&
+                    ` · ${previaMontagem.resumo.linhasIgnoradas} linha(s) em branco/sem carga ignoradas`}
+                  {previaMontagem.resumo.semQuantidade > 0 &&
+                    ` · ${previaMontagem.resumo.semQuantidade} sem Qtd Agendada`}
+                </li>
+                <li>
+                  <b>{inteiro(previaMontagem.resumo.bagsACarregar)} bags a carregar</b> em{' '}
+                  {previaMontagem.resumo.itensACarregar} item(ns):{' '}
+                  {Object.entries(previaMontagem.resumo.porStatus)
+                    .sort((a, b) => b[1].bags - a[1].bags)
+                    .map(([st, v]) => `${st} ${inteiro(v.bags)}`)
+                    .join(' · ')}
+                </li>
+                <li className="text-stone-500">
+                  Fora (já faturado): {previaMontagem.resumo.jaFaturados.itens} item(ns) ·{' '}
+                  {inteiro(previaMontagem.resumo.jaFaturados.bags)} bags
+                  {Object.keys(previaMontagem.resumo.jaFaturados.porStatus).length > 0 &&
+                    ` (${Object.entries(previaMontagem.resumo.jaFaturados.porStatus)
+                      .map(([st, v]) => `${st} ${inteiro(v.bags)}`)
+                      .join(' · ')})`}
+                </li>
+                {previaMontagem.resumo.semTsi.itens > 0 && (
+                  <li className="text-stone-500">
+                    {inteiro(previaMontagem.resumo.semTsi.bags)} bags de semente branca (SEM TSI) —
+                    gravados, mas fora do estoque futuro de produto tratado
+                  </li>
+                )}
+                {previaMontagem.resumo.loteParcial > 0 && (
+                  <li className="text-stone-500">
+                    {previaMontagem.resumo.loteParcial} item(ns) com loteamento pela metade — contado
+                    o agendado, não o lote
+                  </li>
+                )}
+              </ul>
+              {previaMontagem.resumo.linhasOrfasComLote > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    {previaMontagem.resumo.linhasOrfasComLote} linha(s) com lote mas sem carga nem
+                    produto — anotação fora da estrutura do relatório, ignorada. Se for de um item
+                    real, corrija na SimpleAgro e exporte de novo.
+                  </Aviso>
+                </div>
+              )}
+              {previaMontagem.itens.length === 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Nenhum item a carregar</b> neste relatório (tudo já faturado, ou vazio).
+                    Importar grava uma carga vazia e <b>zera a coluna A carregar</b> — é o certo
+                    quando não há mais nada nos caminhões; a carga anterior deixa de valer.
+                  </Aviso>
+                </div>
+              )}
+              {previaMontagem.resumo.semData > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    {previaMontagem.resumo.semData} item(ns) sem Data Carga — entram em qualquer data
+                    escolhida (prazo desconhecido conta como demanda).
+                  </Aviso>
+                </div>
+              )}
+              {Object.keys(previaMontagem.resumo.embalagemDesconhecida).length > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Embalagem sem de-para</b> (fica fora da conta do estoque futuro):{' '}
+                    {Object.entries(previaMontagem.resumo.embalagemDesconhecida)
+                      .map(([e, b]) => `${e} (${inteiro(b)} bg)`)
+                      .join(' · ')}
+                  </Aviso>
+                </div>
+              )}
+              <div className="mt-3">
+                <Botao
+                  variante="primario"
+                  onClick={() => {
+                    if (
+                      previaMontagem.itens.length === 0 &&
+                      !confirm(
+                        'Nenhum item a carregar neste relatório. Importar vai ZERAR a coluna A carregar ' +
+                          '(a carga anterior deixa de valer). Continuar?',
+                      )
+                    ) {
+                      return
+                    }
+                    comErro(async () => {
+                      const qtd = await g.importarMontagemCarga(
+                        previaMontagem.itens.map((i) => ({
+                          numero_carga: i.carga,
+                          status_carga: i.status,
+                          data_carga: i.dataCarga,
+                          pedido: i.pedido,
+                          cultivar: i.cultivar,
+                          categoria: i.categoria,
+                          tratamento: i.tratamento,
+                          embalagem: i.embalagem,
+                          bags: i.bags,
+                          bags_loteados: i.bagsLoteados,
+                          lotes: i.lotes,
+                        })),
+                        usuario!.id,
+                      )
+                      setPreviaMontagem(null)
+                      setMsg(
+                        `${qtd} item(ns) a carregar importados — substituição total da carga anterior. ` +
+                          'Veja na aba Estoque futuro do painel de demanda.',
+                      )
+                    })
+                  }}
+                >
+                  {previaMontagem.itens.length === 0
+                    ? 'Importar (nada a carregar — zera o A carregar)'
+                    : 'Importar A carregar (substitui a carga)'}
+                </Botao>
+              </div>
+            </div>
+          )}
+
           {previaOrdens && (
             <div className="mt-4 rounded-md border border-stone-200 p-4 dark:border-stone-700">
               <h4 className="text-sm font-semibold">Planilha de ordens</h4>
@@ -969,6 +1146,9 @@ export default function Ordens() {
         lotes={lotes}
         receitas={receitas}
         maquinas={maquinas}
+        montagem={montagem}
+        montagemErro={montagemErro}
+        saldoCriadoEm={saldoCriadoEm}
         onProgramado={recarregar}
       />
 
@@ -1236,6 +1416,9 @@ function PainelDemanda({
   lotes,
   receitas,
   maquinas,
+  montagem,
+  montagemErro,
+  saldoCriadoEm,
   onProgramado,
 }: {
   balanco: BalancoLinha[]
@@ -1244,6 +1427,12 @@ function PainelDemanda({
   lotes: LoteSementeLinha[]
   receitas: ReceitaCompleta[]
   maquinas: api.LinhaMaquina[]
+  /** Carga vigente da montagem de carga (A carregar); null = nunca importada. */
+  montagem: { itens: g.MontagemItemLinha[]; criadaEm: string } | null
+  /** Última leitura da montagem falhou — a de cima é a anterior. */
+  montagemErro: string | null
+  /** Hora da última carga de saldo do SAP (estoque_pa). */
+  saldoCriadoEm: string | null
   onProgramado: () => void
 }) {
   /** Item da fila sendo programado agora — abre o modal de divisão por lote. */
@@ -1288,6 +1477,9 @@ function PainelDemanda({
     () => balancoTodo.filter((b) => !ehSemTsi(b.tratamento) && !foraDoBalanco.has(b.embalagem)),
     [balancoTodo, foraDoBalanco],
   )
+  // com montagem importada e balanço vazio (base nova), a aba Estoque futuro
+  // ainda tem o que mostrar (A carregar, futuro negativo)
+  const semDados = balanco.length === 0 && (montagem?.itens.length ?? 0) === 0
 
   // Filtro/ordenação sobrevivem a recarregar (`useRascunho`, mesmo padrão da
   // aba de Cadastros): sem isto, qualquer atualização em tempo real de
@@ -1387,22 +1579,53 @@ function PainelDemanda({
    * Parada/Finalizada, ainda em curso). `planejado_confirmado` já vem
    * assim da view — aqui só soma com o estoque e filtra/ordena.
    */
+  // "A carregar" (pedido do Arion, 24/09/2026): futuro = estoque + planejado
+  // − o que está em ordem de carregamento e ainda não foi faturado, com
+  // Data Carga até o dia escolhido (vazio = todas as datas). Item sem data
+  // entra sempre. A conta é de `calcularEstoqueFuturo` (domínio, testado).
+  const [ateCarga, setAteCarga] = useState('')
+  type CampoFuturo = 'cultivar' | 'tratamento' | 'embalagem' | 'estoque' | 'planejado' | 'aCarregar' | 'futuro'
+  const [ordFuturo, setOrdFuturo] = useState<{ campo: CampoFuturo; dir: 'asc' | 'desc' } | null>(null)
+  const alternarOrdFuturo = (campo: CampoFuturo) =>
+    setOrdFuturo((o) =>
+      !o || o.campo !== campo ? { campo, dir: 'asc' } : o.dir === 'asc' ? { campo, dir: 'desc' } : null,
+    )
+  const setaFuturo = (campo: CampoFuturo): 'asc' | 'desc' | undefined =>
+    ordFuturo?.campo === campo ? ordFuturo.dir : undefined
+  const futuroCalc = useMemo(
+    () =>
+      calcularEstoqueFuturo(balanco, montagem?.itens ?? [], {
+        ate: ateCarga,
+        embalagensConhecidas: new Set(Object.values(EMBALAGEM_DEPARA).map((e) => e.codigo)),
+      }),
+    [balanco, montagem, ateCarga],
+  )
   const estoqueFuturo = useMemo(() => {
-    return balanco
-      .filter((b) => b.estoque_pa > 0 || (b.planejado_confirmado ?? 0) > 0)
-      .map((b) => ({
-        cultivar: b.cultivar,
-        tratamento: b.tratamento,
-        embalagem: b.embalagem,
-        estoque: b.estoque_pa,
-        planejado: b.planejado_confirmado ?? 0,
-        futuro: b.estoque_pa + (b.planejado_confirmado ?? 0),
-      }))
-      .sort((a, b) =>
-        b.futuro - a.futuro ||
-        a.cultivar.localeCompare(b.cultivar, 'pt-BR') ||
-        a.tratamento.localeCompare(b.tratamento, 'pt-BR'))
-  }, [balanco])
+    const lista = futuroCalc.linhas
+    if (!ordFuturo) return lista
+    const { campo, dir } = ordFuturo
+    return lista.slice().sort((a, b) => {
+      const d =
+        campo === 'cultivar' || campo === 'tratamento' || campo === 'embalagem'
+          ? a[campo].localeCompare(b[campo], 'pt-BR', { numeric: true })
+          : a[campo] - b[campo]
+      return dir === 'asc' ? d : -d
+    })
+  }, [futuroCalc, ordFuturo])
+  const totalFuturo = useMemo(
+    () =>
+      estoqueFuturo.reduce(
+        (t, l) => ({
+          estoque: t.estoque + l.estoque,
+          planejado: t.planejado + l.planejado,
+          aCarregar: t.aCarregar + l.aCarregar,
+          futuro: t.futuro + l.futuro,
+          negativos: t.negativos + (l.futuro < 0 ? 1 : 0),
+        }),
+        { estoque: 0, planejado: 0, aCarregar: 0, futuro: 0, negativos: 0 },
+      ),
+    [estoqueFuturo],
+  )
 
   const linhas = useMemo(() => {
     let lista =
@@ -1468,14 +1691,19 @@ function PainelDemanda({
       )
     } else if (abaDemanda === 'futuro') {
       exportarXlsx(
-        'estoque-futuro',
+        ateCarga ? `estoque-futuro-ate-${ateCarga}` : 'estoque-futuro',
         [
           { titulo: 'Cultivar', largura: 18 }, { titulo: 'Tratamento', largura: 22 }, { titulo: 'Embalagem', largura: 12 },
           { titulo: 'Estoque', largura: 10, tipo: 'numero', casas: 0 },
           { titulo: 'Planejado', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: ateCarga ? `A carregar até ${diaCurtoComAno(ateCarga)}` : 'A carregar', largura: 16, tipo: 'numero', casas: 0 },
           { titulo: 'Estoque futuro', largura: 14, tipo: 'numero', casas: 0 },
+          { titulo: 'Cargas', largura: 40 },
         ],
-        estoqueFuturo.map((l) => [l.cultivar, l.tratamento, l.embalagem, l.estoque, l.planejado, l.futuro]),
+        estoqueFuturo.map((l) => [
+          l.cultivar, l.tratamento, l.embalagem, l.estoque, l.planejado, l.aCarregar, l.futuro,
+          l.cargas.map((c) => `${c.carga} (${c.data ? diaCurtoComAno(c.data) : 'sem data'}, ${c.bags})`).join(' · '),
+        ]),
       )
     } else {
       exportarXlsx(
@@ -1516,7 +1744,7 @@ function PainelDemanda({
       acoes={<Botao onClick={alternar}>Mostrar</Botao>}
       className="mb-5"
     >
-      {balanco.length === 0 ? (
+      {semDados ? (
         <p className="text-sm text-stone-500">Nenhuma carga de demanda importada ainda.</p>
       ) : (
         <p className="text-sm text-stone-600 dark:text-stone-300">
@@ -1543,17 +1771,28 @@ function PainelDemanda({
       titulo="Demanda × Estoque × Planejado"
       acoes={
         <>
-          <Botao onClick={exportarDemanda} disabled={balanco.length === 0}>Exportar .xlsx</Botao>
+          <Botao
+            onClick={exportarDemanda}
+            disabled={
+              abaDemanda === 'futuro'
+                ? estoqueFuturo.length === 0
+                : abaDemanda === 'faturar'
+                  ? estoqueTipoPedido.length === 0
+                  : linhas.length === 0
+            }
+          >
+            Exportar .xlsx
+          </Botao>
           <Botao onClick={alternar}>Ocultar</Botao>
         </>
       }
       className="mb-5"
     >
-      {balanco.length === 0 ? (
+      {semDados ? (
         <Vazio>
           Nenhuma carga de demanda importada ainda. Suba o relatório
-          “Pedidos Analítico Resumido” e a exportação de “Saldos” da SimpleAgro no botão
-          Importar planilha acima.
+          “Pedidos Analítico Resumido”, a exportação de “Saldos” da SimpleAgro (ou o saldo do
+          SAP) e o “montagem carga vs lotes” no botão Carregar planilha acima.
         </Vazio>
       ) : (
         <>
@@ -1650,33 +1889,104 @@ function PainelDemanda({
           ) : abaDemanda === 'futuro' ? (
             <>
               <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
-                Estoque do SAP + o que está planejado a produzir — só contando ordem em{' '}
-                <b>Aguardando lote</b>, <b>Pronto para produzir</b> ou <b>Qualidade apontada</b>{' '}
-                (nunca Não programada/Programada, que ainda podem mudar sem custo, nem Em
-                produção/Parada/Finalizada, ainda em curso).
+                <b>Estoque futuro = estoque do SAP + planejado − A carregar.</b> Planejado conta só
+                ordem em <b>Aguardando lote</b>, <b>Pronto para produzir</b> ou{' '}
+                <b>Qualidade apontada</b>. A carregar é o que está em ordem de carregamento na
+                SimpleAgro e ainda não foi faturado (fora Faturado Fiscal, Faturado Transporte e
+                Finalizado), com a Qtd Agendada contada uma vez por item.
               </p>
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                <label className="flex items-center gap-2 text-stone-600 dark:text-stone-300">
+                  Cargas até
+                  <input
+                    type="date"
+                    value={ateCarga}
+                    onChange={(e) => setAteCarga(e.target.value)}
+                    className={CAMPO_FILTRO}
+                  />
+                </label>
+                {ateCarga && <Botao onClick={() => setAteCarga('')}>todas as datas</Botao>}
+                {montagem && (
+                  <span className="text-xs text-stone-500">
+                    montagem importada em {dataHoraCurta(montagem.criadaEm)}
+                    {saldoCriadoEm && <> · saldo do SAP em {dataHoraCurta(saldoCriadoEm)}</>}
+                  </span>
+                )}
+              </div>
+              {montagemErro && (
+                <div className="mb-3">
+                  <Aviso gravidade="bloqueio">
+                    Não consegui ler o A carregar agora ({montagemErro}) — a coluna pode estar
+                    desatualizada{montagem ? ' (mostrando a última leitura que deu certo)' : ''}.
+                  </Aviso>
+                </div>
+              )}
+              {montagem && saldoCriadoEm && diaLocalDe(montagem.criadaEm) !== diaLocalDe(saldoCriadoEm) && (
+                <div className="mb-3">
+                  <Aviso>
+                    <b>Saldo do SAP e montagem são de dias diferentes.</b>{' '}
+                    {Date.parse(montagem.criadaEm) < Date.parse(saldoCriadoEm)
+                      ? 'A montagem é a mais velha: carga faturada depois dela já saiu do SAP e ainda está no A carregar — desconto em dobro. Reimporte a montagem.'
+                      : 'O saldo do SAP é o mais velho: carga faturada depois dele já saiu do A carregar mas ainda conta no estoque — falta desconto. Reimporte o saldo do SAP.'}
+                  </Aviso>
+                </div>
+              )}
+              {!montagem && (
+                <div className="mb-3">
+                  <Aviso>
+                    Nenhum “montagem carga vs lotes” importado ainda — a coluna A carregar fica
+                    zerada. Suba o relatório no botão Carregar planilha, em Carga diária.
+                  </Aviso>
+                </div>
+              )}
+              {montagem && (
+                <p className="mb-3 text-xs text-stone-500">
+                  A carregar {ateCarga ? `até ${diaCurtoComAno(ateCarga)}` : 'em todas as datas'}:{' '}
+                  <b>{inteiro(futuroCalc.resumo.considerados.bags)} bg</b>
+                  {futuroCalc.resumo.semData.itens > 0 &&
+                    ` (${inteiro(futuroCalc.resumo.semData.bags)} sem data — entram em qualquer dia)`}
+                  {futuroCalc.resumo.depois.itens > 0 &&
+                    ` · ${inteiro(futuroCalc.resumo.depois.bags)} bg com carga depois do dia, fora`}
+                  {futuroCalc.resumo.semTsi.itens > 0 &&
+                    ` · ${inteiro(futuroCalc.resumo.semTsi.bags)} bg de semente branca (SEM TSI), fora`}
+                  {futuroCalc.resumo.embalagemDesconhecida.itens > 0 &&
+                    ` · ${inteiro(futuroCalc.resumo.embalagemDesconhecida.bags)} bg em embalagem sem de-para (${futuroCalc.resumo.embalagemDesconhecida.codigos.join(', ')}), fora`}
+                  . Suba o saldo do SAP e a montagem no mesmo dia: carga faturada depois do saldo
+                  já saiu do SAP e ainda apareceria aqui.
+                </p>
+              )}
               {estoqueFuturo.length === 0 ? (
-                <Vazio>Nenhum item com estoque ou planejado confirmado nesta carga.</Vazio>
+                <Vazio>Nenhum item com estoque, planejado confirmado ou carga a carregar.</Vazio>
               ) : (
                 <Tabela
-                  cabecalho={['Cultivar', 'Tratamento', 'Emb.', '#Estoque', '#Planejado', '#Estoque futuro']}
+                  cabecalho={[
+                    { texto: 'Cultivar', onClick: () => alternarOrdFuturo('cultivar'), ordem: setaFuturo('cultivar') },
+                    { texto: 'Tratamento', onClick: () => alternarOrdFuturo('tratamento'), ordem: setaFuturo('tratamento') },
+                    { texto: 'Emb.', onClick: () => alternarOrdFuturo('embalagem'), ordem: setaFuturo('embalagem') },
+                    { texto: '#Estoque', onClick: () => alternarOrdFuturo('estoque'), ordem: setaFuturo('estoque') },
+                    { texto: '#Planejado', onClick: () => alternarOrdFuturo('planejado'), ordem: setaFuturo('planejado') },
+                    { texto: '#A carregar', onClick: () => alternarOrdFuturo('aCarregar'), ordem: setaFuturo('aCarregar') },
+                    { texto: '#Estoque futuro', onClick: () => alternarOrdFuturo('futuro'), ordem: setaFuturo('futuro') },
+                  ]}
                   rodape={
                     <tr className="border-t border-stone-200 font-semibold dark:border-stone-800">
-                      <td className="px-2 py-1.5" colSpan={3}>Total</td>
-                      <td className="num-tabular px-2 py-1.5 text-right">
-                        {inteiro(estoqueFuturo.reduce((a, l) => a + l.estoque, 0))}
+                      <td className="px-2 py-1.5" colSpan={3}>
+                        Total
+                        {totalFuturo.negativos > 0 && (
+                          <span className="ml-2 text-xs font-normal text-red-600 dark:text-red-400">
+                            {totalFuturo.negativos} item(ns) ficam negativos
+                          </span>
+                        )}
                       </td>
-                      <td className="num-tabular px-2 py-1.5 text-right">
-                        {inteiro(estoqueFuturo.reduce((a, l) => a + l.planejado, 0))}
-                      </td>
-                      <td className="num-tabular px-2 py-1.5 text-right">
-                        {inteiro(estoqueFuturo.reduce((a, l) => a + l.futuro, 0))}
-                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{inteiro(totalFuturo.estoque)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{inteiro(totalFuturo.planejado)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{inteiro(totalFuturo.aCarregar)}</td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{inteiro(totalFuturo.futuro)}</td>
                     </tr>
                   }
                 >
-                  {estoqueFuturo.map((l, i) => (
-                    <tr key={i} className="border-t border-stone-100 dark:border-stone-800/60">
+                  {estoqueFuturo.map((l) => (
+                    <tr key={l.chave} className="border-t border-stone-100 dark:border-stone-800/60">
                       <td className="px-2 py-1.5">{l.cultivar}</td>
                       <td className="px-2 py-1.5">{l.tratamento}</td>
                       <td className="whitespace-nowrap px-2 py-1.5"><Emb codigo={l.embalagem} /></td>
@@ -1686,7 +1996,36 @@ function PainelDemanda({
                       <td className="num-tabular px-2 py-1.5 text-right">
                         {l.planejado > 0 ? inteiro(l.planejado) : <span className="text-stone-300">—</span>}
                       </td>
-                      <td className="num-tabular px-2 py-1.5 text-right font-semibold">{inteiro(l.futuro)}</td>
+                      <td
+                        className="num-tabular px-2 py-1.5 text-right"
+                        title={
+                          l.cargas.length > 0
+                            ? l.cargas
+                                .map((c) => `Carga ${c.carga} · ${c.data ? diaCurtoComAno(c.data) : 'sem data'} · ${c.status} · ${inteiro(c.bags)} bg`)
+                                .join('\n')
+                            : undefined
+                        }
+                      >
+                        {l.aCarregar > 0 ? (
+                          <span className="cursor-help underline decoration-dotted underline-offset-2">
+                            {inteiro(l.aCarregar)}
+                          </span>
+                        ) : (
+                          <span className="text-stone-300">—</span>
+                        )}
+                        {l.cargas.length > 0 && (
+                          <div className="text-[11px] font-normal text-stone-400">
+                            {l.cargas.length === 1 ? `carga ${l.cargas[0].carga}` : `${l.cargas.length} cargas`}
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        className={`num-tabular px-2 py-1.5 text-right font-semibold ${
+                          l.futuro < 0 ? 'text-red-600 dark:text-red-400' : ''
+                        }`}
+                      >
+                        {inteiro(l.futuro)}
+                      </td>
                     </tr>
                   ))}
                 </Tabela>

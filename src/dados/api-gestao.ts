@@ -978,6 +978,115 @@ export async function listarEstoqueQuimicos(): Promise<
   return { itens: (data ?? []) as EstoqueQuimicoLinha[], criadaEm: carga.criada_em }
 }
 
+/**
+ * Item em ordem de carregamento ainda não faturado (relatório montagem carga
+ * vs lotes da SimpleAgro) — o "A carregar" do Estoque futuro (24/09/2026).
+ */
+export interface MontagemItemLinha {
+  numero_carga: string
+  status_carga: string
+  data_carga: string | null
+  pedido: string
+  cultivar: string
+  categoria: string
+  tratamento: string
+  embalagem: string
+  bags: number
+  bags_loteados: number
+  lotes: number
+}
+
+/**
+ * Grava a foto do que está a carregar (substituição total = carga nova), numa
+ * transação só (RPC `importar_montagem_carga`): carga e itens entram juntos
+ * ou nada entra — antes a carga era criada primeiro e quem lesse no meio
+ * pegava uma vigente com 0 itens. Lista vazia é válida: "nada a carregar"
+ * (tudo faturado) é uma foto legítima, e é a única forma de zerar a coluna.
+ */
+export async function importarMontagemCarga(
+  itens: MontagemItemLinha[],
+  usuarioId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .rpc('importar_montagem_carga', { p_itens: itens, p_usuario: usuarioId })
+    .single()
+  if (error) {
+    throw new Error(
+      `gravar montagem de carga: ${error.message} — a migração montagem-carga-a-carregar.sql já rodou?`,
+    )
+  }
+  return Number((data as { itens: number }).itens)
+}
+
+/** Erro do PostgREST que significa "a tabela/coluna não existe ainda" (migração pendente). */
+const migracaoPendente = (e: { code?: string; message: string }) =>
+  e.code === '42P01' || e.code === '42703' || /does not exist|schema cache/i.test(e.message)
+
+/**
+ * Itens da carga VIGENTE da montagem (a última tipo 'montagem'). Null SÓ
+ * quando nada foi importado ainda (ou a migração está pendente). Qualquer
+ * outra falha — rede, timeout, JWT — LANÇA: devolver null aqui fazia a tela
+ * trocar uma montagem boa por "nunca importado" e o estoque futuro subir em
+ * silêncio (achado da revisão adversarial, 24/09/2026).
+ */
+export async function listarMontagemCarga(): Promise<
+  { itens: MontagemItemLinha[]; criadaEm: string } | null
+> {
+  const ult = await supabase
+    .from('cargas_demanda')
+    .select('id, criada_em')
+    .eq('tipo', 'montagem')
+    .order('criada_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (ult.error) {
+    if (migracaoPendente(ult.error)) return null
+    erro('ler a carga da montagem', ult.error)
+  }
+  if (!ult.data) return null
+  const carga = ult.data as { id: string; criada_em: string }
+  const itens: MontagemItemLinha[] = []
+  // paginado: o PostgREST corta em 1.000 linhas por resposta
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await supabase
+      .from('montagem_carga_itens')
+      .select(
+        'numero_carga, status_carga, data_carga, pedido, cultivar, categoria, tratamento, embalagem, bags, bags_loteados, lotes',
+      )
+      .eq('carga_id', carga.id)
+      .order('id')
+      .range(de, de + 999)
+    if (error) {
+      if (migracaoPendente(error)) return null
+      erro('ler os itens da montagem', error)
+    }
+    const bloco = (data ?? []) as MontagemItemLinha[]
+    itens.push(...bloco.map((b) => ({ ...b, bags: Number(b.bags), bags_loteados: Number(b.bags_loteados) })))
+    if (bloco.length < 1000) break
+  }
+  return { itens, criadaEm: carga.criada_em }
+}
+
+/**
+ * Quando foi a última carga de um tipo (`criada_em`), ou null se nunca houve.
+ * O Estoque futuro compara a hora do saldo do SAP com a da montagem: carga
+ * faturada entre os dois uploads é descontada duas vezes (montagem mais
+ * velha) ou nenhuma (saldo mais velho).
+ */
+export async function dataUltimaCarga(
+  tipo: 'pedidos' | 'estoque' | 'quimicos' | 'montagem',
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('cargas_demanda')
+    .select('criada_em')
+    .eq('tipo', tipo)
+    .order('criada_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  erro(`ler a última carga de ${tipo}`, error)
+  return (data as { criada_em: string } | null)?.criada_em ?? null
+}
+
 export interface ResumoImportacaoLotes {
   importados: number
   /**

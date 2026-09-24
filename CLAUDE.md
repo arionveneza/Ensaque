@@ -401,6 +401,76 @@ memoizadas de cada aba (`linhas`/`estoqueTipoPedido`/`estoqueFuturo`) — nenhum
 nova. A planilha do Balanço leva as colunas coop./mult. de Pedido e Faturado separadas
 (não só o total), porque numa exportação — ao contrário da tela — não tem onde mostrar a
 sublinha âmbar/azul.
+**"A carregar" no Estoque futuro** (24/09/2026, pedido do Arion: "o saldo futuro será composto
+por ((estoque + planejado) − A carregar)"). Fonte: relatório **"montagem carga vs lotes"** da
+SimpleAgro, subido no MESMO botão "Carregar planilha" da Carga diária (detectado por
+`ehRelatorioMontagemVsLotes` — exige Carga, Status Carga, Data Carga, Produto, Tratamento,
+Embalagem, Qtd Agendada, **Lote** e **Quantidade Lote**, o que o separa do relatório de
+pedidos agendados da Expedição). Conversor puro `src/dominio/importacao/montagemCarga.ts`.
+**O ponto que ele marcou como o mais importante**: o relatório tem UMA LINHA POR LOTE e repete
+a `Qtd Agendada` do item em todas (3 lotes de um item de 35 = três linhas com 35 — somar dá
+105); somar `Quantidade Lote` também erra (35 agendados com só 5 loteados daria 5). **Vale a
+Qtd Agendada, uma vez por item**, com lote, lote parcial ou nenhum. Não há coluna de "item" e
+a MESMA carga+pedido+produto pode ter vários itens (carga 910: itens de 2, 10 e 23; carga 877:
+dois itens de 1), então o item sai da ESTRUTURA, conferida em 41 exportações reais no formato
+atual: item sem lote é uma linha só, e os lotes de um item nunca passam da Qtd Agendada
+quando são dois ou mais. **As linhas de um item NÃO vêm sempre coladas** (achado da revisão
+adversarial: a SimpleAgro não agrupa por carga, e em 4 de 42 exportações uma carga aparece
+em blocos separados — no export de 01/09 a carga 755 tem os lotes nas linhas 18, 22 e 23
+com a carga 753 no meio; a 1ª versão, que só continuava o item na linha seguinte, contava
+45 duas vezes). Regra final: agrupar pela chave completa (carga, pedido, produto, categoria,
+tratamento, embalagem, Qtd Agendada) no arquivo inteiro, na ordem da primeira aparição, e
+partir cada grupo em itens — linha sem lote é item próprio; linhas com lote se somam ao item
+enquanto Σ Quantidade Lote ≤ agendado, e a que passaria abre item novo (o mesmo lote em dois
+endereços do mesmo item continua um item). Conferido nas 42 exportações contra o gabarito
+(o mesmo grupo num export anterior, ainda sem lote): 147 grupos, 0 divergências. Cabeçalho
+com Lote/Quantidade Lote **repetidos** (cópia editada à mão) é recusado — pareava o 1º Lote
+com a quantidade do 2º par. Linhas em branco/sem carga e sem produto (anotação à mão) vão
+para `linhasIgnoradas`/`linhasOrfasComLote`, e a prévia fecha a conta: itens + lotes
+repetidos + sem quantidade + ignoradas = linhas. No arquivo de 24/09: 83 linhas → 73
+itens, **707 bags** (a soma ingênua da coluna U dava 1.023). **Status fora** (lista dele):
+Faturado Fiscal, Faturado Transporte e Finalizado — a nota já saiu e o SAP já baixou;
+**Faturado Qualidade fica** (nas exportações ele vem ANTES do Faturado Fiscal: carga 856
+passou por Faturado Qualidade → Em carga → Faturado Fiscal). Tabela `montagem_carga_itens`
+(migração `montagem-carga-a-carregar.sql`, aplicada: tipo `'montagem'` em `cargas_demanda`,
+mesmo desenho foto-por-carga de pedidos/estoque/químicos, RLS ordens/criar) guarda um
+registro por item, só dos status que ficam, **sem cliente, motorista, CPF, telefone, placa
+nem lote** — a conta não precisa. Gravação pela RPC transacional
+**`importar_montagem_carga(p_itens jsonb, p_usuario)`** (security invoker, carga + itens na
+mesma transação — pelo cliente, quem lia entre o insert da carga e o dos itens pegava uma
+vigente com 0 itens). **Lista vazia é válida e importável** (com `confirm`): relatório só
+com faturados = "nada a carregar", e importar é a ÚNICA forma de zerar a coluna — com o
+botão travado a carga de ontem seguia vigente descontando o que o SAP já tinha baixado.
+**`listarMontagemCarga` lança em erro de rede/timeout** e devolve null só sem carga (ou
+migração pendente, `migracaoPendente`): a 1ª versão devolvia null em qualquer erro e a tela
+trocava a montagem boa por "nunca importado", zerando o A carregar em silêncio. Por isso a
+Ordens lê a montagem em `recarregarMontagem()` à parte (nunca rejeita; falha mantém a
+anterior e mostra `montagemErro`), junto com `dataUltimaCarga('estoque')`.
+**Realtime da Ordens estava morto desde sempre** (mesmo achado): `pedidos_venda` nunca
+esteve na publicação `supabase_realtime`, e uma tabela fora derruba o canal inteiro — outro
+PCP só via a importação nova depois de F5. A migração põe `pedidos_venda`, `receitas` e
+`estoque_quimicos` (as duas últimas o MRP assina) na publicação e a conferência lista TODA
+tabela que Ordens/MRP assinam.
+Cálculo puro `src/dominio/estoqueFuturo.ts` (`calcularEstoqueFuturo`): casa balanço e
+montagem pela `chaveProduto` da Expedição ("FTZ60 S" = "FTZ 60 S", embalagem estrita),
+junta linhas do balanço de mesma chave normalizada, e produto que só existe na montagem
+aparece com futuro negativo. **"Cargas até"** (`<input type="date">`, vazio = todas as
+datas) é cumulativo pela Data Carga — "ver como estará a situação neste dia"; item SEM data
+entra sempre (prazo desconhecido é demanda, a mesma leitura da Expedição). Semente branca
+(SEM TSI) e embalagem sem de-para ficam fora da conta, contadas na legenda, cada bag num
+balde só. A tabela ganhou #A carregar (com as cargas no tooltip e "carga N"/"N cargas"
+embaixo), estoque futuro negativo em vermelho, cabeçalhos ordenáveis (padrão: quem vai
+faltar primeiro) e o export leva a coluna A carregar, a lista de cargas e a data no nome do
+arquivo. Datas de carga saem com o ano quando não é o corrente (`diaCurtoComAno`): a carga
+888 veio com **2027** digitado na SimpleAgro e, só com dd/mm, parecia uma carga de setembro
+vencida — com qualquer "Cargas até" de 2026 ela cai em "depois do dia, fora", e a legenda
+diz isso. O painel aparece com balanço vazio se houver montagem (`semDados`), e o Exportar
+desabilita pela aba ativa. **O planejado NÃO é cortado pela data** (toda ordem confirmada
+conta, como antes). **Saldo do SAP e montagem precisam ser do mesmo dia**: a aba mostra as
+duas horas lado a lado e avisa quando são de dias diferentes, com a direção do erro —
+montagem mais velha = carga faturada entre os dois já saiu do SAP e ainda está no A carregar
+(desconto em dobro); saldo mais velho = já saiu do A carregar e ainda conta no estoque
+(falta desconto).
 **Busca no lote do `ModalProgramarDemanda`** (20/09/2026, pedido do Arion: "tenho que olhar
 lote a lote para encontrar o correto"): o `<select>` de lote desse modal listava TODOS os
 `lotesDoCultivar` sem filtro — o formulário "Nova ordem"/"Editar ordem" já tinha esse filtro
@@ -719,6 +789,13 @@ lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
 **Sub-lote sem saldo não entra**: o SAP desdobra o lote em `-1`, `-2`, `-3`, e o
 importador pula linha com Qtd em Estoque 0 — é por isso que só o sufixo com bags existe
 em `lotes_semente` (o `-1` "sumido" não é bug).
+
+### Montagem carga vs lotes — SimpleAgro (24/09/2026)
+`relatorio-montagem-carga-vs-lotes.xlsx`, subido no "Carregar planilha" da tela Ordens. Vira o
+**A carregar** do Estoque futuro (regras completas na nota "A carregar", §2/§6 Ordens):
+**Qtd Agendada uma vez por item** (a coluna se repete em cada linha de lote), nunca a soma da
+`Quantidade Lote`; fora os status Faturado Fiscal, Faturado Transporte e Finalizado; colunas
+pelo nome.
 
 ### Planilha do Google "Produção 2026" — leitura direta do navegador (18/09/2026)
 Primeira origem que o app lê **sem upload e sem servidor no meio**: o Google manda cabeçalhos
