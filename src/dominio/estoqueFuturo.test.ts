@@ -90,6 +90,43 @@ describe('estoque futuro — data da carga', () => {
   })
 })
 
+describe('estoque futuro — ordens apontadas depois do saldo do SAP', () => {
+  const ap = (c: Partial<{ numero: string; cultivar: string; tratamento: string; embalagem: string; bags: number }> = {}) => ({
+    numero: '152714', cultivar: 'O790 IPRO', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 20, ...c,
+  })
+  const calcAp = (b: BalancoFuturo[], apontadas: ReturnType<typeof ap>[]) =>
+    calcularEstoqueFuturo(b, [], { embalagensConhecidas: EMB, apontadasPosSaldo: apontadas })
+
+  it('entram no planejado da linha (saíram do planejado e ainda não estão no saldo)', () => {
+    const { linhas, resumo } = calcAp([bal({ estoque_pa: 10, planejado_confirmado: 5 })], [ap(), ap({ numero: '152719', bags: 4 })])
+    expect(linhas[0]).toMatchObject({ estoque: 10, planejado: 29, apontadoPosSaldo: 24, futuro: 39 })
+    expect(linhas[0].ordensApontadas).toEqual(['152714', '152719'])
+    expect(resumo.apontadasPosSaldo).toEqual({ itens: 2, bags: 24 })
+  })
+
+  it('produto só com ordem apontada (sem balanço) aparece', () => {
+    const { linhas } = calcAp([], [ap({ cultivar: 'NEO802 I2X', bags: 19 })])
+    expect(linhas).toEqual([expect.objectContaining({ cultivar: 'NEO802 I2X', planejado: 19, futuro: 19 })])
+  })
+
+  it('casa pela chave normalizada (FTZ 60 = FTZ60)', () => {
+    const { linhas } = calcAp([bal({ estoque_pa: 10 })], [ap({ tratamento: 'FTZ 60', bags: 3 })])
+    expect(linhas).toHaveLength(1)
+    expect(linhas[0].planejado).toBe(3)
+  })
+
+  it('SEM TSI e embalagem fora dos ERPs (SC10) não entram', () => {
+    const { linhas, resumo } = calcAp([], [ap({ tratamento: 'SEM TSI' }), ap({ embalagem: 'SC10' })])
+    expect(linhas).toHaveLength(0)
+    expect(resumo.apontadasPosSaldo.itens).toBe(0)
+  })
+
+  it('sem a lista, o planejado é só o da view', () => {
+    const { linhas } = calc([bal({ planejado_confirmado: 7 })], [])
+    expect(linhas[0]).toMatchObject({ planejado: 7, apontadoPosSaldo: 0, ordensApontadas: [] })
+  })
+})
+
 describe('estoque futuro — o que fica fora', () => {
   it('SEM TSI não entra (nem do balanço, nem da montagem)', () => {
     const { linhas, resumo } = calc(

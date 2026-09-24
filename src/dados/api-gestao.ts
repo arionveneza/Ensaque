@@ -1067,6 +1067,44 @@ export async function listarMontagemCarga(): Promise<
   return { itens, criadaEm: carga.criada_em }
 }
 
+/** Ordem já lançada no AGROTIS que o saldo do SAP vigente ainda não traz. */
+export interface ApontadaAposSaldo {
+  numero: string
+  cultivar: string
+  tratamento: string
+  embalagem: string
+  bags: number
+}
+
+/**
+ * Ordens apontadas no AGROTIS DEPOIS do último upload do saldo do SAP
+ * (24/09/2026, achado do Arion: "o planejado não está contando todas as
+ * ordens"). Apontada sai do planejado, mas só entra no estoque no PRÓXIMO
+ * upload — no meio ela sumia dos dois lados (154 bg no dia 24/09). Um
+ * arquivo exportado antes do upload não tem como conter um apontamento
+ * posterior, então somar estas nunca conta em dobro. Sem saldo nenhum
+ * importado, devolve [] (não há "antes" pra comparar).
+ */
+export async function listarApontadasAposSaldo(saldoCriadoEm: string | null): Promise<ApontadaAposSaldo[]> {
+  if (!saldoCriadoEm) return []
+  const { data, error } = await supabase
+    .from('v_ordens')
+    .select('numero, cultivar, receita_nome, embalagem, bags')
+    .eq('status', 'Apontada')
+    .eq('fora_balanco', false)
+    .gt('agrotis_em', saldoCriadoEm)
+    .limit(2000)
+  erro('ler ordens apontadas depois do saldo', error)
+  return ((data ?? []) as { numero: string; cultivar: string; receita_nome: string; embalagem: string; bags: number }[])
+    .map((o) => ({
+      numero: o.numero,
+      cultivar: o.cultivar,
+      tratamento: o.receita_nome,
+      embalagem: o.embalagem,
+      bags: Number(o.bags),
+    }))
+}
+
 /**
  * Quando foi a última carga de um tipo (`criada_em`), ou null se nunca houve.
  * O Estoque futuro compara a hora do saldo do SAP com a da montagem: carga

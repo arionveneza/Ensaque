@@ -211,6 +211,8 @@ export default function Ordens() {
   const [montagemErro, setMontagemErro] = useState<string | null>(null)
   /** Hora da última carga de saldo do SAP, pra comparar com a da montagem. */
   const [saldoCriadoEm, setSaldoCriadoEm] = useState<string | null>(null)
+  /** Ordens apontadas no AGROTIS depois desse saldo — entram no planejado do Estoque futuro. */
+  const [apontadasPosSaldo, setApontadasPosSaldo] = useState<g.ApontadaAposSaldo[]>([])
 
   /**
    * Montagem e hora do saldo lidas À PARTE do resto: falha nelas não derruba a
@@ -221,8 +223,10 @@ export default function Ordens() {
   const recarregarMontagem = useCallback(async () => {
     try {
       const [mc, sc] = await Promise.all([g.listarMontagemCarga(), g.dataUltimaCarga('estoque')])
+      const ap = await g.listarApontadasAposSaldo(sc)
       setMontagem(mc)
       setSaldoCriadoEm(sc)
+      setApontadasPosSaldo(ap)
       setMontagemErro(null)
     } catch (e) {
       setMontagemErro(e instanceof Error ? e.message : String(e))
@@ -1149,6 +1153,7 @@ export default function Ordens() {
         montagem={montagem}
         montagemErro={montagemErro}
         saldoCriadoEm={saldoCriadoEm}
+        apontadasPosSaldo={apontadasPosSaldo}
         onProgramado={recarregar}
       />
 
@@ -1419,6 +1424,7 @@ function PainelDemanda({
   montagem,
   montagemErro,
   saldoCriadoEm,
+  apontadasPosSaldo,
   onProgramado,
 }: {
   balanco: BalancoLinha[]
@@ -1433,6 +1439,8 @@ function PainelDemanda({
   montagemErro: string | null
   /** Hora da última carga de saldo do SAP (estoque_pa). */
   saldoCriadoEm: string | null
+  /** Ordens apontadas no AGROTIS depois do último saldo do SAP (ainda fora dele). */
+  apontadasPosSaldo: g.ApontadaAposSaldo[]
   onProgramado: () => void
 }) {
   /** Item da fila sendo programado agora — abre o modal de divisão por lote. */
@@ -1571,13 +1579,12 @@ function PainelDemanda({
   }, [balanco])
 
   /**
-   * Estoque futuro = estoque do SAP + o que está planejado a produzir, MAS
-   * só contando ordem em `Aguardando lote`/`Pronto para produzir`/
-   * `Qualidade apontada` — pedido do Arion, 22/09/2026: "apenas o que já
-   * está com ordem" nesses três status (nunca Não programada/Programada,
-   * que ainda podem mudar de dia/máquina sem custo, nem Em produção/
-   * Parada/Finalizada, ainda em curso). `planejado_confirmado` já vem
-   * assim da view — aqui só soma com o estoque e filtra/ordena.
+   * Estoque futuro = estoque do SAP + planejado − A carregar. Planejado =
+   * toda ordem CONFIRMADA, do Aguardando lote à Qualidade apontada, inclusive
+   * em produção (`planejado_confirmado` da view — 24/09/2026: fora de Em
+   * produção/Parada/Finalizada a ordem sumia enquanto era produzida) + as
+   * apontadas no AGROTIS depois do último saldo do SAP, que ainda não estão
+   * nele. Fora: Não programada e Programada sem confirmação.
    */
   // "A carregar" (pedido do Arion, 24/09/2026): futuro = estoque + planejado
   // − o que está em ordem de carregamento e ainda não foi faturado, com
@@ -1597,8 +1604,9 @@ function PainelDemanda({
       calcularEstoqueFuturo(balanco, montagem?.itens ?? [], {
         ate: ateCarga,
         embalagensConhecidas: new Set(Object.values(EMBALAGEM_DEPARA).map((e) => e.codigo)),
+        apontadasPosSaldo,
       }),
-    [balanco, montagem, ateCarga],
+    [balanco, montagem, ateCarga, apontadasPosSaldo],
   )
   const estoqueFuturo = useMemo(() => {
     const lista = futuroCalc.linhas
@@ -1696,12 +1704,13 @@ function PainelDemanda({
           { titulo: 'Cultivar', largura: 18 }, { titulo: 'Tratamento', largura: 22 }, { titulo: 'Embalagem', largura: 12 },
           { titulo: 'Estoque', largura: 10, tipo: 'numero', casas: 0 },
           { titulo: 'Planejado', largura: 12, tipo: 'numero', casas: 0 },
+          { titulo: 'Planejado · apontado após o saldo', largura: 16, tipo: 'numero', casas: 0 },
           { titulo: ateCarga ? `A carregar até ${diaCurtoComAno(ateCarga)}` : 'A carregar', largura: 16, tipo: 'numero', casas: 0 },
           { titulo: 'Estoque futuro', largura: 14, tipo: 'numero', casas: 0 },
           { titulo: 'Cargas', largura: 40 },
         ],
         estoqueFuturo.map((l) => [
-          l.cultivar, l.tratamento, l.embalagem, l.estoque, l.planejado, l.aCarregar, l.futuro,
+          l.cultivar, l.tratamento, l.embalagem, l.estoque, l.planejado, l.apontadoPosSaldo, l.aCarregar, l.futuro,
           l.cargas.map((c) => `${c.carga} (${c.data ? diaCurtoComAno(c.data) : 'sem data'}, ${c.bags})`).join(' · '),
         ]),
       )
@@ -1889,9 +1898,11 @@ function PainelDemanda({
           ) : abaDemanda === 'futuro' ? (
             <>
               <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
-                <b>Estoque futuro = estoque do SAP + planejado − A carregar.</b> Planejado conta só
-                ordem em <b>Aguardando lote</b>, <b>Pronto para produzir</b> ou{' '}
-                <b>Qualidade apontada</b>. A carregar é o que está em ordem de carregamento na
+                <b>Estoque futuro = estoque do SAP + planejado − A carregar.</b> Planejado conta toda
+                ordem <b>confirmada</b>, do Aguardando lote à Qualidade apontada — inclusive em
+                produção, parada ou finalizada — e as ordens <b>já apontadas no AGROTIS depois do
+                último saldo do SAP</b> (ainda não estão nele). Fica fora só Não programada e
+                Programada sem confirmação. A carregar é o que está em ordem de carregamento na
                 SimpleAgro e ainda não foi faturado (fora Faturado Fiscal, Faturado Transporte e
                 Finalizado), com a Qtd Agendada contada uma vez por item.
               </p>
@@ -1913,6 +1924,14 @@ function PainelDemanda({
                   </span>
                 )}
               </div>
+              {futuroCalc.resumo.apontadasPosSaldo.itens > 0 && saldoCriadoEm && (
+                <p className="mb-3 text-xs text-stone-500">
+                  O planejado inclui <b>{inteiro(futuroCalc.resumo.apontadasPosSaldo.bags)} bg</b> de{' '}
+                  {futuroCalc.resumo.apontadasPosSaldo.itens} ordem(ns) já apontada(s) no AGROTIS depois
+                  do saldo do SAP de {dataHoraCurta(saldoCriadoEm)} — saem daqui quando o próximo saldo
+                  for importado (aí já estão no estoque).
+                </p>
+              )}
               {montagemErro && (
                 <div className="mb-3">
                   <Aviso gravidade="bloqueio">
@@ -1993,8 +2012,20 @@ function PainelDemanda({
                       <td className="num-tabular px-2 py-1.5 text-right">
                         {l.estoque > 0 ? inteiro(l.estoque) : <span className="text-stone-300">—</span>}
                       </td>
-                      <td className="num-tabular px-2 py-1.5 text-right">
+                      <td
+                        className="num-tabular px-2 py-1.5 text-right"
+                        title={
+                          l.ordensApontadas.length > 0
+                            ? `Inclui ${inteiro(l.apontadoPosSaldo)} bg já apontados no AGROTIS depois do saldo do SAP: ${l.ordensApontadas.join(', ')}`
+                            : undefined
+                        }
+                      >
                         {l.planejado > 0 ? inteiro(l.planejado) : <span className="text-stone-300">—</span>}
+                        {l.apontadoPosSaldo > 0 && (
+                          <div className="cursor-help text-[11px] font-normal text-stone-400">
+                            {inteiro(l.apontadoPosSaldo)} apontado{l.ordensApontadas.length > 1 ? 's' : ''} após o saldo
+                          </div>
+                        )}
                       </td>
                       <td
                         className="num-tabular px-2 py-1.5 text-right"

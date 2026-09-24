@@ -392,6 +392,26 @@ lote OU Pronto pra produzir juntas, de propósito (ele quer as duas), sem checar
 `lote_liberado_em`. `planejado_confirmado` é subconjunto de `ordens_abertas` por construção
 (mesma origem, um `FILTER` a mais) — a migração confere isso como invariante
 (`planejado_confirmado <= ordens_abertas` em toda linha, contra o banco de verdade).
+**Revisto em 24/09/2026 — o planejado cobre a ordem confirmada do começo ao fim** (achado do
+Arion: "o planejado não está contando todas as ordens planejadas"). Conferido no banco, dois
+buracos: (1) a regra ao pé da letra tirava Em produção/Parada/Finalizada, então a ordem
+**sumia do estoque futuro enquanto era produzida** e voltava na Qualidade apontada (a 154856,
+26 bg, Parada, não contava); (2) ordem **apontada no AGROTIS depois do último saldo do SAP**
+sai do planejado e só entra no estoque no próximo upload — no meio, sumia dos dois lados (19
+ordens, 154 bg, no dia 24/09). Migração `estoque-futuro-ordem-em-producao.sql` (base
+`estoque-futuro.sql`, security_invoker reaplicado e conferido): `planejado` = `status in
+('Em producao','Parada','Finalizada','Qualidade apontada') or (maquina_id e confirmada_em
+preenchidos)` — fica fora só Não programada e Programada sem confirmação; conferência nova
+compara a soma da view com as ordens cruas. As apontadas depois do saldo entram pelo **front**
+(`listarApontadasAposSaldo(saldoCriadoEm)` em `v_ordens`: `status = 'Apontada'`, fora do
+balanço excluídas, `agrotis_em` > `criada_em` da última carga `estoque`), somadas ao planejado
+em `calcularEstoqueFuturo` (`apontadasPosSaldo`; SEM TSI e embalagem sem de-para fora) — na
+view elas criariam linhas no Balanço, que tem a regra própria "apontada sai e volta no próximo
+upload". Um arquivo exportado antes do upload não tem como conter apontamento posterior, então
+não há dupla contagem. A célula do Planejado diz "N apontado(s) após o saldo" com os nºs das
+ordens no tooltip, a legenda da aba soma o total e o export ganhou a coluna. **O Balanço
+continua com o buraco (2)** de propósito — pedido era do Estoque futuro; lá a ordem apontada
+depois do saldo some das ordens abertas e o "falta produzir" fica maior até o próximo upload.
 **Exportar .xlsx do painel** (22/09/2026, pedido do Arion: "eu quero um relatório do
 estoque futuro etc"): um botão só, ao lado de "Ocultar", que exporta a **aba ATIVA**
 (`exportarDemanda()` olha `abaDemanda`) — Balanço, Em estoque ou Estoque futuro viram
