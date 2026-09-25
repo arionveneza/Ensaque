@@ -26,9 +26,12 @@ import {
   abrirJanelaImpressao, confirmarNaJanela, imprimirEtiquetaDm, imprimirFichaQuimicos,
   imprimirOrdemProducao, mostrarErroNaJanela,
 } from '@/lib/exportar'
-import { montarFichaQuimicos, proximaRotacao, type AjusteFicha, type EtiquetaFicha } from '@/dominio/fichaQuimicos'
+import {
+  LAYOUTS_FICHA, ROTULO_MODELO_FICHA, linhasAjusteDoModelo, montarFichaQuimicos, proximaRotacao,
+  type AjusteFicha, type EtiquetaFicha, type ModeloFicha,
+} from '@/dominio/fichaQuimicos'
 import { itensReceitaComPrincipios } from '@/dados/api-gestao'
-import { carregarAjusteFicha, salvarAjusteFicha } from '@/lib/ajusteFicha'
+import { carregarAjusteFicha, carregarModeloFicha, salvarAjusteFicha, salvarModeloFicha } from '@/lib/ajusteFicha'
 import { renderizarEtiquetaPdf } from '@/lib/etiquetaPdf'
 import { PainelAjusteFicha } from '@/componentes/AjusteFicha'
 
@@ -78,11 +81,20 @@ export default function ModalOrdem({
   const [menuEtiqueta, setMenuEtiqueta] = useState(false)
   const [menuFicha, setMenuFicha] = useState(false)
   const [ajustandoFicha, setAjustandoFicha] = useState(false)
-  // ajuste fino da impressora DESTE computador (12/09/2026) — localStorage
-  const [ajusteFicha, setAjusteFicha] = useState<AjusteFicha>(() => carregarAjusteFicha())
+  // papel em uso neste computador (25/09/2026: o novo é deitado; o antigo,
+  // em pé, continua selecionável enquanto sobrar formulário velho)
+  const [modeloFicha, setModeloFicha] = useState<ModeloFicha>(() => carregarModeloFicha())
+  // ajuste fino da impressora DESTE computador (12/09/2026) — localStorage,
+  // um por papel: o calibrado no antigo deslocaria o novo
+  const [ajusteFicha, setAjusteFicha] = useState<AjusteFicha>(() => carregarAjusteFicha(carregarModeloFicha()))
   const mudarAjusteFicha = (v: AjusteFicha) => {
     setAjusteFicha(v)
-    salvarAjusteFicha(v)
+    salvarAjusteFicha(v, modeloFicha)
+  }
+  const mudarModeloFicha = (m: ModeloFicha) => {
+    setModeloFicha(m)
+    salvarModeloFicha(m)
+    setAjusteFicha(carregarAjusteFicha(m))
   }
   /**
    * Etiqueta do lote em PDF (17/09/2026): o operador escolhe o arquivo do
@@ -283,7 +295,8 @@ export default function ModalOrdem({
 
   /**
    * Ficha de químicos (11/09/2026): imprime SÓ o texto, sobre o formulário
-   * pré-impresso da Veneza (21,2 × 32 cm). A janela abre ainda no clique
+   * pré-impresso da Veneza (21,2 × 32 cm — deitado no papel novo, em pé no
+   * antigo; a capacidade de cada seção muda com o papel). A janela abre ainda no clique
    * (senão o bloqueador de pop-up pega depois do await) e os princípios
    * ativos da receita vêm do banco em seguida. `teste` desenha também a
    * grade e uma régua, pra calibrar as posições numa ficha real.
@@ -308,6 +321,7 @@ export default function ModalOrdem({
             classe: p.classe,
           })),
         })),
+        LAYOUTS_FICHA[modeloFicha].capacidade,
       )
       const avisos: string[] = []
       if (ficha.semPrincipio.length > 0) {
@@ -318,7 +332,7 @@ export default function ModalOrdem({
       if (ficha.naoCouberam.length > 0) {
         avisos.push(`Não couberam na ficha (OUTROS PRODUTOS lotou): ${ficha.naoCouberam.join(', ')}.`)
       }
-      const opcoes = { teste, ajuste: ajusteFicha, etiqueta }
+      const opcoes = { teste, ajuste: ajusteFicha, etiqueta, modelo: modeloFicha }
       if (avisos.length === 0) {
         imprimirFichaQuimicos(ficha, opcoes, janela)
         return
@@ -437,7 +451,7 @@ export default function ModalOrdem({
                 title={
                   receitaSemTsi
                     ? 'Receita SEM TSI não tem químicos — a ficha não se aplica'
-                    : 'Ficha de químicos: imprime só o texto sobre o formulário pré-impresso (papel 21,2 × 32 cm). Cópias pelo diálogo de impressão.'
+                    : 'Ficha de químicos: imprime só o texto sobre o formulário pré-impresso (papel 21,2 × 32 cm, deitado no modelo novo). Cópias pelo diálogo de impressão.'
                 }
                 className="rounded-md border border-stone-300 px-3 py-1.5 text-sm disabled:opacity-40 dark:border-stone-700"
               >
@@ -449,6 +463,25 @@ export default function ModalOrdem({
                     ajustandoFicha ? 'w-80' : 'w-64'
                   }`}
                 >
+                  <div className="border-b border-stone-200 px-2 pb-1.5 pt-1 dark:border-stone-700">
+                    <p className="text-xs text-stone-500">Papel (formulário)</p>
+                    <div className="mt-1 flex gap-1">
+                      {(['paisagem', 'retrato'] as ModeloFicha[]).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => mudarModeloFicha(m)}
+                          className={`flex-1 rounded border px-2 py-1 text-xs ${
+                            modeloFicha === m
+                              ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                              : 'border-stone-300 text-stone-600 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800'
+                          }`}
+                        >
+                          {ROTULO_MODELO_FICHA[m]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <button
                     onClick={() => void imprimirFicha(false)}
                     className="flex w-full flex-col rounded px-2 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-stone-800"
@@ -515,7 +548,9 @@ export default function ModalOrdem({
                           }}
                         />
                         <span className="mt-0.5 block text-stone-500">
-                          sai no espaço da etiqueta, no alto à esquerda da ficha, no tamanho real
+                          {modeloFicha === 'paisagem'
+                            ? 'sai no quadro da etiqueta, à esquerda da ficha (abaixo dos logos), no tamanho real'
+                            : 'sai no espaço da etiqueta, no alto à esquerda da ficha, no tamanho real'}
                         </span>
                       </label>
                     )}
@@ -533,6 +568,7 @@ export default function ModalOrdem({
                   {ajustandoFicha && (
                     <PainelAjusteFicha
                       valor={ajusteFicha}
+                      linhas={linhasAjusteDoModelo(modeloFicha)}
                       onMudar={mudarAjusteFicha}
                       onImprimirTeste={() => void imprimirFicha(true, true)}
                       onImprimirFicha={() => void imprimirFicha(false, true)}

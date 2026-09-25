@@ -1,45 +1,105 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LIMITE_AJUSTE_MM, aplicarAjusteFicha, concentracaoFicha,
+  AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LAYOUTS_FICHA, LIMITE_AJUSTE_MM, MODELO_FICHA_PADRAO,
+  aplicarAjusteFicha, concentracaoFicha, linhasAjusteDoModelo,
   doseFicha, mmDePontos, montarFichaQuimicos, normalizarAjusteFicha, proximaRotacao,
   rotacaoSugeridaEtiqueta, type ItemFicha, type PrincipioFicha,
 } from './fichaQuimicos'
 
-const LAYOUT = {
-  esquerda: 10,
-  esquerdaOutros: 8.5,
-  etiqueta: { left: 10, top: 14 },
-  receita: { left: 58, top: 90 },
-  biologicos: { left: 164, top: 90 },
-  top: { inseticida: 116, fungicida: 151, nematicida: 184, inoculante: 211, outros: 240 },
-  outraCoisa: 'preservada',
-}
+const LAYOUT = LAYOUTS_FICHA.retrato
 
 describe('aplicarAjusteFicha: ajuste por impressora somado ao padrão', () => {
   it('ajuste zero devolve o layout igual', () => {
     expect(aplicarAjusteFicha(LAYOUT, AJUSTE_FICHA_ZERO)).toEqual(LAYOUT)
   })
 
-  it('cada seção desloca só a sua linha; x desloca todas as esquerdas', () => {
+  it('cada seção desloca só a sua linha; x desloca todas as colunas', () => {
     const a = aplicarAjusteFicha(LAYOUT, { ...AJUSTE_FICHA_ZERO, fungicida: -2, outros: 3, receita: 1, x: -1 })
     expect(a.top).toEqual({ inseticida: 116, fungicida: 149, nematicida: 184, inoculante: 211, outros: 243 })
-    expect(a.receita).toEqual({ left: 57, top: 91 })
-    expect(a.biologicos).toEqual({ left: 163, top: 90 })
-    expect(a.esquerda).toBe(9)
-    expect(a.esquerdaOutros).toBe(7.5)
+    expect(a.receita).toEqual({ left: 57, top: 91, largura: 48, altura: 9 })
+    expect(a.biologicos).toEqual({ left: 163, top: 90, largura: 48, altura: 9 })
+    expect(a.colunas.map((c) => c.left)).toEqual([9, 57, 105, 163])
+    expect(a.colunasOutros.map((c) => c.left)).toEqual([7.5, 72.5, 147.5])
     // a etiqueta acompanha o x geral, sem ajuste próprio
     expect(a.etiqueta).toEqual({ left: 9, top: 14 })
-    expect(a.outraCoisa).toBe('preservada')
     // pura: o padrão não muda
     expect(LAYOUT.top.fungicida).toBe(151)
+    expect(LAYOUT.colunas[0].left).toBe(10)
   })
 
   it('etiqueta do lote tem vertical e horizontal próprios, somados ao x geral', () => {
     const a = aplicarAjusteFicha(LAYOUT, { ...AJUSTE_FICHA_ZERO, etiqueta: -3, etiquetaX: 2, x: 1 })
     expect(a.etiqueta).toEqual({ left: 13, top: 11 })
     // o resto não mexe com o ajuste da etiqueta
-    expect(a.receita).toEqual({ left: 59, top: 90 })
+    expect(a.receita).toEqual({ left: 59, top: 90, largura: 48, altura: 9 })
     expect(a.top.inseticida).toBe(116)
+  })
+
+  it('papel sem campo de receita: o ajuste de receita não cria o campo', () => {
+    const a = aplicarAjusteFicha(LAYOUTS_FICHA.paisagem, { ...AJUSTE_FICHA_ZERO, receita: 5, x: 2 })
+    expect(a.receita).toBeNull()
+    expect(a.biologicos.left).toBeCloseTo(171.7)
+  })
+})
+
+describe('os dois papéis (25/09/2026: o novo é deitado)', () => {
+  it('o antigo continua exatamente como foi calibrado em 12/09', () => {
+    expect(LAYOUTS_FICHA.retrato.pagina).toEqual({ largura: 212, altura: 320 })
+    expect(LAYOUTS_FICHA.retrato.colunas).toEqual([
+      { left: 10, largura: 48 }, { left: 58, largura: 48 }, { left: 106, largura: 48 }, { left: 164, largura: 48 },
+    ])
+    expect(LAYOUTS_FICHA.retrato.colunasOutros).toEqual([
+      { left: 8.5, largura: 65 }, { left: 73.5, largura: 65 }, { left: 148.5, largura: 65 },
+    ])
+    expect(LAYOUTS_FICHA.retrato.capacidade).toEqual(CAPACIDADE_FICHA)
+  })
+
+  it('o novo é deitado, sem receita, com 2 linhas por seção e 3 em OUTROS', () => {
+    const L = LAYOUTS_FICHA.paisagem
+    expect(L.pagina).toEqual({ largura: 320, altura: 212 })
+    expect(L.receita).toBeNull()
+    expect(L.capacidade).toEqual({ inseticida: 2, fungicida: 2, nematicida: 2, inoculante: 2, outros: 3 })
+    expect(MODELO_FICHA_PADRAO).toBe('paisagem')
+  })
+
+  it('no novo tudo cabe na folha e nada se sobrepõe', () => {
+    const L = LAYOUTS_FICHA.paisagem
+    const secoes = ['inseticida', 'fungicida', 'nematicida', 'inoculante', 'outros'] as const
+    // seções em ordem, a última linha de uma acaba antes da 1ª da seguinte
+    for (let i = 0; i < secoes.length - 1; i++) {
+      const fimSecao = L.top[secoes[i]] + L.capacidade[secoes[i]] * L.altura[secoes[i]]
+      expect(fimSecao).toBeLessThanOrEqual(L.top[secoes[i + 1]])
+    }
+    const fimOutros = L.top.outros + L.capacidade.outros * L.altura.outros
+    expect(fimOutros).toBeLessThanOrEqual(L.pagina.altura)
+    // colunas encostadas, dentro da folha
+    for (const cols of [L.colunas, L.colunasOutros]) {
+      for (let i = 0; i < cols.length - 1; i++) {
+        expect(cols[i].left + cols[i].largura).toBeLessThanOrEqual(cols[i + 1].left + 0.01)
+      }
+      const ult = cols[cols.length - 1]
+      expect(ult.left + ult.largura).toBeLessThanOrEqual(L.pagina.largura)
+    }
+    // a etiqueta fica à esquerda da tabela
+    expect(L.etiqueta.left + L.etiquetaPadrao.largura).toBeLessThan(L.colunas[0].left)
+  })
+
+  it('o painel de ajuste esconde "Receita" no papel que não tem receita', () => {
+    expect(linhasAjusteDoModelo('paisagem').some((l) => l.chave === 'receita')).toBe(false)
+    expect(linhasAjusteDoModelo('retrato').some((l) => l.chave === 'receita')).toBe(true)
+  })
+
+  it('a capacidade do papel novo leva nematicida/inoculante extra pra própria seção, não pra OUTROS', () => {
+    const nem = (produto: string): ItemFicha => ({
+      produto, unidade: 'ml/kg', dose: 1,
+      principios: [{ nome: 'Abamectina', concentracao: 500, unidadeConc: 'g/L', classe: 'Nematicida' }],
+    })
+    const antigo = montarFichaQuimicos('R', [nem('A'), nem('B')])
+    expect(antigo.secoes.nematicida.map((l) => l.produto)).toEqual(['A'])
+    expect(antigo.outros.map((l) => l.produto)).toEqual(['B'])
+    const novo = montarFichaQuimicos('R', [nem('A'), nem('B')], LAYOUTS_FICHA.paisagem.capacidade)
+    expect(novo.secoes.nematicida.map((l) => l.produto)).toEqual(['A', 'B'])
+    expect(novo.outros).toEqual([])
   })
 })
 

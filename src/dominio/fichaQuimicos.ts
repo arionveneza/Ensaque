@@ -2,7 +2,10 @@
  * Ficha de químicos da ordem (11/09/2026): o conteúdo VARIÁVEL que vai
  * impresso sobre o formulário pré-impresso da Veneza — o papel (212 × 320
  * mm) já traz logos, cabeçalhos verdes, grade e precauções; o app só
- * preenche as células. Uma linha por produto POR CLASSE de princípio
+ * preenche as células. Desde 25/09/2026 há DOIS modelos de papel
+ * (`ModeloFicha`): o novo, DEITADO (320 × 212 mm, logos e etiqueta à
+ * esquerda, tabela à direita, linhas mais baixas e outra capacidade por
+ * seção), e o antigo, em pé — cada um com o seu layout e o seu ajuste. Uma linha por produto POR CLASSE de princípio
  * ativo: produto que junta fungicida e inseticida sai nas duas seções,
  * cada uma com os princípios daquela classe. Dosagem sempre na base de
  * 100 kg de semente (decisão do Arion). Função pura — testável sem banco.
@@ -43,17 +46,128 @@ export type SecaoFicha = 'inseticida' | 'fungicida' | 'nematicida' | 'inoculante
 
 export const SECOES_FICHA: SecaoFicha[] = ['inseticida', 'fungicida', 'nematicida', 'inoculante']
 
+export type CapacidadeFicha = Record<SecaoFicha | 'outros', number>
+
 /**
- * Linhas de dados que o PAPEL tem em cada seção — quem estoura vai pra
- * OUTROS. Contadas pelo Arion na ficha real (12/09/2026): OUTROS tem 5
+ * Linhas de dados que o papel ANTIGO (em pé) tem em cada seção — quem estoura
+ * vai pra OUTROS. Contadas pelo Arion na ficha real (12/09/2026): OUTROS tem 5
  * linhas, não as 7 que a foto sugeria.
  */
-export const CAPACIDADE_FICHA: Record<SecaoFicha | 'outros', number> = {
+export const CAPACIDADE_FICHA: CapacidadeFicha = {
   inseticida: 2,
   fungicida: 2,
   nematicida: 1,
   inoculante: 1,
   outros: 5,
+}
+
+/** Papel pré-impresso em uso: o novo deitado (25/09/2026) ou o antigo em pé. */
+export type ModeloFicha = 'paisagem' | 'retrato'
+
+export const MODELO_FICHA_PADRAO: ModeloFicha = 'paisagem'
+
+export const ROTULO_MODELO_FICHA: Record<ModeloFicha, string> = {
+  paisagem: 'Nova (deitada)',
+  retrato: 'Antiga (em pé)',
+}
+
+/** Uma coluna da tabela do papel: borda esquerda e largura, em mm. */
+export interface ColunaFicha {
+  left: number
+  largura: number
+}
+
+/** Uma célula avulsa (Receita, Biológicos): canto superior esquerdo e tamanho, em mm. */
+export interface CelulaFicha {
+  left: number
+  top: number
+  largura: number
+  altura: number
+}
+
+/**
+ * Tudo o que muda de um papel pro outro. Posições em mm a partir do canto
+ * superior esquerdo da folha, na orientação em que ela é lida.
+ */
+export interface LayoutFicha {
+  pagina: { largura: number; altura: number }
+  capacidade: CapacidadeFicha
+  /** altura das linhas de DADOS de cada seção */
+  altura: Record<SecaoFicha | 'outros', number>
+  /** top da 1ª linha de dados de cada seção (logo abaixo do cabeçalho de colunas) */
+  top: Record<SecaoFicha | 'outros', number>
+  /** as 4 colunas das seções: PRODUTO, PRINCÍPIO ATIVO, CONCENTRAÇÃO, DOSAGEM */
+  colunas: ColunaFicha[]
+  /** as 3 colunas de OUTROS: PRODUTO, INFORMAÇÕES, DOSAGEM */
+  colunasOutros: ColunaFicha[]
+  /** null = o papel não tem campo pro nome do tratamento */
+  receita: CelulaFicha | null
+  biologicos: CelulaFicha
+  /** canto superior esquerdo da etiqueta do lote (a imagem sai no tamanho real do PDF) */
+  etiqueta: { left: number; top: number }
+  /** tamanho suposto da etiqueta, só pra desenhar a guia do teste sem PDF carregado */
+  etiquetaPadrao: { largura: number; altura: number }
+  /** onde vai o texto de instrução no modo teste */
+  nota: { left: number; top: number; largura: number }
+}
+
+const colunasUniformes = (esquerda: number, largura: number, n: number, deslocUltima: number): ColunaFicha[] =>
+  Array.from({ length: n }, (_, c) => ({ left: esquerda + c * largura + (c === n - 1 ? deslocUltima : 0), largura }))
+
+/**
+ * Os dois papéis.
+ *
+ * RETRATO (antigo, 212 × 320 mm): calibrado com o "Teste de alinhamento" numa
+ * ficha real em 9 rodadas (12/09/2026) — células de 9 mm, 48 mm de largura
+ * (65 em OUTROS), a coluna DOSAGEM 1 cm à direita da grade uniforme, cada
+ * seção com o seu top, e RECEITA/BIOLÓGICOS medidas uma a uma.
+ *
+ * PAISAGEM (novo, 320 × 212 mm — 25/09/2026, pedido do Arion: "a orientação
+ * da ficha de TSI mudou"): medido na FOTO do papel novo, com correção de
+ * perspectiva pelos 4 cantos da folha (homografia) e as linhas da grade achadas
+ * pelos pixels — erro de ±2 mm, acerta-se pelo Teste de alinhamento + Ajuste
+ * fino, como o antigo nasceu. Logos e o quadro da etiqueta (~103 × 70 mm, em
+ * 12,6–116 × 95–165) à esquerda; tabela de 120,6 a 307,8 mm; colunas de
+ * 49 · 49 · 49 · 40 mm (OUTROS: 49 · 75 · 63); linhas de dados de ~6,9 mm
+ * (OUTROS ~5,5); BIOLÓGICO na 1ª linha da tabela (rótulo na 1ª coluna, valor
+ * no resto); SEM campo de receita; 2 linhas em cada seção e 3 em OUTROS.
+ */
+export const LAYOUTS_FICHA: Record<ModeloFicha, LayoutFicha> = {
+  paisagem: {
+    pagina: { largura: 320, altura: 212 },
+    capacidade: { inseticida: 2, fungicida: 2, nematicida: 2, inoculante: 2, outros: 3 },
+    altura: { inseticida: 6.9, fungicida: 6.9, nematicida: 6.9, inoculante: 6.9, outros: 5.5 },
+    top: { inseticida: 38.8, fungicida: 66.2, nematicida: 93, inoculante: 120.1, outros: 146.6 },
+    colunas: [
+      { left: 120.6, largura: 49.1 },
+      { left: 169.7, largura: 49.3 },
+      { left: 219, largura: 49.1 },
+      { left: 268.1, largura: 39.7 },
+    ],
+    colunasOutros: [
+      { left: 120.7, largura: 49.2 },
+      { left: 169.9, largura: 75.1 },
+      { left: 245, largura: 62.8 },
+    ],
+    receita: null,
+    biologicos: { left: 169.7, top: 17.6, largura: 138.1, altura: 8.2 },
+    etiqueta: { left: 14.5, top: 93.5 },
+    etiquetaPadrao: { largura: 100, altura: 73 },
+    nota: { left: 122, top: 3, largura: 186 },
+  },
+  retrato: {
+    pagina: { largura: 212, altura: 320 },
+    capacidade: CAPACIDADE_FICHA,
+    altura: { inseticida: 9, fungicida: 9, nematicida: 9, inoculante: 9, outros: 9 },
+    top: { inseticida: 116, fungicida: 151, nematicida: 184, inoculante: 211, outros: 240 },
+    colunas: colunasUniformes(10, 48, 4, 10),
+    colunasOutros: colunasUniformes(8.5, 65, 3, 10),
+    receita: { left: 58, top: 90, largura: 48, altura: 9 },
+    biologicos: { left: 164, top: 90, largura: 48, altura: 9 },
+    etiqueta: { left: 10, top: 14 },
+    etiquetaPadrao: { largura: 100, altura: 73 },
+    nota: { left: 10, top: 300, largura: 192 },
+  },
 }
 
 /**
@@ -95,6 +209,10 @@ export const LINHAS_AJUSTE_FICHA: { chave: keyof AjusteFicha; rotulo: string }[]
   { chave: 'x', rotulo: 'Tudo na horizontal' },
 ]
 
+/** As linhas do painel que fazem sentido no papel (o novo não tem campo de receita). */
+export const linhasAjusteDoModelo = (modelo: ModeloFicha) =>
+  LINHAS_AJUSTE_FICHA.filter(({ chave }) => chave !== 'receita' || LAYOUTS_FICHA[modelo].receita !== null)
+
 /** Chaves que deslocam na HORIZONTAL (setas ◂▸ no painel); as demais são verticais. */
 export const AJUSTES_HORIZONTAIS: ReadonlySet<keyof AjusteFicha> = new Set<keyof AjusteFicha>(['x', 'etiquetaX'])
 
@@ -117,28 +235,26 @@ export function normalizarAjusteFicha(bruto: unknown): AjusteFicha {
   return saida
 }
 
-interface LayoutAjustavel {
-  esquerda: number
-  esquerdaOutros: number
-  etiqueta: { left: number; top: number }
-  receita: { left: number; top: number }
-  biologicos: { left: number; top: number }
-  top: Record<SecaoFicha | 'outros', number>
-}
-
 /** Soma o ajuste às posições padrão — pura, não muda o layout de entrada. */
-export function aplicarAjusteFicha<L extends LayoutAjustavel>(layout: L, ajuste: AjusteFicha): L {
+export function aplicarAjusteFicha(layout: LayoutFicha, ajuste: AjusteFicha): LayoutFicha {
+  const x = (c: ColunaFicha): ColunaFicha => ({ ...c, left: c.left + ajuste.x })
   return {
     ...layout,
-    esquerda: layout.esquerda + ajuste.x,
-    esquerdaOutros: layout.esquerdaOutros + ajuste.x,
+    colunas: layout.colunas.map(x),
+    colunasOutros: layout.colunasOutros.map(x),
     // a etiqueta acompanha o x geral (desvio da impressora) e ainda tem o seu próprio
     etiqueta: {
       left: layout.etiqueta.left + ajuste.x + ajuste.etiquetaX,
       top: layout.etiqueta.top + ajuste.etiqueta,
     },
-    receita: { left: layout.receita.left + ajuste.x, top: layout.receita.top + ajuste.receita },
-    biologicos: { left: layout.biologicos.left + ajuste.x, top: layout.biologicos.top + ajuste.biologicos },
+    receita: layout.receita
+      ? { ...layout.receita, left: layout.receita.left + ajuste.x, top: layout.receita.top + ajuste.receita }
+      : null,
+    biologicos: {
+      ...layout.biologicos,
+      left: layout.biologicos.left + ajuste.x,
+      top: layout.biologicos.top + ajuste.biologicos,
+    },
     top: {
       inseticida: layout.top.inseticida + ajuste.inseticida,
       fungicida: layout.top.fungicida + ajuste.fungicida,
@@ -197,7 +313,12 @@ export function concentracaoFicha(ps: PrincipioFicha[]): string {
   return com.map((p) => `${fmt(p.concentracao!)} ${p.unidadeConc}`).join(' + ')
 }
 
-export function montarFichaQuimicos(receita: string, itens: ItemFicha[]): FichaQuimicos {
+/** `capacidade`: linhas por seção do papel em uso (padrão: o antigo, em pé). */
+export function montarFichaQuimicos(
+  receita: string,
+  itens: ItemFicha[],
+  capacidade: CapacidadeFicha = CAPACIDADE_FICHA,
+): FichaQuimicos {
   const ficha: FichaQuimicos = {
     receita,
     biologicos: 'NÃO',
@@ -207,7 +328,7 @@ export function montarFichaQuimicos(receita: string, itens: ItemFicha[]): FichaQ
     semPrincipio: [],
   }
   const paraOutros = (linha: LinhaOutros) => {
-    if (ficha.outros.length < CAPACIDADE_FICHA.outros) ficha.outros.push(linha)
+    if (ficha.outros.length < capacidade.outros) ficha.outros.push(linha)
     else if (!ficha.naoCouberam.includes(linha.produto)) ficha.naoCouberam.push(linha.produto)
   }
 
@@ -232,7 +353,7 @@ export function montarFichaQuimicos(receita: string, itens: ItemFicha[]): FichaQ
       if (classe === 'Biologico' || classe === 'Inoculante') ficha.biologicos = 'SIM'
 
       const secao = SECAO_DA_CLASSE[classe]
-      if (secao && ficha.secoes[secao].length < CAPACIDADE_FICHA[secao]) {
+      if (secao && ficha.secoes[secao].length < capacidade[secao]) {
         ficha.secoes[secao].push({ produto: item.produto, principio, concentracao, dosagem })
         continue
       }

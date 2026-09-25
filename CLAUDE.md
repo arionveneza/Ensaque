@@ -1760,6 +1760,28 @@ tela, no máximo 1× a cada 30 s.
   quais chaves são ◂▸). O arquivo fica **só na memória do detalhe da ordem** — nada sobe
   pro Storage, fechar o modal esquece; com etiqueta o `abrirParaImpressao` espera a
   imagem decodificar antes do `print()`.
+  **Papel novo, DEITADO** (25/09/2026, foto do Arion: "a orientação da ficha de TSI mudou").
+  O formulário virou paisagem (320 × 212 mm): logos e o quadro da etiqueta à esquerda,
+  tabela à direita, **sem campo de receita** (só "BIOLÓGICO:" na 1ª linha da tabela), linhas
+  de dados de ~6,9 mm (OUTROS ~5,5) e outra capacidade — Inseticida 2 · Fungicida 2 ·
+  **Nematicida 2 · Inoculante 2 · Outros 3** (o antigo: 2·2·1·1·5). Medido na FOTO: correção
+  de perspectiva pelos 4 cantos da folha (homografia) e as linhas da grade achadas pelos
+  pixels (±2 mm); conferido desenhando as células do layout sobre a foto endireitada — bateu.
+  Os dois papéis ficam: `ModeloFicha` = 'paisagem' (padrão) | 'retrato', e o layout saiu de
+  `exportar.ts` para o domínio (`LAYOUTS_FICHA`, tipo `LayoutFicha`: página, capacidade,
+  altura e top por seção, colunas com left/largura próprios — o papel novo não tem grade
+  uniforme, DOSAGEM é mais estreita —, receita nula, biológicos, etiqueta, posição da nota do
+  teste). O antigo continua bit a bit como calibrado em 12/09 (teste garante).
+  `montarFichaQuimicos(receita, itens, capacidade)` recebe a capacidade do papel;
+  `imprimirFichaQuimicos(…, { modelo })`; a fonte da quebra em 2 linhas agora sai da altura
+  da célula (5,5 mm pede ~6,8 pt). Menu "Ficha de químicos ▾" ganhou o seletor **Papel:
+  Nova (deitada) | Antiga (em pé)**, salvo no computador (`tsi.ficha.modelo`), e o **ajuste
+  fino é POR PAPEL** — o antigo segue em `tsi.ficha.ajuste` (ninguém perde a calibração) e o
+  novo em `tsi.ficha.ajuste.paisagem`; o painel esconde a linha "Receita" no papel novo
+  (`linhasAjusteDoModelo`). Teste `src/lib/fichaImpressao.test.ts` gera o HTML dos dois papéis
+  com uma janela falsa. **Falta calibrar na ficha real** (Teste de alinhamento + Ajuste fino),
+  como o antigo nasceu; e o nome do tratamento deixou de sair na ficha porque o papel novo
+  não tem onde — se precisarem, decidir o lugar.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

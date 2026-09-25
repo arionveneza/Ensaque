@@ -1,8 +1,8 @@
 // o pacote não tem export raiz: no navegador é o subcaminho /browser
 import writeXlsxFile, { type SheetData } from 'write-excel-file/browser'
 import {
-  AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LINHAS_AJUSTE_FICHA, SECOES_FICHA, aplicarAjusteFicha,
-  type AjusteFicha, type FichaQuimicos,
+  AJUSTE_FICHA_ZERO, LAYOUTS_FICHA, LINHAS_AJUSTE_FICHA, MODELO_FICHA_PADRAO, SECOES_FICHA, aplicarAjusteFicha,
+  type AjusteFicha, type ModeloFicha, type FichaQuimicos,
 type EtiquetaFicha,
 } from '@/dominio/fichaQuimicos'
 
@@ -436,51 +436,9 @@ export function imprimirEtiquetaDm(e: EtiquetaDm): void {
 // ================================================================
 
 /**
- * Posições em mm sobre o papel de 212 × 320 mm. O formulário já vem com
- * logos, cabeçalhos verdes, grade e precauções impressos — o app só põe
- * TEXTO dentro das células. Células de 9 mm de altura; 48 mm de largura
- * nas seções de 4 colunas e 65 mm em OUTROS PRODUTOS (3 colunas) — medidas
- * do Arion. Posições calibradas com o "Teste de alinhamento" numa ficha
- * real, em 9 rodadas (12/09/2026) — cada seção acabou com o seu próprio
- * top, e RECEITA/BIOLÓGICOS com posição própria. Se ainda desviar, mexer
- * SÓ aqui.
+ * Posições da ficha: moram no domínio (`LAYOUTS_FICHA`, um por papel —
+ * o novo deitado e o antigo em pé, 25/09/2026). Se desviar, mexer SÓ lá.
  */
-export const FICHA_QUIMICOS_LAYOUT = {
-  pagina: { largura: 212, altura: 320 },
-  altura: 9,
-  largura: 48,
-  larguraOutros: 65,
-  /** borda esquerda da grade de 4 colunas (4 × 48 = 192 mm, centralizado). */
-  esquerda: 10,
-  /** borda esquerda da grade de OUTROS (3 × 65 = 195 mm, centralizado). */
-  esquerdaOutros: 8.5,
-  /**
-   * Células de RECEITA e BIOLÓGICOS no topo, medidas UMA A UMA na ficha
-   * real (Arion, 12/09/2026, 3 rodadas): não seguem a grade das seções —
-   * a receita fica 5 mm mais baixa e 1 cm mais à esquerda que a de
-   * BIOLÓGICOS. Posição = canto superior esquerdo da célula, em mm.
-   */
-  receita: { left: 58, top: 90 },
-  biologicos: { left: 164, top: 90 },
-  /**
-   * Canto superior esquerdo do espaço reservado à ETIQUETA DO LOTE no
-   * cabeçalho da ficha (17/09/2026) — estimativa: o cabeçalho vai de 0 a
-   * 90 mm e a etiqueta física tem 100 × 73 mm. A imagem sai no tamanho
-   * real do PDF; posição se acerta pelo Ajuste fino (Etiqueta do lote).
-   */
-  etiqueta: { left: 10, top: 14 },
-  /** tamanho suposto da etiqueta, só pra desenhar a guia do teste sem PDF carregado. */
-  etiquetaPadrao: { largura: 100, altura: 73 },
-  /**
-   * A coluna DOSAGEM (última) fica 1 cm mais à direita do que a grade
-   * uniforme sugere — em TODAS as seções, OUTROS inclusive (medido pelo
-   * Arion, 12/09/2026).
-   */
-  deslocDosagem: 10,
-  /** top da 1ª linha de DADOS de cada seção (logo abaixo do cabeçalho de colunas). */
-  top: { inseticida: 116, fungicida: 151, nematicida: 184, inoculante: 211, outros: 240 },
-}
-
 /**
  * Só o conteúdo variável, cada valor numa div absoluta em mm — nenhuma
  * borda, cabeçalho ou logo (já estão no papel). Modo `teste` desenha
@@ -491,24 +449,32 @@ export const FICHA_QUIMICOS_LAYOUT = {
  */
 export function imprimirFichaQuimicos(
   f: FichaQuimicos,
-  opcoes: { teste?: boolean; ajuste?: AjusteFicha; etiqueta?: EtiquetaFicha | null } = {},
+  opcoes: {
+    teste?: boolean
+    ajuste?: AjusteFicha
+    etiqueta?: EtiquetaFicha | null
+    /** papel em uso — o novo deitado (padrão) ou o antigo em pé */
+    modelo?: ModeloFicha
+  } = {},
   janelaPronta?: Window,
 ): void {
-  // padrão + ajuste fino da impressora deste computador (12/09/2026)
+  // layout do papel + ajuste fino da impressora deste computador (12/09/2026)
   const ajuste = opcoes.ajuste ?? AJUSTE_FICHA_ZERO
-  const L = aplicarAjusteFicha(FICHA_QUIMICOS_LAYOUT, ajuste)
+  const L = aplicarAjusteFicha(LAYOUTS_FICHA[opcoes.modelo ?? MODELO_FICHA_PADRAO], ajuste)
   const teste = opcoes.teste === true
   const mm = (v: number) => `${Math.round(v * 100) / 100}mm`
 
-  // texto longo cai pra fonte menor e pode quebrar em 2 linhas dentro dos 9 mm
-  // (limites de caracteres pra 10,5 pt: ~22 cabem em 48 mm, ~30 em 65 mm)
-  const celula = (left: number, top: number, largura: number, texto: string) => {
-    const limite = largura >= 60 ? 30 : 22
-    const cls = texto.length > limite ? 'c quebra' : 'c nowrap'
-    return `<div class="${cls}" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(L.altura)}">${esc(texto)}</div>`
+  // texto longo cai pra fonte menor e pode quebrar em 2 linhas dentro da célula.
+  // ~2,2 mm por caractere a 10,5 pt (22 cabem em 48 mm, 30 em 65 mm); na quebra,
+  // a fonte é a que faz 2 linhas caberem na altura (8 pt no máximo) — o papel
+  // novo tem linhas de 6,9 e 5,5 mm, o antigo de 9 mm
+  const celula = (left: number, top: number, largura: number, altura: number, texto: string) => {
+    const quebra = texto.length > Math.floor(largura / 2.2)
+    const fonte = quebra ? `font-size:${Math.min(8, Math.floor(((altura / 2 / 1.15) * 2.835) * 10) / 10)}pt;` : ''
+    return `<div class="c ${quebra ? 'quebra' : 'nowrap'}" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(altura)};${fonte}">${esc(texto)}</div>`
   }
-  const guia = (left: number, top: number, largura: number, rotulo: string) =>
-    `<div class="g" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(L.altura)}"><span>${esc(rotulo)}</span></div>`
+  const guia = (left: number, top: number, largura: number, altura: number, rotulo: string) =>
+    `<div class="g" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(altura)}"><span>${esc(rotulo)}</span></div>`
 
   const partes: string[] = []
   const guias: string[] = []
@@ -526,35 +492,39 @@ export function imprimirFichaQuimicos(
     `<div class="g" style="left:${mm(L.etiqueta.left)};top:${mm(L.etiqueta.top)};width:${mm(etLarg)};height:${mm(etAlt)}"><span>ETIQUETA DO LOTE · ${esc(`${etLarg} × ${etAlt} mm`)}${et ? '' : ' (posição suposta — sem PDF carregado)'}</span></div>`,
   )
 
-  // cabeçalho: RECEITA na 2ª coluna, BIOLÓGICOS na 4ª (os rótulos estão no papel)
-  partes.push(celula(L.receita.left, L.receita.top, L.largura, f.receita))
-  partes.push(celula(L.biologicos.left, L.biologicos.top, L.largura, f.biologicos))
-  guias.push(guia(L.receita.left, L.receita.top, L.largura, 'RECEITA'))
-  guias.push(guia(L.biologicos.left, L.biologicos.top, L.largura, 'BIOLÓGICOS'))
+  // cabeçalho: RECEITA (só no papel antigo — o novo não tem o campo) e
+  // BIOLÓGICOS (os rótulos estão no papel)
+  if (L.receita) {
+    const r = L.receita
+    partes.push(celula(r.left, r.top, r.largura, r.altura, f.receita))
+    guias.push(guia(r.left, r.top, r.largura, r.altura, 'RECEITA'))
+  }
+  const b = L.biologicos
+  partes.push(celula(b.left, b.top, b.largura, b.altura, f.biologicos))
+  guias.push(guia(b.left, b.top, b.largura, b.altura, 'BIOLÓGICOS'))
 
   const COLUNAS = ['PRODUTO', 'PRINCÍPIO ATIVO', 'CONCENTRAÇÃO', 'DOSAGEM']
   for (const secao of SECOES_FICHA) {
-    for (let i = 0; i < CAPACIDADE_FICHA[secao]; i++) {
-      const top = L.top[secao] + i * L.altura
+    for (let i = 0; i < L.capacidade[secao]; i++) {
+      const top = L.top[secao] + i * L.altura[secao]
       const linha = f.secoes[secao][i]
       const valores = linha ? [linha.produto, linha.principio, linha.concentracao, linha.dosagem] : null
       COLUNAS.forEach((nome, c) => {
-        const left = L.esquerda + c * L.largura + (c === COLUNAS.length - 1 ? L.deslocDosagem : 0)
-        guias.push(guia(left, top, L.largura, `${secao.toUpperCase()} ${i + 1} · ${nome}`))
-        if (valores?.[c]) partes.push(celula(left, top, L.largura, valores[c]))
+        const col = L.colunas[c]
+        guias.push(guia(col.left, top, col.largura, L.altura[secao], `${secao.toUpperCase()} ${i + 1} · ${nome}`))
+        if (valores?.[c]) partes.push(celula(col.left, top, col.largura, L.altura[secao], valores[c]))
       })
     }
   }
   const COL_OUTROS = ['PRODUTO', 'INFORMAÇÕES', 'DOSAGEM']
-  for (let i = 0; i < CAPACIDADE_FICHA.outros; i++) {
-    const top = L.top.outros + i * L.altura
+  for (let i = 0; i < L.capacidade.outros; i++) {
+    const top = L.top.outros + i * L.altura.outros
     const linha = f.outros[i]
     const valores = linha ? [linha.produto, linha.informacoes, linha.dosagem] : null
     COL_OUTROS.forEach((nome, c) => {
-      const left =
-        L.esquerdaOutros + c * L.larguraOutros + (c === COL_OUTROS.length - 1 ? L.deslocDosagem : 0)
-      guias.push(guia(left, top, L.larguraOutros, `OUTROS ${i + 1} · ${nome}`))
-      if (valores?.[c]) partes.push(celula(left, top, L.larguraOutros, valores[c]))
+      const col = L.colunasOutros[c]
+      guias.push(guia(col.left, top, col.largura, L.altura.outros, `OUTROS ${i + 1} · ${nome}`))
+      if (valores?.[c]) partes.push(celula(col.left, top, col.largura, L.altura.outros, valores[c]))
     })
   }
 
@@ -597,7 +567,7 @@ export function imprimirFichaQuimicos(
   .g span { position: absolute; left: 1mm; bottom: 0.4mm; font-size: 4.5pt; color: #888; white-space: nowrap; }
   .tick { position: absolute; background: #222; }
   .tl { position: absolute; font-size: 5pt; color: #222; }
-  .nota { position: absolute; left: 10mm; top: 300mm; width: 192mm; font-size: 7pt; line-height: 1.3; color: #333; }
+  .nota { position: absolute; left: ${mm(L.nota.left)}; top: ${mm(L.nota.top)}; width: ${mm(L.nota.largura)}; font-size: 7pt; line-height: 1.3; color: #333; }
 </style></head><body class="${teste ? 'teste' : ''}">
 ${teste ? guias.join('\n') : ''}
 ${partes.join('\n')}

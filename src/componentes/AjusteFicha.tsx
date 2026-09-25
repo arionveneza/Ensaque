@@ -7,6 +7,8 @@ interface Props {
   onMudar: (v: AjusteFicha) => void
   onImprimirTeste: () => void
   onImprimirFicha: () => void
+  /** linhas do papel em uso (o novo não tem Receita); padrão: todas */
+  linhas?: typeof LINHAS_AJUSTE_FICHA
 }
 
 const mm = (v: number) => (v === 0 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v)} mm`)
@@ -17,7 +19,7 @@ const mm = (v: number) => (v === 0 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v)}
  * pingue-pongue "sobe 3 mm / desce 2 mm" com deploy no meio — quem está na
  * frente da impressora acerta e imprime de novo na hora.
  */
-export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirFicha }: Props) {
+export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirFicha, linhas = LINHAS_AJUSTE_FICHA }: Props) {
   const mudar = (chave: keyof AjusteFicha, delta: number) => {
     const novo = Math.max(-LIMITE_AJUSTE_MM, Math.min(LIMITE_AJUSTE_MM, valor[chave] + delta))
     onMudar({ ...valor, [chave]: novo })
@@ -32,7 +34,7 @@ export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirF
       </p>
       <table className="mt-1 w-full text-sm">
         <tbody>
-          {LINHAS_AJUSTE_FICHA.map(({ chave, rotulo }) => {
+          {linhas.map(({ chave, rotulo }) => {
             const horizontal = AJUSTES_HORIZONTAIS.has(chave)
             return (
             <tr key={chave}>
