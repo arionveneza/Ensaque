@@ -21,9 +21,9 @@
  */
 
 import {
-  EMBALAGEM_DEPARA, normaliza, normalizaCultivar, num, numPms, txt, type Linha,
+  EMBALAGEM_DEPARA, normaliza, num, numPms, txt, type Linha,
 } from './simpleagro'
-import { corrigeTratamentoSap } from './sap'
+import { corrigeTratamentoSap, cultivarDaLinhaSap } from './sap'
 
 export const DEPOSITO_MAPA = 'VEN_GER'
 /** Tratamento da semente branca — mesma convenção de lotes_semente. */
@@ -114,6 +114,8 @@ export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInven
   const h = (rows[0] ?? []).map((c) => txt(c).toUpperCase())
   const iLote = idx(h, 'Nº DO LOTE')
   const iCult = idx(h, 'CULTIVAR')
+  // CULTIVAR vazio no SAP: o nome sai da descrição do item (27/09/2026, cultivarDaLinhaSap)
+  const iDesc = h.findIndex((x) => normaliza(x).startsWith('DESCRICAO DO ITEM'))
   const iTrat = idx(h, 'TRATAMENTO (TSI)')
   const iEmb = idx(h, 'EMBALAGEM')
   const iSaldo = idx(h, 'QTD EM ESTOQUE')
@@ -177,7 +179,7 @@ export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInven
         // problema (achado do Arion, 11/09/2026: "NEO700 e 700 I2X" são
         // o mesmo cultivar aparecendo separado no filtro do Mapa) e o
         // importador do mapa nunca aplicava a correção.
-        cultivar: normalizaCultivar(txt(linha[iCult])),
+        cultivar: cultivarDaLinhaSap(txt(linha[iCult]), iDesc >= 0 ? txt(linha[iDesc]) : '').cultivar,
         embalagem: emb.codigo,
         bags,
       })
@@ -214,6 +216,8 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
   const h = (rows[0] ?? []).map((c) => txt(c).toUpperCase())
   const iLote = idx(h, 'Nº DO LOTE')
   const iCult = idx(h, 'CULTIVAR')
+  // CULTIVAR vazio no SAP: o nome sai da descrição do item (27/09/2026, cultivarDaLinhaSap)
+  const iDesc = h.findIndex((x) => normaliza(x).startsWith('DESCRICAO DO ITEM'))
   const iTrat = idx(h, 'TRATAMENTO (TSI)')
   const iEmb = idx(h, 'EMBALAGEM')
   const iSaldo = idx(h, 'QTD EM ESTOQUE')
@@ -326,7 +330,7 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
         tratamento,
         // mesmo de-para do cultivar truncado que a SimpleAgro usa (ver
         // comentário equivalente em converterEstoqueInventario acima)
-        cultivar: normalizaCultivar(txt(linha[iCult])),
+        cultivar: cultivarDaLinhaSap(txt(linha[iCult]), iDesc >= 0 ? txt(linha[iDesc]) : '').cultivar,
         embalagem: emb.codigo,
         pms,
         peso_bag_kg: Math.round(pesoBag * 1000) / 1000,

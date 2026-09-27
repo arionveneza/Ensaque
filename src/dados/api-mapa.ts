@@ -55,37 +55,44 @@ export interface LoteMapaLinha {
 export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
   // bags > 0: carga CARREGADA zera o lote no mapa (gatilho) — a linha fica
   // no banco pro desfazer devolver, mas some da tela.
-  // limit explícito: o PostgREST corta em 1000 linhas EM SILÊNCIO sem ele,
-  // e o mapa já passa de 750 combinações (varredura de 30/08/2026)
-  let r = await supabase
-    .from('lotes_mapa')
-    .select(
-      'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, nao_encontrado_inventario_em, lote_enderecos ( id, armazem, bloco, quadra, bags )',
-    )
-    .gt('bags', 0)
-    .order('cultivar')
-    .limit(10000)
-  if (r.error?.code === '42703') {
-    // janela pré-migração inventario-mapa-ajuste-reserva.sql (coluna nova)
-    r = (await supabase
+  // PAGINADO: o PostgREST corta em 1.000 linhas EM SILÊNCIO, e um limit()
+  // maior não passa do teto do servidor — o mapa tinha 980 combinações com
+  // saldo em 27/09/2026. Ordem estável (cultivar, lote, tratamento) pra
+  // nenhuma linha pular ou repetir entre as páginas.
+  const colunas = (comMarca: boolean) =>
+    `lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, ${comMarca ? 'nao_encontrado_inventario_em, ' : ''}lote_enderecos ( id, armazem, bloco, quadra, bags )`
+  const pagina = (de: number, comMarca: boolean) =>
+    supabase
       .from('lotes_mapa')
-      .select(
-        'lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, lote_enderecos ( id, armazem, bloco, quadra, bags )',
-      )
+      .select(colunas(comMarca))
       .gt('bags', 0)
       .order('cultivar')
-      .limit(10000)) as unknown as typeof r
+      .order('lote')
+      .order('tratamento')
+      .range(de, de + 999)
+  let comMarca = true
+  const linhas: object[] = []
+  for (let de = 0; ; de += 1000) {
+    let r = await pagina(de, comMarca)
+    if (r.error?.code === '42703' && comMarca) {
+      // janela pré-migração inventario-mapa-ajuste-reserva.sql (coluna nova)
+      comMarca = false
+      r = await pagina(de, comMarca)
+    }
+    if (r.error) {
+      // null SÓ na janela pré-migração (tabela ausente); erro transitório
+      // (rede) propaga — devolver null fazia a tela operar com mapa vazio e
+      // salvar carga apagando lotes (varredura de 30/08/2026)
+      if (['42P01', 'PGRST200', 'PGRST205'].includes(r.error.code ?? '')) return null
+      throw new Error(`carregar o mapa: ${r.error.message}`)
+    }
+    const bloco = (r.data ?? []) as object[]
+    linhas.push(...bloco)
+    if (bloco.length < 1000) break
   }
-  if (r.error) {
-    // null SÓ na janela pré-migração (tabela ausente); erro transitório
-    // (rede) propaga — devolver null fazia a tela operar com mapa vazio e
-    // salvar carga apagando lotes (varredura de 30/08/2026)
-    if (['42P01', 'PGRST200', 'PGRST205'].includes(r.error.code ?? '')) return null
-    throw new Error(`carregar o mapa: ${r.error.message}`)
-  }
-  return (r.data ?? []).map((l) => ({
+  return linhas.map((l) => ({
     nao_encontrado_inventario_em: null,
-    ...(l as object),
+    ...l,
   })) as unknown as LoteMapaLinha[]
 }
 

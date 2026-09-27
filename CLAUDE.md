@@ -828,6 +828,32 @@ lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
 **Sub-lote sem saldo não entra**: o SAP desdobra o lote em `-1`, `-2`, `-3`, e o
 importador pula linha com Qtd em Estoque 0 — é por isso que só o sufixo com bags existe
 em `lotes_semente` (o `-1` "sumido" não é bug).
+**CULTIVAR vazio no SAP → sai da descrição do item** (27/09/2026, achado do Arion: "o 640 I2X
+não aparece para fazer ordem de produção"). Desde 11/09 o SAP exporta alguns itens com a
+coluna CULTIVAR vazia — "SS 640 I2X BB5M (R)", "SS NEO680 IPRO BMB TSI (R)", "SS NEO700 I2X
+BB5M TSI (R)", "SS CG7191 I2X BB5M (R)", "SS NEO799 I2X SC200MS (R)" — e os três conversores
+desse arquivo (`converterSaldoSap`, `converterLotesMapa`, `converterEstoqueInventario`) só
+liam a coluna: o lote entrava com cultivar em branco e sumia da seleção de lote do cultivar
+dele (o 640 I2X ficou assim de 11/09 a 25/09; o export de 26/09 voltou a trazer a coluna).
+`cultivarDaLinhaSap`/`cultivarDaDescricaoSap` (`sap.ts`): a coluna preenchida SEMPRE manda;
+vazia, a descrição "SS <cultivar> <embalagem> [TSI] [(R)]" perde o parêntese, o TSI e o código
+de embalagem do fim e o "SS" do começo. Conferido em 23.787 linhas de todos os exports com as
+duas colunas: mesma resposta em todas as reais (a única diferença é O700 × NEO700, que
+`normalizaCultivar` já trata). A prévia do saldo do SAP em Ordens avisa quantas linhas vieram
+assim (`resumo.cultivarDaDescricao`) — vale pedir o acerto do cadastro do item no SAP.
+Junto: (1) **`listarLotes` e `listarLotesMapa` paginados** — o PostgREST devolve no máximo
+1.000 linhas e corta em silêncio, e `limit(10000)` não passa do teto do servidor: com 1.019
+lotes, os 19 últimos por número (O790, NEO802, NEO791, O820, NEO680) sumiam de toda seleção de
+lote; o Mapa estava com 980 combinações com saldo. (2) A tela de Ordens **recarrega os lotes**
+no `recarregar` (tempo real de `lotes_semente` e depois de importar) — eram lidos só ao abrir,
+e a seleção de lote seguia com a lista velha até um F5. (3) **O Mapa não recebe o upload do
+SAP desde 28/08** (última substituição em massa da branca: 515 lotes naquele dia; depois só
+entradas manuais, com cultivar digitado errado em 20 lotes). Sincronizar tudo em 27/09
+traria +60 lotes, apagaria 196 (194 com endereço, 13 em carga montada aberta) e mudaria 126
+saldos — **decisão do Arion: só os lotes do 640 I2X** (`supabase/mapa-lotes-640-i2x.sql`,
+aplicado: +7 lotes, 2 "NEO640 I2X" corrigidos, SV001302656300 → SV0013026563000 com o
+endereço; conferido 10 lotes · 72 bg = SAP). O resto do Mapa segue como estava; a
+sincronização geral continua pendente de decisão.
 
 ### Montagem carga vs lotes — SimpleAgro (24/09/2026)
 `relatorio-montagem-carga-vs-lotes.xlsx`, subido no "Carregar planilha" da tela Ordens. Vira o

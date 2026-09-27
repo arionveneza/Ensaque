@@ -53,6 +53,46 @@ const TRATAMENTO_DEPARA_SAP: Record<string, string> = {
 export const corrigeTratamentoSap = (bruto: string): string =>
   TRATAMENTO_DEPARA_SAP[normaliza(bruto)] ?? bruto
 
+/**
+ * Cultivar tirado da "Descrição do Item" quando a coluna CULTIVAR vem VAZIA
+ * (27/09/2026, achado do Arion: "o 640 I2X não aparece para fazer ordem de
+ * produção"). Desde 11/09 o SAP exporta alguns itens sem CULTIVAR — "SS 640
+ * I2X BB5M (R)", "SS NEO680 IPRO BMB TSI (R)", "SS NEO700 I2X BB5M TSI (R)",
+ * "SS CG7191 I2X BB5M (R)", "SS NEO799 I2X SC200MS (R)" — e o lote entrava
+ * com cultivar em branco: sumia da seleção de lote do cultivar dele (o 640 I2X
+ * ficou assim de 11/09 a 25/09). A descrição segue o padrão "SS <cultivar>
+ * <embalagem> [TSI] [(R)]": tira o parêntese do fim, o TSI e o código de
+ * embalagem do fim e o "SS" do começo. Conferido em 23.787 linhas de todos os
+ * exports que têm as duas colunas: a descrição dá o mesmo cultivar em todas
+ * (as únicas diferenças são O700 I2X × NEO700 I2X, que `normalizaCultivar` já
+ * trata). A coluna preenchida SEMPRE manda — isto é só a rede.
+ */
+const EMBALAGEM_NA_DESCRICAO = /^(BB\d*M?|BMB|BAG|BIGBAG|MEIOBAG|BG5M|SC\d+\w*)$/
+export function cultivarDaDescricaoSap(descricao: string): string {
+  let partes = normaliza(descricao)
+    .replace(/(\s*\([^)]*\))+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+  if (partes[0] === 'SS') partes = partes.slice(1)
+  while (
+    partes.length > 1 &&
+    (partes[partes.length - 1] === 'TSI' || EMBALAGEM_NA_DESCRICAO.test(partes[partes.length - 1]))
+  ) {
+    partes = partes.slice(0, -1)
+  }
+  return partes.join(' ')
+}
+
+/** Cultivar da linha: a coluna CULTIVAR; vazia, o que a descrição do item diz. */
+export function cultivarDaLinhaSap(colunaCultivar: string, descricao: string): { cultivar: string; daDescricao: boolean } {
+  const coluna = normalizaCultivar(colunaCultivar)
+  if (coluna) return { cultivar: coluna, daDescricao: false }
+  const derivado = descricao ? normalizaCultivar(cultivarDaDescricaoSap(descricao)) : ''
+  return { cultivar: derivado, daDescricao: derivado !== '' }
+}
+
 export interface ResumoSaldoSap {
   totalLinhas: number
   /** Sem embalagem reconhecida (BB5M/BMB) → ignorado (granel/pré-lote). */
@@ -73,6 +113,11 @@ export interface ResumoSaldoSap {
   pmsRecuperado: number
   /** "UM Estoque" vista em cada linha aproveitada — mais de uma chave aqui é sinal de unidade misturada (ex.: bag e kg juntos). */
   unidades: Record<string, number>
+  /**
+   * Linhas aproveitadas com a coluna CULTIVAR vazia no SAP, cujo cultivar
+   * saiu da descrição do item — valor → linhas. Vale pedir o acerto no SAP.
+   */
+  cultivarDaDescricao: Record<string, number>
 }
 
 export interface ResultadoSaldoSap {
@@ -104,6 +149,8 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
   const h = (rows[0] ?? []).map((c) => txt(c).toUpperCase())
   const ix = (nome: string) => h.indexOf(nome)
   const iCult = ix('CULTIVAR')
+  // rede do cultivar vazio (27/09/2026): a descrição do item traz o nome
+  const iDesc = h.findIndex((x) => normaliza(x).startsWith('DESCRICAO DO ITEM'))
   const iLote = ix('Nº DO LOTE')
   const iTrat = ix('TRATAMENTO (TSI)')
   const iEmb = ix('EMBALAGEM')
@@ -132,6 +179,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
     semPms: 0,
     pmsRecuperado: 0,
     unidades: {},
+    cultivarDaDescricao: {},
   }
 
   for (const r of rows.slice(1)) {
@@ -159,7 +207,8 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
     const um = txt(r[iUm]) || '(vazio)'
     resumo.unidades[um] = (resumo.unidades[um] ?? 0) + 1
 
-    const cultivar = normalizaCultivar(txt(r[iCult]))
+    const { cultivar, daDescricao } = cultivarDaLinhaSap(txt(r[iCult]), iDesc >= 0 ? txt(r[iDesc]) : '')
+    if (daDescricao) resumo.cultivarDaDescricao[cultivar] = (resumo.cultivarDaDescricao[cultivar] ?? 0) + 1
     const tratamento = corrigeTratamentoSap(txt(r[iTrat]))
     let pms = iPms >= 0 ? numPms(r[iPms]) : 0
     // PMS de soja nunca chega a 1.000 g/mil-sementes — valor fora disso é

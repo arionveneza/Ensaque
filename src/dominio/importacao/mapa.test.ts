@@ -14,6 +14,7 @@ const CAB: Linha = [
 const linha = (opts: {
   lote: string
   cultivar?: string
+  desc?: string
   classif?: string | null
   pms?: number | null
   pesoBruto?: number | null
@@ -23,7 +24,7 @@ const linha = (opts: {
   dep?: string
   qtd?: number
 }): Linha => [
-  'SOJ00002', opts.lote, 'SS X BB5M', opts.cultivar ?? 'NEO680 IPRO', opts.classif ?? 'Classe C',
+  'SOJ00002', opts.lote, opts.desc ?? 'SS X BB5M', opts.cultivar ?? 'NEO680 IPRO', opts.classif ?? 'Classe C',
   'C1', 'P 6.0 mm', opts.pms === undefined ? 150 : opts.pms,
   opts.pesoBruto === undefined ? 750 : opts.pesoBruto, opts.emb ?? 'BB5M', opts.emb ?? 'BB5M',
   'BB5M', 'BB5M', opts.trat ?? null, opts.dest ?? null, new Date('2026-02-27'),
@@ -230,5 +231,22 @@ describe('converterEstoqueInventario', () => {
       linha({ lote: 'A', cultivar: 'O700 I2X', qtd: 3 }),
     ])
     expect(r.saldos[0].cultivar).toBe('NEO700 I2X')
+  })
+})
+
+describe('CULTIVAR vazio no SAP: Mapa e Inventário tiram o nome da descrição (27/09/2026)', () => {
+  it('Mapa: lote do 640 I2X com a coluna vazia entra como 640 I2X', () => {
+    const r = converterLotesMapa([CAB, linha({ lote: '6250003-1', cultivar: '', desc: 'SS 640 I2X BB5M (R)', qtd: 18 })])
+    expect(r.lotes).toEqual([expect.objectContaining({ lote: '6250003', cultivar: '640 I2X', bags: 18 })])
+  })
+
+  it('Mapa: coluna preenchida continua mandando', () => {
+    const r = converterLotesMapa([CAB, linha({ lote: 'A1', cultivar: '761 I2X', desc: 'SS 640 I2X BB5M (R)' })])
+    expect(r.lotes[0].cultivar).toBe('761 I2X')
+  })
+
+  it('Inventário: mesma regra', () => {
+    const r = converterEstoqueInventario([CAB, linha({ lote: '6250003-1', cultivar: '', desc: 'SS 640 I2X BB5M (R)', qtd: 18 })])
+    expect(r.saldos.map((x) => x.cultivar)).toEqual(['640 I2X'])
   })
 })

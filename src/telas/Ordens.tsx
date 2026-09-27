@@ -235,13 +235,19 @@ export default function Ordens() {
     }
   }, [])
 
+  // os LOTES entram aqui também (27/09/2026, achado do Arion: "o 640 I2X não
+  // aparece para fazer ordem de produção"): eram lidos só ao abrir a tela, e
+  // depois de importar o saldo do SAP — aqui mesmo ou em outro computador,
+  // pelo tempo real de lotes_semente — a seleção de lote seguia com a lista
+  // velha até alguém dar F5
   const recarregar = useCallback(async () => {
-    const [o, b, cf] = await Promise.all([
-      g.listarOrdens(), g.listarBalanco(), g.listarConferencias(), recarregarMontagem(),
+    const [o, b, cf, l] = await Promise.all([
+      g.listarOrdens(), g.listarBalanco(), g.listarConferencias(), g.listarLotes(), recarregarMontagem(),
     ])
     setOrdens(o)
     setBalanco(b)
     setConferencias(cf)
+    setLotes(l)
   }, [recarregarMontagem])
 
   useEffect(() => {
@@ -828,6 +834,20 @@ export default function Ordens() {
                   <Aviso gravidade="bloqueio">
                     {previaSaldoSap.resumo.semPms} lote(s) sem PMS <b>e sem Peso Bruto</b> — o
                     peso do bag fica zero. Corrigir na origem antes de produzir.
+                  </Aviso>
+                </div>
+              )}
+              {Object.keys(previaSaldoSap.resumo.cultivarDaDescricao ?? {}).length > 0 && (
+                <div className="mt-3">
+                  <Aviso>
+                    <b>Coluna CULTIVAR vazia no SAP</b> em{' '}
+                    {Object.values(previaSaldoSap.resumo.cultivarDaDescricao).reduce((a, n) => a + n, 0)} linha(s)
+                    — o cultivar saiu da descrição do item:{' '}
+                    {Object.entries(previaSaldoSap.resumo.cultivarDaDescricao)
+                      .map(([c, n]) => `${c} (${n})`)
+                      .join(' · ')}
+                    . Sem isso esses lotes entrariam sem cultivar e sumiriam da seleção de lote. Vale
+                    pedir o acerto do cadastro do item no SAP.
                   </Aviso>
                 </div>
               )}

@@ -492,13 +492,26 @@ export interface LoteSementeLinha {
   baixado_em: string | null
 }
 
+/**
+ * Todos os lotes de semente, PAGINADO: o PostgREST devolve no máximo 1.000
+ * linhas por consulta e corta o resto em silêncio. Com 1.019 lotes (27/09/2026)
+ * os últimos em ordem de número — O790, NEO802, NEO791, O820, NEO680 — sumiam
+ * de toda seleção de lote (Nova ordem, Programar pela demanda).
+ */
 export async function listarLotes(): Promise<LoteSementeLinha[]> {
-  const { data, error } = await supabase
-    .from('lotes_semente')
-    .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver, baixado_por, baixado_em')
-    .order('id')
-  erro('lotes de semente', error)
-  return (data ?? []) as LoteSementeLinha[]
+  const todos: LoteSementeLinha[] = []
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await supabase
+      .from('lotes_semente')
+      .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver, baixado_por, baixado_em')
+      .order('id')
+      .range(de, de + 999)
+    erro('lotes de semente', error)
+    const bloco = (data ?? []) as LoteSementeLinha[]
+    todos.push(...bloco)
+    if (bloco.length < 1000) break
+  }
+  return todos
 }
 
 /**

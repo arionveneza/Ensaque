@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { converterSaldoSap, ehRelatorioSaldoSap } from './sap'
+import { converterSaldoSap, cultivarDaDescricaoSap, cultivarDaLinhaSap, ehRelatorioSaldoSap } from './sap'
 import type { Linha } from './simpleagro'
 
 const CAB_SAP = [
@@ -274,5 +274,46 @@ describe('conversao de saldos do SAP', () => {
     // mesma combinacao apos a correcao: agrega numa linha so
     expect(r.estoquePa).toHaveLength(1)
     expect(r.estoquePa[0]).toMatchObject({ tratamento: 'V&P', bags: 10 })
+  })
+})
+
+describe('cultivar vazio no SAP: sai da descrição do item (27/09/2026)', () => {
+  // as 5 descrições que vieram com a coluna CULTIVAR vazia nos exports de set/2026
+  it.each([
+    ['SS 640 I2X BB5M (R)', '640 I2X'],
+    ['SS NEO680 IPRO BMB TSI (R)', 'NEO680 IPRO'],
+    ['SS NEO700 I2X BB5M TSI (R)', 'NEO700 I2X'],
+    ['SS CG7191 I2X BB5M (R)', 'CG7191 I2X'],
+    ['SS NEO799 I2X SC200MS (R)', 'NEO799 I2X'],
+    ['SS NEO700 I2X BB5M', 'NEO700 I2X'],
+    ['  ss  o790   ipro  bmb ', 'O790 IPRO'],
+  ])('%s → %s', (descricao, esperado) => {
+    expect(cultivarDaDescricaoSap(descricao)).toBe(esperado)
+  })
+
+  it('a coluna preenchida sempre manda; vazia, vem da descrição', () => {
+    expect(cultivarDaLinhaSap('761 I2X', 'SS 640 I2X BB5M (R)')).toEqual({ cultivar: '761 I2X', daDescricao: false })
+    expect(cultivarDaLinhaSap('', 'SS 640 I2X BB5M (R)')).toEqual({ cultivar: '640 I2X', daDescricao: true })
+    expect(cultivarDaLinhaSap('  ', '')).toEqual({ cultivar: '', daDescricao: false })
+    // o de-para do cultivar truncado continua valendo na coluna
+    expect(cultivarDaLinhaSap('O700 I2X', 'SS NEO700 I2X BB5M').cultivar).toBe('NEO700 I2X')
+  })
+
+  it('no import do saldo, o lote com CULTIVAR vazio entra com o cultivar da descrição (antes entrava em branco)', () => {
+    const cab = ['Nº do Lote', 'Descrição do Item', 'Cultivar', 'Tratamento (TSI)', 'Embalagem', 'PMS (g)', 'Data de Entrada', 'UM Estoque', 'Qtd em Estoque']
+    const r = converterSaldoSap([
+      cab,
+      ['6250003-1', 'SS 640 I2X BB5M (R)', '', 'SEM TSI', 'BB5M', 158.4, '2026-06-10', 'SC', 18] as Linha,
+      ['SV001', 'SS 761 I2X BB5M', '761 I2X', 'SEM TSI', 'BB5M', 171, '2026-06-10', 'SC', 5] as Linha,
+    ])
+    expect(r.lotes.find((l) => l.id === '6250003-1')?.cultivar).toBe('640 I2X')
+    expect(r.lotes.find((l) => l.id === 'SV001')?.cultivar).toBe('761 I2X')
+    expect(r.resumo.cultivarDaDescricao).toEqual({ '640 I2X': 1 })
+  })
+
+  it('sem coluna de descrição no arquivo, nada muda (cultivar vazio fica vazio)', () => {
+    const r = converterSaldoSap([CAB_SAP, linha('', 'X1', 'SEM TSI', 'BB5M', 150, '2026-06-10', 'SC', 3)])
+    expect(r.lotes[0].cultivar).toBe('')
+    expect(r.resumo.cultivarDaDescricao).toEqual({})
   })
 })
