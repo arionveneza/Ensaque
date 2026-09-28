@@ -661,7 +661,7 @@ export default function Expedicao() {
                 ) : (
                   <div className="mt-3">
                     <Tabela cabecalho={[
-                      'Carga', 'Data(s)', 'Cliente', '#Bags', 'Situação', 'O que falta',
+                      'Carga', 'Data(s)', 'Cliente', '#Bags', 'Situação', 'Produtos · estoque / em ordem / falta',
                       { texto: 'Status carga', className: 'hidden lg:table-cell' },
                       '',
                     ]}>
@@ -710,7 +710,7 @@ export default function Expedicao() {
                                 )}
                               </span>
                             </td>
-                            <td className="px-2 py-1.5 text-xs"><FaltaDaCarga carga={c} /></td>
+                            <td className="px-2 py-1.5 text-xs"><ProdutosDaCarga carga={c} /></td>
                             <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">
                               {c.status.join(' / ') || '—'}
                             </td>
@@ -739,6 +739,9 @@ export default function Expedicao() {
                   data só conta ordem já iniciada, e a etiqueta diz <b>caminhão sem data</b> — uma carga pode ter
                   as duas, cada produto pelo seu motivo).
                   {' '}<b>Falta planejar</b> = sobra bag sem ordem (tratado) ou sem lote (semente branca).
+                  {' '}Na coluna dos produtos, cada um diz quanto a carga já tem <b>em estoque</b>, quanto está <b>em ordem</b>{' '}
+                  (com as ordens do produto — em âmbar a parte que não fica pronta até o caminhão) e quanto está{' '}
+                  <b>sem ordem</b>; produto que o estoque cobre inteiro vira um resumo no fim da célula.
                   {' '}<b>Embalagem sem de-para</b> = o app não conhece a embalagem, estoque e ordem nunca casam:
                   fica fora da conta, nunca vira falta.
                   {' '}A fila é uma só: as cargas de antes pegam o estoque e as ordens primeiro. Só as cargas do
@@ -1486,41 +1489,68 @@ function TagSituacaoCarga({ situacao }: { situacao: SituacaoCarga }) {
 }
 
 /**
- * O que falta na carga, produto a produto: o sem ordem / sem lote e, na
- * carga planejada fora do prazo, quanto depende de ordem que não está
- * garantida até o caminhão — com as ordens do produto, para achar qual.
+ * Os produtos da carga, cada um com o que JÁ TEM (estoque), o que está EM
+ * ORDEM (com nº e status das ordens do produto) e o que FALTA (sem ordem /
+ * sem lote). Até 28/09/2026 a coluna mostrava só a falta — o produto coberto
+ * por ordem sumia da linha e só aparecia no recorte (pergunta do Arion sobre a
+ * carga 950: "por que aparece só o que falta produzir e não o que está
+ * planejado também?"). A parte em ordem que não está garantida até o caminhão
+ * (ordem sem dia, atrasada, depois do caminhão — ou agendamento sem data) sai
+ * em âmbar, com as ordens fora do prazo. Produto que o estoque cobre inteiro
+ * vira uma linha de resumo no fim, pra carga grande não virar parede.
  */
-function FaltaDaCarga({ carga }: { carga: CargaClassificada }) {
-  const emFalta = carga.produtos.filter((p) => p.falta > 0)
+function ProdutosDaCarga({ carga }: { carga: CargaClassificada }) {
+  const avaliaveis = carga.produtos.filter((p) => !p.semDePara)
   const semDePara = carga.produtos.filter((p) => p.semDePara)
-  const foraDoPrazo = carga.foraDoPrazo
-    ? carga.produtos.filter((p) => !p.semDePara && p.falta <= 0 && p.garantido < p.bags)
-    : []
-  if (emFalta.length === 0 && foraDoPrazo.length === 0 && semDePara.length === 0) {
-    return <span className="text-stone-400">—</span>
-  }
+  const soEstoque = avaliaveis.filter((p) => p.falta <= 0 && p.estoque >= p.bags)
+  const detalhados = avaliaveis.filter((p) => !(p.falta <= 0 && p.estoque >= p.bags))
+  if (avaliaveis.length === 0 && semDePara.length === 0) return <span className="text-stone-400">—</span>
   return (
-    <ul className="space-y-0.5">
-      {emFalta.map((p) => (
-        <li key={`f|${p.cultivar}|${p.tratamento}|${p.embalagem}`}>
-          <span className="font-medium">{p.cultivar}</span> · {p.semTsi ? SEM_TSI : p.tratamento} · {p.embalagem}
-          {' · '}
-          <b className="text-red-700 dark:text-red-400">
-            {inteiro(p.falta)} bg {p.semTsi ? 'sem lote' : 'sem ordem'}
-          </b>
+    <ul className="space-y-1">
+      {detalhados.map((p) => {
+        const emEstoque = Math.min(p.estoque, p.bags)
+        const emOrdem = Math.max(0, p.planejado - p.estoque)
+        const foraDoPrazo = Math.max(0, p.planejado - Math.max(p.garantido, p.estoque))
+        return (
+          <li key={`p|${p.cultivar}|${p.tratamento}|${p.embalagem}`}>
+            <span className="font-medium">{p.cultivar}</span> · {p.semTsi ? SEM_TSI : p.tratamento} · {p.embalagem}
+            {' · '}{inteiro(p.bags)} bg:
+            {emEstoque > 0 && <span className="text-stone-600 dark:text-stone-300"> {inteiro(emEstoque)} em estoque</span>}
+            {emOrdem > 0 && (
+              <span className="text-sky-700 dark:text-sky-400">
+                {emEstoque > 0 ? ' ·' : ''} {inteiro(emOrdem)} em ordem
+              </span>
+            )}
+            {foraDoPrazo > 0 && (
+              <span className="text-amber-800 dark:text-amber-300">
+                {' '}({inteiro(foraDoPrazo)}{' '}
+                {p.caminhaoSemData
+                  ? 'dependem de ordem ainda não iniciada — o agendamento não tem data, só ordem iniciada garante'
+                  : `fora do prazo${p.ateQuando ? ` do caminhão de ${diaCurto(p.ateQuando)}` : ''}`}
+                )
+              </span>
+            )}
+            {p.falta > 0 && (
+              <b className="text-red-700 dark:text-red-400">
+                {emEstoque > 0 || emOrdem > 0 ? ' ·' : ''} {inteiro(p.falta)} {p.semTsi ? 'sem lote' : 'sem ordem'}
+              </b>
+            )}
+            {/* as ordens do produto (a fila decide quanto delas é desta carga); fora do prazo em destaque */}
+            {emOrdem > 0 && (
+              <OrdensDaLinha ordens={foraDoPrazo > 0 && p.ordensForaDoPrazo.length > 0 ? p.ordensForaDoPrazo : p.ordens} />
+            )}
+          </li>
+        )
+      })}
+      {soEstoque.length > 0 && (
+        <li className="text-stone-500 dark:text-stone-400">
+          {detalhados.length > 0 ? '+ ' : ''}
+          {soEstoque.length} produto(s) inteiro(s) em estoque ({inteiro(soEstoque.reduce((s, p) => s + p.bags, 0))} bg)
+          {detalhados.length === 0 && soEstoque.length <= 3 && (
+            <>: {soEstoque.map((p) => `${p.cultivar} · ${p.semTsi ? SEM_TSI : p.tratamento} · ${p.embalagem}`).join('; ')}</>
+          )}
         </li>
-      ))}
-      {foraDoPrazo.map((p) => (
-        <li key={`p|${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="text-amber-800 dark:text-amber-300">
-          <span className="font-medium">{p.cultivar}</span> · {p.tratamento} · {p.embalagem}
-          {' · '}{inteiro(p.bags - p.garantido)} bg{' '}
-          {p.caminhaoSemData
-            ? 'dependem de ordem ainda não iniciada (o agendamento não tem data — só ordem iniciada garante)'
-            : `dependem de ordem fora do prazo${p.ateQuando ? ` (caminhão ${diaCurto(p.ateQuando)})` : ''}`}
-          {/* só as ordens que NÃO estão garantidas — a 1ª versão listava todas, inclusive a que já rodava */}
-          {p.ordensForaDoPrazo.length > 0 && <OrdensDaLinha ordens={p.ordensForaDoPrazo} />}
-        </li>
-      ))}
+      )}
       {semDePara.map((p) => (
         <li key={`d|${p.cultivar}|${p.tratamento}|${p.embalagem}`} className="text-amber-800 dark:text-amber-300">
           <span className="font-medium">{p.cultivar}</span> · {p.tratamento} · {p.embalagem}

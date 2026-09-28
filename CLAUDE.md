@@ -1372,11 +1372,27 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    exclusivos (todas · atendem agora · tudo planejado · falta planejar · ordem fora do prazo)
    com o total de bags sem ordem/sem lote, `Tabela` Carga · Data(s) · Cliente · Bags ("X de
    Y" quando o período corta a carga, total por `cargasAgendadas(agendamentos)`) · Situação
-   (Tag + "ordem fora do prazo") · O que falta (`FaltaDaCarga`: produto · falta · sem
-   ordem/sem lote, "embalagem sem de-para" etiquetada; na planejada fora do prazo, quanto
-   depende de ordem fora do prazo e `ordensCurto`) · Status carga · botão **recortar** (marca
+   (Tag + "ordem fora do prazo") · Produtos (`ProdutosDaCarga` desde 28/09/2026 — ver
+   abaixo; até ali `FaltaDaCarga`, só a falta) · Status carga · botão **recortar** (marca
    só aquela carga no recorte, fecha o painel); o seletor de cargas mostra a situação ao lado
    de cada linha (`TagSituacaoCarga`).
+   **A linha da carga mostra também o que já está em ordem** (28/09/2026, pedido do Arion:
+   "por que a carga 950 aparece na tela de expedição só o que falta produzir e não o que
+   está planejado tbm?"). A coluna "O que falta" listava só produto com falta; o coberto por
+   ordem sumia da linha e só aparecia no recorte — na 950, o NEO700 I2X (11 bg nas ordens
+   158135/158159) e 2 bg do 76KA72 (ordem 158284) não apareciam, só os 71KA72 sem ordem.
+   Agora a coluna "Produtos · estoque / em ordem / falta" (`ProdutosDaCarga`) dá, por
+   produto, **N em estoque · N em ordem · N sem ordem** (SEM TSI: "sem lote"), com as ordens
+   embaixo (`OrdensDaLinha`: nº · status · bags · dia). Os três números saem direto dos
+   níveis da fila, sem conta nova: em estoque = `estoque`, em ordem = `planejado − estoque`,
+   falta = `bags − planejado` — somam os bags do produto na carga. A parte em ordem que não
+   está garantida até o caminhão (`planejado − garantido`) sai em âmbar, "fora do prazo do
+   caminhão de dd/mm" (ou "o agendamento não tem data, só ordem iniciada garante"), e aí a
+   lista embaixo é só `ordensForaDoPrazo`. Produto que o estoque cobre inteiro vira uma
+   linha de resumo no fim ("+ N produto(s) inteiro(s) em estoque"; com até 3 e nada mais na
+   carga, com os nomes), pra carga grande não virar parede; embalagem sem de-para continua
+   etiquetada e fora da conta. As ordens listadas são as do PRODUTO — a fila decide quanto
+   delas é desta carga, e uma ordem pode servir a duas cargas (mesma leitura do recorte).
    **Filial do pedido e transferência de saldo** (13/09/2026, pedido do Arion: "para pedido
    de outra filial é necessário solicitar a transferência de saldo em estoque"). O relatório
    de agendados tem coluna FILIAL, mas ela vem **vazia** (289/289 em 10/09); a filial só existe
