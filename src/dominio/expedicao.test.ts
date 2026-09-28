@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  SEM_CARGA, SEM_STATUS_CARGA, grupoStatusCarga, ordenarStatusCarga, statusCargaPadrao,
   agendadoPorTipo,
   converterAgendados,
   converterMontagemCarga,
@@ -1502,5 +1503,32 @@ describe('cargas: o que da para atender (19/09/2026)', () => {
     // qualquer tela que use chaveProduto (Cargas, Ordens sem caminhão)
     expect(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ60 S', embalagem: 'BG5M' }))
       .toBe(chaveProduto({ cultivar: 'NEO700 I2X', tratamento: 'FTZ 60 S', embalagem: 'BG5M' }))
+  })
+})
+
+describe('filtro por status da carga (28/09/2026)', () => {
+  it('agrupa: status da carga; sem status com carga; sem carga', () => {
+    expect(grupoStatusCarga({ carga: '894', status_carga: 'Faturado Fiscal' })).toBe('Faturado Fiscal')
+    expect(grupoStatusCarga({ carga: '894', status_carga: '  ' })).toBe(SEM_STATUS_CARGA)
+    expect(grupoStatusCarga({ carga: null, status_carga: null })).toBe(SEM_CARGA)
+    expect(grupoStatusCarga({ carga: '', status_carga: '' })).toBe(SEM_CARGA)
+  })
+
+  it('o padrão tira só as cargas já faturadas (Faturado Qualidade fica)', () => {
+    const existentes = [
+      SEM_CARGA, 'Agendado', 'Aguardando Aprovação', 'Veículo no pátio', 'Em carga', 'Carregado',
+      'Faturado Qualidade', 'Faturado Fiscal', 'Faturado Transporte', 'Finalizado',
+    ]
+    expect(statusCargaPadrao(existentes)).toEqual([
+      SEM_CARGA, 'Agendado', 'Aguardando Aprovação', 'Veículo no pátio', 'Em carga', 'Carregado', 'Faturado Qualidade',
+    ])
+    // a comparação tolera caixa, acento e espaço
+    expect(statusCargaPadrao(['FATURADO  TRANSPORTE', 'faturado fiscal', 'Veículo no pátio'])).toEqual(['Veículo no pátio'])
+  })
+
+  it('chips na ordem do ciclo da carga; desconhecido vai pro fim', () => {
+    expect(
+      ordenarStatusCarga(['Faturado Transporte', 'Zzz novo', 'Veículo no pátio', SEM_CARGA, 'Aguardando Aprovação', 'Faturado Fiscal']),
+    ).toEqual([SEM_CARGA, 'Aguardando Aprovação', 'Veículo no pátio', 'Faturado Fiscal', 'Faturado Transporte', 'Zzz novo'])
   })
 })

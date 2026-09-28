@@ -22,6 +22,9 @@ import {
   situacaoSaldo,
   transferenciaDe,
   SEM_TSI,
+  grupoStatusCarga,
+  ordenarStatusCarga,
+  statusCargaPadrao,
   type AlocacaoCaminhao,
   type CargaClassificada,
   type CriterioFalta,
@@ -85,6 +88,8 @@ export default function Expedicao() {
   const [ate, setAte] = useState('')
   const [tipoSel, setTipoSel] = useState<Set<string>>(new Set())
   const [statusSel, setStatusSel] = useState<Set<string>>(new Set())
+  // status da CARGA (28/09/2026): nasce sem as já faturadas — ver statusCargaPadrao
+  const [statusCargaSel, setStatusCargaSel] = useState<Set<string>>(new Set())
   const [fCultivar, setFCultivar] = useState<string[]>([])
   const [fTratamento, setFTratamento] = useState<string[]>([])
   const [fEmbalagem, setFEmbalagem] = useState<string[]>([])
@@ -151,13 +156,19 @@ export default function Expedicao() {
     () => [...new Set(agendamentos.map((a) => a.status_entrega))].sort(),
     [agendamentos],
   )
+  const statusCargaExistentes = useMemo(
+    () => ordenarStatusCarga([...new Set(agendamentos.map(grupoStatusCarga))]),
+    [agendamentos],
+  )
+  const statusCargaDoPadrao = useMemo(() => statusCargaPadrao(statusCargaExistentes), [statusCargaExistentes])
   const [chipsIniciados, setChipsIniciados] = useState(false)
   useEffect(() => {
     if (chipsIniciados || agendamentos.length === 0) return
     setTipoSel(new Set(tiposExistentes))
     setStatusSel(new Set(statusExistentes))
+    setStatusCargaSel(new Set(statusCargaDoPadrao))
     setChipsIniciados(true)
-  }, [agendamentos.length, tiposExistentes, statusExistentes, chipsIniciados])
+  }, [agendamentos.length, tiposExistentes, statusExistentes, statusCargaDoPadrao, chipsIniciados])
 
   const filtrados = useMemo(
     () =>
@@ -166,6 +177,9 @@ export default function Expedicao() {
         if (ate && (a.data == null || a.data > ate)) return false
         if (tipoSel.size > 0 && !tipoSel.has(a.tipo_venda || '(sem tipo)')) return false
         if (statusSel.size > 0 && !statusSel.has(a.status_entrega)) return false
+        // carga já faturada sai ANTES da fila, de propósito: a nota saiu e o saldo
+        // do SAP já desconta — se ficasse, consumiria estoque que não existe mais
+        if (statusCargaSel.size > 0 && !statusCargaSel.has(grupoStatusCarga(a))) return false
         if (fCultivar.length > 0 && !fCultivar.includes(a.cultivar)) return false
         if (fTratamento.length > 0 && !fTratamento.includes(a.tratamento)) return false
         if (fEmbalagem.length > 0 && !fEmbalagem.includes(a.embalagem)) return false
@@ -181,8 +195,21 @@ export default function Expedicao() {
         }
         return true
       }),
-    [agendamentos, de, ate, tipoSel, statusSel, fCultivar, fTratamento, fEmbalagem, busca, soTransferencia, transferencia],
+    [agendamentos, de, ate, tipoSel, statusSel, statusCargaSel, fCultivar, fTratamento, fEmbalagem, busca, soTransferencia, transferencia],
   )
+
+  /** Linhas e cargas que o filtro de status da carga está deixando de fora agora. */
+  const ocultasPorStatusCarga = useMemo(() => {
+    if (statusCargaSel.size === 0) return { linhas: 0, bags: 0, cargas: 0 }
+    const fora = agendamentos.filter((a) => !statusCargaSel.has(grupoStatusCarga(a)))
+    return {
+      linhas: fora.length,
+      bags: fora.reduce((t, a) => t + a.bags, 0),
+      cargas: new Set(fora.map((a) => (a.carga ?? '').trim()).filter(Boolean)).size,
+    }
+  }, [agendamentos, statusCargaSel])
+  const statusCargaEhPadrao =
+    statusCargaSel.size === statusCargaDoPadrao.length && statusCargaDoPadrao.every((st) => statusCargaSel.has(st))
 
   /** Quantos agendamentos (e bags) são de filial ≠ matriz, por filial. */
   const transferencias = useMemo(() => {
@@ -410,6 +437,7 @@ export default function Expedicao() {
     // faltavam os dois (achado de 19/09/2026): com só um deles ligado o botão
     // "Limpar filtros" não aparecia, e o recorte ficava ativo e invisível
     soTransferencia ||
+    !statusCargaEhPadrao ||
     temSelecao
 
   function limparFiltros() {
@@ -421,6 +449,7 @@ export default function Expedicao() {
     setBusca('')
     setTipoSel(new Set(tiposExistentes))
     setStatusSel(new Set(statusExistentes))
+    setStatusCargaSel(new Set(statusCargaDoPadrao))
     setSoTransferencia(false)
     setCargaSel(new Set())
     setSoSelecao(false)
@@ -546,6 +575,23 @@ export default function Expedicao() {
               ))}
               <span className="ml-1 text-xs text-stone-400">
                 ("Aguardando Estoque" entra: é exatamente a demanda que precisa de estoque)
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-stone-500">Status carga:</span>
+              {statusCargaExistentes.map((s) => (
+                <Chip key={s} ativo={statusCargaSel.has(s)} onClick={() => alternar(setStatusCargaSel, s)}>{s}</Chip>
+              ))}
+              <span className="ml-1 text-xs text-stone-400">
+                (Faturado Fiscal, Faturado Transporte e Finalizado nascem desmarcados: a carga já saiu e o
+                saldo do SAP já desconta — contar de novo dobraria a falta)
+                {ocultasPorStatusCarga.linhas > 0 && (
+                  <>
+                    {' '}· fora agora: {ocultasPorStatusCarga.linhas} linha(s)
+                    {ocultasPorStatusCarga.cargas > 0 && `, ${ocultasPorStatusCarga.cargas} carga(s)`},{' '}
+                    {inteiro(ocultasPorStatusCarga.bags)} bg
+                  </>
+                )}
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">

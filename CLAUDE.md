@@ -1455,6 +1455,22 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Cliente ao lado — o padrão `compacto=true` é só para a densidade do painel de Demanda em
    Ordens. O botão já mostra o rótulo e a contagem ("Cultivar (2) ▾"), então a label visível
    separada que envolvia cada `<select>` foi removida.
+   **Filtro "Status carga"** (28/09/2026, pedido do Arion: "estão aparecendo cargas com faturado
+   transporte, faturado fiscal etc. — fica estranho ver uma carga que já saiu"). Linha de chips
+   nova nos Filtros, abaixo de "Status entrega", com um chip por status da carga presente
+   (`grupoStatusCarga`: o status; "(sem status)" com carga e sem status; **"Sem carga"** para a
+   linha sem caminhão montado — a maior parte da demanda), na ordem do ciclo da carga
+   (`ordenarStatusCarga`). **Nasce sem as cargas já faturadas** (`statusCargaPadrao` — Faturado
+   Fiscal, Faturado Transporte e Finalizado, a mesma régua `statusJaFaturado` do "A carregar" do
+   Estoque futuro; o Faturado Qualidade vem ANTES do fiscal e fica). Não é só visual: o filtro
+   entra em `filtrados`, ANTES da fila, de propósito — a nota saiu e o saldo do SAP já desconta,
+   então a carga faturada que ficava na fila consumia estoque que não existe mais e **dobrava a
+   falta** do produto (no dia 28/09: 7 linhas, 4 cargas, 109 bg). O "Finalizado" já saía na
+   importação (15/09); os dois faturados passaram a sair aqui, reversível pelo chip. "Limpar
+   filtros" volta ao padrão (não a "todos"), e aparece quando a seleção difere dele; o aviso ao
+   lado dos chips diz quantas linhas/cargas/bags estão fora agora. Não entra em
+   `temFiltroDeProduto` (tira a carga inteira; se um dia uma carga tiver linhas com status
+   diferentes, o "X de Y" da lista de cargas já mostra o corte).
 6c. **Mapa e Montagem de Carga** (28/08/2026) — TODO lote do SAP (semente branca E
    tratada) do depósito `VEN_GER`, em tabela própria (`lotes_mapa`) SEPARADA de
    `lotes_semente` de propósito: a base de produção assume semente branca. **A unidade é

@@ -19,6 +19,7 @@ import {
   EMBALAGEM_DEPARA, FILIAL_CASA, nomeCurtoFilial, normaliza, normalizaCultivar, normalizaFilial,
   type Linha,
 } from './importacao/simpleagro'
+import { statusJaFaturado } from './importacao/montagemCarga'
 
 /**
  * O pedido precisa de transferência de saldo? Só quando a filial é
@@ -1069,6 +1070,47 @@ export function agendadoPorTipo<T extends CarregamentoLinha>(
  * os caminhões de fora já levaram. É a mesma mecânica do "por tipo de
  * venda" (12/09/2026), com outro predicado.
  */
+
+// ---------------------------------------------------------------------------
+// Filtro por STATUS DA CARGA (28/09/2026, pedido do Arion: "estão aparecendo
+// cargas com faturado transporte, faturado fiscal etc. — fica estranho ver
+// uma carga que já saiu"). Carga faturada já teve a nota emitida e o saldo do
+// SAP já desconta: contar de novo como demanda dobrava a falta daquele
+// produto. Mesma régua do "A carregar" do Estoque futuro (statusJaFaturado —
+// Faturado Fiscal, Faturado Transporte e Finalizado; o Faturado Qualidade
+// vem ANTES do fiscal e fica). O Finalizado já sai na importação.
+// ---------------------------------------------------------------------------
+
+/** Linha agendada sem número de carga: o caminhão ainda não foi montado. */
+export const SEM_CARGA = 'Sem carga'
+/** Linha com carga mas sem status informado no relatório. */
+export const SEM_STATUS_CARGA = '(sem status)'
+
+/** Grupo da linha no filtro de status da carga. */
+export function grupoStatusCarga(a: { carga?: string | null; status_carga?: string | null }): string {
+  const st = (a.status_carga ?? '').trim()
+  if (st) return st
+  return (a.carga ?? '').trim() ? SEM_STATUS_CARGA : SEM_CARGA
+}
+
+/** Ordem de exibição dos chips: a do ciclo da carga; status desconhecido vai pro fim, em ordem alfabética. */
+const ORDEM_STATUS_CARGA = [
+  SEM_CARGA, 'AGENDADO', 'AGUARDANDO APROVACAO', 'VEICULO NO PATIO', 'EM CARGA', 'CARREGADO',
+  'FATURADO QUALIDADE', 'FATURADO FISCAL', 'FATURADO TRANSPORTE', 'FINALIZADO', SEM_STATUS_CARGA,
+].map((s) => normaliza(s))
+
+export function ordenarStatusCarga(status: string[]): string[] {
+  const pos = (s: string) => {
+    const i = ORDEM_STATUS_CARGA.indexOf(normaliza(s).replace(/s+/g, ' '))
+    return i < 0 ? ORDEM_STATUS_CARGA.length : i
+  }
+  return [...status].sort((a, b) => pos(a) - pos(b) || a.localeCompare(b, 'pt-BR'))
+}
+
+/** O filtro nasce com tudo marcado MENOS as cargas já faturadas. */
+export function statusCargaPadrao(existentes: string[]): string[] {
+  return existentes.filter((s) => !statusJaFaturado(s))
+}
 
 /** O mínimo que uma linha agendada precisa ter para virar item do seletor. */
 export interface LinhaComCarga {
