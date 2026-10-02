@@ -220,25 +220,43 @@ export interface LinhaBalanco {
 const pendente = (l: LinhaBalanco): number => Math.max(0, l.pedido_pendente ?? 0)
 
 /**
+ * Estoque + programado que NEM o pedido aprovado NEM o aguardando aprovação
+ * absorvem — o que vai sobrar de verdade (02/10/2026, achado do Arion: "a
+ * contagem no card vai sobrar e sem pedido parece que está calculando
+ * errado"). Antes a sobra era `-saldo`, só contra o aprovado: 761 I2X · V&P
+ * com 54 em estoque e 30 aguardando aparecia com 54 "sem pedido", e O820 IPRO
+ * · DER + LMT (26 aprovado, 34 aguardando, 37 em estoque) com 11 "vai sobrar",
+ * quando o aguardando leva tudo. O pendente continua FORA do `saldo` (não
+ * vira falta): só deixa de ser contado como sobra o bag que já tem dono.
+ */
+const excedente = (l: LinhaBalanco): number => Math.max(0, -(l.saldo + pendente(l)))
+
+/**
  * `sem-pedido` é separado de `sobra` de propósito: sobra é excesso sobre um
  * pedido que existe, enquanto sem-pedido é produzir ou estocar algo que
- * ninguém comprou — 100% de excesso, e o caso mais grave.
+ * ninguém comprou — 100% de excesso, e o caso mais grave. Estoque/programado
+ * sem pedido aprovado mas inteiro coberto pelo aguardando é `aguardando`
+ * (tem dono, falta o financeiro liberar), não alarme.
  */
 export function situacaoDemanda(l: LinhaBalanco): SituacaoDemanda {
   if (l.pedido_aprovado <= 0) {
-    if (l.estoque_pa + l.ordens_abertas > 0) return 'sem-pedido'
+    if (excedente(l) > 0) return 'sem-pedido'
     return pendente(l) > 0 ? 'aguardando' : 'coberto'
   }
   if (l.saldo > 0) return 'descoberto'
-  if (l.saldo < 0) return 'sobra'
+  if (excedente(l) > 0) return 'sobra'
   return 'coberto'
 }
 
 /** Bags que faltam produzir para cobrir o pedido aprovado. */
 export const bagsFaltando = (l: LinhaBalanco): number => Math.max(0, l.saldo)
 
-/** Bags que passam do pedido aprovado: estoque + programado que vai sobrar. */
-export const bagsSobrando = (l: LinhaBalanco): number => Math.max(0, -l.saldo)
+/**
+ * Bags que vão sobrar: estoque + programado acima do aprovado E do aguardando
+ * aprovação. Na linha `sem-pedido` é o mesmo número do alerta (o que ninguém
+ * comprou nem está para comprar).
+ */
+export const bagsSobrando = (l: LinhaBalanco): number => excedente(l)
 
 /**
  * Tudo que dá pra programar nesta combinação: o que falta pro pedido firme
@@ -261,10 +279,10 @@ export interface ResumoBalanco {
   /** Combinações e bags que faltam produzir. */
   faltando: number
   combosFaltando: number
-  /** Combinações e bags que vão sobrar, incluindo as sem pedido nenhum. */
+  /** Combinações e bags que vão sobrar ACIMA de um pedido que existe (situação `sobra`). */
   sobrando: number
   combosSobrando: number
-  /** Subconjunto do que sobra: sem nenhum pedido aprovado. */
+  /** Combinações e bags sem pedido nenhum (situação `sem-pedido`) — fora de `sobrando`. */
   semPedido: number
   combosSemPedido: number
   /** Pedido aguardando aprovação que estoque e ordens ainda não cobrem (12/09/2026). */
@@ -273,9 +291,11 @@ export interface ResumoBalanco {
 }
 
 /**
- * Totais do painel. O que sobra soma tudo que passa do pedido, e as linhas sem
- * pedido nenhum aparecem também no próprio contador — é o mesmo bag contado nos
- * dois lugares, de propósito, porque um é o total e o outro é o alerta.
+ * Totais do painel. "Vai sobrar" e "sem pedido" são conjuntos SEPARADOS, pela
+ * situação da linha — o mesmo critério do filtro que o chip aplica, então o
+ * número do chip é o número de linhas que aparecem ao clicar nele (02/10/2026:
+ * antes o "vai sobrar" contava também as linhas sem pedido — 39 no chip, 10 na
+ * lista — e o mesmo bag entrava nos dois totais).
  */
 export function resumoBalanco(linhas: LinhaBalanco[]): ResumoBalanco {
   const r: ResumoBalanco = {
@@ -286,15 +306,12 @@ export function resumoBalanco(linhas: LinhaBalanco[]): ResumoBalanco {
   }
   for (const l of linhas) {
     const falta = bagsFaltando(l)
-    const sobra = bagsSobrando(l)
     const aguardando = bagsAguardandoDescoberto(l)
+    const s = situacaoDemanda(l)
     if (falta > 0) { r.faltando += falta; r.combosFaltando++ }
-    if (sobra > 0) { r.sobrando += sobra; r.combosSobrando++ }
     if (aguardando > 0) { r.aguardando += aguardando; r.combosAguardando++ }
-    if (situacaoDemanda(l) === 'sem-pedido') {
-      r.semPedido += l.estoque_pa + l.ordens_abertas
-      r.combosSemPedido++
-    }
+    if (s === 'sobra') { r.sobrando += bagsSobrando(l); r.combosSobrando++ }
+    if (s === 'sem-pedido') { r.semPedido += bagsSobrando(l); r.combosSemPedido++ }
   }
   return r
 }

@@ -740,6 +740,22 @@ saldo = pedidos_APROVADOS − estoque_PA − ordens_abertas
   **`aguardando`** só quando não há pedido firme, estoque nem ordem — antes essa linha saía
   "coberto", em verde, o que era falso. Cooperado pendente entra no atalho do popover
   quando o alvo inclui pendente.
+- **"Vai sobrar" e "sem pedido" descontam o aguardando, e não se sobrepõem** (02/10/2026,
+  achado do Arion: "a contagem no card vai sobrar e sem pedido parece que está calculando
+  errado"). Dois defeitos em `resumoBalanco`/`situacaoDemanda` (`src/dominio/balanco.ts`):
+  (1) o chip "Vai sobrar" contava toda linha com `saldo < 0` — incluindo as sem pedido —,
+  mas o filtro do chip mostra só a situação `sobra`: 39 no chip, 10 na lista, e o mesmo bag
+  entrava nos dois totais ("de propósito", dizia o comentário antigo — confundia); (2) a
+  sobra era `-saldo`, só contra o APROVADO, então estoque reservado a pedido aguardando
+  aprovação virava "sem pedido"/"vai sobrar" (761 I2X · V&P: 54 em estoque e 30 aguardando
+  saía com 54 sem pedido; O820 IPRO · DER + LMT: 26 aprovado, 34 aguardando, 37 em estoque
+  saía com 11 vai sobrar). Agora `bagsSobrando = max(0, −(saldo + pendente))` — o que nem o
+  aprovado nem o aguardando levam —; sem aprovado com tudo coberto pelo aguardando vira
+  `aguardando`; com aprovado e o aguardando absorvendo o excesso vira `coberto`; e o resumo
+  separa por situação (`sobra` soma em "vai sobrar", `sem-pedido` em "sem pedido"), o mesmo
+  critério do filtro, então o número do chip é o número de linhas ao clicar. O `saldo` e a
+  falta não mudaram (o pendente continua sem gerar falta). No dia: vai sobrar 39 → 5 combos
+  (433 → 37 bg), sem pedido 29 → 14 (301 → 102 bg).
 - Pedido de venda com código de tratamento **sem receita cadastrada** entra no balanço (a demanda
   existe), mas **não permite criar ordem** — a combinação é marcada "receita não cadastrada".
 - **VENDA MULTIPLICADOR destacada, igual VENDA COOPERADO** (20/09/2026, pedido do Arion: "o

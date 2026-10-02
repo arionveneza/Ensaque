@@ -2166,8 +2166,8 @@ function PainelDemanda({
               valor={resumo.sobrando}
               detalhe={
                 resumo.sobrando > 0
-                  ? `${resumo.combosSobrando} combinação(ões) acima do pedido`
-                  : 'nada acima do pedido aprovado'
+                  ? `${resumo.combosSobrando} combinação(ões) acima do aprovado + aguardando`
+                  : 'nada acima dos pedidos (aprovado + aguardando)'
               }
               cor={resumo.sobrando > 0 ? 'alerta' : 'ok'}
             />
@@ -2176,8 +2176,8 @@ function PainelDemanda({
               valor={resumo.semPedido}
               detalhe={
                 resumo.semPedido > 0
-                  ? `${resumo.combosSemPedido} combinação(ões) em estoque ou programadas`
-                  : 'tudo tem pedido aprovado'
+                  ? `${resumo.combosSemPedido} combinação(ões) sem pedido aprovado nem aguardando`
+                  : 'tudo tem pedido (aprovado ou aguardando)'
               }
               cor={resumo.semPedido > 0 ? 'perigo' : 'ok'}
             />

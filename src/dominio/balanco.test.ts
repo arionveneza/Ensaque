@@ -191,16 +191,42 @@ describe('pedido aguardando aprovacao financeira', () => {
   })
 
   it('sobra do firme abate o pendente antes de pedir producao nova', () => {
-    const l = comPendente(10, 7, 15, 0) // sobra 5; dos 7 pendentes, só 2 descobertos
-    expect(situacaoDemanda(l)).toBe('sobra')
+    const l = comPendente(10, 7, 15, 0) // 5 acima do firme vão pro pendente; dos 7 pendentes, só 2 descobertos
+    // 02/10/2026: os 5 têm dono (o aguardando) — não é mais "vai sobrar"
+    expect(situacaoDemanda(l)).toBe('coberto')
+    expect(bagsSobrando(l)).toBe(0)
     expect(bagsProgramaveis(l)).toBe(2)
     expect(bagsAguardandoDescoberto(l)).toBe(2)
   })
 
-  it('pendente ja coberto por estoque nao pede nada', () => {
+  it('estoque maior que o pendente: so o que passa dele e sem pedido', () => {
     const l = comPendente(0, 5, 20, 0)
-    expect(situacaoDemanda(l)).toBe('sem-pedido') // estoque sem pedido firme continua alarme
+    expect(situacaoDemanda(l)).toBe('sem-pedido')
+    expect(bagsSobrando(l)).toBe(15) // 20 em estoque − 5 aguardando
     expect(bagsProgramaveis(l)).toBe(0)
+  })
+
+  // casos reais do painel em 02/10/2026 (achado do Arion: "a contagem no card
+  // vai sobrar e sem pedido parece que está calculando errado")
+  it('estoque com pedido aguardando nao e mais sem pedido inteiro', () => {
+    const vp = comPendente(0, 30, 54, 0) // 761 I2X · V&P
+    expect(situacaoDemanda(vp)).toBe('sem-pedido')
+    expect(bagsSobrando(vp)).toBe(24) // antes contava os 54
+    const igual = comPendente(0, 21, 21, 0) // 761 I2X · FTZ60 + VIC + ARV
+    expect(situacaoDemanda(igual)).toBe('aguardando')
+    expect(bagsSobrando(igual)).toBe(0)
+    const falta1 = comPendente(0, 10, 9, 0) // NEO791 CE · FTZ60 + VIC: o estoque é do aguardando e ainda falta 1
+    expect(situacaoDemanda(falta1)).toBe('aguardando')
+    expect(bagsAguardandoDescoberto(falta1)).toBe(1)
+  })
+
+  it('sobra acima do aprovado que o aguardando absorve nao vai sobrar', () => {
+    const o820 = comPendente(26, 34, 37, 0) // O820 IPRO · DER + LMT: saldo −11, aguardando 34
+    expect(situacaoDemanda(o820)).toBe('coberto')
+    expect(bagsSobrando(o820)).toBe(0)
+    const neo700 = comPendente(21, 43, 57, 12) // NEO700 I2X · FTZ60: saldo −48, aguardando 43
+    expect(situacaoDemanda(neo700)).toBe('sobra')
+    expect(bagsSobrando(neo700)).toBe(5)
   })
 
   it('linha sem o campo (view antiga) se comporta como antes', () => {
@@ -226,12 +252,29 @@ describe('resumo do balanco', () => {
     expect(r.combosSobrando).toBe(1)
   })
 
-  it('conta o sem-pedido tambem no total que sobra', () => {
-    const r = resumoBalanco([bal(0, 10, 60)])
+  it('sem-pedido e vai-sobrar sao conjuntos separados (02/10/2026)', () => {
+    const r = resumoBalanco([bal(0, 10, 60), bal(100, 40, 90)])
     expect(r.semPedido).toBe(70)
     expect(r.combosSemPedido).toBe(1)
-    // o mesmo bag aparece nos dois: um e o total, o outro e o alerta
-    expect(r.sobrando).toBe(70)
+    // antes o sem-pedido entrava também no "vai sobrar" (100 bg / 2 combos)
+    expect(r.sobrando).toBe(30)
+    expect(r.combosSobrando).toBe(1)
+  })
+
+  it('o numero do chip e o numero de linhas do filtro da mesma situacao', () => {
+    const comPendente = (pedido: number, pendente: number, estoque: number, abertas: number): LinhaBalanco =>
+      ({ ...bal(pedido, estoque, abertas), pedido_pendente: pendente })
+    const linhas = [
+      bal(0, 10, 60), comPendente(0, 30, 54, 0), comPendente(0, 21, 21, 0), bal(100, 40, 90),
+      comPendente(26, 34, 37, 0), comPendente(21, 43, 57, 12), bal(150, 20, 45), bal(80, 80, 0),
+    ]
+    const r = resumoBalanco(linhas)
+    expect(r.combosSobrando).toBe(linhas.filter((l) => situacaoDemanda(l) === 'sobra').length)
+    expect(r.combosSemPedido).toBe(linhas.filter((l) => situacaoDemanda(l) === 'sem-pedido').length)
+    expect(r.combosSobrando).toBe(2)
+    expect(r.sobrando).toBe(35) // 30 + 5
+    expect(r.combosSemPedido).toBe(2)
+    expect(r.semPedido).toBe(94) // 70 + 24
   })
 
   it('painel sem carga nenhuma da tudo zero', () => {
