@@ -1186,6 +1186,19 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
 3. **Lotes a baixar** — cards por lote com bags a baixar, lotes críticos (travam ordem urgente),
    mini-tabela de ordens dependentes, seção "baixados sem ordem — devolver", relatório de baixas
    (dia/semana/mês) com export.
+   **Prioridades do dia na Logística** (02/10/2026, pedido do Arion: "na aba Logística, colocar
+   quando a ordem for prioridade, para que também tenham a visão"). A tela (`Lotes.tsx`) só
+   mostrava "urgente"; a posição P1, P2… da faixa Prioridades do dia já vinha em
+   `OrdemVisao.prioridade_dia` (de `v_ordens`) e não aparecia. Agora: selo âmbar `P{n}` (mesmo
+   desenho do quadro do dia, componente local `SeloPrioridade`) ao lado do nº nas tabelas de
+   ordens a liberar e liberadas; no cabeçalho do cartão do lote, um selo por ordem a liberar
+   priorizada com a máquina ("P1 · TSI 1"), no mesmo grupo empurrado à direita da etiqueta de
+   urgência; aviso no topo listando os lotes que seguram prioridades; a lista de ordens do
+   cartão abre sozinha também quando há prioridade (antes só no crítico); e a ordem dos
+   cartões passou a ser crítico → menor P → volume (`prioridadeMin` no agregado). Só ordens a
+   LIBERAR contam para cabeçalho/aviso/ordenação — a já liberada mostra o selo na linha, mas
+   não move o lote. Ordem só Programada (sem confirmação) continua fora da Logística, mesmo
+   priorizada.
 4. **Execução** — cards por máquina (ordem atual, tempo planejado, decorrido, paradas, parada atual),
    **faixa de prioridades do dia** (16/09/2026: a lista da máquina mostra P1/P2/P3 no topo,
    em âmbar, antes das "demais ordens" por sequência; com a máquina livre o cartão aponta a

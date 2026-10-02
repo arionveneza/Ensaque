@@ -40,8 +40,34 @@ type LoteAgregado = {
   bagsNecessarios: number
   pesoT: number
   critico: boolean
+  /** Menor posição na faixa Prioridades do dia (P1 = 1) entre as ordens a liberar; null = nenhuma. */
+  prioridadeMin: number | null
   orfao: boolean
 }
+
+/**
+ * Selo da faixa "Prioridades do dia" da Programação (P1, P2…), com o mesmo
+ * desenho do quadro do dia — a Logística passa a ver qual lote segura a
+ * próxima ordem da máquina (pedido do Arion, 02/10/2026: "na aba Logística,
+ * colocar quando a ordem for prioridade, para que também tenham a visão").
+ */
+function SeloPrioridade({ p, maquina }: { p: number; maquina?: string | null }) {
+  return (
+    <span
+      className="inline-block rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap text-white"
+      title="Prioridade do dia marcada pelo PCP na Programação"
+    >
+      P{p}
+      {maquina ? ` · ${maquina}` : ''}
+    </span>
+  )
+}
+
+/** Ordens a liberar que estão na faixa de prioridades, P1 primeiro. */
+const priorizadas = (ordens: OrdemVisao[]) =>
+  ordens
+    .filter((o) => o.prioridade_dia != null)
+    .sort((a, b) => (a.prioridade_dia ?? 0) - (b.prioridade_dia ?? 0) || (a.maquina_id ?? '').localeCompare(b.maquina_id ?? ''))
 
 export default function Lotes() {
   const { usuario, permitido } = useAuth()
@@ -127,6 +153,7 @@ export default function Lotes() {
         const bagsNecessarios = aLiberar.reduce((a, o) => a + o.bags, 0)
         const pesoT = aLiberar.reduce((a, o) => a + o.peso_t, 0)
         const temUrgente = aLiberar.some((o) => o.prioridade === 'Urgente')
+        const posicoes = aLiberar.map((o) => o.prioridade_dia).filter((p): p is number => p != null)
         return {
           lote: l,
           dependentes,
@@ -138,19 +165,25 @@ export default function Lotes() {
           pesoT,
           /** Trava ordem urgente: ainda falta liberar bags para ela. */
           critico: temUrgente,
+          prioridadeMin: posicoes.length > 0 ? Math.min(...posicoes) : null,
           /** Baixado e sem nenhuma ordem: devolver ao estoque. */
           orfao: l.status === 'Baixado' && dependentes.length === 0,
         }
       })
+      // crítico (trava urgente) primeiro; depois quem segura uma prioridade
+      // do dia, P1 antes de P2; depois o volume (02/10/2026)
       .sort(
         (a, b) =>
-          Number(b.critico) - Number(a.critico) || b.bagsNecessarios - a.bagsNecessarios,
+          Number(b.critico) - Number(a.critico) ||
+          (a.prioridadeMin ?? 99) - (b.prioridadeMin ?? 99) ||
+          b.bagsNecessarios - a.bagsNecessarios,
       )
   }, [lotes, ordens])
 
   const aBaixar = agregado.filter((a) => a.aLiberar.length > 0)
   const orfaos = agregado.filter((a) => a.orfao)
   const criticos = agregado.filter((a) => a.critico)
+  const comPrioridade = aBaixar.filter((a) => a.prioridadeMin != null)
   // Tem ordem liberada (e ainda não iniciada): é o único caminho para
   // desfazer uma liberação errada — sem isto ficava invisível, sem botão
   // de estorno em lugar nenhum. Pode aparecer também em "A baixar" ao
@@ -193,6 +226,18 @@ export default function Lotes() {
           <Aviso gravidade="bloqueio">
             <b>{criticos.length} lote(s) crítico(s)</b> — travam ordem urgente:{' '}
             {criticos.map((c) => c.lote.id).join(', ')}
+          </Aviso>
+        </div>
+      )}
+
+      {comPrioridade.length > 0 && (
+        <div className="mb-5">
+          <Aviso>
+            <b>Prioridades do dia</b> (P1, P2… marcadas pelo PCP na Programação) dependem de{' '}
+            {comPrioridade.length === 1 ? '1 lote' : `${comPrioridade.length} lotes`}:{' '}
+            {comPrioridade
+              .map((c) => `${c.lote.id} (${priorizadas(c.aLiberar).map((o) => `P${o.prioridade_dia} ${nomeMaquina(o.maquina_id) ?? 'sem máquina'}`).join(', ')})`)
+              .join(' · ')}
           </Aviso>
         </div>
       )}
@@ -505,6 +550,7 @@ function LinhaLote({
   // com o que este clique vai liberar agora.
   const qtd = aLiberar.length
   const urgentes = aLiberar.filter((o) => o.prioridade === 'Urgente').length
+  const prioridadesLote = priorizadas(aLiberar)
   // endereço é da ordem, não do lote: quase sempre é um só, e aí cabe na linha
   const enderecos = [...new Set(aLiberar.map((o) => enderecoLote(o, '')).filter(Boolean))]
   const semEndereco = aLiberar.filter((o) => !enderecoLote(o, '')).length
@@ -539,10 +585,19 @@ function LinhaLote({
             <span>
               {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
             </span>
-            {item.critico ? (
-              <Tag cor="perigo" className="sm:ml-auto">trava ordem urgente</Tag>
-            ) : (
-              urgentes > 0 && <Tag cor="alerta" className="sm:ml-auto">{urgentes} urgente(s)</Tag>
+            {/* selos de prioridade do dia + urgência num grupo só, empurrado
+                pro fim da linha — mesma regra de alinhamento de 26/08/2026 */}
+            {(item.critico || urgentes > 0 || prioridadesLote.length > 0) && (
+              <span className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+                {prioridadesLote.map((o) => (
+                  <SeloPrioridade key={o.id} p={o.prioridade_dia!} maquina={nomeMaquina(o.maquina_id)} />
+                ))}
+                {item.critico ? (
+                  <Tag cor="perigo">trava ordem urgente</Tag>
+                ) : (
+                  urgentes > 0 && <Tag cor="alerta">{urgentes} urgente(s)</Tag>
+                )}
+              </span>
             )}
           </p>
           <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
@@ -586,7 +641,7 @@ function LinhaLote({
         </div>
       </div>
 
-      <details className="mt-2" open={item.critico}>
+      <details className="mt-2" open={item.critico || prioridadesLote.length > 0}>
         <summary className="cursor-pointer py-2.5 text-xs text-stone-500 sm:py-1 dark:text-stone-400">
           {abertas.length === 1
             ? 'ver a ordem dependente'
@@ -607,6 +662,11 @@ function LinhaLote({
                   {o.prioridade === 'Urgente' && (
                     <span className="ml-1">
                       <Tag cor="perigo">urgente</Tag>
+                    </span>
+                  )}
+                  {o.prioridade_dia != null && (
+                    <span className="ml-1">
+                      <SeloPrioridade p={o.prioridade_dia} />
                     </span>
                   )}
                   <p className="text-xs font-normal text-stone-500 lg:hidden">
@@ -699,6 +759,11 @@ function LinhaLoteBaixado({
                 {o.prioridade === 'Urgente' && (
                   <span className="ml-1">
                     <Tag cor="perigo">urgente</Tag>
+                  </span>
+                )}
+                {o.prioridade_dia != null && (
+                  <span className="ml-1">
+                    <SeloPrioridade p={o.prioridade_dia} />
                   </span>
                 )}
               </td>
