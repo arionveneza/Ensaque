@@ -39,7 +39,8 @@ const fila: OrdemVisao[] = [
   ordem({ id: 'D', seq: 4, status_efetivo: 'Programada', cultivar: 'NEO680 IPRO' }),
   ordem({ id: 'F', seq: 5, status_efetivo: 'Programada', cultivar: 'NEO680 IPRO', data_expedicao: '2026-09-25' }),
   // cultivar "0000" de propósito: se a ordenação mexesse nas já produzidas, a E iria pro topo
-  ordem({ id: 'E', seq: 6, status_efetivo: 'Finalizada', cultivar: '0000 IPRO', bags: 5, peso_t: 4 }),
+  // observação numa FINALIZADA: é o caso que não tinha onde aparecer (01/10/2026)
+  ordem({ id: 'E', seq: 6, status_efetivo: 'Finalizada', cultivar: '0000 IPRO', bags: 5, peso_t: 4, observacao: 'SEM GRAFITE' }),
 ]
 
 const COL = { seq: 0, ordem: 1, tempo: 8, setup: 9, expedicao: 10, acoes: 13 }
@@ -127,6 +128,15 @@ describe('ListaMaquinaDia', () => {
     expect(screen.getAllByText('urgente')).toHaveLength(1 + 6) // a Tag da A + o botão de cada linha
     expect(screen.getAllByText('normal')).toHaveLength(5)
     expect(screen.getByText('P1')).toBeInTheDocument()
+  })
+
+  it('observacao de processo aparece embaixo do numero mesmo na concluida (01/10/2026)', () => {
+    const { linha } = montar()
+    const celula = linha('E').cells[COL.ordem]
+    expect(celula.textContent).toContain('obs: SEM GRAFITE')
+    expect(celula.querySelector('[title="Observação de processo: SEM GRAFITE"]')).not.toBeNull()
+    // sem observação, nada é renderizado (nem "obs:" vazio)
+    expect(linha('A').cells[COL.ordem].textContent).not.toContain('obs:')
   })
 
   it('tempo planejado por ordem (peso ÷ t/h) e no total; sem capacidade, traco', () => {

@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 import type { OrdemVisao } from '@/dados/api-gestao'
 import { Cartao, Tabela, Tag, Vazio, corDoStatus, diaCurto, n } from '@/componentes/ui'
+import { ObservacaoOrdem } from '@/componentes/ObservacaoOrdem'
 import { tempoPlanejadoS } from '@/dominio/calculos'
 import { setupPrevistoDaOrdem, type Setup } from '@/dominio/programacao'
 import { ehConcluida, ordenarQuadroDoDia, posicoesDeExibicao, type CampoQuadro } from '@/dominio/quadroDoDia'
@@ -254,6 +255,7 @@ export function ListaMaquinaDia({
                         </span>
                       )}
                     </span>
+                    <ObservacaoOrdem texto={ord.observacao} />
                     {/* no tablet, emb. e lote somem como coluna e aparecem aqui (padrão da lista de Ordens) */}
                     <p className="text-xs font-normal text-stone-500 lg:hidden">
                       {ord.embalagem} · lote {ord.lote_id}

@@ -289,6 +289,19 @@ traço apagado quando vazia). **Filtro de status nasce com tudo marcado menos Ap
 a coluna SAP tem três vagas fixas (número · veredito `w-80` · ação); no painel de demanda,
 quatro (situação · aguardando · na fila · Programar) — caixa de tamanho fixo em toda linha
 é o padrão visual que o Arion pediu, e vale para os próximos cartões.
+**Observação de processo embaixo do número, em qualquer status** (01/10/2026, pedido do
+Arion: "quero ver as observações das ordens, mas em ordens finalizadas eu não consigo").
+`ordens.observacao` ("SEM GRAFITE", "SEM CLASSIFICACAO") só aparecia no formulário de
+edição — que a matriz de status tira assim que a produção toca a ordem — e na faixa
+amarela do detalhe (`ModalOrdem`); na lista, nada. Com 468 Apontadas (53 com observação)
+e o filtro de status escondendo Apontada por padrão, a observação sumia da vista.
+Componente `ObservacaoOrdem` (`src/componentes/ObservacaoOrdem.tsx`: linha âmbar "obs: …"
+cortada em `max-w-56`, texto inteiro no `title`; nada quando vazia), na célula do número
+das três listas que mostram ordem concluída — Ordens, grade da Execução e lista do quadro
+do dia (`ProgramacaoLista`, teste jsdom cobre a Finalizada). Só leitura: editar observação
+em ordem já rodada continua fora (mesma pendência da `data_expedicao` — item no menu de
+ações, ao lado do renumerar; a coluna não está no `fn_ordem_imutavel`, mas o
+`fn_ordens_por_acao` cobra `ordens/editar` por ela).
 **Aba "Em estoque · coop./mult. × outros"** (21/09/2026). Pedido original do Arion ("tem
 como colocar uma aba com o total a faturar de cada produto onde o tipo de pedido é
 cooperado ou multiplicador?") virou uma 1ª versão agregada por produto que ele achou

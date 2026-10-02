@@ -49,6 +49,7 @@ import { pode } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import { Destinacao } from '@/componentes/Destinacao'
+import { ObservacaoOrdem } from '@/componentes/ObservacaoOrdem'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, SeletorMultiplo, Tabela, Tag, Vazio,
   corDoStatus, dataHoraCurta, diaCurto, diaCurtoComAno, enderecoLote, inteiro, n,
@@ -3614,6 +3615,9 @@ function FragmentoDia({
                         ↷{o.reprogramacoes}
                       </span>
                     )}
+                    {/* observação em qualquer status — a finalizada não tem mais
+                        "editar", que era onde ela aparecia (01/10/2026) */}
+                    <ObservacaoOrdem texto={o.observacao} />
                     {/* lote/embalagem somem em lg: — mostra aqui embaixo. Endereço
                         saiu da linha: é o texto mais longo e essa é a Ordem do
                         PCP, não a separação (a Logística já tem endereço em
