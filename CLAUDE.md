@@ -1594,10 +1594,13 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    `pg_proc`: não há `insert into lotes_mapa`). Com o mapa vazio, aplicar o inventário deixa
    todo o tratado de fora: o "aplicar" precisa passar a criar a combinação contada antes de o
    inventário novo ser aplicado (a `inventario_saldos` não tem peso do bag/PMS — vem do SAP ou
-   de `lotes_semente`). Pendências conhecidas do dia do reset: as 9 cargas montadas antigas
-   (31/08–08/09, 37 itens, nunca carregadas) continuam "reservando" lote e, se alguém marcar
-   Carregada, debitam o mapa novo; o cartão Pendências do Mapa segue mostrando o inventário
-   de 05/09 até o próximo ser aplicado; o inventário de 12/09 está aberto e vazio. Desenhos da
+   de `lotes_semente`). **Cargas montadas antigas também saíram** (mesmo dia, "delete cargas
+   antigas"): as 9 nunca carregadas já tinham sido excluídas pela tela; a última (30/08,
+   carregada, 3 itens) foi copiada para `arquivo.cargas_montadas_20261003` (+ produtos e
+   itens) e apagada por `supabase/mapa-reset-cargas-2026-10-03.sql` — desfazer a Carregada
+   dela devolveria bags ao mapa novo. Pendências conhecidas: o cartão Pendências do Mapa segue
+   mostrando o inventário de 05/09 até o próximo ser aplicado; o inventário de 12/09 está
+   aberto e vazio. Desenhos da
    estratégia nova (baixa do carregado no tablet, saída da branca para a TSI, conferência com o
    SAP) ficaram no scratchpad da sessão de 02/10 — o Arion decidiu: quantidade pelo app em
    tempo real, operador dá baixa no tablet na hora do carregamento, SAP só confere divergência.
