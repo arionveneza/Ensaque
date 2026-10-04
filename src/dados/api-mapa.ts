@@ -173,9 +173,21 @@ export async function salvarEnderecos(
     .eq('lote', lote)
     .eq('tratamento', tratamento)
   erro('limpar endereços do lote', del.error)
-  if (enderecos.length > 0) {
+  // o mesmo endereço em duas linhas vira uma só (índice único por
+  // combinação + endereço desde 04/10/2026): soma os bags; desconhecido em
+  // qualquer uma das duas continua desconhecido
+  const porEndereco = new Map<string, (typeof enderecos)[number]>()
+  for (const e of enderecos) {
+    const k = `${e.armazem}|${e.bloco}|${e.quadra}`
+    const ja = porEndereco.get(k)
+    porEndereco.set(
+      k,
+      ja ? { ...ja, bags: ja.bags != null && e.bags != null ? ja.bags + e.bags : null } : e,
+    )
+  }
+  if (porEndereco.size > 0) {
     const ins = await supabase.from('lote_enderecos').insert(
-      enderecos.map((e) => ({ ...e, lote, tratamento, criado_por: usuarioId })),
+      [...porEndereco.values()].map((e) => ({ ...e, lote, tratamento, criado_por: usuarioId })),
     )
     erro('gravar endereços do lote', ins.error)
   }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { BLOCOS, BLOCO_MAX, QUADRAS, QUADRA_MAX, numeroEndereco } from '@/dominio/endereco'
 
 /** Peças visuais compartilhadas pelas telas. Nada de regra de negócio aqui. */
 
@@ -369,6 +370,59 @@ export function SeletorArmazem({
       <option value="">—</option>
       {opcoes.map((a) => (
         <option key={a} value={a}>{a}</option>
+      ))}
+    </select>
+  )
+}
+
+const CLASSE_SELETOR_ENDERECO =
+  'w-full rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800'
+
+/**
+ * Bloco de 1 a 44 e quadra de 1 a 20, em lista — não texto livre (regra do
+ * Arion, 03/10/2026; `src/dominio/endereco.ts`). Valor antigo no formato
+ * "06E"/"1A" aparece já como o número ("6"/"1"), que é o que será gravado;
+ * fora da faixa aparece vazio, pedindo escolha.
+ */
+export function SeletorBloco({
+  valor, aoMudar, className = '',
+}: {
+  valor: string
+  aoMudar: (v: string) => void
+  className?: string
+}) {
+  return (
+    <select
+      value={numeroEndereco(valor, BLOCO_MAX) ?? ''}
+      onChange={(e) => aoMudar(e.target.value)}
+      className={className || CLASSE_SELETOR_ENDERECO}
+    >
+      <option value="">—</option>
+      {BLOCOS.map((b) => (
+        <option key={b} value={b}>{b}</option>
+      ))}
+    </select>
+  )
+}
+
+/** Quadra 1 é a da parede; a de número maior fica na frente, no acesso. */
+export function SeletorQuadra({
+  valor, aoMudar, className = '',
+}: {
+  valor: string
+  aoMudar: (v: string) => void
+  className?: string
+}) {
+  return (
+    <select
+      value={numeroEndereco(valor, QUADRA_MAX) ?? ''}
+      onChange={(e) => aoMudar(e.target.value)}
+      className={className || CLASSE_SELETOR_ENDERECO}
+      title="Quadra 1 = parede; número maior = frente, no acesso"
+    >
+      <option value="">—</option>
+      {QUADRAS.map((q) => (
+        <option key={q} value={q}>{q === '1' ? '1 (parede)' : q}</option>
       ))}
     </select>
   )

@@ -8,8 +8,9 @@ import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
 import { somarEndereco } from '@/dados/api-mapa'
 import { loteBase } from '@/dominio/importacao/mapa'
+import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, Tabela, Tag, Vazio,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, SeletorBloco, SeletorQuadra, Tabela, Tag, Vazio,
   corDoStatus, dataHoraCurta, diaCurto, enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
 
@@ -811,15 +812,18 @@ function LinhaConferencia({
   const [bags, setBags] = useState('')
   const [obs, setObs] = useState('')
   // endereçamento embutido (08/09/2026): o tratado entrou no mapa quando a
-  // produção apontou; quem confere diz ONDE pôs — armazém obrigatório.
+  // produção apontou; quem confere diz ONDE pôs — armazém, bloco e quadra
+  // obrigatórios, na regra do galpão (04/10/2026, src/dominio/endereco.ts).
   // Ordem SEM TSI não cria tratado no mapa: sem campos de endereço.
   const [armazem, setArmazem] = useState('')
   const [bloco, setBloco] = useState('')
   const [quadra, setQuadra] = useState('')
   const tratada = (ordem.receita_nome ?? '').trim().toUpperCase() !== 'SEM TSI'
   const contados = parseInt(bags, 10)
+  const endereco = normalizaEndereco({ armazem, bloco, quadra })
+  const faltaEndereco = problemaEndereco({ armazem, bloco, quadra })
   const valido =
-    Number.isFinite(contados) && contados >= 0 && (!tratada || armazem.trim() !== '')
+    Number.isFinite(contados) && contados >= 0 && (!tratada || endereco != null)
   const referencia = ordem.bags_produzidos ?? ordem.bags
   const diverge = Number.isFinite(contados) && contados >= 0 && contados !== referencia
 
@@ -872,36 +876,30 @@ function LinhaConferencia({
                     <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
                   </span>
                 </label>
-                <input
-                  value={bloco}
-                  onChange={(e) => setBloco(e.target.value)}
-                  placeholder="bloco"
-                  className="w-24 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
-                />
-                <input
-                  value={quadra}
-                  onChange={(e) => setQuadra(e.target.value)}
-                  placeholder="quadra"
-                  className="w-24 rounded-md border border-stone-300 px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-800"
-                />
+                <label className="flex items-center gap-1.5 text-sm">
+                  bloco
+                  <span className="w-20">
+                    <SeletorBloco valor={bloco} aoMudar={setBloco} />
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 text-sm">
+                  quadra
+                  <span className="w-28">
+                    <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
+                  </span>
+                </label>
               </>
             )}
             <Botao
               variante="primario"
               disabled={!valido}
-              titulo={tratada && !armazem ? 'Informe o armazém onde o lote foi guardado' : undefined}
+              titulo={
+                tratada && faltaEndereco
+                  ? `Onde o lote foi guardado: ${faltaEndereco}`
+                  : undefined
+              }
               onClick={() =>
-                onConferir(
-                  contados,
-                  obs.trim() || null,
-                  tratada && armazem.trim() !== ''
-                    ? {
-                        armazem: armazem.trim().toUpperCase(),
-                        bloco: bloco.trim().toUpperCase(),
-                        quadra: quadra.trim().toUpperCase(),
-                      }
-                    : null,
-                )
+                onConferir(contados, obs.trim() || null, tratada ? endereco : null)
               }
             >
               Conferir

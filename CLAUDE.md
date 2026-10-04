@@ -1697,6 +1697,46 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Novo lote de produção segue igual: apontou quantidade → "Sem localização" →
    endereçado → mapa (botão Novo lote continua pra compra de terceiros); consumo e
    reserva de ordens/cargas seguem sobre a tabela `lotes_mapa` cheia, sem mudança.
+   **Inventário de implantação — cada contagem entra no mapa na hora** (04/10/2026, pedido
+   do Arion: "eu fiz o inventário de 1 lote e não apareceu no mapa"). O mapa foi zerado em
+   03/10 (`mapa-reset-2026-10-03.sql`, cópia no schema `arquivo`) para ser remontado pela
+   contagem, mas o lançamento só vivia em `inventario_itens` e o "Aplicar no mapa" só
+   ENDEREÇA combinação que já existe — com o mapa vazio, nada aparecia. Migração
+   `inventario-implantacao-mapa.sql` (aplicada): `inventarios.alimenta_mapa` (marcado por
+   padrão ao criar; desmarcado = só compara com o SAP, como antes; não muda depois que há
+   contagem) e gatilho em `inventario_itens` (SECURITY DEFINER) que mexe em `lotes_mapa` +
+   `lote_enderecos` por DELTA — lançar soma, editar troca, excluir tira. **Exceção: a 1ª
+   contagem de uma combinação no inventário SOBRESCREVE saldo e endereços** — o lote que a
+   produção pôs no mapa ontem, "sem localização", é o mesmo que o operador conta hoje, e somar
+   dobraria; a marca fica em `inventario_mapa_assumido` (sobrevive à exclusão do lançamento,
+   então apagar e relançar não sobrescreve de novo o que produção/carga mexeram no meio).
+   Lote que não está no mapa NASCE com pms/peso/destinação/classe/peneira/categoria da lista
+   do SAP do inventário (`inventario_saldos` ganhou essas colunas; o conversor
+   `converterEstoqueInventario` já manda, `pmsEPeso` com a mesma rede do Peso Bruto), senão do
+   lote de semente. Inventário que alimenta o mapa não tem "Aplicar no mapa" (a RPC recusa),
+   e o cartão "Pendências do inventário" do Mapa some quando existe um desses depois do último
+   aplicado (as pendências de 05/09 falavam de lotes que já não estão no mapa). Excluir o
+   inventário NÃO tira do mapa o que já entrou. O inventário de 03/10 foi reaberto e ligado
+   na migração; o lote já contado entrou em A · 1 · 5.
+   **Endereço com regra fixa** (mesmo pedido): armazém **A–E**, bloco **1–44**, quadra
+   **1–20**, quadra 1 = parede (número maior = frente, como a grade). `src/dominio/endereco.ts`
+   (`normalizaEndereco`/`problemaEndereco`, número puro sem zero à esquerda: "06E"/"1A" viram
+   "6"/"1") e `SeletorBloco`/`SeletorQuadra` em `ui.tsx` — listas, não texto livre, e os três
+   obrigatórios em toda tela que endereça: contagem e lançamento manual do Inventário,
+   conferência da Logística, Endereçar/Mover/Ajuste/Contar das pendências no Mapa (o ajuste
+   segue opcional, mas começado tem de estar completo). No banco, gatilho que normaliza +
+   CHECK em `lote_enderecos` e `inventario_itens` (NOT VALID: o inventário de 05/09 tem
+   "06E"), e índice único `(lote, tratamento, armazem, bloco, quadra)` — `salvarEnderecos`
+   funde linhas repetidas. CORREDOR/SILO deixaram de valer.
+   **A produção punha o tratado no mapa com o sufixo do SAP** (achado na mesma conferência):
+   `fn_lote_tratado_no_mapa` gravava `ordens.lote_id` ("SV0013026563000-1") enquanto
+   importador, inventário e conferência da Logística usam o número BASE — o lote contado
+   aparecia duas vezes, e a branca consumida nunca saía do mapa (a branca também é por base).
+   O gatilho passou a usar o base (mesma migração) e o único tratado com sufixo foi fundido.
+   **Ainda em aberto**: o upload do SAP no Mapa (`substituir_brancas_mapa`) continua
+   SUBSTITUINDO toda a semente branca — durante a implantação, subir o SAP lá sobrescreve o
+   saldo contado e apaga a branca contada que não está no SAP. Pela decisão de 03/10 ("o SAP só
+   confere divergência") esse upload deve virar conferência; não mexido ainda.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

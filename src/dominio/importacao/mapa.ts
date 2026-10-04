@@ -94,6 +94,39 @@ export interface SaldoInventarioConvertido {
   cultivar: string
   embalagem: string
   bags: number
+  /**
+   * Dados para o inventário CRIAR o lote no mapa (03/10/2026: inventário de
+   * implantação — cada contagem entra no mapa na hora, e o mapa exige peso do
+   * bag). Mesma regra do converterLotesMapa: PMS legível manda, senão
+   * "Peso Bruto" ÷ fator; primeiro valor não-vazio da combinação.
+   */
+  pms?: number | null
+  peso_bag_kg?: number
+  destinacao?: string | null
+  classificacao?: string | null
+  peneira?: string | null
+  categoria?: string | null
+}
+
+/**
+ * PMS e peso do bag de uma linha do SAP — PMS legível (< 1.000 g) manda; senão
+ * sai do "Peso Bruto" ÷ fator da embalagem (12/09/2026). Peso do bag: o Peso
+ * Bruto quando existe, senão PMS × fator.
+ */
+function pmsEPeso(
+  linha: Linha, iPms: number, iPesoBruto: number, fator: number,
+): { pms: number | null; peso_bag_kg: number } {
+  const pmsBruto = iPms >= 0 ? numPms(linha[iPms]) : 0
+  const pesoBruto = iPesoBruto >= 0 ? num(linha[iPesoBruto]) : 0
+  const derivado = pesoBruto > 0 ? pesoBruto / fator : 0
+  const pms =
+    pmsBruto > 0 && pmsBruto < 1000
+      ? pmsBruto
+      : derivado > 0 && derivado < 1000
+        ? derivado
+        : null
+  const pesoBag = pesoBruto > 0 ? pesoBruto : pms != null ? pms * fator : 0
+  return { pms, peso_bag_kg: Math.round(pesoBag * 1000) / 1000 }
 }
 
 export interface ResultadoEstoqueInventario {
@@ -125,6 +158,14 @@ export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInven
       'Não achei as colunas "Nº do Lote", "Cultivar", "Embalagem", "Qtd em Estoque" e "Depósito" — é o export de saldo do SAP?',
     )
   }
+  // opcionais: só servem para o inventário de implantação criar o lote no mapa
+  const iDest = idx(h, 'DESTINAÇÃO')
+  const iPms = h.findIndex((x) => x.includes('PMS'))
+  const iPesoBruto = h.findIndex((x) => x.includes('PESO BRUTO'))
+  const iClassif = h.findIndex((x) => x.includes('CLASSIFICA'))
+  const iPeneira = h.findIndex((x) => x.includes('PENEIRA'))
+  const iCategoria = h.findIndex((x) => x.includes('CATEGORIA'))
+  const opc = (linha: Linha, i: number) => (i >= 0 ? txt(linha[i]) || null : null)
 
   const saldos = new Map<string, SaldoInventarioConvertido>()
   const r: ResultadoEstoqueInventario = {
@@ -169,8 +210,17 @@ export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInven
     const base = loteBase(lote)
     const chave = `${base}|${tratamento}|${emb.codigo}`
     const acc = saldos.get(chave)
-    if (acc) acc.bags += bags
-    else
+    const { pms, peso_bag_kg } = pmsEPeso(linha, iPms, iPesoBruto, emb.fator)
+    if (acc) {
+      acc.bags += bags
+      // primeiro valor não-vazio de cada campo (mesma regra do converterLotesMapa)
+      acc.pms ??= pms
+      if (!acc.peso_bag_kg && peso_bag_kg) acc.peso_bag_kg = peso_bag_kg
+      acc.destinacao ??= opc(linha, iDest)
+      acc.classificacao ??= opc(linha, iClassif)
+      acc.peneira ??= opc(linha, iPeneira)
+      acc.categoria ??= opc(linha, iCategoria)
+    } else
       saldos.set(chave, {
         lote: base,
         tratamento,
@@ -182,6 +232,12 @@ export function converterEstoqueInventario(rows: Linha[]): ResultadoEstoqueInven
         cultivar: cultivarDaLinhaSap(txt(linha[iCult]), iDesc >= 0 ? txt(linha[iDesc]) : '').cultivar,
         embalagem: emb.codigo,
         bags,
+        pms,
+        peso_bag_kg,
+        destinacao: opc(linha, iDest),
+        classificacao: opc(linha, iClassif),
+        peneira: opc(linha, iPeneira),
+        categoria: opc(linha, iCategoria),
       })
   }
 
@@ -301,16 +357,7 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
     // converterSaldoSap, sap.ts, achado do Arion, 12/09/2026). Ilegível
     // aqui também cai no "Peso Bruto" ÷ fator, como em converterSaldoSap:
     // o peso do bag já vinha dessa coluna, mas o PMS ficava nulo à toa.
-    const pmsBruto = iPms >= 0 ? numPms(linha[iPms]) : 0
-    const pesoBruto = iPesoBruto >= 0 ? num(linha[iPesoBruto]) : 0
-    const derivado = pesoBruto > 0 ? pesoBruto / emb.fator : 0
-    const pms =
-      pmsBruto > 0 && pmsBruto < 1000
-        ? pmsBruto
-        : derivado > 0 && derivado < 1000
-          ? derivado
-          : null
-    const pesoBag = pesoBruto > 0 ? pesoBruto : pms != null ? pms * emb.fator : 0
+    const { pms, peso_bag_kg: pesoBag } = pmsEPeso(linha, iPms, iPesoBruto, emb.fator)
 
     // branca também entra pelo número BASE: o SAP sufixa branca em
     // reentrada/desdobramento, e a produção (ordens, endereçamento) só
@@ -333,7 +380,7 @@ export function converterLotesMapa(rows: Linha[]): ResultadoLotesMapa {
         cultivar: cultivarDaLinhaSap(txt(linha[iCult]), iDesc >= 0 ? txt(linha[iDesc]) : '').cultivar,
         embalagem: emb.codigo,
         pms,
-        peso_bag_kg: Math.round(pesoBag * 1000) / 1000,
+        peso_bag_kg: pesoBag,
         bags,
         destinacao: txt(linha[iDest]) || null,
         classificacao: iClassif >= 0 ? txt(linha[iClassif]) || null : null,

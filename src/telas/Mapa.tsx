@@ -22,9 +22,11 @@ import { abrirJanelaImpressao, imprimirCroquiCarga, imprimirOrdemCarregamento } 
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, Tabela, Tag, Vazio, dataHoraCurta,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, SeletorBloco, SeletorQuadra, Tabela, Tag,
+  Vazio, dataHoraCurta,
   enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
+import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
 
 /**
  * Mapa e Montagem de Carga (28/08/2026).
@@ -55,13 +57,6 @@ const ordenaQuadras = (a: string, b: string): number => {
   return a.localeCompare(b)
 }
 const rotuloQuadra = (q: string) => (ehNumero(q) ? `QD${q.padStart(2, '0')}` : q)
-
-/** "1C" → "01C", mesma casa do 01C — normalização usada no endereçamento. */
-const normalizaBloco = (s: string): string => {
-  const b = s.replace(/\s+/g, ' ').trim().toUpperCase()
-  const m2 = b.match(/^(\d)([A-Z])$/)
-  return m2 ? `0${m2[1]}${m2[2]}` : b
-}
 
 const INPUT =
   'rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800'
@@ -345,16 +340,15 @@ export default function Mapa() {
       // (BB5M e MEIOBAG não somam); usar salvarEnderecos aqui apagaria o
       // endereço que a contagem de OUTRA embalagem acabou de gravar
       // (11/09/2026 — achado ao validar a tela com o Arion).
-      if (enderecar && bags > 0 && recontaArmazem.trim()) {
+      const enderecoReconta = normalizaEndereco({
+        armazem: recontaArmazem, bloco: recontaBloco, quadra: recontaQuadra,
+      })
+      if (enderecar && bags > 0 && enderecoReconta) {
         try {
           await m.somarEndereco(
             enderecar.lote,
             enderecar.tratamento,
-            {
-              armazem: recontaArmazem.trim().toUpperCase(),
-              bloco: recontaBloco.trim().toUpperCase(),
-              quadra: recontaQuadra.trim().toUpperCase(),
-            },
+            enderecoReconta,
             bags,
             usuario?.id ?? '',
           )
@@ -1345,9 +1339,11 @@ export default function Mapa() {
                         // ONDE: endereço junto da quantidade, um ato só
                         const pedeEndereco = p.situacao === 'nao_contado' && !!p.loteMapa
                         const bags = parseBagsReconta(valorRecontaPend)
+                        const faltaEnd = problemaEndereco({
+                          armazem: recontaArmazem, bloco: recontaBloco, quadra: recontaQuadra,
+                        })
                         const okValido =
-                          bags != null &&
-                          (!pedeEndereco || bags === 0 || recontaArmazem.trim() !== '')
+                          bags != null && (!pedeEndereco || bags === 0 || faltaEnd == null)
                         return recontandoPend === chave ? (
                           <>
                             {pedeEndereco && (
@@ -1359,18 +1355,20 @@ export default function Mapa() {
                                     className="w-full rounded-md border border-stone-300 px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
                                   />
                                 </span>
-                                <input
-                                  value={recontaBloco}
-                                  onChange={(e) => setRecontaBloco(e.target.value)}
-                                  placeholder="bloco"
-                                  className="w-20 rounded-md border border-stone-300 px-2 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
-                                />
-                                <input
-                                  value={recontaQuadra}
-                                  onChange={(e) => setRecontaQuadra(e.target.value)}
-                                  placeholder="quadra"
-                                  className="w-20 rounded-md border border-stone-300 px-2 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
-                                />
+                                <span className="w-16" title="Bloco (1 a 44)">
+                                  <SeletorBloco
+                                    valor={recontaBloco}
+                                    aoMudar={setRecontaBloco}
+                                    className="w-full rounded-md border border-stone-300 px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
+                                  />
+                                </span>
+                                <span className="w-16">
+                                  <SeletorQuadra
+                                    valor={recontaQuadra}
+                                    aoMudar={setRecontaQuadra}
+                                    className="w-full rounded-md border border-stone-300 px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800"
+                                  />
+                                </span>
                               </>
                             )}
                             <input
@@ -1385,8 +1383,8 @@ export default function Mapa() {
                               variante="primario"
                               disabled={!okValido}
                               titulo={
-                                pedeEndereco && bags != null && bags > 0 && !recontaArmazem.trim()
-                                  ? 'Contou? Diga também ONDE está (armazém)'
+                                pedeEndereco && bags != null && bags > 0 && faltaEnd
+                                  ? `Contou? Diga também ONDE está — ${faltaEnd}`
                                   : undefined
                               }
                               onClick={() => {
@@ -2493,7 +2491,11 @@ function ModalAjusteEstoque({
   const qtdOk = /^\d+([.,]\d{1,2})?$/.test(qtd.trim()) && qtdNum > 0
   const delta = sinal * qtdNum
   const novoSaldo = sel && qtdOk ? Math.round((sel.bags + delta) * 100) / 100 : null
-  const valido = !!sel && qtdOk && motivo.trim() !== '' && (novoSaldo ?? -1) >= 0
+  // endereço é opcional; começado, tem de estar completo e na regra
+  const enderecoAjuste = normalizaEndereco({ armazem, bloco, quadra })
+  const enderecoIncompleto = !!(armazem || bloco || quadra) && enderecoAjuste == null
+  const valido =
+    !!sel && qtdOk && motivo.trim() !== '' && (novoSaldo ?? -1) >= 0 && !enderecoIncompleto
 
   // o contado do último inventário aplicado é a referência do ajuste
   const contadoSel = sel ? contadoInventario?.get(`${sel.lote}|${sel.tratamento}`) : undefined
@@ -2667,22 +2669,21 @@ function ModalAjusteEstoque({
             <p className="mt-3 text-xs font-medium uppercase tracking-wide text-stone-500">
               Endereço do ajuste (opcional — preenchido, o ± entra naquele lugar)
             </p>
-            <div className="mt-1 flex flex-wrap gap-2">
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               <div className="w-28">
                 <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
               </div>
-              <input
-                value={bloco}
-                onChange={(e) => setBloco(e.target.value)}
-                placeholder="bloco"
-                className={`${INPUT} w-28`}
-              />
-              <input
-                value={quadra}
-                onChange={(e) => setQuadra(e.target.value)}
-                placeholder="quadra"
-                className={`${INPUT} w-28`}
-              />
+              <div className="w-24" title="Bloco (1 a 44)">
+                <SeletorBloco valor={bloco} aoMudar={setBloco} />
+              </div>
+              <div className="w-28">
+                <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
+              </div>
+              {enderecoIncompleto && (
+                <span className="text-xs text-amber-700 dark:text-amber-400">
+                  Endereço incompleto: {problemaEndereco({ armazem, bloco, quadra })}
+                </span>
+              )}
             </div>
           </>
         )}
@@ -2702,9 +2703,9 @@ function ModalAjusteEstoque({
                 tratamento: sel.tratamento,
                 delta,
                 motivo: motivo.trim(),
-                armazem: armazem.trim().toUpperCase() || null,
-                bloco: bloco.trim().toUpperCase() || null,
-                quadra: quadra.trim().toUpperCase() || null,
+                armazem: enderecoAjuste?.armazem ?? null,
+                bloco: enderecoAjuste?.bloco ?? null,
+                quadra: enderecoAjuste?.quadra ?? null,
               }).catch((e) => {
                 setErro(e instanceof Error ? e.message : String(e))
                 gravandoRef.current = false
@@ -2844,7 +2845,8 @@ function ModalMover({
 
   const bagsNum = Number(bags) || 0
   const parcial = bags.trim() !== '' && bagsNum > 0
-  const valido = armazem.trim() && bloco.trim() && quadra.trim()
+  const destino = normalizaEndereco({ armazem, bloco, quadra })
+  const valido = destino != null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -2868,9 +2870,15 @@ function ModalMover({
             className={`${INPUT} w-40`}
           />
           <span className="text-sm text-stone-400">→</span>
-          <input value={armazem} onChange={(e) => setArmazem(e.target.value)} placeholder="armazém" className={`${INPUT} w-24`} />
-          <input value={bloco} onChange={(e) => setBloco(e.target.value)} placeholder="bloco" className={`${INPUT} w-24`} />
-          <input value={quadra} onChange={(e) => setQuadra(e.target.value)} placeholder="quadra" className={`${INPUT} w-28`} />
+          <div className="w-24" title="Armazém (A a E)">
+            <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+          </div>
+          <div className="w-24" title="Bloco (1 a 44)">
+            <SeletorBloco valor={bloco} aoMudar={setBloco} />
+          </div>
+          <div className="w-28">
+            <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
+          </div>
         </div>
 
         {parcial && a.endereco.bags == null && (
@@ -2888,11 +2896,8 @@ function ModalMover({
             onClick={async () => {
               setSalvando(true)
               try {
-                await onMover(parcial ? bagsNum : null, {
-                  armazem: armazem.trim().toUpperCase(),
-                  bloco: normalizaBloco(bloco),
-                  quadra: quadra.trim().toUpperCase(),
-                })
+                if (!destino) return
+                await onMover(parcial ? bagsNum : null, destino)
               } finally {
                 setSalvando(false)
               }
@@ -2923,7 +2928,12 @@ function ModalEnderecos({
   )
   const [salvando, setSalvando] = useState(false)
 
-  const validas = linhas.filter((l) => l.armazem.trim() && l.bloco.trim() && l.quadra.trim() !== '')
+  // linha em branco é ignorada; linha começada e fora da regra trava o Salvar
+  // — salvar sem ela apagaria o endereço que o operador achou que gravou
+  const preenchida = (l: (typeof linhas)[number]) =>
+    !!(l.armazem.trim() || l.bloco.trim() || l.quadra.trim())
+  const validas = linhas.filter((l) => normalizaEndereco(l) != null)
+  const incompleta = linhas.find((l) => preenchida(l) && normalizaEndereco(l) == null)
 
   const atualizar = (i: number, campo: keyof (typeof linhas)[number], valor: string) =>
     setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
@@ -2935,17 +2945,23 @@ function ModalEnderecos({
           Endereçar — {lote.lote} · {lote.cultivar} · {rotuloTratamento(lote.tratamento)}
         </h3>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-          {inteiro(lote.bags)} bags no SAP. Quanto maior a QUADRA (número), mais fácil o
-          acesso — CORREDOR/SILO também valem. Bags por endereço é opcional. Pode dividir
-          em mais de um endereço.
+          {inteiro(lote.bags)} bags no mapa. Armazém A a E, bloco 1 a 44, quadra 1 a 20 — a
+          quadra 1 é a da parede; quanto maior a quadra, mais fácil o acesso. Bags por
+          endereço é opcional. Pode dividir em mais de um endereço.
         </p>
 
         <div className="mt-4 space-y-2">
           {linhas.map((l, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
-              <input value={l.armazem} onChange={(e) => atualizar(i, 'armazem', e.target.value)} placeholder="armazém" className={`${INPUT} w-28`} />
-              <input value={l.bloco} onChange={(e) => atualizar(i, 'bloco', e.target.value)} placeholder="bloco" className={`${INPUT} w-24`} />
-              <input value={l.quadra} onChange={(e) => atualizar(i, 'quadra', e.target.value)} placeholder="quadra" className={`${INPUT} w-28`} />
+              <div className="w-24" title="Armazém (A a E)">
+                <SeletorArmazem valor={l.armazem} aoMudar={(v) => atualizar(i, 'armazem', v)} />
+              </div>
+              <div className="w-24" title="Bloco (1 a 44)">
+                <SeletorBloco valor={l.bloco} aoMudar={(v) => atualizar(i, 'bloco', v)} />
+              </div>
+              <div className="w-28">
+                <SeletorQuadra valor={l.quadra} aoMudar={(v) => atualizar(i, 'quadra', v)} />
+              </div>
               <input type="number" min={1} value={l.bags} onChange={(e) => atualizar(i, 'bags', e.target.value)} placeholder="bags (opc.)" className={`${INPUT} w-28`} />
               {linhas.length > 1 && (
                 <button
@@ -2968,20 +2984,23 @@ function ModalEnderecos({
         >
           + adicionar endereço
         </button>
+        {incompleta && (
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            Endereço incompleto: {problemaEndereco(incompleta)} — complete ou remova a linha.
+          </p>
+        )}
 
         <div className="mt-4 flex justify-end gap-2">
           <Botao onClick={onFechar}>Cancelar</Botao>
           <Botao
             variante="primario"
-            disabled={salvando || validas.length === 0}
+            disabled={salvando || validas.length === 0 || !!incompleta}
             onClick={async () => {
               setSalvando(true)
               try {
                 await onSalvar(
                   validas.map((l) => ({
-                    armazem: l.armazem.trim().toUpperCase(),
-                    bloco: normalizaBloco(l.bloco),
-                    quadra: l.quadra.trim().toUpperCase(),
+                    ...normalizaEndereco(l)!,
                     bags: Number(l.bags) > 0 ? Number(l.bags) : null,
                   })),
                 )

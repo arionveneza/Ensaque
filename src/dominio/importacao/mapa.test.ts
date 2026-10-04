@@ -164,6 +164,30 @@ describe('converterLotesMapa', () => {
   })
 })
 
+describe('converterEstoqueInventario — dados para criar o lote no mapa (03/10/2026)', () => {
+  it('leva PMS, peso do bag, destinação e classe da primeira linha não-vazia', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'A-1', trat: 'FTZ60', qtd: 4, pms: 171, pesoBruto: 855, dest: null }),
+      linha({ lote: 'A-2', trat: 'FTZ60', qtd: 6, dest: 'COMIGO' }),
+    ])
+    expect(r.saldos).toHaveLength(1)
+    expect(r.saldos[0]).toMatchObject({
+      lote: 'A', tratamento: 'FTZ60', embalagem: 'BG5M', bags: 10,
+      pms: 171, peso_bag_kg: 855, destinacao: 'COMIGO', classificacao: 'Classe C',
+      peneira: 'P 6.0 mm', categoria: 'C1',
+    })
+  })
+
+  it('PMS ilegível cai no Peso Bruto ÷ fator (meio bag = 2,5)', () => {
+    const r = converterEstoqueInventario([
+      CAB,
+      linha({ lote: 'B', trat: null, emb: 'BMB', pms: null, pesoBruto: 425 }),
+    ])
+    expect(r.saldos[0]).toMatchObject({ embalagem: 'MEIOBAG', pms: 170, peso_bag_kg: 425 })
+  })
+})
+
 describe('converterEstoqueInventario', () => {
   it('TRATADO entra com quantidade — diferente do mapa, que só carimba', () => {
     const r = converterEstoqueInventario([

@@ -25,6 +25,12 @@ export interface InventarioLinha {
   fechado_em: string | null
   /** Endereços aplicados no mapa — aplicado não reabre mais (08/09/2026). */
   aplicado_em: string | null
+  /**
+   * Inventário de implantação (04/10/2026): cada lançamento entra no mapa na
+   * hora (gatilho no banco, migração inventario-implantacao-mapa.sql) e não
+   * existe "Aplicar no mapa". Falso = só compara com o SAP, como antes.
+   */
+  alimenta_mapa: boolean
   inventario_saldos: { count: number }[]
   inventario_itens: { count: number }[]
 }
@@ -33,10 +39,20 @@ export async function listarInventarios(): Promise<InventarioLinha[] | null> {
   let r = await supabase
     .from('inventarios')
     .select(
-      'id, titulo, criado_em, fechado_em, aplicado_em, inventario_saldos ( count ), inventario_itens ( count )',
+      'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, inventario_saldos ( count ), inventario_itens ( count )',
     )
     .order('criado_em', { ascending: false })
     .limit(100)
+  if (r.error?.code === '42703') {
+    // janela pré-migração inventario-implantacao-mapa.sql (sem alimenta_mapa)
+    r = (await supabase
+      .from('inventarios')
+      .select(
+        'id, titulo, criado_em, fechado_em, aplicado_em, inventario_saldos ( count ), inventario_itens ( count )',
+      )
+      .order('criado_em', { ascending: false })
+      .limit(100)) as unknown as typeof r
+  }
   if (r.error?.code === '42703') {
     // janela pré-migração inventario-mapa-ajuste-reserva.sql (sem aplicado_em)
     r = (await supabase
@@ -51,13 +67,13 @@ export async function listarInventarios(): Promise<InventarioLinha[] | null> {
     if (PRE_MIGRACAO.includes(r.error.code ?? '')) return null
     throw new Error(`listar inventários: ${r.error.message}`)
   }
-  return (r.data ?? []).map((i) => ({ aplicado_em: null, ...(i as object) })) as unknown as InventarioLinha[]
+  return (r.data ?? []).map((i) => ({ aplicado_em: null, alimenta_mapa: false, ...(i as object) })) as unknown as InventarioLinha[]
 }
 
-export async function criarInventario(titulo: string): Promise<string> {
+export async function criarInventario(titulo: string, alimentaMapa = false): Promise<string> {
   const { data, error } = await supabase
     .from('inventarios')
-    .insert({ titulo })
+    .insert(alimentaMapa ? { titulo, alimenta_mapa: true } : { titulo })
     .select('id')
     .single()
   erro('criar inventário — a migração inventario.sql já rodou?', error)
@@ -235,7 +251,18 @@ export async function ultimoInventarioAplicado(): Promise<InventarioAplicadoRef 
     if ([...PRE_MIGRACAO, '42703'].includes(error.code ?? '')) return null
     throw new Error(`buscar o último inventário aplicado: ${error.message}`)
   }
-  return ((data ?? [])[0] as InventarioAplicadoRef | undefined) ?? null
+  const aplicado = ((data ?? [])[0] as InventarioAplicadoRef | undefined) ?? null
+  if (!aplicado) return null
+  // um inventário de implantação DEPOIS dele (04/10/2026) remonta o mapa do
+  // zero: as pendências do aplicado falam de lotes que já não estão lá
+  const novo = await supabase
+    .from('inventarios')
+    .select('id')
+    .eq('alimenta_mapa', true)
+    .gt('criado_em', aplicado.aplicado_em)
+    .limit(1)
+  if (!novo.error && (novo.data ?? []).length > 0) return null
+  return aplicado
 }
 
 export interface ResumoAplicacao {

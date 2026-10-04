@@ -34,9 +34,10 @@ import {
   type LinhaInventario, type SituacaoInventario,
 } from '@/dominio/inventario'
 import { listarLotesMapa } from '@/dados/api-mapa'
+import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
 import {
-  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, Tabela, Tag, Vazio,
-  dataHoraCurta, enderecoLote, exportarCsv, inteiro,
+  Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, SeletorBloco, SeletorQuadra, Tabela,
+  Tag, Vazio, dataHoraCurta, enderecoLote, exportarCsv, inteiro,
 } from '@/componentes/ui'
 
 const INPUT =
@@ -229,9 +230,9 @@ export default function Inventario() {
           selId={selId}
           onSelecionar={setSelId}
           podeAbrir={podeAbrir}
-          onCriar={(titulo) =>
+          onCriar={(titulo, alimentaMapa) =>
             acao(async () => {
-              const id = await api.criarInventario(titulo)
+              const id = await api.criarInventario(titulo, alimentaMapa)
               setSelId(id)
             })
           }
@@ -273,27 +274,44 @@ function ListaInventarios({
   selId: string | null
   onSelecionar: (id: string) => void
   podeAbrir: boolean
-  onCriar: (titulo: string) => void
+  onCriar: (titulo: string, alimentaMapa: boolean) => void
 }) {
   const [titulo, setTitulo] = useState('')
+  // padrão desde 04/10/2026: a contagem monta o mapa (implantação). Só
+  // comparar com o SAP, sem mexer no mapa, continua possível desmarcando.
+  const [alimentaMapa, setAlimentaMapa] = useState(true)
   return (
     <Cartao titulo="Inventários" semPadding className="self-start">
       {podeAbrir && (
         <form
-          className="flex gap-2 border-b border-stone-200 p-3 dark:border-stone-800"
+          className="flex flex-col gap-2 border-b border-stone-200 p-3 dark:border-stone-800"
           onSubmit={(e) => {
             e.preventDefault()
-            onCriar(titulo.trim() || tituloSugerido())
+            onCriar(titulo.trim() || tituloSugerido(), alimentaMapa)
             setTitulo('')
           }}
         >
-          <input
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            placeholder={tituloSugerido()}
-            className={INPUT}
-          />
-          <Botao tipo="submit" variante="primario">Novo</Botao>
+          <div className="flex gap-2">
+            <input
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder={tituloSugerido()}
+              className={INPUT}
+            />
+            <Botao tipo="submit" variante="primario">Novo</Botao>
+          </div>
+          <label className="flex items-start gap-2 text-xs text-stone-600 dark:text-stone-300">
+            <input
+              type="checkbox"
+              checked={alimentaMapa}
+              onChange={(e) => setAlimentaMapa(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <b>Cada contagem entra no mapa</b> na hora, com o endereço — desmarque para só
+              comparar com o SAP
+            </span>
+          </label>
         </form>
       )}
       {invs.length === 0 ? (
@@ -316,6 +334,7 @@ function ListaInventarios({
                   <Tag cor={i.fechado_em ? 'ok' : 'alerta'}>
                     {i.fechado_em ? 'fechado' : 'em contagem'}
                   </Tag>
+                  {i.alimenta_mapa && <Tag cor="info">monta o mapa</Tag>}
                   <span>
                     {inteiro(i.inventario_saldos?.[0]?.count ?? 0)} do SAP ·{' '}
                     {inteiro(i.inventario_itens?.[0]?.count ?? 0)} lançados
@@ -379,6 +398,7 @@ function DetalheInventario({
           <span className="flex items-center gap-2">
             {inv.titulo}
             <Tag cor={aberto ? 'alerta' : 'ok'}>{aberto ? 'em contagem' : 'fechado'}</Tag>
+            {inv.alimenta_mapa && <Tag cor="info">cada contagem entra no mapa</Tag>}
             {aplicado && <Tag cor="info">aplicado no mapa</Tag>}
           </span>
         }
@@ -429,7 +449,11 @@ function DetalheInventario({
                   onAcao(async () => {
                     if (
                       !confirm(
-                        `Excluir "${inv.titulo}" apaga a lista do SAP e a contagem inteira (${itens.length} lançamento(s)). Excluir?`,
+                        `Excluir "${inv.titulo}" apaga a lista do SAP e a contagem inteira (${itens.length} lançamento(s)).${
+                          inv.alimenta_mapa
+                            ? '\n\nO que já entrou no mapa continua lá — para tirar um lote do mapa, exclua o lançamento dele antes.'
+                            : ''
+                        }\n\nExcluir?`,
                       )
                     )
                       return
@@ -448,11 +472,13 @@ function DetalheInventario({
           Criado em {dataHoraCurta(inv.criado_em)}
           {inv.fechado_em && ` · fechado em ${dataHoraCurta(inv.fechado_em)}`}
           {inv.aplicado_em && ` · endereços aplicados no mapa em ${dataHoraCurta(inv.aplicado_em)}`}
+          {inv.alimenta_mapa &&
+            ' · cada lançamento já entra no mapa (saldo e endereço); editar ou excluir o lançamento corrige o mapa junto'}
           {` · lista do SAP com ${inteiro(saldos.length)} combinação(ões)`}
         </p>
       </Cartao>
 
-      {!aberto && podeAbrir && !aplicado && (
+      {!aberto && podeAbrir && !aplicado && !inv.alimenta_mapa && (
         <AplicarMapaCartao inv={inv} resultados={resultados} itens={itens} onAcao={onAcao} onMsg={onMsg} />
       )}
 
@@ -767,6 +793,10 @@ function ContagemCartao({
   // recolhida por padrão: com o galpão andando a lista passa fácil de cem
   // linhas e enterrava o formulário de contagem (pedido do Arion, 05/09/2026)
   const [mostrarLancamentos, setMostrarLancamentos] = useState(false)
+  // último armazém + bloco gravados: o operador anda o bloco contando lote
+  // a lote, e escolher os dois de novo a cada lote atrasava (04/10/2026).
+  // A quadra fica em branco de propósito — muda quase sempre.
+  const [ultimoEndereco, setUltimoEndereco] = useState<{ armazem: string; bloco: string } | null>(null)
 
   const lancamentosPor = useMemo(() => {
     const c = new Map<string, number>()
@@ -814,7 +844,10 @@ function ContagemCartao({
       if (idEdicao) await api.atualizarItemInventario(idEdicao, item)
       else await api.adicionarItemInventario(inv.id, item)
     })
-    if (ok) setEditando(null)
+    if (ok) {
+      setEditando(null)
+      if (item.armazem && item.bloco) setUltimoEndereco({ armazem: item.armazem, bloco: item.bloco })
+    }
     return ok
   }
 
@@ -823,6 +856,12 @@ function ContagemCartao({
       <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
         Ache a combinação na lista e lance <b>endereço + quantidade</b> — um lançamento por
         endereço; a conferência soma. Contagem cega: a quantidade do SAP não aparece aqui.
+        {inv.alimenta_mapa && (
+          <>
+            {' '}
+            <b>Cada lançamento já entra no mapa</b>, no endereço informado.
+          </>
+        )}
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -849,6 +888,7 @@ function ContagemCartao({
             tratamentos={tratamentos}
             cultivares={cultivares}
             embalagens={embalagens}
+            enderecoInicial={ultimoEndereco}
             aoSalvar={async (item) => {
               const ok = await salvarLancamento(item, null)
               if (ok) setLancandoEm(null)
@@ -889,6 +929,7 @@ function ContagemCartao({
                 {abertoAqui && !editando && (
                   <div className="border-t border-stone-100 bg-stone-50/60 px-3 py-3 dark:border-stone-800/60 dark:bg-stone-800/30">
                     <FormEnderecoQuantidade
+                      enderecoInicial={ultimoEndereco}
                       aoSalvar={(campos) =>
                         salvarLancamento(
                           {
@@ -1032,9 +1073,11 @@ function ContagemCartao({
 
 /** Endereço (Armazém/Bloco/Quadra, como no mapa) + quantidade. */
 function FormEnderecoQuantidade({
-  inicial, rotuloSalvar = 'Adicionar', aoSalvar, aoCancelar,
+  inicial, enderecoInicial, rotuloSalvar = 'Adicionar', aoSalvar, aoCancelar,
 }: {
   inicial?: { armazem: string | null; bloco: string | null; quadra: string | null; bags: number }
+  /** Lançamento novo: armazém e bloco do último lançamento gravado. */
+  enderecoInicial?: { armazem: string; bloco: string } | null
   rotuloSalvar?: string
   aoSalvar: (campos: {
     armazem: string | null
@@ -1044,8 +1087,8 @@ function FormEnderecoQuantidade({
   }) => Promise<boolean>
   aoCancelar?: () => void
 }) {
-  const [armazem, setArmazem] = useState(inicial?.armazem ?? '')
-  const [bloco, setBloco] = useState(inicial?.bloco ?? '')
+  const [armazem, setArmazem] = useState(inicial?.armazem ?? enderecoInicial?.armazem ?? '')
+  const [bloco, setBloco] = useState(inicial?.bloco ?? enderecoInicial?.bloco ?? '')
   const [quadra, setQuadra] = useState(inicial?.quadra ?? '')
   const [bags, setBags] = useState(inicial ? String(inicial.bags).replace('.', ',') : '')
   const [salvando, setSalvando] = useState(false)
@@ -1055,7 +1098,10 @@ function FormEnderecoQuantidade({
   const enviandoRef = useRef(false)
 
   const bagsNum = parseBags(bags)
-  const valido = armazem.trim() !== '' && bagsNum != null
+  // endereço completo e na regra (armazém A–E, bloco 1–44, quadra 1–20)
+  const endereco = normalizaEndereco({ armazem, bloco, quadra })
+  const falta = problemaEndereco({ armazem, bloco, quadra }) ?? (bagsNum == null ? 'informe os bags' : null)
+  const valido = endereco != null && bagsNum != null
 
   return (
     <form
@@ -1068,16 +1114,10 @@ function FormEnderecoQuantidade({
         void (async () => {
           // limpa SÓ depois do servidor confirmar — limpar antes perdia a
           // digitação quando a gravação era recusada (varredura 04/09/2026)
-          const ok = await aoSalvar({
-            armazem: armazem.trim().toUpperCase(),
-            bloco: bloco.trim().toUpperCase() || null,
-            quadra: quadra.trim().toUpperCase() || null,
-            bags: bagsNum!,
-          })
+          const ok = await aoSalvar({ ...endereco!, bags: bagsNum! })
           enviandoRef.current = false
           setSalvando(false)
           if (ok && !inicial) {
-            setBloco('')
             setQuadra('')
             setBags('')
           }
@@ -1089,12 +1129,12 @@ function FormEnderecoQuantidade({
         <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
       </div>
       <div>
-        <label className={ROTULO_CAMPO}>Bloco</label>
-        <input value={bloco} onChange={(e) => setBloco(e.target.value)} className={INPUT} />
+        <label className={ROTULO_CAMPO}>Bloco * (1–44)</label>
+        <SeletorBloco valor={bloco} aoMudar={setBloco} />
       </div>
       <div>
-        <label className={ROTULO_CAMPO}>Quadra</label>
-        <input value={quadra} onChange={(e) => setQuadra(e.target.value)} className={INPUT} />
+        <label className={ROTULO_CAMPO}>Quadra * (1 = parede)</label>
+        <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
       </div>
       <div>
         <label className={ROTULO_CAMPO}>Bags *</label>
@@ -1108,11 +1148,19 @@ function FormEnderecoQuantidade({
         />
       </div>
       <div className="flex items-end gap-2">
-        <Botao tipo="submit" variante="primario" disabled={!valido || salvando}>
+        <Botao
+          tipo="submit"
+          variante="primario"
+          disabled={!valido || salvando}
+          titulo={falta ? `Falta: ${falta}` : undefined}
+        >
           {salvando ? 'Gravando…' : rotuloSalvar}
         </Botao>
         {aoCancelar && <Botao onClick={aoCancelar}>Cancelar</Botao>}
       </div>
+      {falta && (quadra || bags) && (
+        <p className="text-xs text-amber-700 sm:col-span-5 dark:text-amber-400">Falta: {falta}</p>
+      )}
     </form>
   )
 }
@@ -1120,13 +1168,14 @@ function FormEnderecoQuantidade({
 /** Lançamento manual completo — achado no galpão fora da lista do SAP. */
 function FormLancamentoManual({
   titulo = 'Fora da lista do SAP — lançamento manual',
-  tratamentos, cultivares, embalagens, inicial, aoSalvar, aoCancelar,
+  tratamentos, cultivares, embalagens, inicial, enderecoInicial, aoSalvar, aoCancelar,
 }: {
   titulo?: string
   tratamentos: string[]
   cultivares: string[]
   embalagens: string[]
   inicial?: api.ItemInventario
+  enderecoInicial?: { armazem: string; bloco: string } | null
   aoSalvar: (item: api.NovoItemInventario) => Promise<boolean>
   aoCancelar: () => void
 }) {
@@ -1142,7 +1191,12 @@ function FormLancamentoManual({
           quadra: inicial.quadra ?? '',
           bags: String(inicial.bags).replace('.', ','),
         }
-      : { ...FORM_VAZIO, embalagem: embalagens[0] ?? '' },
+      : {
+          ...FORM_VAZIO,
+          embalagem: embalagens[0] ?? '',
+          armazem: enderecoInicial?.armazem ?? '',
+          bloco: enderecoInicial?.bloco ?? '',
+        },
   )
   const [salvando, setSalvando] = useState(false)
   const muda = (campo: keyof FormLancamento) => (v: string) =>
@@ -1151,9 +1205,11 @@ function FormLancamentoManual({
   const enviandoRef = useRef(false)
 
   const bagsNum = parseBags(f.bags)
+  const endereco = normalizaEndereco(f)
   const valido =
     f.lote.trim() !== '' && f.tratamento.trim() !== '' && f.cultivar.trim() !== '' &&
-    f.embalagem.trim() !== '' && f.armazem.trim() !== '' && bagsNum != null
+    f.embalagem.trim() !== '' && endereco != null && bagsNum != null
+  const faltaEndereco = problemaEndereco(f)
 
   return (
     <Cartao titulo={titulo}>
@@ -1171,9 +1227,7 @@ function FormLancamentoManual({
             tratamento: f.tratamento.trim().toUpperCase(),
             cultivar: f.cultivar.trim(),
             embalagem: f.embalagem.trim().toUpperCase(),
-            armazem: f.armazem.trim().toUpperCase(),
-            bloco: f.bloco.trim().toUpperCase() || null,
-            quadra: f.quadra.trim().toUpperCase() || null,
+            ...endereco!,
             bags: bagsNum!,
             fora_da_lista: true,
           }).finally(() => {
@@ -1228,12 +1282,12 @@ function FormLancamentoManual({
           <SeletorArmazem valor={f.armazem} aoMudar={muda('armazem')} />
         </div>
         <div>
-          <label className={ROTULO_CAMPO}>Bloco</label>
-          <input value={f.bloco} onChange={(e) => muda('bloco')(e.target.value)} className={INPUT} />
+          <label className={ROTULO_CAMPO}>Bloco * (1–44)</label>
+          <SeletorBloco valor={f.bloco} aoMudar={muda('bloco')} />
         </div>
         <div>
-          <label className={ROTULO_CAMPO}>Quadra</label>
-          <input value={f.quadra} onChange={(e) => muda('quadra')(e.target.value)} className={INPUT} />
+          <label className={ROTULO_CAMPO}>Quadra * (1 = parede)</label>
+          <SeletorQuadra valor={f.quadra} aoMudar={muda('quadra')} />
         </div>
         <div>
           <label className={ROTULO_CAMPO}>Bags *</label>
@@ -1250,6 +1304,11 @@ function FormLancamentoManual({
             {salvando ? 'Gravando…' : inicial ? 'Salvar alterações' : 'Adicionar fora da lista'}
           </Botao>
           <Botao onClick={aoCancelar}>Cancelar</Botao>
+          {faltaEndereco && f.quadra && (
+            <span className="self-center text-xs text-amber-700 dark:text-amber-400">
+              Falta: {faltaEndereco}
+            </span>
+          )}
         </div>
       </form>
     </Cartao>
