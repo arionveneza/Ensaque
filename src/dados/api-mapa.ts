@@ -258,6 +258,20 @@ export async function ajustarSaldoMapa(a: {
   return (data as number) ?? 0
 }
 
+/**
+ * Exclui a combinação do mapa (04/10/2026): saldo a zero, endereços apagados
+ * e rastro no histórico de ajustes, com motivo — RPC excluir_lote_mapa
+ * (migração mapa-excluir-lote.sql).
+ */
+export async function excluirLoteMapa(lote: string, tratamento: string, motivo: string): Promise<void> {
+  const { error } = await supabase.rpc('excluir_lote_mapa', {
+    p_lote: lote,
+    p_tratamento: tratamento,
+    p_motivo: motivo,
+  })
+  erro('excluir o lote do mapa — a migração mapa-excluir-lote.sql já rodou?', error)
+}
+
 export interface AjusteMapa {
   id: string
   lote: string

@@ -279,6 +279,10 @@ export default function Mapa() {
   const [fotosDe, setFotosDe] = useState<string | null>(null)
   const [novoLote, setNovoLote] = useState(false)
   const [ajustando, setAjustando] = useState(false)
+  // ajuste aberto a partir de um lote do mapa (posição): já vem com o lote e
+  // o endereço daquela posição (04/10/2026)
+  const [ajusteInicial, setAjusteInicial] = useState<AjusteInicial | undefined>(undefined)
+  const [excluindo, setExcluindo] = useState<LoteMapaLinha | null>(null)
   // prefill do modal de ajuste quando vem do cartão de divergências
   const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
   // último inventário APLICADO — referência do cartão de pendências
@@ -1174,7 +1178,10 @@ export default function Mapa() {
             <div className="flex flex-wrap items-center gap-2">
               {podeAjustar && (
                 <Botao
-                  onClick={() => setAjustando(true)}
+                  onClick={() => {
+                    setAjusteInicial(undefined)
+                    setAjustando(true)
+                  }}
                   titulo="± quantidade numa combinação, com motivo e endereço — fica registrado"
                 >
                   Ajuste de estoque
@@ -1254,7 +1261,14 @@ export default function Mapa() {
                     : <Tag cor="ok">livre</Tag>}
                 </td>
                 <td className="px-2 py-1.5 text-right">
-                  {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
+                  <div className="flex justify-end gap-1.5">
+                    {podeEnderecar && <Botao onClick={() => setEnderecando(l)}>Endereçar</Botao>}
+                    {podeAjustar && (
+                      <Botao variante="perigo" onClick={() => setExcluindo(l)}>
+                        Excluir
+                      </Botao>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1563,10 +1577,24 @@ export default function Mapa() {
           posicao={posicao}
           alocacoes={naPosicao}
           podeEnderecar={podeEnderecar}
+          podeAjustar={podeAjustar}
           podeMontar={podeMontar}
           cargasParaLote={cargasParaLote}
           faltaNaCarga={faltaNaCarga}
           onFechar={() => setPosicao(null)}
+          onAjustar={(a) => {
+            setAjusteInicial({
+              lote: a.lote.lote,
+              tratamento: a.lote.tratamento,
+              endereco: { armazem: a.endereco.armazem, bloco: a.endereco.bloco, quadra: a.endereco.quadra },
+            })
+            setAjustando(true)
+            setPosicao(null)
+          }}
+          onExcluir={(l) => {
+            setExcluindo(l)
+            setPosicao(null)
+          }}
           onMover={(a) => {
             setMovendo(a)
             setPosicao(null)
@@ -1762,7 +1790,12 @@ export default function Mapa() {
           lotes={todos}
           contadoInventario={contadoInventarioPor}
           inventarioTitulo={divInv?.titulo ?? null}
+          inicial={ajusteInicial}
           onFechar={() => setAjustando(false)}
+          onExcluir={(l) => {
+            setAjustando(false)
+            setExcluindo(l)
+          }}
           onSalvar={async (a) => {
             const novo = await m.ajustarSaldoMapa(a)
             setAjustando(false)
@@ -1770,6 +1803,19 @@ export default function Mapa() {
               `Ajuste gravado: ${a.lote} · ${rotuloTratamento(a.tratamento)} ` +
                 `${a.delta > 0 ? '+' : ''}${n(a.delta, 0)} bg → saldo ${inteiro(novo)} bg.`,
             )
+            await recarregar()
+          }}
+        />
+      )}
+
+      {excluindo && (
+        <ModalExcluirLote
+          lote={excluindo}
+          onFechar={() => setExcluindo(null)}
+          onExcluir={async (motivo) => {
+            await m.excluirLoteMapa(excluindo.lote, excluindo.tratamento, motivo)
+            setExcluindo(null)
+            setMsg(`${excluindo.lote} · ${rotuloTratamento(excluindo.tratamento)} saiu do mapa (${inteiro(excluindo.bags)} bg).`)
             await recarregar()
           }}
         />
@@ -2435,17 +2481,28 @@ function MapaGrade({
  * combinação, motivo obrigatório e endereço opcional — usado quando a
  * divergência do inventário foi resolvida no SAP. Rastro em mapa_ajustes.
  */
+/** Ajuste aberto já com o lote (e, vindo de uma posição, o endereço dela). */
+interface AjusteInicial {
+  lote: string
+  tratamento: string
+  delta?: number
+  motivo?: string
+  endereco?: { armazem: string; bloco: string; quadra: string }
+}
+
 function ModalAjusteEstoque({
-  lotes, contadoInventario, inventarioTitulo, inicial, onFechar, onSalvar,
+  lotes, contadoInventario, inventarioTitulo, inicial, onFechar, onSalvar, onExcluir,
 }: {
   lotes: LoteMapaLinha[]
   /** Contado do último inventário aplicado por "lote|tratamento" — o ajuste
    *  trabalha EM CIMA DO CONTADO (pedido do Arion, 10/09/2026). */
   contadoInventario?: Map<string, number>
   inventarioTitulo?: string | null
-  /** Prefill vindo do cartão de divergências do inventário (10/09/2026). */
-  inicial?: { lote: string; tratamento: string; delta: number; motivo: string }
+  /** Prefill: cartão de divergências do inventário (10/09/2026) ou lote do mapa. */
+  inicial?: AjusteInicial
   onFechar: () => void
+  /** Zerar e tirar do mapa (04/10/2026) — abre a confirmação com motivo. */
+  onExcluir?: (l: LoteMapaLinha) => void
   onSalvar: (a: {
     lote: string
     tratamento: string
@@ -2462,14 +2519,14 @@ function ModalAjusteEstoque({
       ? lotes.find((l) => l.lote === inicial.lote && l.tratamento === inicial.tratamento) ?? null
       : null,
   )
-  const [sinal, setSinal] = useState<1 | -1>(inicial && inicial.delta < 0 ? -1 : 1)
+  const [sinal, setSinal] = useState<1 | -1>((inicial?.delta ?? 0) < 0 ? -1 : 1)
   const [qtd, setQtd] = useState(
-    inicial ? String(Math.round(Math.abs(inicial.delta) * 100) / 100).replace('.', ',') : '',
+    inicial?.delta ? String(Math.round(Math.abs(inicial.delta) * 100) / 100).replace('.', ',') : '',
   )
   const [motivo, setMotivo] = useState(inicial?.motivo ?? '')
-  const [armazem, setArmazem] = useState('')
-  const [bloco, setBloco] = useState('')
-  const [quadra, setQuadra] = useState('')
+  const [armazem, setArmazem] = useState(inicial?.endereco?.armazem ?? '')
+  const [bloco, setBloco] = useState(inicial?.endereco?.bloco ?? '')
+  const [quadra, setQuadra] = useState(inicial?.endereco?.quadra ?? '')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   // guarda síncrona anti-clique-duplo: o estado só muda no re-render e dois
@@ -2577,12 +2634,22 @@ function ModalAjusteEstoque({
                 {rotuloTratamento(sel.tratamento)}
               </Tag>
               <span className="text-xs text-stone-500">saldo atual {inteiro(sel.bags)} bg</span>
-              <button
-                onClick={() => setSel(null)}
-                className="ml-auto text-xs text-stone-500 underline-offset-2 hover:underline"
-              >
-                trocar
-              </button>
+              <span className="ml-auto flex items-center gap-3">
+                {onExcluir && sel.bags > 0 && (
+                  <button
+                    onClick={() => onExcluir(sel)}
+                    className="text-xs font-medium text-red-700 underline-offset-2 hover:underline dark:text-red-400"
+                  >
+                    excluir do mapa
+                  </button>
+                )}
+                <button
+                  onClick={() => setSel(null)}
+                  className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                >
+                  trocar
+                </button>
+              </span>
             </div>
 
             {contadoSel != null && sel && (
@@ -2723,18 +2790,21 @@ function ModalAjusteEstoque({
 
 /** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 function ModalPosicao({
-  posicao, alocacoes, podeEnderecar, podeMontar, cargasParaLote, faltaNaCarga,
-  onFechar, onMover, onEnderecar, onEnviarParaCarga,
+  posicao, alocacoes, podeEnderecar, podeAjustar, podeMontar, cargasParaLote, faltaNaCarga,
+  onFechar, onMover, onEnderecar, onAjustar, onExcluir, onEnviarParaCarga,
 }: {
   posicao: Posicao
   alocacoes: Alocacao[]
   podeEnderecar: boolean
+  podeAjustar: boolean
   podeMontar: boolean
   cargasParaLote: (l: LoteMapaLinha) => CargaMontadaLinha[]
   faltaNaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha) => number
   onFechar: () => void
   onMover: (a: Alocacao) => void
   onEnderecar: (l: LoteMapaLinha) => void
+  onAjustar: (a: Alocacao) => void
+  onExcluir: (l: LoteMapaLinha) => void
   onEnviarParaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha, bags: number | null) => void
 }) {
   // bags a enviar por linha — nasce com o que há NESTA posição (rateado)
@@ -2816,6 +2886,23 @@ function ModalPosicao({
                     <Botao onClick={() => onEnderecar(a.lote)}>Endereços</Botao>
                   </>
                 )}
+                {podeAjustar && (
+                  <>
+                    <Botao
+                      onClick={() => onAjustar(a)}
+                      titulo="Acrescentar ou subtrair bags deste lote (neste endereço), com motivo"
+                    >
+                      Ajustar
+                    </Botao>
+                    <Botao
+                      variante="perigo"
+                      onClick={() => onExcluir(a.lote)}
+                      titulo="Zera o lote e tira de todos os endereços, com motivo"
+                    >
+                      Excluir
+                    </Botao>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -2823,6 +2910,99 @@ function ModalPosicao({
 
         <div className="mt-4 flex justify-end">
           <Botao onClick={onFechar}>Fechar</Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Motivos de um toque para a exclusão — o campo continua editável. */
+const MOTIVOS_EXCLUSAO = ['Carregado — saiu do galpão', 'Enviado para tratamento', 'Lançado por engano']
+
+/**
+ * Excluir um lote do mapa (04/10/2026, pedido do Arion: "não consigo por
+ * exemplo excluir um lote"): zera o saldo, tira TODOS os endereços e deixa o
+ * rastro no histórico de ajustes (RPC excluir_lote_mapa).
+ */
+function ModalExcluirLote({
+  lote, onFechar, onExcluir,
+}: {
+  lote: LoteMapaLinha
+  onFechar: () => void
+  onExcluir: (motivo: string) => Promise<void>
+}) {
+  const [motivo, setMotivo] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const gravandoRef = useRef(false)
+  const enderecos = lote.lote_enderecos
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">
+          Excluir do mapa — {lote.lote} · {rotuloTratamento(lote.tratamento)}
+        </h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          {lote.cultivar} · {lote.embalagem} · <b>{inteiro(lote.bags)} bg</b>
+          {enderecos.length > 0
+            ? ` em ${enderecos.length} endereço(s): ${enderecos
+                .map((e) => `${e.armazem} · ${e.bloco} · ${e.quadra}${e.bags != null ? ` (${inteiro(e.bags)} bg)` : ''}`)
+                .join(', ')}`
+            : ' · sem localização'}
+        </p>
+        <p className="mt-2 text-sm">
+          O saldo vai a zero e o lote sai de todos os endereços. Fica registrado no histórico
+          de ajustes (quem, quando e por quê).
+        </p>
+        <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+          Se o lote foi contado errado no inventário, exclua o lançamento lá — ele sai do mapa
+          junto e a contagem fica certa.
+        </p>
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {MOTIVOS_EXCLUSAO.map((mt) => (
+            <button
+              key={mt}
+              type="button"
+              onClick={() => setMotivo(mt)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                motivo === mt
+                  ? 'border-red-500 bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300'
+                  : 'border-stone-300 hover:bg-stone-50 dark:border-stone-700 dark:hover:bg-stone-800'
+              }`}
+            >
+              {mt}
+            </button>
+          ))}
+        </div>
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="motivo * (obrigatório)"
+          className={`${INPUT} mt-2 w-full`}
+        />
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante="perigo"
+            disabled={!motivo.trim() || salvando}
+            onClick={() => {
+              if (!motivo.trim() || gravandoRef.current) return
+              gravandoRef.current = true
+              setSalvando(true)
+              setErro(null)
+              onExcluir(motivo.trim()).catch((e) => {
+                setErro(e instanceof Error ? e.message : String(e))
+                gravandoRef.current = false
+                setSalvando(false)
+              })
+            }}
+          >
+            {salvando ? 'Excluindo…' : 'Excluir do mapa'}
+          </Botao>
         </div>
       </div>
     </div>

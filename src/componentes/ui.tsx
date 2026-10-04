@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { BLOCOS, BLOCO_MAX, QUADRAS, QUADRA_MAX, numeroEndereco } from '@/dominio/endereco'
+import { BLOCO_MAX, QUADRA_MAX, numeroEndereco } from '@/dominio/endereco'
 
 /** Peças visuais compartilhadas pelas telas. Nada de regra de negócio aqui. */
 
@@ -379,10 +379,162 @@ const CLASSE_SELETOR_ENDERECO =
   'w-full rounded-md border border-stone-300 px-2 py-2 text-sm sm:py-1.5 dark:border-stone-700 dark:bg-stone-800'
 
 /**
- * Bloco de 1 a 44 e quadra de 1 a 20, em lista — não texto livre (regra do
- * Arion, 03/10/2026; `src/dominio/endereco.ts`). Valor antigo no formato
- * "06E"/"1A" aparece já como o número ("6"/"1"), que é o que será gravado;
- * fora da faixa aparece vazio, pedindo escolha.
+ * Número de bloco/quadra: DIGITA e a lista filtra (04/10/2026, pedido do
+ * Arion: "tem que correr a lista, dá pra colocar a opção de digitar e
+ * filtrar"). "1" mostra 1 e 10–19; Enter (ou toque) escolhe o primeiro;
+ * fora da faixa fica vermelho e o formulário não grava (quem valida é
+ * `normalizaEndereco`). A lista abre em `position: fixed` — dentro da lista
+ * rolável do inventário e dos modais um `absolute` ficava cortado.
+ */
+function SeletorNumeroEndereco({
+  valor, aoMudar, max, rotulo, className = '', titulo,
+}: {
+  valor: string
+  aoMudar: (v: string) => void
+  max: number
+  rotulo?: (n: string) => string
+  className?: string
+  titulo?: string
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const listaRef = useRef<HTMLUListElement>(null)
+  const [aberto, setAberto] = useState(false)
+  const [filtro, setFiltro] = useState('')
+  const [ativo, setAtivo] = useState(0)
+  const [pos, setPos] = useState<{
+    left: number; top?: number; bottom?: number; minW: number; maxH: number
+  } | null>(null)
+
+  const opcoes = useMemo(() => Array.from({ length: max }, (_, i) => String(i + 1)), [max])
+  const digitos = filtro.replace(/\D/g, '').replace(/^0+/, '')
+  const visiveis = digitos ? opcoes.filter((o) => o.startsWith(digitos)) : opcoes
+  const atual = numeroEndereco(valor, max)
+  const invalido = valor.trim() !== '' && atual == null
+
+  // posição da lista: embaixo do campo, ou em cima se não couber (teclado
+  // do tablet aberto); acompanha rolagem e redimensionamento
+  useEffect(() => {
+    if (!aberto) return
+    const atualizar = () => {
+      const r = ref.current?.getBoundingClientRect()
+      if (!r) return
+      const abaixo = window.innerHeight - r.bottom
+      const acima = r.top
+      setPos(
+        abaixo >= 180 || abaixo >= acima
+          ? { left: r.left, top: r.bottom + 4, minW: r.width, maxH: Math.max(96, Math.min(240, abaixo - 12)) }
+          : { left: r.left, bottom: window.innerHeight - r.top + 4, minW: r.width, maxH: Math.max(96, Math.min(240, acima - 12)) },
+      )
+    }
+    atualizar()
+    window.addEventListener('scroll', atualizar, true)
+    window.addEventListener('resize', atualizar)
+    return () => {
+      window.removeEventListener('scroll', atualizar, true)
+      window.removeEventListener('resize', atualizar)
+    }
+  }, [aberto])
+
+  useEffect(() => {
+    listaRef.current
+      ?.querySelector(`[data-i="${ativo}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [ativo])
+
+  const escolher = (o: string) => {
+    aoMudar(o)
+    setFiltro('')
+    setAberto(false)
+  }
+
+  return (
+    <>
+      <input
+        ref={ref}
+        value={valor}
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder={`1–${max}`}
+        title={titulo}
+        onFocus={(e) => {
+          setFiltro('')
+          setAtivo(0)
+          setAberto(true)
+          e.target.select()
+        }}
+        onBlur={() => {
+          setAberto(false)
+          // "06" vira "6" ao sair do campo
+          if (atual && atual !== valor) aoMudar(atual)
+        }}
+        onChange={(e) => {
+          aoMudar(e.target.value)
+          setFiltro(e.target.value)
+          setAtivo(0)
+          setAberto(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setAberto(true)
+            setAtivo((a) => Math.min(a + 1, visiveis.length - 1))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setAtivo((a) => Math.max(a - 1, 0))
+          } else if (e.key === 'Enter' && aberto && visiveis[ativo]) {
+            // Enter com a lista aberta escolhe; fechada, segue pro formulário
+            e.preventDefault()
+            escolher(visiveis[ativo])
+          } else if (e.key === 'Escape') {
+            setAberto(false)
+          }
+        }}
+        className={`${className || CLASSE_SELETOR_ENDERECO} ${
+          invalido ? '!border-red-500 text-red-700 dark:text-red-400' : ''
+        }`}
+      />
+      {aberto && pos && (
+        <ul
+          ref={listaRef}
+          // mousedown não tira o foco do campo — senão o blur fecha a lista
+          // antes do clique escolher
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom,
+            minWidth: Math.max(pos.minW, 72), maxHeight: pos.maxH,
+          }}
+          className="z-[70] overflow-y-auto rounded-md border border-stone-200 bg-white py-1 text-sm shadow-lg dark:border-stone-700 dark:bg-stone-900"
+        >
+          {visiveis.length === 0 ? (
+            <li className="px-3 py-2 text-xs whitespace-nowrap text-red-600 dark:text-red-400">
+              só de 1 a {max}
+            </li>
+          ) : (
+            visiveis.map((o, i) => (
+              <li key={o}>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-i={i}
+                  onClick={() => escolher(o)}
+                  className={`block w-full px-3 py-2 text-left whitespace-nowrap sm:py-1.5 ${
+                    i === ativo ? 'bg-green-50 dark:bg-green-950/50' : 'hover:bg-stone-50 dark:hover:bg-stone-800'
+                  } ${o === atual ? 'font-semibold text-green-800 dark:text-green-300' : ''}`}
+                >
+                  {rotulo ? rotulo(o) : o}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </>
+  )
+}
+
+/**
+ * Bloco de 1 a 44 e quadra de 1 a 20 (regra do Arion, 03/10/2026;
+ * `src/dominio/endereco.ts`) — digita ou escolhe na lista filtrada.
  */
 export function SeletorBloco({
   valor, aoMudar, className = '',
@@ -392,16 +544,13 @@ export function SeletorBloco({
   className?: string
 }) {
   return (
-    <select
-      value={numeroEndereco(valor, BLOCO_MAX) ?? ''}
-      onChange={(e) => aoMudar(e.target.value)}
-      className={className || CLASSE_SELETOR_ENDERECO}
-    >
-      <option value="">—</option>
-      {BLOCOS.map((b) => (
-        <option key={b} value={b}>{b}</option>
-      ))}
-    </select>
+    <SeletorNumeroEndereco
+      valor={valor}
+      aoMudar={aoMudar}
+      max={BLOCO_MAX}
+      className={className}
+      titulo={`Bloco de 1 a ${BLOCO_MAX} — digite ou escolha`}
+    />
   )
 }
 
@@ -414,17 +563,14 @@ export function SeletorQuadra({
   className?: string
 }) {
   return (
-    <select
-      value={numeroEndereco(valor, QUADRA_MAX) ?? ''}
-      onChange={(e) => aoMudar(e.target.value)}
-      className={className || CLASSE_SELETOR_ENDERECO}
-      title="Quadra 1 = parede; número maior = frente, no acesso"
-    >
-      <option value="">—</option>
-      {QUADRAS.map((q) => (
-        <option key={q} value={q}>{q === '1' ? '1 (parede)' : q}</option>
-      ))}
-    </select>
+    <SeletorNumeroEndereco
+      valor={valor}
+      aoMudar={aoMudar}
+      max={QUADRA_MAX}
+      rotulo={(q) => (q === '1' ? '1 (parede)' : q)}
+      className={className}
+      titulo="Quadra de 1 a 20 — 1 = parede; número maior = frente, no acesso"
+    />
   )
 }
 

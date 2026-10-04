@@ -236,6 +236,13 @@ export interface InventarioAplicadoRef {
 }
 
 /**
+ * O mapa foi zerado em 03/10/2026 (mapa-reset-2026-10-03.sql) para ser
+ * remontado pela contagem — inventário aplicado antes disso não diz nada
+ * sobre o mapa de hoje.
+ */
+const MAPA_ZERADO_EM = '2026-10-03'
+
+/**
  * O inventário aplicado mais recente — referência do cartão "Divergências
  * do inventário" no Mapa (10/09/2026). Null quando nenhum foi aplicado ou
  * na janela pré-migração.
@@ -253,6 +260,10 @@ export async function ultimoInventarioAplicado(): Promise<InventarioAplicadoRef 
   }
   const aplicado = ((data ?? [])[0] as InventarioAplicadoRef | undefined) ?? null
   if (!aplicado) return null
+  // aplicado ANTES do reset do mapa fala de outro mapa: as pendências e o
+  // "contado" do Ajuste de estoque (que preencheu "Inventário 05/09/2026:
+  // contado 5, sistema 10" num lote recém-contado, 04/10/2026) seriam lixo
+  if (aplicado.aplicado_em < MAPA_ZERADO_EM) return null
   // um inventário de implantação DEPOIS dele (04/10/2026) remonta o mapa do
   // zero: as pendências do aplicado falam de lotes que já não estão lá
   const novo = await supabase

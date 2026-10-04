@@ -1737,6 +1737,30 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    SUBSTITUINDO toda a semente branca — durante a implantação, subir o SAP lá sobrescreve o
    saldo contado e apaga a branca contada que não está no SAP. Pela decisão de 03/10 ("o SAP só
    confere divergência") esse upload deve virar conferência; não mexido ainda.
+   **Bloco/quadra digitados, com a lista filtrando** (mesmo dia, 2ª rodada — "tem que correr a
+   lista, dá pra colocar a opção de digitar e filtrar"): `SeletorBloco`/`SeletorQuadra` deixaram
+   de ser `<select>` e viraram campo numérico (`inputMode="numeric"`) com lista filtrada pelo
+   começo do número ("1" → 1 e 10–19), Enter/seta/toque escolhem, fora da faixa fica vermelho
+   ("só de 1 a 44") e "06" vira "6" ao sair do campo. A lista abre em `position: fixed` (z-70)
+   — dentro da lista rolável do inventário e dos modais um `absolute` ficava cortado — e sobe
+   quando falta espaço embaixo (teclado do tablet). Mesma troca em toda tela, já que todas usam
+   os dois componentes. Conferido com página de teste no dev server (a tela real exige login).
+   **Ajustar e Excluir no próprio lote do Mapa** ("não tem como fazer o ajuste no mapa, não
+   consigo por exemplo excluir um lote"): o Ajuste de estoque só existia no topo do cartão do
+   SAP, com busca; agora o modal da POSIÇÃO tem, por lote, **Ajustar** (abre o ajuste já com o
+   lote e o endereço daquela posição) e **Excluir**, e a lista "Sem localização" e o próprio
+   ajuste ("excluir do mapa") também. Excluir = RPC `excluir_lote_mapa` (migração
+   `mapa-excluir-lote.sql`, aplicada; ação `mapa/ajustar`): saldo a zero, TODOS os endereços
+   apagados, rastro em `mapa_ajustes` ("Excluído do mapa: motivo", delta = −saldo), motivo
+   obrigatório com três atalhos (carregado · enviado para tratamento · lançado por engano). A
+   linha fica com bags 0 (some da tela, como a carga carregada). Não mexe no inventário — lote
+   contado errado se corrige excluindo o lançamento lá. Na mesma migração o
+   `ajustar_saldo_mapa` passou a apagar os endereços quando o saldo ZERA: o Arion zerou dois
+   lotes pelo Ajuste e o endereço A·1·5 ficou para trás (limpo na migração). **Achado junto**:
+   com o inventário de 03/10 excluído, o Mapa voltou a usar o de 05/09 como referência e o
+   Ajuste preencheu "Inventário 05/09/2026: contado 5, sistema 10" num lote do mapa novo —
+   `ultimoInventarioAplicado` agora ignora inventário aplicado antes do reset
+   (`MAPA_ZERADO_EM = '2026-10-03'`), o que também some com o cartão Pendências antigo.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS
