@@ -1577,6 +1577,30 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    monta OU quem endereça. A consulta
    em tempo real ao SAP foi DESCARTADA por ora (30/08/2026): o tratado entra pela
    produção e o upload segue cobrindo branca + destinação/classe.
+   **Reset do mapa (03/10/2026)** — pedido do Arion: "eu preciso apagar todos os lotes do
+   mapa, iremos fazer inventário e endereçar os lotes novamente". O mapa estava 67% acima do
+   SAP (16.829 × 10.087 bags em 02/10): a carga feita pela SimpleAgro nunca dá baixa no mapa
+   (a montagem de carga do app não é usada — 10 cargas, a última de 08/09) e 379 combinações
+   zeradas no SAP seguiam com endereço. `supabase/mapa-reset-2026-10-03.sql` (aplicada) copiou
+   `lotes_mapa` (1.159 linhas, 16.956 bags) e `lote_enderecos` (1.320) para o schema
+   **`arquivo`** (`arquivo.lotes_mapa_20261003`, `arquivo.lote_enderecos_20261003` — fora da
+   API: sem `usage` para anon/authenticated, conferido) e apagou as duas tabelas numa
+   transação, com a cópia conferida antes do delete; o desfazer está no cabeçalho do arquivo.
+   Ficaram intactos `ordem_mapa_lancado` (ordem já lançada não entra de novo), cargas montadas
+   e inventários. **Como o mapa se reconstrói hoje, e a lacuna**: o upload do SAP na aba Mapa
+   recria só a BRANCA (`substituir_brancas_mapa`); o tratado entra só pela produção (gatilho na
+   Finalizada) ou pelo "Novo lote" manual; e o `aplicar_inventario_no_mapa` vigente só grava
+   endereço em combinação que JÁ existe — o resto vai para `sem_mapa` (conferido no
+   `pg_proc`: não há `insert into lotes_mapa`). Com o mapa vazio, aplicar o inventário deixa
+   todo o tratado de fora: o "aplicar" precisa passar a criar a combinação contada antes de o
+   inventário novo ser aplicado (a `inventario_saldos` não tem peso do bag/PMS — vem do SAP ou
+   de `lotes_semente`). Pendências conhecidas do dia do reset: as 9 cargas montadas antigas
+   (31/08–08/09, 37 itens, nunca carregadas) continuam "reservando" lote e, se alguém marcar
+   Carregada, debitam o mapa novo; o cartão Pendências do Mapa segue mostrando o inventário
+   de 05/09 até o próximo ser aplicado; o inventário de 12/09 está aberto e vazio. Desenhos da
+   estratégia nova (baixa do carregado no tablet, saída da branca para a TSI, conferência com o
+   SAP) ficaram no scratchpad da sessão de 02/10 — o Arion decidiu: quantidade pelo app em
+   tempo real, operador dá baixa no tablet na hora do carregamento, SAP só confere divergência.
 
 6d. **Inventário** (04/09/2026) — contagem física de sementes (branca e tratada) × estoque
    do SAP, **FORA do mapa** de propósito: nenhum saldo é ajustado, a tela só responde "bate
