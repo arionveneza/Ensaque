@@ -391,6 +391,22 @@ function DetalheInventario({
     )
   }, [aberto, itens, saldos, resultados])
 
+  // descarte/observações vivem no lançamento; a conferência é por
+  // combinação, então junta aqui (vale aberto ou fechado — os lançamentos
+  // continuam lidos)
+  const extrasPorCombinacao = useMemo(() => {
+    const m = new Map<string, ExtrasCombinacao>()
+    for (const i of itens) {
+      if (!i.descarte && !i.observacao) continue
+      const k = chaveInventario(i.lote, i.tratamento, i.embalagem)
+      const ex = m.get(k) ?? { descarte: false, observacoes: [] }
+      if (i.descarte) ex.descarte = true
+      if (i.observacao && !ex.observacoes.includes(i.observacao)) ex.observacoes.push(i.observacao)
+      m.set(k, ex)
+    }
+    return m
+  }, [itens])
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Cartao
@@ -502,6 +518,7 @@ function DetalheInventario({
         inv={inv}
         linhas={linhas}
         aberto={aberto}
+        extras={extrasPorCombinacao}
         recontagem={
           !aberto
             ? {
@@ -768,11 +785,12 @@ interface FormLancamento {
   bloco: string
   quadra: string
   bags: string
+  observacao: string
 }
 
 const FORM_VAZIO: FormLancamento = {
   lote: '', tratamento: SEM_TSI, cultivar: '', embalagem: '',
-  armazem: '', bloco: '', quadra: '', bags: '',
+  armazem: '', bloco: '', quadra: '', bags: '', observacao: '',
 }
 
 function ContagemCartao({
@@ -1025,6 +1043,15 @@ function ContagemCartao({
                   {i.fora_da_lista && (
                     <Tag cor="info" className="ml-1.5">fora da lista</Tag>
                   )}
+                  {i.descarte && <Tag cor="perigo" className="ml-1.5">descarte</Tag>}
+                  {i.observacao && (
+                    <span
+                      className="mt-0.5 block max-w-64 truncate font-sans text-amber-700 dark:text-amber-400"
+                      title={i.observacao}
+                    >
+                      obs: {i.observacao}
+                    </span>
+                  )}
                 </td>
                 <td className="px-2 py-1.5">{i.tratamento}</td>
                 <td className="px-2 py-1.5 text-xs">{i.embalagem}</td>
@@ -1190,6 +1217,7 @@ function FormLancamentoManual({
           bloco: inicial.bloco ?? '',
           quadra: inicial.quadra ?? '',
           bags: String(inicial.bags).replace('.', ','),
+          observacao: inicial.observacao ?? '',
         }
       : {
           ...FORM_VAZIO,
@@ -1198,6 +1226,10 @@ function FormLancamentoManual({
           bloco: enderecoInicial?.bloco ?? '',
         },
   )
+  // descarte e observações (04/10/2026, pedido do Arion): o que aparece no
+  // galpão fora da lista do SAP muitas vezes é descarte — marcado, entra no
+  // mapa com destinação DESCARTE (vermelho, ninguém carrega por engano)
+  const [descarte, setDescarte] = useState(inicial?.descarte ?? false)
   const [salvando, setSalvando] = useState(false)
   const muda = (campo: keyof FormLancamento) => (v: string) =>
     setF((atual) => ({ ...atual, [campo]: v }))
@@ -1230,6 +1262,8 @@ function FormLancamentoManual({
             ...endereco!,
             bags: bagsNum!,
             fora_da_lista: true,
+            descarte,
+            observacao: f.observacao.trim() || null,
           }).finally(() => {
             enviandoRef.current = false
             setSalvando(false)
@@ -1299,6 +1333,37 @@ function FormLancamentoManual({
             className={INPUT}
           />
         </div>
+        <label
+          className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm sm:col-span-2 lg:col-span-4 ${
+            descarte
+              ? 'border-red-500 bg-red-50 text-red-800 dark:border-red-600 dark:bg-red-950/40 dark:text-red-300'
+              : 'border-stone-300 dark:border-stone-700'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={descarte}
+            onChange={(e) => setDescarte(e.target.checked)}
+            className="h-5 w-5 accent-red-600"
+          />
+          <span>
+            <b>É DESCARTE</b>
+            <span className="block text-xs opacity-80">
+              entra no mapa marcado como DESCARTE, em vermelho — não vai para carga
+            </span>
+          </span>
+        </label>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <label className={ROTULO_CAMPO}>Observações</label>
+          <textarea
+            value={f.observacao}
+            onChange={(e) => muda('observacao')(e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder={descarte ? 'ex.: motivo do descarte, estado da embalagem…' : 'opcional'}
+            className={INPUT}
+          />
+        </div>
         <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
           <Botao tipo="submit" variante="primario" disabled={!valido || salvando}>
             {salvando ? 'Gravando…' : inicial ? 'Salvar alterações' : 'Adicionar fora da lista'}
@@ -1325,12 +1390,19 @@ interface RecontagemInfo {
   primeira: number | null
 }
 
+/** Descarte e observações dos lançamentos, por lote|tratamento|embalagem. */
+interface ExtrasCombinacao {
+  descarte: boolean
+  observacoes: string[]
+}
+
 function ConferenciaCartao({
-  inv, linhas, aberto, recontagem,
+  inv, linhas, aberto, extras, recontagem,
 }: {
   inv: api.InventarioLinha
   linhas: LinhaInventario[]
   aberto: boolean
+  extras: Map<string, ExtrasCombinacao>
   /** Recontagem no físico (10/09/2026) — só com o inventário FECHADO. */
   recontagem?: {
     podeRecontar: boolean
@@ -1388,17 +1460,22 @@ function ConferenciaCartao({
           disabled={linhas.length === 0}
           onClick={() =>
             exportarCsv(`inventario-${inv.titulo.replace(/[^\p{L}\p{N}]+/gu, '-')}`, [
-              ['Situação', 'Cultivar', 'Lote', 'Tratamento', 'Embalagem', 'Contado (bg)', 'SAP (bg)', 'Diferença (bg)'],
-              ...linhas.map((l) => [
-                ROTULO_SITUACAO[l.situacao],
-                l.cultivar ?? '',
-                l.lote,
-                l.tratamento,
-                l.embalagem,
-                l.contado ?? '',
-                l.sistema ?? '',
-                l.diferenca,
-              ]),
+              ['Situação', 'Cultivar', 'Lote', 'Tratamento', 'Embalagem', 'Contado (bg)', 'SAP (bg)', 'Diferença (bg)', 'Descarte', 'Observações'],
+              ...linhas.map((l) => {
+                const ex = extras.get(chaveInventario(l.lote, l.tratamento, l.embalagem))
+                return [
+                  ROTULO_SITUACAO[l.situacao],
+                  l.cultivar ?? '',
+                  l.lote,
+                  l.tratamento,
+                  l.embalagem,
+                  l.contado ?? '',
+                  l.sistema ?? '',
+                  l.diferenca,
+                  ex?.descarte ? 'SIM' : '',
+                  ex?.observacoes.join(' | ') ?? '',
+                ]
+              }),
             ])
           }
         >
@@ -1481,6 +1558,7 @@ function ConferenciaCartao({
             {visiveis.map((l) => {
               const chave = `${l.lote}|${l.tratamento}|${l.embalagem}`
               const info = recontagem?.de.get(chave)
+              const ex = extras.get(chaveInventario(l.lote, l.tratamento, l.embalagem))
               return (
               <tr
                 key={chave}
@@ -1493,6 +1571,15 @@ function ConferenciaCartao({
                       title={`1ª contagem: ${info.primeira != null ? fmtBg(info.primeira) : 'não contado'} · recontado em ${dataHoraCurta(info.recontadoEm)}`}
                     >
                       <Tag cor="alerta" className="ml-1">recontado</Tag>
+                    </span>
+                  )}
+                  {ex?.descarte && <Tag cor="perigo" className="ml-1">descarte</Tag>}
+                  {ex && ex.observacoes.length > 0 && (
+                    <span
+                      className="mt-0.5 block max-w-56 truncate text-xs text-amber-700 dark:text-amber-400"
+                      title={ex.observacoes.join('\n')}
+                    >
+                      obs: {ex.observacoes.join(' · ')}
                     </span>
                   )}
                 </td>

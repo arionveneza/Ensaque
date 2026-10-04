@@ -1761,6 +1761,21 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    Ajuste preencheu "Inventário 05/09/2026: contado 5, sistema 10" num lote do mapa novo —
    `ultimoInventarioAplicado` agora ignora inventário aplicado antes do reset
    (`MAPA_ZERADO_EM = '2026-10-03'`), o que também some com o cartão Pendências antigo.
+   **Descarte e observações no lançamento fora da lista** (mesmo dia, pedido do Arion: "quando
+   não estiver na lista do SAP e o operador clicar em Não está na lista, abrir uma caixa para
+   ele informar que é DESCARTE e também um campo de OBSERVAÇÕES"). `inventario_itens.descarte`
+   (boolean, default false) e `.observacao` (migração `inventario-descarte.sql`, aplicada); no
+   formulário manual, caixa grande "É DESCARTE" (fica vermelha marcada) e textarea Observações
+   (até 500 caracteres) — o lançamento da lista não tem os dois e não mexe neles. **No mapa o
+   descarte entra como qualquer contagem** (ocupa lugar no galpão e a Logística precisa achá-lo
+   para tirar), **com destinação `DESCARTE`**: o mapa já pinta de vermelho e avisa forte no
+   loteamento todo lote com destinação, então ninguém carrega descarte por engano. Desmarcar ou
+   excluir o ÚLTIMO lançamento de descarte da combinação no inventário devolve a destinação do
+   SAP (ou nenhuma) — `inventario_mapa_tira`/`_poe` recriadas sobre a base de
+   `inventario-implantacao-mapa.sql`, conferidas numa transação desfeita (marca, segundo
+   endereço, desmarca, remarca, exclui). Na tela: etiqueta "descarte" e "obs: …" nos
+   lançamentos e na conferência (por combinação, juntando os lançamentos), e o CSV ganhou as
+   colunas Descarte e Observações.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

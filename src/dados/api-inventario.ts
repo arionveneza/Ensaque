@@ -145,6 +145,9 @@ export interface ItemInventario {
   quadra: string | null
   bags: number
   fora_da_lista: boolean
+  /** Fora da lista marcado como descarte (04/10/2026) — no mapa vira destinação DESCARTE. */
+  descarte: boolean
+  observacao: string | null
   criado_em: string
 }
 
@@ -158,6 +161,9 @@ export interface NovoItemInventario {
   quadra: string | null
   bags: number
   fora_da_lista: boolean
+  /** Só o lançamento fora da lista manda — o da lista não mexe nos dois. */
+  descarte?: boolean
+  observacao?: string | null
 }
 
 export async function listarItensInventario(
@@ -166,7 +172,7 @@ export async function listarItensInventario(
   const { data, error } = await supabase
     .from('inventario_itens')
     .select(
-      'id, lote, tratamento, cultivar, embalagem, armazem, bloco, quadra, bags, fora_da_lista, criado_em',
+      'id, lote, tratamento, cultivar, embalagem, armazem, bloco, quadra, bags, fora_da_lista, descarte, observacao, criado_em',
     )
     .eq('inventario_id', inventarioId)
     .order('criado_em', { ascending: false })
