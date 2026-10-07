@@ -313,6 +313,38 @@ export function concentracaoFicha(ps: PrincipioFicha[]): string {
   return com.map((p) => `${fmt(p.concentracao!)} ${p.unidadeConc}`).join(' + ')
 }
 
+/**
+ * Produtos que dividem UMA linha de OUTROS (07/10/2026, pedido do Arion:
+ * "colocar o DISCO BLACK ao lado do Fluidus 047, pois só há espaço para 3
+ * produtos em Outros Produtos"). O papel deitado tem 3 linhas em OUTROS, e
+ * Fluidus + Disco Black + Kelmax + Premax — juntos em boa parte das receitas —
+ * deixavam um de fora. Casa pelo nome (maiúsculo, sem acento, "contém"); na
+ * linha o PRIMEIRO do par vem antes, qualquer que seja a ordem na receita.
+ * Par novo = mais uma entrada aqui.
+ */
+export const JUNTOS_EM_OUTROS: [string, string][] = [['FLUIDUS', 'DISCO BLACK']]
+
+const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+
+/** Funde cada par de `JUNTOS_EM_OUTROS` presente numa linha só, na posição do que vier antes. */
+function juntarParesOutros(linhas: LinhaOutros[]): LinhaOutros[] {
+  let resultado = [...linhas]
+  for (const [a, b] of JUNTOS_EM_OUTROS) {
+    const ia = resultado.findIndex((l) => semAcento(l.produto).includes(a))
+    const ib = resultado.findIndex((l, i) => i !== ia && semAcento(l.produto).includes(b))
+    if (ia < 0 || ib < 0) continue
+    const [la, lb] = [resultado[ia], resultado[ib]]
+    const junta: LinhaOutros = {
+      produto: `${la.produto} + ${lb.produto}`,
+      informacoes: [la.informacoes, lb.informacoes].filter(Boolean).join(' · '),
+      dosagem: `${la.dosagem} + ${lb.dosagem}`,
+    }
+    const fica = Math.min(ia, ib)
+    resultado = resultado.flatMap((l, i) => (i === fica ? [junta] : i === ia || i === ib ? [] : [l]))
+  }
+  return resultado
+}
+
 /** `capacidade`: linhas por seção do papel em uso (padrão: o antigo, em pé). */
 export function montarFichaQuimicos(
   receita: string,
@@ -327,10 +359,10 @@ export function montarFichaQuimicos(
     naoCouberam: [],
     semPrincipio: [],
   }
-  const paraOutros = (linha: LinhaOutros) => {
-    if (ficha.outros.length < capacidade.outros) ficha.outros.push(linha)
-    else if (!ficha.naoCouberam.includes(linha.produto)) ficha.naoCouberam.push(linha.produto)
-  }
+  // OUTROS junta tudo primeiro e só depois funde os pares e corta na
+  // capacidade — o par tem de virar uma linha ANTES de contar o espaço
+  const candidatosOutros: LinhaOutros[] = []
+  const paraOutros = (linha: LinhaOutros) => candidatosOutros.push(linha)
 
   for (const item of itens) {
     const dosagem = doseFicha(item.dose, item.unidade)
@@ -364,6 +396,10 @@ export function montarFichaQuimicos(
         .join(' · ')
       paraOutros({ produto: item.produto, informacoes, dosagem })
     }
+  }
+  for (const linha of juntarParesOutros(candidatosOutros)) {
+    if (ficha.outros.length < capacidade.outros) ficha.outros.push(linha)
+    else if (!ficha.naoCouberam.includes(linha.produto)) ficha.naoCouberam.push(linha.produto)
   }
   return ficha
 }

@@ -1988,6 +1988,17 @@ tela, no máximo 1× a cada 30 s.
   com uma janela falsa. **Falta calibrar na ficha real** (Teste de alinhamento + Ajuste fino),
   como o antigo nasceu; e o nome do tratamento deixou de sair na ficha porque o papel novo
   não tem onde — se precisarem, decidir o lugar.
+  **Disco Black na mesma linha do Fluidus F047** (07/10/2026, pedido do Arion: "colocar o
+  DISCO BLACK ao lado do Fluidus 047, pois só há espaço para 3 produtos em Outros Produtos").
+  Os dois vão juntos em quase toda receita, sem princípio ativo, e com Kelmax + Premax a receita
+  passava das 3 linhas de OUTROS do papel deitado — um produto ficava fora da ficha
+  (`naoCouberam`; ex.: FTZ60 + RCoMoNi + Lli). `JUNTOS_EM_OUTROS` (`fichaQuimicos.ts`, hoje só
+  `['FLUIDUS', 'DISCO BLACK']`, casando pelo nome sem acento/caixa) funde o par numa linha:
+  produto "FLUIDUS F047 PO SECANTE + DISCO BLACK", dosagem "700 g/100 kg + 150 mL/100 kg",
+  sempre o Fluidus primeiro, nos dois papéis e mesmo quando caberia. `montarFichaQuimicos`
+  passou a juntar os candidatos a OUTROS, fundir os pares e SÓ DEPOIS cortar na capacidade.
+  O aviso de "sem princípio" continua com os dois. Conferido no HTML gerado: a célula de 49 mm
+  leva o nome numa linha a 6,7 pt (a regra de quebra da `exportar.ts`) e a dosagem cabe em 63 mm.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

@@ -270,3 +270,52 @@ describe('montarFichaQuimicos', () => {
     expect(f.naoCouberam).toEqual([`P${n}`, `P${n + 1}`])
   })
 })
+
+describe('Disco Black na mesma linha do Fluidus F047 (07/10/2026)', () => {
+  const fluidus = item('FLUIDUS F047 PO SECANTE', [], 400, 'g/100kg')
+  const disco = item('DISCO BLACK', [], 150, 'ml/100kg')
+
+  it('os dois viram uma linha só, Fluidus primeiro mesmo com o Disco Black antes na receita', () => {
+    const f = montarFichaQuimicos('X', [disco, fluidus])
+    expect(f.outros).toEqual([
+      {
+        produto: 'FLUIDUS F047 PO SECANTE + DISCO BLACK',
+        informacoes: '',
+        dosagem: '400 g/100 kg + 150 mL/100 kg',
+      },
+    ])
+    // o aviso de "sem princípio" continua com os dois
+    expect(f.semPrincipio).toEqual(['DISCO BLACK', 'FLUIDUS F047 PO SECANTE'])
+  })
+
+  it('receita real FTZ60 + RCoMoNi + Lli no papel deitado: cabe tudo nas 3 linhas', () => {
+    const itens = [
+      item('KELMAX RN BR', [], 200, 'ml/100kg'),
+      item('RIZOLIQ LLI', [p('Bradyrhizobium 7×10⁹ UFC/mL', 'Inoculante', null)], 250, 'ml/100kg'),
+      item('MAXIM QUATTRO', [p('Azoxistrobina', 'Fungicida'), p('Fludioxonil', 'Fungicida')], 30, 'ml/100kg'),
+      item('FORTENZA 600 FS', [p('Ciantraniliprole', 'Inseticida', 600)], 60, 'ml/100kg'),
+      item('CRUISER 600 FS', [p('Tiametoxam', 'Inseticida', 600)], 115, 'ml/100kg'),
+      disco,
+      item('PREMAX', [p('PREMAX® 7×10⁹ UFC/mL', 'Outros', null)], 50, 'ml/100kg'),
+      fluidus,
+    ]
+    const f = montarFichaQuimicos('FTZ60 + RCoMoNi + Lli', itens, LAYOUTS_FICHA.paisagem.capacidade)
+    expect(f.outros.map((l) => l.produto)).toEqual([
+      'KELMAX RN BR',
+      'FLUIDUS F047 PO SECANTE + DISCO BLACK',
+      'PREMAX',
+    ])
+    expect(f.naoCouberam).toEqual([])
+  })
+
+  it('só um dos dois na receita: linha normal, nada junta', () => {
+    const f = montarFichaQuimicos('X', [fluidus, item('KELMAX RN BR', [], 200, 'ml/100kg')])
+    expect(f.outros.map((l) => l.produto)).toEqual(['FLUIDUS F047 PO SECANTE', 'KELMAX RN BR'])
+  })
+
+  it('casa sem acento e sem diferença de caixa', () => {
+    const f = montarFichaQuimicos('X', [item('Fluidus F047 Pó Secante', [], 300, 'g/100kg'), item('Disco Black', [], 250, 'ml/100kg')])
+    expect(f.outros).toHaveLength(1)
+    expect(f.outros[0].produto).toBe('Fluidus F047 Pó Secante + Disco Black')
+  })
+})
