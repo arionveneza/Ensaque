@@ -2007,6 +2007,18 @@ tela, no máximo 1× a cada 30 s.
   continua com a fonte que faz 2 linhas caberem (8 pt no máximo). O papel antigo (linhas de 9 mm)
   ficou igual: 10,5 pt e 8 na quebra. Conferido no HTML gerado: as 27 células de uma receita cheia
   (FTZ ELITE + RCoMoNi + Lli) cabem.
+  **Ajuste fino na horizontal POR COLUNA** (mesmo dia: "coloque o ajuste fino pra direita e
+  esquerda também" e, logo depois, "com as letras menores, as dosagens ficaram na coluna de
+  informações e não de dosagem utilizada"). A posição não mudou — a letra menor deixou de invadir
+  a coluna certa: a sobreposição do layout na foto do papel (25/09) bate com a grade, então o
+  deslocamento é da impressão (o papel deitado nunca foi calibrado na ficha real). `AjusteFicha`
+  ganhou `xProduto/xPrincipio/xConcentracao/xDosagem` (seções) e
+  `xOutrosProduto/xOutrosInformacoes/xOutrosDosagem` (OUTROS), somados ao `x` geral em
+  `aplicarAjusteFicha`; ajuste salvo antes delas vira 0 nelas (`normalizarAjusteFicha`). O painel
+  (`AjusteFicha.tsx`) agrupa as linhas com subtítulo (`LINHAS_AJUSTE_FICHA[].grupo`): Etiqueta do
+  lote · Pra cima e pra baixo · Pra esquerda e pra direita (por coluna). O caminho é imprimir o
+  Teste de alinhamento em 100% (a régua de 10 mm mostra se é deslocamento ou escala de "ajustar à
+  página") e acertar coluna a coluna.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LAYOUTS_FICHA, LIMITE_AJUSTE_MM, MODELO_FICHA_PADRAO,
+  AJUSTES_HORIZONTAIS, AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LAYOUTS_FICHA, LIMITE_AJUSTE_MM, MODELO_FICHA_PADRAO,
   aplicarAjusteFicha, concentracaoFicha, linhasAjusteDoModelo,
   doseFicha, fonteCelulaFicha, mmDePontos, montarFichaQuimicos, normalizarAjusteFicha, proximaRotacao,
   rotacaoSugeridaEtiqueta, type ItemFicha, type PrincipioFicha,
@@ -33,6 +33,36 @@ describe('aplicarAjusteFicha: ajuste por impressora somado ao padrão', () => {
     // o resto não mexe com o ajuste da etiqueta
     expect(a.receita).toEqual({ left: 59, top: 90, largura: 48, altura: 9 })
     expect(a.top.inseticida).toBe(116)
+  })
+
+  it('cada coluna anda na horizontal sozinha, somada ao x geral (07/10/2026)', () => {
+    const P = LAYOUTS_FICHA.paisagem
+    const a = aplicarAjusteFicha(P, { ...AJUSTE_FICHA_ZERO, x: 1, xDosagem: 3, xOutrosDosagem: 12, xOutrosProduto: -2 })
+    expect(a.colunas.map((c) => c.left)).toEqual([
+      P.colunas[0].left + 1, P.colunas[1].left + 1, P.colunas[2].left + 1, P.colunas[3].left + 4,
+    ])
+    expect(a.colunasOutros.map((c) => c.left)).toEqual([
+      P.colunasOutros[0].left - 1, P.colunasOutros[1].left + 1, P.colunasOutros[2].left + 13,
+    ])
+    // a largura e o resto não mudam
+    expect(a.colunasOutros[2].largura).toBe(P.colunasOutros[2].largura)
+    expect(a.top).toEqual(P.top)
+  })
+
+  it('ajuste salvo antes das colunas (sem as chaves novas) vira 0 nelas', () => {
+    const velho = { x: 2, outros: 1 }
+    const n = normalizarAjusteFicha(velho)
+    expect(n.xOutrosDosagem).toBe(0)
+    expect(n.x).toBe(2)
+    expect(n.outros).toBe(1)
+  })
+
+  it('o painel mostra todas as colunas em ◂▸, agrupadas', () => {
+    const horizontais = linhasAjusteDoModelo('paisagem').filter((l) => AJUSTES_HORIZONTAIS.has(l.chave))
+    expect(horizontais.map((l) => l.chave)).toEqual([
+      'etiquetaX', 'xProduto', 'xPrincipio', 'xConcentracao', 'xDosagem',
+      'xOutrosProduto', 'xOutrosInformacoes', 'xOutrosDosagem', 'x',
+    ])
   })
 
   it('papel sem campo de receita: o ajuste de receita não cria o campo', () => {

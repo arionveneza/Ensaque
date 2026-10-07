@@ -189,24 +189,45 @@ export interface AjusteFicha {
   nematicida: number
   inoculante: number
   outros: number
+  /**
+   * Horizontal POR COLUNA (07/10/2026, pedido do Arion: "coloque o ajuste fino
+   * pra direita e esquerda também" — com a letra menor a dosagem de OUTROS caiu
+   * na coluna INFORMAÇÕES, e só o "tudo na horizontal" não acerta uma coluna sem
+   * desacertar as outras). Somado ao x geral.
+   */
+  xProduto: number
+  xPrincipio: number
+  xConcentracao: number
+  xDosagem: number
+  xOutrosProduto: number
+  xOutrosInformacoes: number
+  xOutrosDosagem: number
 }
 
 export const AJUSTE_FICHA_ZERO: AjusteFicha = {
   x: 0, etiqueta: 0, etiquetaX: 0, receita: 0, biologicos: 0, inseticida: 0, fungicida: 0, nematicida: 0, inoculante: 0, outros: 0,
+  xProduto: 0, xPrincipio: 0, xConcentracao: 0, xDosagem: 0, xOutrosProduto: 0, xOutrosInformacoes: 0, xOutrosDosagem: 0,
 }
 
-/** Ordem e rótulo das linhas do painel de ajuste. */
-export const LINHAS_AJUSTE_FICHA: { chave: keyof AjusteFicha; rotulo: string }[] = [
-  { chave: 'etiqueta', rotulo: 'Etiqueta do lote (vertical)' },
-  { chave: 'etiquetaX', rotulo: 'Etiqueta do lote (horizontal)' },
-  { chave: 'receita', rotulo: 'Receita (nome do tratamento)' },
-  { chave: 'biologicos', rotulo: 'Biológicos (SIM/NÃO)' },
-  { chave: 'inseticida', rotulo: 'Inseticida' },
-  { chave: 'fungicida', rotulo: 'Fungicida' },
-  { chave: 'nematicida', rotulo: 'Nematicida' },
-  { chave: 'inoculante', rotulo: 'Inoculante' },
-  { chave: 'outros', rotulo: 'Outros produtos' },
-  { chave: 'x', rotulo: 'Tudo na horizontal' },
+/** Ordem, rótulo e grupo (subtítulo no painel) das linhas do painel de ajuste. */
+export const LINHAS_AJUSTE_FICHA: { chave: keyof AjusteFicha; rotulo: string; grupo: string }[] = [
+  { chave: 'etiqueta', rotulo: 'Etiqueta do lote (vertical)', grupo: 'Etiqueta do lote' },
+  { chave: 'etiquetaX', rotulo: 'Etiqueta do lote (horizontal)', grupo: 'Etiqueta do lote' },
+  { chave: 'receita', rotulo: 'Receita (nome do tratamento)', grupo: 'Pra cima e pra baixo' },
+  { chave: 'biologicos', rotulo: 'Biológicos (SIM/NÃO)', grupo: 'Pra cima e pra baixo' },
+  { chave: 'inseticida', rotulo: 'Inseticida', grupo: 'Pra cima e pra baixo' },
+  { chave: 'fungicida', rotulo: 'Fungicida', grupo: 'Pra cima e pra baixo' },
+  { chave: 'nematicida', rotulo: 'Nematicida', grupo: 'Pra cima e pra baixo' },
+  { chave: 'inoculante', rotulo: 'Inoculante', grupo: 'Pra cima e pra baixo' },
+  { chave: 'outros', rotulo: 'Outros produtos', grupo: 'Pra cima e pra baixo' },
+  { chave: 'xProduto', rotulo: 'Seções · Produto', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'xPrincipio', rotulo: 'Seções · Princípio ativo', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'xConcentracao', rotulo: 'Seções · Concentração', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'xDosagem', rotulo: 'Seções · Dosagem', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'xOutrosProduto', rotulo: 'Outros · Produto', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'xOutrosInformacoes', rotulo: 'Outros · Informações', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'xOutrosDosagem', rotulo: 'Outros · Dosagem', grupo: 'Pra esquerda e pra direita (por coluna)' },
+  { chave: 'x', rotulo: 'Tudo na horizontal', grupo: 'Pra esquerda e pra direita (por coluna)' },
 ]
 
 /** As linhas do painel que fazem sentido no papel (o novo não tem campo de receita). */
@@ -214,7 +235,10 @@ export const linhasAjusteDoModelo = (modelo: ModeloFicha) =>
   LINHAS_AJUSTE_FICHA.filter(({ chave }) => chave !== 'receita' || LAYOUTS_FICHA[modelo].receita !== null)
 
 /** Chaves que deslocam na HORIZONTAL (setas ◂▸ no painel); as demais são verticais. */
-export const AJUSTES_HORIZONTAIS: ReadonlySet<keyof AjusteFicha> = new Set<keyof AjusteFicha>(['x', 'etiquetaX'])
+export const AJUSTES_HORIZONTAIS: ReadonlySet<keyof AjusteFicha> = new Set<keyof AjusteFicha>([
+  'x', 'etiquetaX', 'xProduto', 'xPrincipio', 'xConcentracao', 'xDosagem',
+  'xOutrosProduto', 'xOutrosInformacoes', 'xOutrosDosagem',
+])
 
 /** Mais que isso é erro de digitação, não calibração. */
 export const LIMITE_AJUSTE_MM = 30
@@ -237,11 +261,15 @@ export function normalizarAjusteFicha(bruto: unknown): AjusteFicha {
 
 /** Soma o ajuste às posições padrão — pura, não muda o layout de entrada. */
 export function aplicarAjusteFicha(layout: LayoutFicha, ajuste: AjusteFicha): LayoutFicha {
-  const x = (c: ColunaFicha): ColunaFicha => ({ ...c, left: c.left + ajuste.x })
+  // cada coluna anda o x geral + o seu próprio
+  const porColuna = [ajuste.xProduto, ajuste.xPrincipio, ajuste.xConcentracao, ajuste.xDosagem]
+  const porColunaOutros = [ajuste.xOutrosProduto, ajuste.xOutrosInformacoes, ajuste.xOutrosDosagem]
+  const x = (proprio: number[]) => (c: ColunaFicha, i: number): ColunaFicha =>
+    ({ ...c, left: c.left + ajuste.x + (proprio[i] ?? 0) })
   return {
     ...layout,
-    colunas: layout.colunas.map(x),
-    colunasOutros: layout.colunasOutros.map(x),
+    colunas: layout.colunas.map(x(porColuna)),
+    colunasOutros: layout.colunasOutros.map(x(porColunaOutros)),
     // a etiqueta acompanha o x geral (desvio da impressora) e ainda tem o seu próprio
     etiqueta: {
       left: layout.etiqueta.left + ajuste.x + ajuste.etiquetaX,

@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import {
   AJUSTES_HORIZONTAIS, AJUSTE_FICHA_ZERO, LIMITE_AJUSTE_MM, LINHAS_AJUSTE_FICHA, type AjusteFicha,
 } from '@/dominio/fichaQuimicos'
@@ -15,7 +16,8 @@ const mm = (v: number) => (v === 0 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v)}
 
 /**
  * Painel de ajuste fino da ficha de químicos (12/09/2026): ▲▼ de 1 mm por
- * seção e um horizontal geral, salvo neste computador. Substitui o
+ * seção, ◂▸ por coluna (07/10/2026) e um horizontal geral, salvo neste
+ * computador. Substitui o
  * pingue-pongue "sobe 3 mm / desce 2 mm" com deploy no meio — quem está na
  * frente da impressora acerta e imprime de novo na hora.
  */
@@ -34,10 +36,19 @@ export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirF
       </p>
       <table className="mt-1 w-full text-sm">
         <tbody>
-          {linhas.map(({ chave, rotulo }) => {
+          {linhas.map(({ chave, rotulo, grupo }, i) => {
             const horizontal = AJUSTES_HORIZONTAIS.has(chave)
+            const novoGrupo = i === 0 || linhas[i - 1].grupo !== grupo
             return (
-            <tr key={chave}>
+            <Fragment key={chave}>
+            {novoGrupo && (
+              <tr>
+                <td colSpan={2} className="px-2 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+                  {grupo}
+                </td>
+              </tr>
+            )}
+            <tr>
               <td className="px-2 py-0.5">{rotulo}</td>
               <td className="px-1 py-0.5 text-right">
                 <div className="inline-flex items-center gap-1">
@@ -65,6 +76,7 @@ export function PainelAjusteFicha({ valor, onMudar, onImprimirTeste, onImprimirF
                 </div>
               </td>
             </tr>
+            </Fragment>
             )
           })}
         </tbody>
