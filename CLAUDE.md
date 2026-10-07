@@ -1231,6 +1231,23 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    na primeira vez que a ordem ganha um dia e nunca muda — para as duas pontas (planejado e
    executado): mostra quanto do que foi combinado para aquele dia saiu, não importa quando saiu de
    fato. Divergência entre os dois é reprogramação mascarando atraso.
+   **Filtro de datas livre e relatório de horários** (07/10/2026, pedido do Arion: "um relatório
+   com horário de início e fim de cada ordem e as paradas" e "colocar um filtro de data — hoje
+   consigo ver apenas semana, mês e hoje"). O período virou `{de, ate}` com dois `<input
+   type="date">` no cabeçalho; os botões Hoje/7 dias/30 dias/Geral só preenchem de/até e ficam
+   acesos quando batem; datas trocadas valem invertidas; "de" vazio = desde sempre, "até" vazio =
+   hoje. Todo limite superior que era `hoje` passou a `ate` (consultas, recortes por dia,
+   aproveitamento, nome do export). Cartão novo **"Horários das ordens e paradas"** (antes de
+   "Paradas no período"): linha do tempo por **máquina × dia de produção do INÍCIO real**
+   (`horariosPorDiaEMaquina`, `src/dominio/horariosProducao.ts`, puro e testado) — a ordem com
+   início, fim, bruto, paradas e líquido, as paradas DELA recuadas embaixo, e as paradas de máquina
+   sem ordem (âmbar) intercaladas no horário; `horaNoDia` mostra "01:20 (08/10)" quando o relógio
+   já virou. Abre recolhido com mais de 60 ordens; export .xlsx com uma linha por ordem e por
+   parada (Linha = Ordem / Parada da ordem / Parada sem ordem). `ParadaLinha` ganhou `ordem_id`
+   (casar parada com ordem pelo número erraria — o nº não é único). **`listarTempos`,
+   `listarParadasPeriodo` e `paretoParadas` passaram a paginar** (`todasAsPaginas`, ordem estável):
+   com o período livre um intervalo longo passa das 1.000 linhas que o PostgREST corta em silêncio
+   (574 ordens com tempo e 498 paradas no total em 07/10).
 6b. **Expedição** (07/08/2026; refeita em 12/09/2026) — upload do relatório **pedidos
    agendados** da SimpleAgro (`converterAgendados`, substituiu a "montagem de carga";
    substituição total na tabela `agendamentos`, migração `agendamentos.sql`; a tabela

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -11,6 +11,7 @@ import {
   sobreposicaoNoDiaS,
 } from '@/dominio/calculos'
 import { HORAS_TURNOS, horasDoDia } from '@/dominio/programacao'
+import { horaNoDia, horariosPorDiaEMaquina, type GrupoHorario } from '@/dominio/horariosProducao'
 import { exportarXlsx } from '@/lib/exportar'
 import {
   Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, dataHoraCurta, diaCurto, exportarCsv,
@@ -30,7 +31,18 @@ export default function Indicadores() {
   // Brasil o toISOString já apontava amanhã e "Hoje" vinha vazio. Alinha com
   // o Painel e a Execução, que também usam diaDeProducao.
   const hoje = diaDeProducao(new Date())
-  const [janela, setJanela] = useState<Janela>('semana')
+  // período livre (07/10/2026, pedido do Arion: "colocar um filtro de data — hoje
+  // consigo ver apenas semana, mês e hoje"): os botões só preenchem de/até
+  const inicioDoAtalho = (j: Janela) =>
+    j === 'dia' ? hoje : j === 'geral' ? DESDE_SEMPRE : somaDias(hoje, j === 'semana' ? -7 : -30)
+  const [periodo, setPeriodo] = useState({ de: somaDias(hoje, -7), ate: hoje })
+  // datas trocadas (de depois de até) valem invertidas — nunca um período vazio calado
+  const de = periodo.de <= periodo.ate ? periodo.de : periodo.ate
+  const ate = periodo.de <= periodo.ate ? periodo.ate : periodo.de
+  const janela: Janela | null =
+    (['dia', 'semana', 'mes', 'geral'] as Janela[]).find(
+      (j) => periodo.ate === hoje && periodo.de === inicioDoAtalho(j),
+    ) ?? null
   const [tempos, setTempos] = useState<TempoOrdem[]>([])
   const [paradas, setParadas] = useState<ParadaDetalhe[]>([])
   const [paradasDet, setParadasDet] = useState<ParadaLinha[]>([])
@@ -43,23 +55,13 @@ export default function Indicadores() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
-  const de = useMemo(
-    () =>
-      janela === 'dia'
-        ? hoje
-        : janela === 'geral'
-          ? DESDE_SEMPRE
-          : somaDias(hoje, janela === 'semana' ? -7 : -30),
-    [janela, hoje],
-  )
-
   useEffect(() => {
     let vivo = true
     setCarregando(true)
     Promise.all([
-      g.listarTempos(de, hoje), g.paretoParadas(de, hoje),
-      g.listarParadasPeriodo(de, hoje), g.listarOrdens(), g.listarChecksQualidade(),
-      g.listarParadasMaquina(de, hoje), g.listarDiasProducao(de, hoje),
+      g.listarTempos(de, ate), g.paretoParadas(de, ate),
+      g.listarParadasPeriodo(de, ate), g.listarOrdens(), g.listarChecksQualidade(),
+      g.listarParadasMaquina(de, ate), g.listarDiasProducao(de, ate),
     ])
       .then(([t, p, pd, o, c, pm, cal]) => {
         if (!vivo) return
@@ -74,7 +76,7 @@ export default function Indicadores() {
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : String(e)))
       .finally(() => vivo && setCarregando(false))
     return () => { vivo = false }
-  }, [de, hoje])
+  }, [de, ate])
 
   /** Bags, tratamento e lote de cada ordem — a v_ordem_tempos não os carrega. */
   const ordemPorId = useMemo(() => new Map(ordens.map((o) => [o.id, o])), [ordens])
@@ -231,7 +233,7 @@ export default function Indicadores() {
       mapa.set(chave, atual)
     }
     for (const o of ordens) {
-      if (!o.data_prog || o.data_prog < de || o.data_prog > hoje) continue
+      if (!o.data_prog || o.data_prog < de || o.data_prog > ate) continue
       const atual = mapa.get(o.data_prog) ?? vazio(o.data_prog)
       atual.programado += o.bags
       if (STATUS_FINALIZADO.has(o.status_efetivo)) atual.finalizado += o.bags_produzidos ?? o.bags
@@ -246,7 +248,7 @@ export default function Indicadores() {
       mapa.set(p.dia, atual)
     }
     return [...mapa.values()].sort((a, b) => a.dia.localeCompare(b.dia))
-  }, [tempos, ordens, paradasMaq, de, hoje])
+  }, [tempos, ordens, paradasMaq, de, ate])
 
   /**
    * Aproveitamento da máquina — horas do turno × horas realmente produzindo
@@ -280,7 +282,7 @@ export default function Indicadores() {
       let d = diaDeProducao(new Date(iniMs))
       const ultimo = diaDeProducao(new Date(fimMs))
       for (let volta = 0; volta < 40 && d <= ultimo; volta++) {
-        const s = d >= de && d <= hoje ? sobreposicaoNoDiaS(iniMs, fimMs, d) : 0
+        const s = d >= de && d <= ate ? sobreposicaoNoDiaS(iniMs, fimMs, d) : 0
         if (s > 0) {
           const k = `${t.maquina_id}|${d}`
           chaves.set(k, { maquina: t.maquina_id, dia: d })
@@ -305,7 +307,7 @@ export default function Indicadores() {
         ),
       }))
       .sort((a, b) => a.dia.localeCompare(b.dia) || a.maquina.localeCompare(b.maquina))
-  }, [tempos, paradasMaq, calendario, de, hoje])
+  }, [tempos, paradasMaq, calendario, de, ate])
 
   /**
    * A lista de paradas do período mostra os dois eixos juntos, em ordem de
@@ -331,6 +333,25 @@ export default function Indicadores() {
         })),
       ].sort((a, b) => a.inicio.localeCompare(b.inicio)),
     [paradasDet, paradasMaq],
+  )
+
+  /** Linha do tempo por máquina e dia: ordens com as suas paradas + paradas sem ordem. */
+  const horarios = useMemo(
+    () =>
+      horariosPorDiaEMaquina(
+        tempos.map((t) => {
+          const o = ordemPorId.get(t.ordem_id)
+          return {
+            ordem_id: t.ordem_id, numero: t.numero, maquina_id: t.maquina_id, turno_id: t.turno_id,
+            ini: t.ini, fim: t.fim, bruto_s: Number(t.bruto_s), paradas_s: Number(t.paradas_s),
+            liquido_s: Number(t.liquido_s),
+            cultivar: o?.cultivar ?? null, tratamento: o?.receita_nome ?? null, lote: o?.lote_id ?? null,
+          }
+        }),
+        paradasDet,
+        paradasMaq,
+      ),
+    [tempos, ordemPorId, paradasDet, paradasMaq],
   )
 
   const aproveitamentoTotal = useMemo(() => {
@@ -362,19 +383,19 @@ export default function Indicadores() {
     const vazio = (dia: string) => ({ dia, programado: 0, finalizado: 0 })
     for (const o of ordens) {
       const dia = o.data_prog_original ?? o.data_prog
-      if (!dia || dia < de || dia > hoje) continue
+      if (!dia || dia < de || dia > ate) continue
       const atual = mapa.get(dia) ?? vazio(dia)
       atual.programado += o.bags
       if (STATUS_FINALIZADO.has(o.status_efetivo)) atual.finalizado += o.bags_produzidos ?? o.bags
       mapa.set(dia, atual)
     }
     return [...mapa.values()].sort((a, b) => a.dia.localeCompare(b.dia))
-  }, [ordens, de, hoje])
+  }, [ordens, de, ate])
 
   /** O relatório geral: uma linha por ordem, com tudo. */
   async function exportarGeral() {
     await exportarXlsx(
-      janela === 'geral' ? 'producao-geral' : `producao-geral-${de}-a-${hoje}`,
+      janela === 'geral' ? 'producao-geral' : `producao-geral-${de}-a-${ate}`,
       [
         { titulo: 'Dia', largura: 12 }, { titulo: 'Máquina', largura: 10 },
         { titulo: 'Turno', largura: 8 }, { titulo: 'Ordem', largura: 14 },
@@ -414,10 +435,40 @@ export default function Indicadores() {
       acoes={
         <>
           {(['dia', 'semana', 'mes', 'geral'] as Janela[]).map((j) => (
-            <Botao key={j} variante={janela === j ? 'primario' : 'normal'} onClick={() => setJanela(j)}>
+            <Botao
+              key={j}
+              variante={janela === j ? 'primario' : 'normal'}
+              onClick={() => setPeriodo({ de: inicioDoAtalho(j), ate: hoje })}
+            >
               {j === 'dia' ? 'Hoje' : j === 'semana' ? '7 dias' : j === 'mes' ? '30 dias' : 'Geral'}
             </Botao>
           ))}
+          <span className="flex items-center gap-1.5 text-sm text-stone-600 dark:text-stone-300">
+            <label className="flex items-center gap-1">
+              de
+              <input
+                type="date"
+                value={periodo.de === DESDE_SEMPRE ? '' : periodo.de}
+                onChange={(e) => setPeriodo((p) => ({ ...p, de: e.target.value || DESDE_SEMPRE }))}
+                title="Primeiro dia (vazio = desde o começo)"
+                className={`rounded-md border px-2 py-1.5 text-sm dark:bg-stone-800 ${
+                  janela == null ? 'border-green-700 ring-1 ring-green-700' : 'border-stone-300 dark:border-stone-700'
+                }`}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              até
+              <input
+                type="date"
+                value={periodo.ate}
+                onChange={(e) => setPeriodo((p) => ({ ...p, ate: e.target.value || hoje }))}
+                title="Último dia (vazio = hoje)"
+                className={`rounded-md border px-2 py-1.5 text-sm dark:bg-stone-800 ${
+                  janela == null ? 'border-green-700 ring-1 ring-green-700' : 'border-stone-300 dark:border-stone-700'
+                }`}
+              />
+            </label>
+          </span>
           <Botao
             disabled={tempos.length === 0}
             titulo="Uma linha por ordem produzida: dia, turno, tratamento, bags, tempos e paradas"
@@ -818,6 +869,8 @@ export default function Indicadores() {
             )}
           </Cartao>
 
+          <CartaoHorarios grupos={horarios} de={de} ate={ate} />
+
           <Cartao
             titulo={`Paradas no período (${paradasTodas.length})`}
             acoes={
@@ -982,6 +1035,169 @@ export default function Indicadores() {
         </>
       )}
     </Pagina>
+  )
+}
+
+/**
+ * Horários das ordens e paradas (07/10/2026, pedido do Arion: "um relatório com
+ * horário de início e fim de cada ordem e as paradas"). Uma linha do tempo por
+ * máquina e dia de produção: a ordem com início, fim e tempo bruto, as paradas
+ * DELA logo embaixo (recuadas) e as paradas de máquina sem ordem (âmbar) no
+ * horário em que aconteceram. Com muitas ordens a tabela abre recolhida.
+ */
+function CartaoHorarios({ grupos, de, ate }: { grupos: GrupoHorario[]; de: string; ate: string }) {
+  const totalOrdens = grupos.reduce((s, g) => s + g.ordens, 0)
+  const totalParadas = grupos.reduce(
+    (s, g) => s + g.linhas.reduce((t, l) => t + (l.linha === 'ordem' ? l.paradas.length : 1), 0),
+    0,
+  )
+  const [aberto, setAberto] = useState(totalOrdens <= 60)
+
+  async function exportar() {
+    const quando = (iso: string | null, vazio: string) => (iso ? new Date(iso).toLocaleString('pt-BR') : vazio)
+    const linhas: (string | number)[][] = []
+    for (const g of grupos) {
+      for (const l of g.linhas) {
+        if (l.linha === 'ordem') {
+          linhas.push([
+            g.dia, g.maquina_id, l.turno_id ?? '', 'Ordem', l.numero, l.cultivar ?? '', l.tratamento ?? '',
+            l.lote ?? '', quando(l.ini, ''), quando(l.fim, 'em andamento'), Math.round(l.bruto_s / 60),
+            '', '', '',
+          ])
+          for (const pa of l.paradas) {
+            linhas.push([
+              g.dia, g.maquina_id, l.turno_id ?? '', 'Parada da ordem', l.numero, l.cultivar ?? '',
+              l.tratamento ?? '', l.lote ?? '', quando(pa.inicio, ''), quando(pa.fim, 'em aberto'),
+              Math.round(pa.segundos / 60), pa.motivo, pa.tipo === 'Planejada' ? 'Planejada' : 'Não planejada',
+              pa.observacao ?? '',
+            ])
+          }
+        } else {
+          linhas.push([
+            g.dia, g.maquina_id, '', 'Parada sem ordem', '', '', '', '', quando(l.inicio, ''),
+            quando(l.fim, 'em aberto'), Math.round(l.segundos / 60), l.motivo,
+            l.tipo === 'Planejada' ? 'Planejada' : 'Não planejada', l.observacao ?? '',
+          ])
+        }
+      }
+    }
+    await exportarXlsx(
+      `horarios-ordens-paradas-${de === DESDE_SEMPRE ? 'inicio' : de}-a-${ate}`,
+      [
+        { titulo: 'Dia', largura: 12 }, { titulo: 'Máquina', largura: 10 }, { titulo: 'Turno', largura: 8 },
+        { titulo: 'Linha', largura: 16 }, { titulo: 'Ordem', largura: 12 }, { titulo: 'Cultivar', largura: 16 },
+        { titulo: 'Tratamento', largura: 22 }, { titulo: 'Lote', largura: 16 },
+        { titulo: 'Início', largura: 20 }, { titulo: 'Fim', largura: 20 },
+        { titulo: 'Duração (min)', largura: 13, tipo: 'numero', casas: 0 },
+        { titulo: 'Motivo da parada', largura: 26 }, { titulo: 'Tipo da parada', largura: 15 },
+        { titulo: 'Observação', largura: 30 },
+      ],
+      linhas,
+    )
+  }
+
+  return (
+    <Cartao
+      titulo={`Horários das ordens e paradas (${totalOrdens} ordens · ${totalParadas} paradas)`}
+      acoes={
+        <Botao disabled={grupos.length === 0} onClick={() => void exportar()}>
+          Exportar (.xlsx)
+        </Botao>
+      }
+      className="mb-5"
+    >
+      <p className="mb-2 text-xs text-stone-500 dark:text-stone-400">
+        Por máquina e dia de produção (07:30 às 03:00), na ordem em que aconteceu: cada ordem com
+        início, fim e tempo bruto, as paradas <b>dela</b> logo embaixo, e em âmbar as paradas da
+        máquina <b>sem ordem</b>. O dia é o do início real da ordem.
+      </p>
+      <button
+        onClick={() => setAberto((v) => !v)}
+        className="mb-2 flex w-full items-center justify-between rounded-lg border border-stone-200 px-3 py-2 text-sm font-medium hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/60"
+      >
+        <span>
+          Linha do tempo · {grupos.length} {grupos.length === 1 ? 'máquina-dia' : 'máquinas-dia'}
+        </span>
+        <span className="text-xs text-stone-500 dark:text-stone-400">{aberto ? '▴ esconder' : '▾ mostrar'}</span>
+      </button>
+      {aberto && grupos.length > 0 && (
+        <Tabela cabecalho={['Início', 'Fim', '#Duração', 'Ordem / parada', 'Tipo · paradas']}>
+          {grupos.map((gr) => (
+            <Fragment key={`${gr.dia}|${gr.maquina_id}`}>
+              <tr className="border-t-2 border-stone-300 bg-stone-100 dark:border-stone-700 dark:bg-stone-800">
+                <td colSpan={5} className="px-2 py-1.5 text-xs">
+                  <b className="text-sm">{diaCurto(gr.dia)} · {gr.maquina_id}</b>
+                  <span className="ml-2 text-stone-500 dark:text-stone-400">
+                    {gr.ordens} ordem(ns) · bruto {formataHms(gr.brutoS)} · paradas nas ordens{' '}
+                    {formataHms(gr.paradasOrdemS)}
+                    {gr.paradasMaquinaS > 0 && ` · sem ordem ${formataHms(gr.paradasMaquinaS)}`}
+                  </span>
+                </td>
+              </tr>
+              {gr.linhas.map((l, i) =>
+                l.linha === 'ordem' ? (
+                  <Fragment key={l.ordem_id}>
+                    <tr className="border-t border-stone-200 dark:border-stone-700">
+                      <td className="num-tabular px-2 py-1.5 font-medium whitespace-nowrap">{horaNoDia(l.ini, gr.dia)}</td>
+                      <td className="num-tabular px-2 py-1.5 whitespace-nowrap">
+                        {l.fim ? (
+                          horaNoDia(l.fim, gr.dia)
+                        ) : (
+                          <span className="text-xs text-green-600 dark:text-green-400">em andamento</span>
+                        )}
+                      </td>
+                      <td className="num-tabular px-2 py-1.5 text-right">{formataHms(l.bruto_s)}</td>
+                      <td className="px-2 py-1.5">
+                        <span className="font-semibold">{l.numero}</span>
+                        <span className="block text-xs text-stone-500 dark:text-stone-400">
+                          {[l.cultivar, l.tratamento, l.lote].filter(Boolean).join(' · ')}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-xs text-stone-600 dark:text-stone-300">
+                        {l.paradas.length === 0
+                          ? 'sem parada'
+                          : `${l.paradas.length} parada(s) · ${formataHms(l.paradas_s)}`}
+                        <span className="block text-stone-500 dark:text-stone-400">líquido {formataHms(l.liquido_s)}</span>
+                      </td>
+                    </tr>
+                    {l.paradas.map((pa, j) => (
+                      <tr key={j} className="bg-stone-50/70 text-xs dark:bg-stone-900/40">
+                        <td className="num-tabular py-1 pr-2 pl-5 whitespace-nowrap">{horaNoDia(pa.inicio, gr.dia)}</td>
+                        <td className="num-tabular px-2 py-1 whitespace-nowrap">
+                          {pa.fim ? horaNoDia(pa.fim, gr.dia) : 'em aberto'}
+                        </td>
+                        <td className="num-tabular px-2 py-1 text-right">{formataHms(pa.segundos)}</td>
+                        <td className="py-1 pr-2 pl-5">↳ {pa.motivo}</td>
+                        <td className="px-2 py-1">
+                          <Tag cor={pa.tipo === 'Planejada' ? 'info' : 'perigo'}>
+                            {pa.tipo === 'Planejada' ? 'Planejada' : 'Não planejada'}
+                          </Tag>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ) : (
+                  <tr key={`m${i}`} className="border-t border-stone-200 bg-amber-50/70 text-xs dark:border-stone-700 dark:bg-amber-950/30">
+                    <td className="num-tabular px-2 py-1 whitespace-nowrap">{horaNoDia(l.inicio, gr.dia)}</td>
+                    <td className="num-tabular px-2 py-1 whitespace-nowrap">{l.fim ? horaNoDia(l.fim, gr.dia) : 'em aberto'}</td>
+                    <td className="num-tabular px-2 py-1 text-right">{formataHms(l.segundos)}</td>
+                    <td className="px-2 py-1">
+                      <span className="font-medium text-amber-800 dark:text-amber-300">parada sem ordem</span> · {l.motivo}
+                      {l.observacao && <span className="block text-stone-500 dark:text-stone-400">{l.observacao}</span>}
+                    </td>
+                    <td className="px-2 py-1">
+                      <Tag cor={l.tipo === 'Planejada' ? 'info' : 'perigo'}>
+                        {l.tipo === 'Planejada' ? 'Planejada' : 'Não planejada'}
+                      </Tag>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </Fragment>
+          ))}
+        </Tabela>
+      )}
+    </Cartao>
   )
 }
 

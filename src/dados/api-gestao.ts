@@ -1467,15 +1467,41 @@ export interface TempoOrdem {
   planejado_s: number
 }
 
+/**
+ * Lê todas as páginas de uma consulta: o PostgREST devolve no máximo 1.000
+ * linhas e corta em SILÊNCIO (lição dos lotes, 27/09/2026). Com o filtro de
+ * datas livre nos Indicadores (07/10/2026) um período longo passa disso —
+ * 574 ordens com tempo e 498 paradas no total em 07/10. A consulta precisa
+ * de ordem estável, senão uma linha pula ou repete entre as páginas.
+ */
+async function todasAsPaginas<T>(
+  pagina: (de: number, ate: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  contexto: string,
+): Promise<T[]> {
+  const todos: T[] = []
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await pagina(de, de + 999)
+    erro(contexto, error)
+    const bloco = (data ?? []) as T[]
+    todos.push(...bloco)
+    if (bloco.length < 1000) break
+  }
+  return todos
+}
+
 export async function listarTempos(de: string, ate: string): Promise<TempoOrdem[]> {
-  const { data, error } = await supabase
-    .from('v_ordem_tempos')
-    .select('*')
-    .gte('data_prog', de)
-    .lte('data_prog', ate)
-    .order('data_prog')
-  erro('tempos por ordem', error)
-  return (data ?? []) as TempoOrdem[]
+  return todasAsPaginas<TempoOrdem>(
+    (i, f) =>
+      supabase
+        .from('v_ordem_tempos')
+        .select('*')
+        .gte('data_prog', de)
+        .lte('data_prog', ate)
+        .order('data_prog')
+        .order('ordem_id')
+        .range(i, f),
+    'tempos por ordem',
+  )
 }
 
 /** Nomes para os relatórios (quem inspecionou, quem conferiu). */
@@ -1489,6 +1515,8 @@ export async function listarNomesUsuarios(): Promise<Record<string, string>> {
 
 /** Uma parada individual, para o relatório por dia/ordem/turno. */
 export interface ParadaLinha {
+  /** De qual ordem — o relatório de horários põe a parada embaixo dela (07/10/2026). */
+  ordem_id: string
   inicio: string
   fim: string | null
   segundos: number
@@ -1501,20 +1529,27 @@ export interface ParadaLinha {
 }
 
 export async function listarParadasPeriodo(de: string, ate: string): Promise<ParadaLinha[]> {
-  const { data, error } = await supabase
-    .from('ordem_paradas')
-    .select('inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( numero, maquina_id, data_prog, turno_id )')
-    .gte('ordens.data_prog', de)
-    .lte('ordens.data_prog', ate)
-    .order('inicio')
-  erro('paradas do período', error)
-
-  return ((data ?? []) as unknown as {
+  const data = await todasAsPaginas<{
+    ordem_id: string
     inicio: string
     fim: string | null
     motivos_parada: { descricao: string; tipo: TipoParada } | null
     ordens: { numero: string; maquina_id: string; data_prog: string | null; turno_id: number | null }
-  }[]).map((p) => ({
+  }>(
+    (i, f) =>
+      supabase
+        .from('ordem_paradas')
+        .select('id, ordem_id, inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( numero, maquina_id, data_prog, turno_id )')
+        .gte('ordens.data_prog', de)
+        .lte('ordens.data_prog', ate)
+        .order('inicio')
+        .order('id')
+        .range(i, f),
+    'paradas do período',
+  )
+
+  return data.map((p) => ({
+    ordem_id: p.ordem_id,
     inicio: p.inicio,
     fim: p.fim,
     segundos:
@@ -1614,15 +1649,20 @@ export interface ParadaDetalhe {
  * entre "faltou lote no meio da ordem" e "a máquina nunca chegou a começar".
  */
 export async function paretoParadas(de: string, ate: string): Promise<ParadaDetalhe[]> {
-  const [{ data, error }, maquina] = await Promise.all([
-    supabase
-      .from('ordem_paradas')
-      .select('inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( data_prog )')
-      .gte('ordens.data_prog', de)
-      .lte('ordens.data_prog', ate),
+  const [data, maquina] = await Promise.all([
+    todasAsPaginas<unknown>(
+      (i, f) =>
+        supabase
+          .from('ordem_paradas')
+          .select('id, inicio, fim, motivos_parada ( descricao, tipo ), ordens!inner ( data_prog )')
+          .gte('ordens.data_prog', de)
+          .lte('ordens.data_prog', ate)
+          .order('id')
+          .range(i, f),
+      'paradas do período',
+    ),
     listarParadasMaquina(de, ate),
   ])
-  erro('paradas do período', error)
 
   const acc = new Map<string, ParadaDetalhe>()
   const soma = (motivo: string, tipo: TipoParada, segundos: number, semOrdem: boolean) => {
@@ -1636,7 +1676,7 @@ export async function paretoParadas(de: string, ate: string): Promise<ParadaDeta
     }
   }
 
-  for (const p of (data ?? []) as unknown as {
+  for (const p of data as {
     inicio: string
     fim: string | null
     motivos_parada: { descricao: string; tipo: TipoParada }
