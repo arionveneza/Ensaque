@@ -977,6 +977,9 @@ Recurso `pesagem` (14/09/2026): `ver` (Balança, PCP, Logística, Direção, Ges
 `registrar` (**só Balança**, e Gestor) · `administrar` (tipos de veículo, tolerâncias, correção
 de bruto — **só Gestor**). Decisão do Arion: "só Balança registra; Gestor administra".
 
+Recurso `gerencial` (07/10/2026): `ver` (PCP, Direção, Gestor) · `editar` (lançar o
+carregamento do dia — **PCP** e Gestor). Decisão do Arion: "quem preenche tudo é o PCP".
+
 No protótipo os perfis são fixos no código. **No sistema real**: Supabase Auth com usuários
 nominais (apontamento registra a pessoa, não o perfil) e uma **tela de administração** onde o gestor
 define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
@@ -1892,6 +1895,41 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    são o mesmo bloco). Domínio puro em `src/dominio/enderecamento.ts` e
    `src/dominio/importacao/planilhaEnderecamento.ts`; parser de CSV próprio em
    `src/dominio/importacao/csv.ts` (o primeiro do projeto — todo o resto é .xlsx).
+6g. **Relatório gerencial** (07/10/2026, pedido do Arion: "um relatório gerencial, onde vou
+   inserir data, quantidade de veículos carregados, bags carregados, veículos descarregados e
+   veículos que sobraram no pátio; o sistema deverá ir somando pra saber o acumulado da semana em
+   bags e veículos carregados. E também um relatório gerencial simples de produção, planejado vs
+   executado. Cuidado ao passar a programação cascata pra não deixar o dia 100%"). Tela
+   `src/telas/Gerencial.tsx` (menu "Gerencial", depois de Indicadores), domínio puro
+   `src/dominio/gerencial.ts`, dados `src/dados/api-gerencial.ts`, migração `gerencial.sql`
+   (aplicada). **Semana de segunda a domingo** (`semanaDe`), navegável (anterior/próxima/esta
+   semana/escolher um dia).
+   **Carregamento** — tabela `relatorio_carregamento` (uma linha por dia, PK `dia`; os quatro
+   números são opcionais — vazio = não informado, ≠ zero; carimbo de quem/quando por gatilho;
+   realtime). O PCP digita na própria linha do dia e salva na linha (Enter também); dia futuro
+   fica travado. **Acumulado da semana** (`carregamentoDaSemana`) soma só veículos e bags
+   CARREGADOS, de segunda até o dia; descarregados somam só no total da semana, e pátio é foto
+   do fim do dia — não soma, o rodapé mostra o último informado.
+   **Produção · planejado × executado** — sem coluna nova: sai de `ordens`, `v_ordem_tempos`
+   (fim real) e `ordem_reprogramacoes`. O problema que ele apontou: "se eu empurrar as ordens
+   não feitas pra frente, o total planejado do dia vai ser sempre igual ao executado" — a
+   cascata reescreve `data_prog`. Regra (`noPlanoDoDia`): a ordem está no plano do dia se não
+   tinha terminado quando ele começou (07:30) e está programada pra ele, OU **saiu dele pra um
+   dia seguinte (ou pro pool) depois das 07:30 daquele dia** — o histórico da mudança mostra.
+   A empurrada conta nos dois dias (coluna "Empurrado p/ frente" no de origem). Adiantada (foi
+   pra um dia ANTERIOR) não conta no de onde saiu. **Congelar o plano às 07:30 foi descartado**
+   com dado real: a maioria das ordens nasce no próprio dia em que roda (30/09: 17 de 22; 02/10:
+   18 de 18), então o "plano das 07:30" saía quase vazio. **Executado** = terminou no dia de
+   produção (07:30–03:00, `diaDeProducao(fim)`), inclusive adiantada; tonelada produzida =
+   `peso_t × bags_produzidos ÷ bags`. **Do planejado** = das ordens do plano, as que terminaram
+   no próprio dia → **aderência** (do planejado ÷ planejado); "executado ÷ planejado" fica ao
+   lado. Dia que ainda não começou não tem %. **Semana** (`producaoDaSemana`): cada ordem conta
+   UMA vez (a empurrada de segunda pra terça está no plano dos dois dias); entra também a
+   programada pra um dia da semana e adiantada dentro dela (`noPlanoDaSemana`). Conferido com
+   o banco: 03/10 tinha 199,3 t no plano e 104,4 t programadas hoje (110,7 t empurradas), 89 t
+   executadas; 06/10, 179 t planejadas × 154,8 t programadas hoje = 154,8 t executadas — o
+   "100%" que a cascata mostrava. Export .xlsx dos dois cartões.
+   **Alterou o recurso**: `tem_acao` recriada (base `pesagem.sql`) com `gerencial`.
 7. **Cadastros** — máquinas, turnos, embalagens, químicos (com densidade), receitas (dose · densidade ·
    volume · peso de balança), motivos de parada, lotes.
 

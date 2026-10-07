@@ -22,6 +22,7 @@ const Expedicao = lazy(() => import('@/telas/Expedicao'))
 const Veiculos = lazy(() => import('@/telas/Veiculos'))
 const Pesagem = lazy(() => import('@/telas/Pesagem'))
 const Indicadores = lazy(() => import('@/telas/Indicadores'))
+const Gerencial = lazy(() => import('@/telas/Gerencial'))
 const Mrp = lazy(() => import('@/telas/Mrp'))
 const Mapa = lazy(() => import('@/telas/Mapa'))
 const Enderecamento = lazy(() => import('@/telas/Enderecamento'))
@@ -36,7 +37,7 @@ const DefinirSenha = lazy(() => import('@/telas/DefinirSenha'))
 type TelaId =
   | 'ordens' | 'programacao' | 'lotes' | 'execucao' | 'qualidade'
   | 'agrotis' | 'etapas' | 'expedicao' | 'mapa' | 'enderecamento' | 'inventario'
-  | 'veiculos' | 'pesagem' | 'indicadores' | 'mrp' | 'cadastros' | 'administracao' | 'sap'
+  | 'veiculos' | 'pesagem' | 'indicadores' | 'gerencial' | 'mrp' | 'cadastros' | 'administracao' | 'sap'
 
 const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'ordens', nome: 'Ordens' },
@@ -53,6 +54,7 @@ const TELAS: { id: TelaId; nome: string }[] = [
   { id: 'veiculos', nome: 'Veículos' },
   { id: 'pesagem', nome: 'Pesagem' },
   { id: 'indicadores', nome: 'Indicadores' },
+  { id: 'gerencial', nome: 'Gerencial' },
   { id: 'mrp', nome: 'MRP' },
   { id: 'cadastros', nome: 'Cadastros' },
   { id: 'administracao', nome: 'Administração' },
@@ -371,6 +373,7 @@ function Shell() {
             {atual === 'veiculos' && <Veiculos />}
             {atual === 'pesagem' && <Pesagem />}
             {atual === 'indicadores' && <Indicadores />}
+            {atual === 'gerencial' && <Gerencial />}
             {atual === 'mrp' && <Mrp />}
             {atual === 'cadastros' && <Cadastros />}
             {atual === 'administracao' && <Administracao />}
@@ -484,6 +487,13 @@ function IconeTela({ id }: { id: TelaId }) {
       )
     case 'indicadores':
       return <svg {...props}><path d="M2 13V9M6.5 13V5M11 13V7M15 13V3" /></svg>
+    case 'gerencial':
+      return (
+        <svg {...props}>
+          <rect x="2.5" y="2" width="11" height="12.5" rx="1.5" />
+          <path d="M5 11.5V9.5M8 11.5V6.5M11 11.5V8M5 4.5h6" />
+        </svg>
+      )
     case 'mrp':
       return (
         <svg {...props}>

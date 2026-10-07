@@ -34,6 +34,8 @@ export const ACOES_POR_RECURSO: Record<string, string[]> = {
   // Google onde a operação anota onde cada lote está. Só 'ver' — a tela não
   // grava nada, aqui nem lá.
   enderecamento: ['ver'],
+  // Relatório gerencial (07/10/2026): editar = lançar o carregamento do dia
+  gerencial: ['ver', 'editar'],
 }
 
 export const ROTULO_ACAO: Record<string, string> = {
@@ -90,6 +92,8 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     // Pesagem (14/09/2026): PCP só acompanha; quem registra é a Balança
     pesagem: ['ver'],
     enderecamento: ['ver'],
+    // Relatório gerencial (07/10/2026): o PCP lança o carregamento do dia
+    gerencial: ['ver', 'editar'],
   },
   Logistica: {
     programacao: ['ver'],
@@ -143,6 +147,7 @@ export const MATRIZ_PADRAO: Record<Perfil, Record<string, string[]>> = {
     expedicao: ['ver'],
     veiculos: ['ver'],
     pesagem: ['ver'],
+    gerencial: ['ver'],
   },
   /**
    * Balança (15/08/2026): perfil do pátio/portaria — checklist de veículo e

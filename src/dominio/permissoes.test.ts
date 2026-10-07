@@ -109,6 +109,16 @@ describe('matriz padrao', () => {
     expect(ACOES_POR_RECURSO.enderecamento).toEqual(['ver'])
   })
 
+  it('relatorio gerencial (07/10/2026): o PCP lanca, Direcao e Gestor veem', () => {
+    for (const p of ['PCP', 'Gestor'] as const) {
+      expect(permitidoPadrao(p, 'gerencial', 'ver')).toBe(true)
+      expect(permitidoPadrao(p, 'gerencial', 'editar')).toBe(true)
+    }
+    expect(permitidoPadrao('Direcao', 'gerencial', 'ver')).toBe(true)
+    for (const p of ['Logistica', 'Producao', 'Qualidade', 'Balanca'] as const)
+      expect(permitidoPadrao(p, 'gerencial', 'ver')).toBe(false)
+  })
+
   it('ajuste de estoque do mapa (08/09/2026) e do PCP e da Logistica', () => {
     expect(permitidoPadrao('PCP', 'mapa', 'ajustar')).toBe(true)
     expect(permitidoPadrao('Logistica', 'mapa', 'ajustar')).toBe(true)
