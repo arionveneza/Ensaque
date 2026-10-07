@@ -313,6 +313,32 @@ export function concentracaoFicha(ps: PrincipioFicha[]): string {
   return com.map((p) => `${fmt(p.concentracao!)} ${p.unidadeConc}`).join(' + ')
 }
 
+/** Fonte máxima de uma célula — a do papel antigo, de linhas de 9 mm. */
+export const FONTE_MAX_FICHA = 10.5
+
+/**
+ * Tamanho da letra de uma célula (07/10/2026, pedido do Arion: "diminua um
+ * pouco as letras, tem algumas fontes grandes"). Era 10,5 pt em toda célula
+ * de uma linha só — grande nas linhas de 6,9 e 5,5 mm do papel deitado, e
+ * destoando da célula que quebra em 2 linhas (6,7 pt em OUTROS). Agora a letra
+ * segue a altura da linha (~1,24 pt por mm, até 10,5): 8,5 pt nas seções, 6,8
+ * em OUTROS, 10,1 em BIOLÓGICO; o papel antigo (9 mm) continua em 10,5. O texto
+ * longo quebra em 2 linhas com a fonte que cabe na altura (8 pt no máximo); a
+ * conta de quantos caracteres cabem (~2,2 mm por caractere a 10,5 pt) acompanha
+ * a fonte.
+ */
+export function fonteCelulaFicha(
+  texto: string,
+  largura: number,
+  altura: number,
+): { pt: number; quebra: boolean } {
+  const linha = Math.min(FONTE_MAX_FICHA, Math.floor(altura * 1.24 * 10) / 10)
+  const quebra = texto.length > Math.floor(largura / ((2.2 * linha) / FONTE_MAX_FICHA))
+  if (!quebra) return { pt: linha, quebra }
+  const duasLinhas = Math.floor(((altura / 2 / 1.15) * 2.835) * 10) / 10
+  return { pt: Math.min(8, duasLinhas, linha), quebra }
+}
+
 /**
  * Produtos que dividem UMA linha de OUTROS (07/10/2026, pedido do Arion:
  * "colocar o DISCO BLACK ao lado do Fluidus 047, pois só há espaço para 3

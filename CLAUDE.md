@@ -1999,6 +1999,14 @@ tela, no máximo 1× a cada 30 s.
   passou a juntar os candidatos a OUTROS, fundir os pares e SÓ DEPOIS cortar na capacidade.
   O aviso de "sem princípio" continua com os dois. Conferido no HTML gerado: a célula de 49 mm
   leva o nome numa linha a 6,7 pt (a regra de quebra da `exportar.ts`) e a dosagem cabe em 63 mm.
+  **Letras menores** (mesmo dia: "diminua um pouco as letras, tem algumas fontes grandes"): toda
+  célula de uma linha só saía em 10,5 pt — grande nas linhas de 6,9 e 5,5 mm do papel deitado, e
+  destoando da linha juntada (6,7 pt). `fonteCelulaFicha` (domínio, testada) faz a letra seguir a
+  altura da linha, ~1,24 pt por mm até 10,5: **8,5 pt nas seções, 6,8 em OUTROS, 10,1 no
+  BIOLÓGICO**; a conta de quantas letras cabem antes de quebrar acompanha a fonte, e a quebra
+  continua com a fonte que faz 2 linhas caberem (8 pt no máximo). O papel antigo (linhas de 9 mm)
+  ficou igual: 10,5 pt e 8 na quebra. Conferido no HTML gerado: as 27 células de uma receita cheia
+  (FTZ ELITE + RCoMoNi + Lli) cabem.
 - **Capacidade variável**: 12 t/h é global. Pode variar por receita/embalagem?
 - **Horário previsto por ordem** (cascata a partir da sequência) — sugerido, não feito.
   O **painel modo TV** FOI feito (09/08/2026): botão "Painel TV" no cabeçalho, tela cheia,

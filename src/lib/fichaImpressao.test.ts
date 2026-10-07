@@ -68,11 +68,11 @@ describe('impressão da ficha de químicos nos dois papéis', () => {
   it('texto longo em linha baixa (OUTROS, 5,5 mm) quebra com fonte que cabe em 2 linhas', () => {
     const longa: FichaQuimicos = {
       ...FICHA,
-      outros: [{ produto: 'Produto com nome comprido demais', informacoes: '', dosagem: '1 g/100 kg' }],
+      outros: [{ produto: 'FLUIDUS F047 PO SECANTE + DISCO BLACK', informacoes: '', dosagem: '1 g/100 kg' }],
     }
     const { janela, html } = janelaFalsa()
     imprimirFichaQuimicos(longa, { modelo: 'paisagem' }, janela)
-    const m = html().match(/class="c quebra"[^>]*font-size:([\d.]+)pt[^>]*>Produto com nome comprido demais</)
+    const m = html().match(/class="c quebra"[^>]*font-size:([\d.]+)pt[^>]*>FLUIDUS F047 PO SECANTE \+ DISCO BLACK</)
     expect(m).not.toBeNull()
     // 2 linhas × 1,15 de entrelinha cabem nos 5,5 mm
     expect((Number(m![1]) / 2.835) * 1.15 * 2).toBeLessThanOrEqual(5.5)

@@ -1,7 +1,8 @@
 // o pacote não tem export raiz: no navegador é o subcaminho /browser
 import writeXlsxFile, { type SheetData } from 'write-excel-file/browser'
 import {
-  AJUSTE_FICHA_ZERO, LAYOUTS_FICHA, LINHAS_AJUSTE_FICHA, MODELO_FICHA_PADRAO, SECOES_FICHA, aplicarAjusteFicha,
+  AJUSTE_FICHA_ZERO, FONTE_MAX_FICHA, LAYOUTS_FICHA, LINHAS_AJUSTE_FICHA, MODELO_FICHA_PADRAO, SECOES_FICHA,
+  aplicarAjusteFicha, fonteCelulaFicha,
   type AjusteFicha, type ModeloFicha, type FichaQuimicos,
 type EtiquetaFicha,
 } from '@/dominio/fichaQuimicos'
@@ -464,13 +465,12 @@ export function imprimirFichaQuimicos(
   const teste = opcoes.teste === true
   const mm = (v: number) => `${Math.round(v * 100) / 100}mm`
 
-  // texto longo cai pra fonte menor e pode quebrar em 2 linhas dentro da célula.
-  // ~2,2 mm por caractere a 10,5 pt (22 cabem em 48 mm, 30 em 65 mm); na quebra,
-  // a fonte é a que faz 2 linhas caberem na altura (8 pt no máximo) — o papel
-  // novo tem linhas de 6,9 e 5,5 mm, o antigo de 9 mm
+  // a letra segue a altura da linha e o texto longo quebra em 2 linhas
+  // (fonteCelulaFicha, 07/10/2026) — o papel novo tem linhas de 6,9 e 5,5 mm,
+  // o antigo de 9 mm, que continua no 10,5 pt do CSS
   const celula = (left: number, top: number, largura: number, altura: number, texto: string) => {
-    const quebra = texto.length > Math.floor(largura / 2.2)
-    const fonte = quebra ? `font-size:${Math.min(8, Math.floor(((altura / 2 / 1.15) * 2.835) * 10) / 10)}pt;` : ''
+    const { pt, quebra } = fonteCelulaFicha(texto, largura, altura)
+    const fonte = quebra || pt < FONTE_MAX_FICHA ? `font-size:${pt}pt;` : ''
     return `<div class="c ${quebra ? 'quebra' : 'nowrap'}" style="left:${mm(left)};top:${mm(top)};width:${mm(largura)};height:${mm(altura)};${fonte}">${esc(texto)}</div>`
   }
   const guia = (left: number, top: number, largura: number, altura: number, rotulo: string) =>

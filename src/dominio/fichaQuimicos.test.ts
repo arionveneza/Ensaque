@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AJUSTE_FICHA_ZERO, CAPACIDADE_FICHA, LAYOUTS_FICHA, LIMITE_AJUSTE_MM, MODELO_FICHA_PADRAO,
   aplicarAjusteFicha, concentracaoFicha, linhasAjusteDoModelo,
-  doseFicha, mmDePontos, montarFichaQuimicos, normalizarAjusteFicha, proximaRotacao,
+  doseFicha, fonteCelulaFicha, mmDePontos, montarFichaQuimicos, normalizarAjusteFicha, proximaRotacao,
   rotacaoSugeridaEtiqueta, type ItemFicha, type PrincipioFicha,
 } from './fichaQuimicos'
 
@@ -268,6 +268,31 @@ describe('montarFichaQuimicos', () => {
     expect(n).toBe(5)
     expect(f.outros).toHaveLength(n)
     expect(f.naoCouberam).toEqual([`P${n}`, `P${n + 1}`])
+  })
+})
+
+describe('fonteCelulaFicha: a letra segue a altura da linha (07/10/2026)', () => {
+  const P = LAYOUTS_FICHA.paisagem
+  it('papel deitado: 8,5 pt nas seções, 6,8 em OUTROS, 10,1 no BIOLÓGICO', () => {
+    expect(fonteCelulaFicha('FORTENZA 600 FS', P.colunas[0].largura, P.altura.inseticida)).toEqual({ pt: 8.5, quebra: false })
+    expect(fonteCelulaFicha('KELMAX RN BR', P.colunasOutros[0].largura, P.altura.outros)).toEqual({ pt: 6.8, quebra: false })
+    expect(fonteCelulaFicha('SIM', P.biologicos.largura, P.biologicos.altura)).toEqual({ pt: 10.1, quebra: false })
+  })
+
+  it('fonte menor cabe mais letra antes de quebrar; o par Fluidus + Disco Black ainda quebra em 6,7', () => {
+    // 25 caracteres: a 10,5 pt quebrava (22 cabiam em 49 mm); a 8,5 cabe numa linha
+    expect(fonteCelulaFicha('Bacillus amyloliquefacie', P.colunas[1].largura, P.altura.nematicida).quebra).toBe(false)
+    expect(fonteCelulaFicha('FLUIDUS F047 PO SECANTE + DISCO BLACK', P.colunasOutros[0].largura, P.altura.outros))
+      .toEqual({ pt: 6.7, quebra: true })
+    expect(fonteCelulaFicha('700 g/100 kg + 150 mL/100 kg', P.colunasOutros[2].largura, P.altura.outros))
+      .toEqual({ pt: 6.8, quebra: false })
+  })
+
+  it('papel antigo (linhas de 9 mm) continua como era: 10,5 pt e 8 pt na quebra', () => {
+    const R = LAYOUTS_FICHA.retrato
+    expect(fonteCelulaFicha('FORTENZA', R.colunas[0].largura, R.altura.inseticida)).toEqual({ pt: 10.5, quebra: false })
+    expect(fonteCelulaFicha('Piraclostrobina + Tiofanato-metílico', R.colunas[1].largura, R.altura.fungicida))
+      .toEqual({ pt: 8, quebra: true })
   })
 })
 
