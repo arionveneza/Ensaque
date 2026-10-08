@@ -1218,6 +1218,29 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    LIBERAR contam para cabeçalho/aviso/ordenação — a já liberada mostra o selo na linha, mas
    não move o lote. Ordem só Programada (sem confirmação) continua fora da Logística, mesmo
    priorizada.
+   **ENDEREÇAR na conferência** (07/10/2026, pedido do Arion: "às vezes os operadores não
+   endereçam, e aí não tem como eu lançar as ordens na rotina AGROTIS; tem como criar um
+   endereço chamado ENDEREÇAR?"). A conferência de ordem TRATADA exigia armazém/bloco/quadra, e
+   sem conferência o AGROTIS não lança. O seletor de armazém da conferência ganhou a opção
+   **ENDEREÇAR** (`SeletorArmazem` com `extras`; só ali — Inventário e Mapa continuam A–E):
+   some bloco/quadra, o botão vira "Conferir · endereçar depois", a conferência grava normal com
+   `ordem_conferencias.enderecar_depois` (só com bags > 0) e nada vai pro `lote_enderecos`.
+   **ENDEREÇAR não é endereço do mapa** de propósito — o CHECK A–E/1–44/1–20 continua, e um
+   armazém falso apareceria na grade, nos filtros, no inventário e na ordem de carregamento; a
+   pendência mora na conferência. Cartão **"A endereçar (N)"** abaixo da conferência
+   (`listarAEnderecar`, que busca as ordens pelo id — não depende da lista geral, que inclui
+   Apontada): nº, cultivar, tratamento, lote, bags contados, quem conferiu e há quantos dias
+   (âmbar a partir de 2), com armazém/bloco/quadra e **Endereçar**, ou **"já endereçado"** (com
+   `confirm`) quando alguém já endereçou pelo Mapa. Os dois passam pela RPC
+   **`enderecar_conferencia(ordem, armazem, bloco, quadra)`** (migração
+   `conferencia-enderecar-depois.sql`, aplicada; SECURITY INVOKER — valem as policies de hoje):
+   soma os bags contados no endereço (mesma conta do `somarEndereco`, `on conflict` no índice
+   único, o gatilho normaliza "06" → "6" antes do teste) e carimba `enderecado_em/por` na MESMA
+   transação; `for update` + `enderecado_em is null` recusam o segundo clique (não soma duas
+   vezes); armazém nulo só dá baixa. Conferido numa transação desfeita contra o banco. O lote
+   tratado segue entrando no mapa na Finalizada — sem endereço nenhum, também aparece em "Sem
+   localização". Junto: `listarConferencias` passou a paginar (572 conferências em 07/10; o
+   PostgREST corta em 1.000).
 4. **Execução** — cards por máquina (ordem atual, tempo planejado, decorrido, paradas, parada atual),
    **faixa de prioridades do dia** (16/09/2026: a lista da máquina mostra P1/P2/P3 no topo,
    em âmbar, antes das "demais ordens" por sequência; com a máquina livre o cartão aponta a

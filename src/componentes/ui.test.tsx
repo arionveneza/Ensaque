@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import {
-  Aviso, Tabela, Tag, Vazio, corDoStatus, diaCurto, diaSemana, inteiro, n, somaDias,
+  Aviso, SeletorArmazem, Tabela, Tag, Vazio, corDoStatus, diaCurto, diaSemana, inteiro, n, somaDias,
 } from './ui'
 
 describe('formatacao numerica em pt-BR', () => {
@@ -101,5 +101,21 @@ describe('Tabela', () => {
   it('sem rodape nao ha tfoot', () => {
     const { container } = render(<Tabela cabecalho={['A']}><tr><td>x</td></tr></Tabela>)
     expect(container.querySelector('tfoot')).toBeNull()
+  })
+})
+
+describe('SeletorArmazem', () => {
+  const opcoes = (c: HTMLElement) => [...c.querySelectorAll('option')].map((o) => o.value)
+
+  it('lista so A a E por padrao', () => {
+    const { container } = render(<SeletorArmazem valor="" aoMudar={() => {}} />)
+    expect(opcoes(container)).toEqual(['', 'A', 'B', 'C', 'D', 'E'])
+  })
+
+  it('extras entram no fim (ENDERECAR na conferencia da Logistica, 07/10/2026)', () => {
+    const { container } = render(
+      <SeletorArmazem valor="ENDEREÇAR" aoMudar={() => {}} extras={['ENDEREÇAR']} />,
+    )
+    expect(opcoes(container)).toEqual(['', 'A', 'B', 'C', 'D', 'E', 'ENDEREÇAR'])
   })
 })

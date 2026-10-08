@@ -1341,6 +1341,10 @@ export interface ConferenciaLinha {
   bags_contados: number
   observacao: string | null
   ts: string
+  /** Conferida com ENDEREÇAR (07/10/2026): falta dizer onde o lote está. */
+  enderecar_depois?: boolean
+  enderecado_em?: string | null
+  conferido_por?: string | null
 }
 
 /**
@@ -1358,11 +1362,61 @@ export async function conferenciaDaOrdem(ordemId: string): Promise<ConferenciaLi
 }
 
 export async function listarConferencias(): Promise<ConferenciaLinha[]> {
+  // paginada (07/10/2026): 572 conferências hoje, e o PostgREST corta em 1.000
+  return todasAsPaginas<ConferenciaLinha>(
+    (i, f) =>
+      supabase
+        .from('ordem_conferencias')
+        .select('ordem_id, bags_contados, observacao, ts, enderecar_depois, enderecado_em, conferido_por')
+        .order('ordem_id')
+        .range(i, f),
+    'conferências de estoque',
+  )
+}
+
+/**
+ * Ordens conferidas com ENDEREÇAR e ainda sem endereço (07/10/2026) — o
+ * cartão "A endereçar" da Logística. Busca as ordens pelo id (não depende
+ * da lista geral de ordens da tela).
+ */
+export async function listarAEnderecar(): Promise<{ conferencia: ConferenciaLinha; ordem: OrdemVisao }[]> {
   const { data, error } = await supabase
     .from('ordem_conferencias')
-    .select('ordem_id, bags_contados, observacao, ts')
-  erro('conferências de estoque', error)
-  return (data ?? []) as ConferenciaLinha[]
+    .select('ordem_id, bags_contados, observacao, ts, enderecar_depois, enderecado_em, conferido_por')
+    .eq('enderecar_depois', true)
+    .is('enderecado_em', null)
+    .order('ts')
+  erro('conferências a endereçar', error)
+  const confs = (data ?? []) as ConferenciaLinha[]
+  if (confs.length === 0) return []
+  const o = await supabase
+    .from('v_ordens')
+    .select('*')
+    .in('id', confs.map((c) => c.ordem_id))
+  erro('ordens a endereçar', o.error)
+  const porId = new Map(((o.data ?? []) as OrdemVisao[]).map((x) => [x.id, x]))
+  return confs.flatMap((c) => {
+    const ordem = porId.get(c.ordem_id)
+    return ordem ? [{ conferencia: c, ordem }] : []
+  })
+}
+
+/**
+ * Endereça a pendência numa transação (RPC enderecar_conferencia): soma os
+ * bags contados no endereço do mapa e dá baixa. Endereço nulo só dá baixa
+ * ("já endereçado pelo Mapa").
+ */
+export async function enderecarConferencia(
+  ordemId: string,
+  endereco: { armazem: string; bloco: string; quadra: string } | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('enderecar_conferencia', {
+    p_ordem: ordemId,
+    p_armazem: endereco?.armazem ?? null,
+    p_bloco: endereco?.bloco ?? null,
+    p_quadra: endereco?.quadra ?? null,
+  })
+  erro('endereçar a ordem conferida', error)
 }
 
 export async function registrarConferencia(
@@ -1370,6 +1424,8 @@ export async function registrarConferencia(
   bagsContados: number,
   observacao: string | null,
   usuarioId: string,
+  /** ENDEREÇAR (07/10/2026): confere sem endereço; vai pro cartão "A endereçar". */
+  enderecarDepois = false,
 ): Promise<void> {
   if (!Number.isFinite(bagsContados) || bagsContados < 0)
     throw new Error('Informe a quantidade de bags contados (0 ou mais).')
@@ -1380,6 +1436,7 @@ export async function registrarConferencia(
       observacao,
       conferido_por: usuarioId,
       ts: new Date().toISOString(),
+      enderecar_depois: enderecarDepois,
     },
     { onConflict: 'ordem_id' },
   )

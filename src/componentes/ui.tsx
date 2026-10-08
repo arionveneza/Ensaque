@@ -351,13 +351,16 @@ export const ARMAZENS = ['A', 'B', 'C', 'D', 'E']
  * selecionável na edição — sumir com ele corromperia o dado calado.
  */
 export function SeletorArmazem({
-  valor, aoMudar, className = '',
+  valor, aoMudar, className = '', extras = [],
 }: {
   valor: string
   aoMudar: (v: string) => void
   className?: string
+  /** Opções além de A–E, no fim da lista — ex.: ENDEREÇAR na conferência da Logística. */
+  extras?: string[]
 }) {
-  const opcoes = valor && !ARMAZENS.includes(valor) ? [valor, ...ARMAZENS] : ARMAZENS
+  const base = [...ARMAZENS, ...extras]
+  const opcoes = valor && !base.includes(valor) ? [valor, ...base] : base
   return (
     <select
       value={valor}

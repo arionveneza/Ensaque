@@ -80,6 +80,7 @@ export default function Lotes() {
   const [maquinas, setMaquinas] = useState<api.LinhaMaquina[]>([])
   const [movimentos, setMovimentos] = useState<MovimentoLote[]>([])
   const [conferencias, setConferencias] = useState<g.ConferenciaLinha[]>([])
+  const [aEnderecar, setAEnderecar] = useState<{ conferencia: g.ConferenciaLinha; ordem: OrdemVisao }[]>([])
   const [nomes, setNomes] = useState<Record<string, string>>({})
   const [periodo, setPeriodo] = useState<Periodo>('semana')
   const [carregando, setCarregando] = useState(true)
@@ -93,18 +94,20 @@ export default function Lotes() {
   const recarregar = useCallback(async () => {
     try {
       setErro(null)
-      const [l, o, m, c, nm] = await Promise.all([
+      const [l, o, m, c, nm, ae] = await Promise.all([
         g.listarLotes(),
         g.listarOrdens(),
         g.listarMovimentos(`${desde}T00:00:00Z`),
         g.listarConferencias(),
         g.listarNomesUsuarios(),
+        g.listarAEnderecar(),
       ])
       setLotes(l)
       setOrdens(o)
       setMovimentos(m)
       setConferencias(c)
       setNomes(nm)
+      setAEnderecar(ae)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     }
@@ -369,9 +372,13 @@ export default function Lotes() {
                 key={o.id}
                 ordem={o}
                 podeConferir={podeConferir}
-                onConferir={(bags, obs, endereco) =>
+                onConferir={(bags, obs, endereco, enderecarDepois) =>
                   comErro(async () => {
-                    await g.registrarConferencia(o.id, bags, obs, usuario!.id)
+                    // ENDEREÇAR (07/10/2026): confere sem endereço — o AGROTIS
+                    // fica liberado e a ordem vai pro cartão "A endereçar"
+                    await g.registrarConferencia(
+                      o.id, bags, obs, usuario!.id, enderecarDepois && bags > 0,
+                    )
                     // endereçamento embutido (08/09/2026): o lote TRATADO
                     // entrou no mapa quando a produção apontou (Finalizada);
                     // a Logística confere a quantidade e já diz onde pôs.
@@ -395,6 +402,28 @@ export default function Lotes() {
           </div>
         )}
       </Cartao>
+
+      {/* -------- a endereçar (conferidas com ENDEREÇAR) -------- */}
+      {aEnderecar.length > 0 && (
+        <Cartao titulo={`A endereçar (${aEnderecar.length})`} className="mb-6">
+          <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+            Conferidas com <b>ENDEREÇAR</b>: o lançamento no AGROTIS já está liberado, mas o lote
+            ainda não tem lugar no mapa. Diga onde ele está e clique em Endereçar.
+          </p>
+          <div className="space-y-3">
+            {aEnderecar.map(({ conferencia, ordem }) => (
+              <LinhaAEnderecar
+                key={ordem.id}
+                ordem={ordem}
+                conferencia={conferencia}
+                quem={conferencia.conferido_por ? nomes[conferencia.conferido_por] : undefined}
+                podeEnderecar={podeConferir}
+                onEnderecar={(endereco) => comErro(() => g.enderecarConferencia(ordem.id, endereco))}
+              />
+            ))}
+          </div>
+        </Cartao>
+      )}
 
       {/* -------- relatório de baixas -------- */}
       <Cartao
@@ -791,6 +820,111 @@ function LinhaLoteBaixado({
   )
 }
 
+/** Opção do armazém na conferência que deixa o endereço pra depois (07/10/2026). */
+const ENDERECAR = 'ENDEREÇAR'
+
+/**
+ * Ordem conferida com ENDEREÇAR (07/10/2026): o AGROTIS já está liberado,
+ * falta dizer onde o lote está. Endereçar soma os bags contados no
+ * endereço do mapa e tira da lista; "já endereçado" só tira da lista,
+ * para quando alguém já endereçou pelo Mapa.
+ */
+function LinhaAEnderecar({
+  ordem, conferencia, quem, podeEnderecar, onEnderecar,
+}: {
+  ordem: OrdemVisao
+  conferencia: g.ConferenciaLinha
+  quem: string | undefined
+  podeEnderecar: boolean
+  onEnderecar: (endereco: { armazem: string; bloco: string; quadra: string } | null) => Promise<void>
+}) {
+  const [armazem, setArmazem] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [quadra, setQuadra] = useState('')
+  const [gravando, setGravando] = useState(false)
+  const endereco = normalizaEndereco({ armazem, bloco, quadra })
+  const falta = problemaEndereco({ armazem, bloco, quadra })
+  const dias = Math.max(0, Math.floor((Date.now() - new Date(conferencia.ts).getTime()) / 86_400_000))
+
+  async function gravar(e: { armazem: string; bloco: string; quadra: string } | null) {
+    setGravando(true)
+    try {
+      await onEnderecar(e)
+    } finally {
+      setGravando(false)
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-sky-200 bg-sky-50/40 p-3 dark:border-sky-900 dark:bg-sky-950/20">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-medium">
+            {ordem.numero} · {ordem.cultivar}{' '}
+            <Tag cor={corDoStatus(ordem.status_efetivo)} className="min-w-36 text-center">
+              {ordem.status_efetivo}
+            </Tag>
+          </p>
+          <p className="text-xs text-stone-500">
+            {ordem.receita_nome} · lote {ordem.lote_id} · contados <b>{conferencia.bags_contados} bg</b>
+          </p>
+          <p className="text-xs text-stone-500">
+            conferida {dataHoraCurta(conferencia.ts)}
+            {quem ? ` por ${quem}` : ''} ·{' '}
+            <span className={dias >= 2 ? 'font-medium text-amber-700 dark:text-amber-400' : ''}>
+              {dias === 0 ? 'hoje' : dias === 1 ? 'há 1 dia' : `há ${dias} dias`}
+            </span>
+          </p>
+        </div>
+        {podeEnderecar && (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-sm">
+              armazém
+              <span className="w-20">
+                <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 text-sm">
+              bloco
+              <span className="w-20">
+                <SeletorBloco valor={bloco} aoMudar={setBloco} />
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 text-sm">
+              quadra
+              <span className="w-28">
+                <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
+              </span>
+            </label>
+            <Botao
+              variante="primario"
+              disabled={!endereco || gravando}
+              titulo={falta ? `Onde o lote está: ${falta}` : undefined}
+              onClick={() => void gravar(endereco)}
+            >
+              Endereçar
+            </Botao>
+            <Botao
+              disabled={gravando}
+              titulo="Tira da lista sem gravar endereço — use só se o lote já foi endereçado pelo Mapa"
+              onClick={() => {
+                if (
+                  confirm(
+                    `Tirar a ordem ${ordem.numero} da lista sem gravar endereço?\n\nUse só se o lote já foi endereçado pelo Mapa.`,
+                  )
+                )
+                  void gravar(null)
+              }}
+            >
+              já endereçado
+            </Botao>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /**
  * A contagem física de uma ordem finalizada. O campo começa VAZIO de
  * propósito (decisão de 05/08/2026): a logística informa a quantidade
@@ -807,6 +941,7 @@ function LinhaConferencia({
     bags: number,
     obs: string | null,
     endereco: { armazem: string; bloco: string; quadra: string } | null,
+    enderecarDepois: boolean,
   ) => void
 }) {
   const [bags, setBags] = useState('')
@@ -820,10 +955,13 @@ function LinhaConferencia({
   const [quadra, setQuadra] = useState('')
   const tratada = (ordem.receita_nome ?? '').trim().toUpperCase() !== 'SEM TSI'
   const contados = parseInt(bags, 10)
-  const endereco = normalizaEndereco({ armazem, bloco, quadra })
-  const faltaEndereco = problemaEndereco({ armazem, bloco, quadra })
+  // ENDEREÇAR (07/10/2026): o operador não sabe/não disse onde guardou —
+  // confere mesmo assim (libera o AGROTIS) e a ordem fica "A endereçar"
+  const enderecarDepois = tratada && armazem === ENDERECAR
+  const endereco = enderecarDepois ? null : normalizaEndereco({ armazem, bloco, quadra })
+  const faltaEndereco = enderecarDepois ? null : problemaEndereco({ armazem, bloco, quadra })
   const valido =
-    Number.isFinite(contados) && contados >= 0 && (!tratada || endereco != null)
+    Number.isFinite(contados) && contados >= 0 && (!tratada || enderecarDepois || endereco != null)
   const referencia = ordem.bags_produzidos ?? ordem.bags
   const diverge = Number.isFinite(contados) && contados >= 0 && contados !== referencia
 
@@ -872,22 +1010,26 @@ function LinhaConferencia({
               <>
                 <label className="flex items-center gap-1.5 text-sm">
                   armazém
-                  <span className="w-20">
-                    <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+                  <span className="w-32">
+                    <SeletorArmazem valor={armazem} aoMudar={setArmazem} extras={[ENDERECAR]} />
                   </span>
                 </label>
-                <label className="flex items-center gap-1.5 text-sm">
-                  bloco
-                  <span className="w-20">
-                    <SeletorBloco valor={bloco} aoMudar={setBloco} />
-                  </span>
-                </label>
-                <label className="flex items-center gap-1.5 text-sm">
-                  quadra
-                  <span className="w-28">
-                    <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
-                  </span>
-                </label>
+                {!enderecarDepois && (
+                  <>
+                    <label className="flex items-center gap-1.5 text-sm">
+                      bloco
+                      <span className="w-20">
+                        <SeletorBloco valor={bloco} aoMudar={setBloco} />
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm">
+                      quadra
+                      <span className="w-28">
+                        <SeletorQuadra valor={quadra} aoMudar={setQuadra} />
+                      </span>
+                    </label>
+                  </>
+                )}
               </>
             )}
             <Botao
@@ -899,14 +1041,20 @@ function LinhaConferencia({
                   : undefined
               }
               onClick={() =>
-                onConferir(contados, obs.trim() || null, tratada ? endereco : null)
+                onConferir(contados, obs.trim() || null, tratada ? endereco : null, enderecarDepois)
               }
             >
-              Conferir
+              {enderecarDepois ? 'Conferir · endereçar depois' : 'Conferir'}
             </Botao>
           </div>
         )}
       </div>
+      {enderecarDepois && (
+        <p className="mt-2 text-xs text-sky-700 dark:text-sky-400">
+          A conferência libera o lançamento no AGROTIS; a ordem fica em <b>A endereçar</b> até
+          alguém dizer onde o lote está.
+        </p>
+      )}
       {diverge && (
         <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
           Divergência: {contados} contados para {referencia}{' '}
