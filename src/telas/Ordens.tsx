@@ -2843,7 +2843,9 @@ function ModalProgramarDemanda({
                         </option>
                         {lotesFiltradosDaLinha.map((lt) => (
                           <option key={lt.id} value={lt.id}>
+                            {/* kg por unidade: lote em saco de 200 mil sementes (SC200MS, 09/10/2026) tem 28 kg, não ~700 */}
                             {lt.id}{lt.bags_disp != null ? ` (${lt.bags_disp} disp.)` : ''}
+                            {lt.peso_bag_kg ? ` · ${n(lt.peso_bag_kg, 0)} kg` : ''}
                           </option>
                         ))}
                       </select>

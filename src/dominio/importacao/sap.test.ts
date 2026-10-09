@@ -177,6 +177,36 @@ describe('conversao de saldos do SAP', () => {
   // (texto, número, data, vazio) e 6 lotes com saldo entraram sem peso. O
   // peso do bag também vem pronto em "Peso Bruto", que bateu com PMS × fator
   // em 100% das 1.137 linhas do export de 10/09/2026.
+  // 09/10/2026 — NEO799 I2X em SC200MS (saco de 200 mil sementes) era
+  // descartado como granel e o lote não aparecia pra montar ordem
+  describe('SC200MS (saco de 200 mil sementes)', () => {
+    it('semente branca entra como lote, contada em sacos, peso = PMS × 0,2 com 2 casas', () => {
+      const r = converterSaldoSap([
+        CAB_SAP,
+        linha('NEO799 I2X', '26B98C0007', '', 'SC200MS', '140.2', '2026-09-19', 'SC', 75),
+      ])
+      expect(r.lotes).toHaveLength(1)
+      expect(r.lotes[0]).toMatchObject({ id: '26B98C0007', cultivar: 'NEO799 I2X', bags: 75, pms: 140.2 })
+      expect(r.lotes[0].pesoBagKg).toBe(28.04)
+      expect(r.resumo.granel).toBe(0)
+    })
+
+    it('tratado em SC200MS continua fora (o app não tem essa embalagem no estoque PA)', () => {
+      const r = converterSaldoSap([
+        CAB_SAP,
+        linha('NEO799 I2X', 'X1', 'FTZ60', 'SC200MS', '140.2', '2026-09-19', 'SC', 10),
+      ])
+      expect(r.lotes).toHaveLength(0)
+      expect(r.estoquePa).toHaveLength(0)
+      expect(r.resumo.granel).toBe(1)
+    })
+
+    it('bag e meio-bag seguem com peso inteiro', () => {
+      const r = converterSaldoSap([CAB_SAP, linha('761 I2X', 'SV1', 'SEM TSI', 'BB5M', '140.2', '2026-02-10', 'SC', 3)])
+      expect(r.lotes[0].pesoBagKg).toBe(701)
+    })
+  })
+
   describe('PMS ilegível na coluna própria', () => {
     it('célula em formato de data vira PMS pelo serial do Excel', () => {
       const r = converterSaldoSap([

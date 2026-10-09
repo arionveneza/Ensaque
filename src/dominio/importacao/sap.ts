@@ -35,6 +35,29 @@ const paraData = (v: unknown): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * Embalagem que só vale para LOTE DE SEMENTE BRANCA (09/10/2026, pedido do
+ * Arion: "os lotes do cultivar 799 não estão aparecendo para montagem de
+ * ordem de produção"). O SAP traz o NEO799 I2X também em SC200MS — saco de
+ * 200 mil sementes, peso = PMS × 0,2 — e o importador jogava a linha fora
+ * como granel (lote 26B98C0007, 75 sacos). Decisão dele: o lote entra com a
+ * contagem em SACOS (75 de 28 kg), como o BMB entra em meio-bags; a baixa da
+ * ordem é por peso e generaliza sozinha. Fica FORA do EMBALAGEM_DEPARA de
+ * propósito: lá ela viraria embalagem de pedido, estoque PA, mapa e
+ * inventário, onde o app não tem SC200MS cadastrada.
+ */
+export const EMBALAGEM_SO_LOTE_BRANCO: Record<string, { codigo: string; fator: number }> = {
+  SC200MS: { codigo: 'SC200MS', fator: 0.2 },
+}
+
+/**
+ * Peso do bag do lote: inteiro em bag/meio-bag, como sempre foi; no saco
+ * pequeno (fator < 1) com 2 casas — 28,04 kg arredondado a 28 erraria a
+ * conversão da baixa em até 1,8%.
+ */
+const pesoDoBag = (pms: number, fator: number) =>
+  fator >= 1 ? Math.round(pms * fator) : Math.round(pms * fator * 100) / 100
+
 /** Só lote com entrada a partir daqui conta como estoque disponível — lote velho já baixado no SAP não deve reentrar (pedido do Arion, 19/08/2026). */
 export const CORTE_SALDO_SAP = new Date('2026-01-01T00:00:00')
 
@@ -184,7 +207,12 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
 
   for (const r of rows.slice(1)) {
     const embRaw = txt(r[iEmb])
-    const emb = EMBALAGEM_DEPARA[normaliza(embRaw)]
+    const tratamento = corrigeTratamentoSap(txt(r[iTrat]))
+    const branca = !tratamento || tratamento.toUpperCase() === 'SEM TSI'
+    // SC200MS só entra como lote de semente branca (EMBALAGEM_SO_LOTE_BRANCO)
+    const emb =
+      EMBALAGEM_DEPARA[normaliza(embRaw)] ??
+      (branca ? EMBALAGEM_SO_LOTE_BRANCO[normaliza(embRaw)] : undefined)
     if (!emb) {
       resumo.granel++
       continue
@@ -209,7 +237,6 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
 
     const { cultivar, daDescricao } = cultivarDaLinhaSap(txt(r[iCult]), iDesc >= 0 ? txt(r[iDesc]) : '')
     if (daDescricao) resumo.cultivarDaDescricao[cultivar] = (resumo.cultivarDaDescricao[cultivar] ?? 0) + 1
-    const tratamento = corrigeTratamentoSap(txt(r[iTrat]))
     let pms = iPms >= 0 ? numPms(r[iPms]) : 0
     // PMS de soja nunca chega a 1.000 g/mil-sementes — valor fora disso é
     // origem corrompida (célula errada, parsing), não semente de verdade.
@@ -234,7 +261,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
       }
     }
 
-    if (!tratamento || tratamento.toUpperCase() === 'SEM TSI') {
+    if (branca) {
       const id = txt(r[iLote])
       if (!id) continue
       if (!pms) resumo.semPms++
@@ -247,7 +274,7 @@ export function converterSaldoSap(rows: Linha[]): ResultadoSaldoSap {
           cultivar,
           tratamento: tratamento || 'SEM TSI',
           pms,
-          pesoBagKg: Math.round(pms * emb.fator),
+          pesoBagKg: pesoDoBag(pms, emb.fator),
           bags,
           peneira: iPeneira >= 0 ? txt(r[iPeneira]) || null : null,
           categoria: iCategoria >= 0 ? txt(r[iCategoria]) || null : null,

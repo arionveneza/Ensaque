@@ -854,6 +854,23 @@ têm as duas. O resumo ganhou `pmsRecuperado` e a prévia da importação diz qu
 vieram por essa rede (vale pedir o acerto da coluna no SAP) — o aviso vermelho de
 `semPms` agora só sobra pra quem não tem **nem** PMS **nem** Peso Bruto. Correção dos 6
 lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
+**SC200MS entra como lote de semente branca, contado em SACOS** (09/10/2026, pedido do Arion:
+"os lotes do cultivar 799 e 751 não estão aparecendo para montagem de ordem de produção"). O
+SAP traz o NEO799 I2X também em **SC200MS** (saco de 200 mil sementes; lote 26B98C0007, 75
+sacos, PMS 140,2, CULTIVAR vazio — sai da descrição) e o importador só conhecia BB5M/BMB: a
+linha caía em `granel`. `EMBALAGEM_SO_LOTE_BRANCO` (`sap.ts`, fator 0,2) vale **só para a branca
+do `converterSaldoSap`** — fora do `EMBALAGEM_DEPARA` de propósito, senão viraria embalagem de
+pedido, estoque PA, mapa e inventário, onde o app não tem SC200MS; tratado em SC200MS continua
+granel. Decisão dele entre "converter em 3 bags de 5M" e "75 sacos de 28 kg": **75 sacos de 28
+kg**, como o BMB entra em meio-bags — a baixa da ordem é por peso; a lista de lotes do
+"Programar" passou a mostrar o kg da unidade ("75 disp. · 28 kg") porque o campo de bags da
+ordem aceita até 75. Peso do saco com 2 casas (`pesoDoBag`: inteiro só com fator ≥ 1 — 28,04
+arredondado a 28 erraria a baixa em até 1,8%). **O 751 não existe no SAP** (nenhuma linha
+NEO751 CE em 22 exports, de 14/09 a 08/10, em nenhum depósito): os 2 lotes do Mapa
+(26B65C0162, 4 bg, 770 kg; 26B65C0163, 5 bg, 950 kg — lançados à mão em 07/10) viraram **lote
+manual** (`origem_manual`, o upload não zera) com PMS = peso ÷ 5. `supabase/lotes-799-751.sql`
+(aplicado) também antecipou o 26B98C0007 (não manual: o próximo upload, já com o código novo,
+cuida dele — subir o SAP numa aba velha, sem F5, zeraria esse lote).
 **Sub-lote sem saldo não entra**: o SAP desdobra o lote em `-1`, `-2`, `-3`, e o
 importador pula linha com Qtd em Estoque 0 — é por isso que só o sufixo com bags existe
 em `lotes_semente` (o `-1` "sumido" não é bug).
