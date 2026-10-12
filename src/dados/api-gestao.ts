@@ -1558,6 +1558,32 @@ async function todasAsPaginas<T>(
   return todos
 }
 
+/**
+ * Ordens que ainda pesam no estoque de químico do SAP (12/10/2026): toda ordem
+ * não apontada — o SAP baixa o químico no lançamento AGROTIS. O MRP soma o
+ * químico delas pelo peso real (`peso_kg`: bags × peso do bag do lote, ou os
+ * kg a tratar do lote em saco). Paginada: não pode cortar em 1.000.
+ */
+export async function listarOrdensMrp(): Promise<
+  { numero: string; receita_id: string; peso_kg: number; status: string }[]
+> {
+  const linhas = await todasAsPaginas<{
+    id: string; numero: string; receita_id: string; peso_kg: number; status_efetivo: string
+  }>(
+    (i, f) =>
+      supabase
+        .from('v_ordens')
+        .select('id, numero, receita_id, peso_kg, status_efetivo')
+        .not('status', 'in', '("Apontada","Excluida")')
+        .order('id')
+        .range(i, f),
+    'ordens abertas do MRP',
+  )
+  return linhas.map((o) => ({
+    numero: o.numero, receita_id: o.receita_id, peso_kg: Number(o.peso_kg), status: o.status_efetivo,
+  }))
+}
+
 export async function listarTempos(de: string, ate: string): Promise<TempoOrdem[]> {
   return todasAsPaginas<TempoOrdem>(
     (i, f) =>

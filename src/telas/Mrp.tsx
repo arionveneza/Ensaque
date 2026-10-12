@@ -6,8 +6,8 @@ import type {
 } from '@/dados/api-gestao'
 import {
   calcularMrp, chaveCombinacao, conferirCadastro, cruzarEstoqueQuimico,
-  estoqueSapPorCombinacao, necessidadeNativa, PESO_REF_BAG_KG,
-  type EstoqueCruzado, type NecessidadeProduto,
+  estoqueSapPorCombinacao, necessidadeNativa, pmsReferencia, PESO_REF_BAG_KG,
+  type EstoqueCruzado, type NecessidadeProduto, type OrdemMrp,
 } from '@/dominio/mrp'
 import {
   ARMAZEM_QUIMICOS, converterQuimicos, ehRelatorioQuimicos, type ResultadoQuimicos,
@@ -37,6 +37,10 @@ export default function Mrp() {
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<EmbalagemLinha[]>([])
   const [estoquePa, setEstoquePa] = useState<EstoquePaLinha[]>([])
+  // ordens não apontadas (o químico delas ainda está no SAP) e lotes (PMS do
+  // cultivar pro peso do bag) — auditoria de 12/10/2026
+  const [ordens, setOrdens] = useState<OrdemMrp[]>([])
+  const [lotes, setLotes] = useState<g.LoteSementeLinha[]>([])
   const [estoqueQuimicos, setEstoqueQuimicos] = useState<
     { itens: EstoqueQuimicoLinha[]; criadaEm: string } | null
   >(null)
@@ -49,14 +53,16 @@ export default function Mrp() {
   const recarregar = () =>
     Promise.all([
       g.listarBalanco(), g.listarReceitas(), g.listarEmbalagens(), g.listarEstoquePa(),
-      g.listarEstoqueQuimicos(),
+      g.listarEstoqueQuimicos(), g.listarOrdensMrp(), g.listarLotes(),
     ])
-      .then(([b, r, e, pa, eq]) => {
+      .then(([b, r, e, pa, eq, os, ls]) => {
         setBalanco(b)
         setReceitas(r)
         setEmbalagens(e)
         setEstoquePa(pa)
         setEstoqueQuimicos(eq)
+        setOrdens(os)
+        setLotes(ls)
         setErro(null)
       })
       .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
@@ -65,7 +71,7 @@ export default function Mrp() {
     recarregar().finally(() => setCarregando(false))
   }, [])
   useRealtime(
-    ['ordens', 'pedidos_venda', 'estoque_pa', 'receitas', 'estoque_quimicos'],
+    ['ordens', 'pedidos_venda', 'estoque_pa', 'receitas', 'estoque_quimicos', 'lotes_semente'],
     () => void recarregar(),
   )
 
@@ -108,9 +114,10 @@ export default function Mrp() {
     }
   }
 
+  const pms = useMemo(() => pmsReferencia(lotes), [lotes])
   const mrp = useMemo(
-    () => calcularMrp(balanco, receitas, embalagens),
-    [balanco, receitas, embalagens],
+    () => calcularMrp(balanco, receitas, embalagens, { ordens, pms }),
+    [balanco, receitas, embalagens, ordens, pms],
   )
   const conferencia = useMemo(() => conferirCadastro(balanco, receitas), [balanco, receitas])
   const estoqueSap = useMemo(() => estoqueSapPorCombinacao(estoquePa), [estoquePa])
@@ -125,13 +132,14 @@ export default function Mrp() {
         { titulo: 'Código', largura: 12 },
         { titulo: 'Unidade da dose', largura: 14 },
         { titulo: 'Unidade', largura: 10 },
-        { titulo: 'Firme', largura: 14, tipo: 'numero' },
+        { titulo: 'Ordens abertas', largura: 14, tipo: 'numero' },
+        { titulo: 'Falta produzir (firme)', largura: 16, tipo: 'numero' },
         { titulo: 'Aguardando', largura: 14, tipo: 'numero' },
         { titulo: 'Total', largura: 14, tipo: 'numero' },
         { titulo: 'Em estoque', largura: 14, tipo: 'numero' },
-        { titulo: 'Saldo (firme)', largura: 14, tipo: 'numero' },
+        { titulo: 'Saldo (ordens + firme)', largura: 16, tipo: 'numero' },
         { titulo: 'Saldo (total)', largura: 14, tipo: 'numero' },
-        { titulo: 'Falta comprar (firme)', largura: 18, tipo: 'numero' },
+        { titulo: 'Falta comprar (ordens + firme)', largura: 20, tipo: 'numero' },
         { titulo: 'Falta comprar (total)', largura: 18, tipo: 'numero' },
       ],
       mrp.produtos.map((p) => {
@@ -142,6 +150,7 @@ export default function Mrp() {
           p.codigo,
           p.unidade,
           nat.unidade,
+          arred(nat.ordens),
           arred(nat.firme),
           arred(nat.aguardando),
           arred(nat.total),
@@ -165,7 +174,7 @@ export default function Mrp() {
   return (
     <Pagina
       titulo="MRP — Necessidade de Material"
-      descricao={`Falta produzir (pedidos aprovados − estoque − ordens abertas) × receita = químico necessário; a parcela "aguardando" é o adicional se os pedidos pendentes de liberação financeira aprovarem. Bags viram kg de semente pelo peso de referência: BG5M ${PESO_REF_BAG_KG.BG5M} kg · MEIOBAG ${PESO_REF_BAG_KG.MEIOBAG} kg (demanda ainda sem lote não tem PMS); saco de peso fixo usa o peso do cadastro.`}
+      descricao={`Químico necessário = ordens abertas (não apontadas, pelo peso real de cada uma — o SAP só baixa o químico no AGROTIS) + falta produzir (pedidos aprovados − estoque − ordens abertas) × receita; a parcela "aguardando" é o adicional se os pedidos pendentes de liberação financeira aprovarem. A demanda sem lote vira kg de semente pelo PMS médio dos lotes brancos em estoque do cultivar (sem lote do cultivar, a média de todos; sem lote nenhum, BG5M ${PESO_REF_BAG_KG.BG5M} kg · MEIOBAG ${PESO_REF_BAG_KG.MEIOBAG} kg); saco de peso fixo usa o peso do cadastro.`}
     >
       {erro && <Erro>{erro}</Erro>}
 
@@ -191,7 +200,12 @@ export default function Mrp() {
       )}
 
       {/* totais no topo: o tamanho do trabalho que falta, numa olhada */}
-      <div className="mb-5 grid gap-2 sm:grid-cols-3">
+      <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <CartaoTotal
+          rotulo="Ordens abertas"
+          valor={`${inteiro(mrp.totais.ordens)} ordens`}
+          detalhe={`${n(mrp.totais.kgSementeOrdens / 1000, 1)} t de semente · ${n(mrp.totais.kgQuimicoOrdens, 1)} kg de químico`}
+        />
         <CartaoTotal
           rotulo="Falta produzir (firme)"
           valor={`${inteiro(mrp.totais.bags)} bags`}
@@ -211,8 +225,8 @@ export default function Mrp() {
           }
         />
         <CartaoTotal
-          rotulo="Químico necessário"
-          valor={`${n(mrp.totais.kgQuimico, 1)} kg`}
+          rotulo="Químico necessário (ordens + firme)"
+          valor={`${n(mrp.totais.kgQuimicoOrdens + mrp.totais.kgQuimico, 1)} kg`}
           detalhe={
             mrp.totais.kgQuimicoAguardando > 0
               ? `+ ${n(mrp.totais.kgQuimicoAguardando, 1)} kg se o aguardando aprovar`
@@ -295,7 +309,7 @@ export default function Mrp() {
             cabecalho={[
               'Produto',
               { texto: 'Unidade da dose', className: 'hidden lg:table-cell' },
-              '#Firme', '#Aguardando', '#Total',
+              '#Ordens abertas', '#Falta produzir', '#Aguardando', '#Total',
               '#Em estoque', '#Saldo', '#Falta comprar',
               '',
             ]}
@@ -312,12 +326,15 @@ export default function Mrp() {
           </Tabela>
         )}
         <p className="mt-2 text-xs text-stone-500">
-          A coluna Aguardando é o ADICIONAL caso os pedidos pendentes de liberação
-          financeira aprovem (sobra de estoque já abatida). Tudo na unidade NATIVA do
-          produto — líquido em LITROS, pó em KG, a mesma do estoque do SAP (armazém{' '}
-          {ARMAZEM_QUIMICOS}, casado pelo nome). "Saldo" é estoque − necessário total, com
-          sinal (positivo sobra, negativo falta); "Falta comprar" é sobre a parcela firme,
-          com o "c/ aguardando" embaixo incluindo o pendente.
+          "Ordens abertas" é o químico das ordens ainda não apontadas no AGROTIS (o SAP
+          só baixa o químico no lançamento); "Falta produzir" é o dos pedidos aprovados que
+          ainda não têm ordem nem estoque; "Aguardando" é o ADICIONAL caso os pedidos
+          pendentes de liberação financeira aprovem (sobra de estoque já abatida). Tudo na
+          unidade NATIVA do produto — líquido em LITROS, pó em KG, a mesma do estoque do
+          SAP (armazém {ARMAZEM_QUIMICOS}, casado pelo nome, somando as embalagens do mesmo
+          produto). "Saldo" é estoque − necessário total, com sinal (positivo sobra,
+          negativo falta); "Falta comprar" é sobre ordens + falta produzir, com o "c/
+          aguardando" embaixo incluindo o pendente.
         </p>
       </Cartao>
 
@@ -384,6 +401,7 @@ export default function Mrp() {
             <Tabela
               cabecalho={[
                 'Cultivar', 'Tratamento', 'Emb.',
+                { texto: '#Bag (kg)', className: 'hidden lg:table-cell' },
                 '#Pedido firme (bg)', '#Pedido aguard. (bg)',
                 '#Estoque SAP (bg)',
                 { texto: '#Ordens abertas (bg)', className: 'hidden lg:table-cell' },
@@ -400,6 +418,15 @@ export default function Mrp() {
                     <td className="px-2 py-1.5">{c.cultivar}</td>
                     <td className="px-2 py-1.5">{c.tratamento}</td>
                     <td className="px-2 py-1.5">{c.embalagem}</td>
+                    <td
+                      className="num-tabular hidden px-2 py-1.5 text-right text-stone-500 lg:table-cell"
+                      title={`Peso do bag usado na conta: ${c.origemPeso}`}
+                    >
+                      {n(c.pesoBagKg, 0)}
+                      {c.origemPeso !== 'lotes do cultivar' && c.origemPeso !== 'peso fixo' && (
+                        <span className="ml-0.5 text-amber-600 dark:text-amber-400">*</span>
+                      )}
+                    </td>
                     <td className="num-tabular px-2 py-1.5 text-right">
                       {c.pedidoAprovado > 0 ? inteiro(c.pedidoAprovado) : <span className="text-stone-300">—</span>}
                     </td>
@@ -432,7 +459,10 @@ export default function Mrp() {
             </Tabela>
             <p className="mt-2 text-xs text-stone-500">
               Falta produzir = pedido firme − estoque SAP − ordens abertas (é o que puxa
-              químico na tabela acima). "Falta se aprovar" é o adicional caso o pedido
+              químico na coluna "Falta produzir" acima; o químico das ordens abertas vem
+              à parte, pelo peso real de cada ordem). Bag (kg) = PMS médio dos lotes brancos
+              em estoque do cultivar × fator da embalagem; o "*" marca cultivar sem lote
+              em estoque (média de todos os lotes, ou a referência fixa). "Falta se aprovar" é o adicional caso o pedido
               aguardando liberação financeira aprove, já abatendo sobra de estoque. Estoque
               SAP = produto JÁ TRATADO (estoque PA da última carga de saldos); o "+N" é
               estoque da mesma combinação em outra embalagem, fora da conta desta linha.
@@ -474,7 +504,16 @@ function ProdutoLinhas({
         <td className="px-2 py-1.5 font-medium">{p.nome}</td>
         <td className="hidden px-2 py-1.5 text-stone-500 lg:table-cell">{p.unidade}</td>
         <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
-          {n(nat.firme, 1)} {nat.unidade}
+          {nat.ordens > 0 ? (
+            <span title={`${p.ordens.length} ordem(ns) não apontada(s)`}>
+              {n(nat.ordens, 1)} {nat.unidade}
+            </span>
+          ) : (
+            <span className="text-stone-300">—</span>
+          )}
+        </td>
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+          {nat.firme > 0 ? `${n(nat.firme, 1)} ${nat.unidade}` : <span className="text-stone-300">—</span>}
         </td>
         <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap text-stone-500">
           {nat.aguardando > 0 ? `${n(nat.aguardando, 1)} ${nat.unidade}` : <span className="text-stone-300">—</span>}
@@ -512,7 +551,7 @@ function ProdutoLinhas({
               </span>
               {cruzado.saldoFirme != null && cruzado.saldoFirme !== cruzado.saldoTotal && (
                 <p className="text-xs font-normal text-stone-500">
-                  só firme: {cruzado.saldoFirme >= 0 ? '+' : ''}
+                  sem aguard.: {cruzado.saldoFirme >= 0 ? '+' : ''}
                   {n(cruzado.saldoFirme, 1)}
                 </p>
               )}
@@ -535,7 +574,7 @@ function ProdutoLinhas({
             </>
           ) : cruzado.faltaTotal > 0 ? (
             <>
-              <span className="font-medium text-green-700 dark:text-green-400">cobre o firme</span>
+              <span className="font-medium text-green-700 dark:text-green-400">cobre ordens + firme</span>
               <p className="text-xs font-normal text-amber-700 dark:text-amber-400">
                 c/ aguard.: falta {n(cruzado.faltaTotal, 1)} {cruzado.unidadeComparacao}
               </p>
@@ -555,6 +594,32 @@ function ProdutoLinhas({
         </td>
       </tr>
       {aberto &&
+        p.ordens.map((o) => {
+          const v = o.litros ?? o.kg
+          return (
+            <tr key={`o-${o.numero}`} className="bg-sky-50/50 text-xs dark:bg-sky-950/20">
+              <td className="px-2 py-1 pl-6 text-stone-600 dark:text-stone-300">
+                ordem {o.numero} · {o.status}
+              </td>
+              <td className="hidden px-2 py-1 text-stone-500 lg:table-cell">
+                {inteiro(o.kgSemente)} kg semente
+              </td>
+              <td className="num-tabular px-2 py-1 text-right whitespace-nowrap">
+                {n(v, 1)} {nat.unidade}
+              </td>
+              <td />
+              <td />
+              <td className="num-tabular px-2 py-1 text-right whitespace-nowrap">
+                {n(v, 1)} {nat.unidade}
+              </td>
+              <td />
+              <td />
+              <td />
+              <td />
+            </tr>
+          )
+        })}
+      {aberto &&
         p.combinacoes.map((c, i) => {
           const firme = c.litros ?? c.kg
           const aguard = c.litrosAguardando ?? c.kgAguardando
@@ -564,8 +629,9 @@ function ProdutoLinhas({
                 {c.cultivar} · {c.tratamento} · {c.embalagem}
               </td>
               <td className="hidden px-2 py-1 text-stone-500 lg:table-cell">
-                {inteiro(c.bags + c.bagsAguardando)} bg · {inteiro(c.kgSemente + c.kgSementeAguardando)} kg semente
+                {inteiro(c.bags + c.bagsAguardando)} bg × {n(c.pesoBagKg, 0)} kg · {inteiro(c.kgSemente + c.kgSementeAguardando)} kg semente
               </td>
+              <td />
               <td className="num-tabular px-2 py-1 text-right whitespace-nowrap">
                 {n(firme, 1)} {nat.unidade}
               </td>

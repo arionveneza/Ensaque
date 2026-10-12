@@ -2057,6 +2057,33 @@ tela, no máximo 1× a cada 30 s.
   (INS00004 lá é RIZOLIQ, aqui era KELMAX). Líquido compara em L, pó em kg; colunas
   "Em estoque"/"Falta comprar" (firme e com aguardando) na tabela de necessidade.
   Segue em aberto só o alerta pró-ativo contra a programação da semana.
+  **Auditoria do MRP** (12/10/2026, pergunta do Arion: "os cálculos de MRP estão corretos?").
+  A fórmula por produto estava certa (dose × kg de semente; ml/100 kg → L, g/100 kg → kg; os 20
+  produtos casaram com o estoque, nenhum em ml sem densidade), mas o **"falta comprar" saía
+  menor**: o balanço TIRA as ordens abertas do "falta produzir" e o MRP só olhava o falta
+  produzir — o químico das ordens já criadas sumia, embora ainda esteja no estoque do SAP.
+  Decisão dele: entra o químico de **TODA ordem não apontada** (o SAP baixa o químico no
+  lançamento AGROTIS; até a Qualidade apontada o SAP ainda conta o que a ordem gastou), pelo
+  peso REAL da ordem (`v_ordens.peso_kg`, com lote e kg a tratar; `listarOrdensMrp`, paginada) —
+  inclusive fora do estoque (sacaria gasta químico igual). `calcularMrp(…, { ordens, pms })`:
+  `NecessidadeProduto.totalKgOrdens/totalLOrdens/ordens[]`, `necessidadeNativa` ganhou `ordens`
+  (total = ordens + firme + aguardando) e o `cruzarEstoqueQuimico` compara **ordens + firme**
+  (e + aguardando) com o estoque. Em 12/10, com 15 ordens abertas (71,4 t): Kelmax 1.230,6 →
+  1.255 L a comprar, Fortenza 107,6 → 132,3, Victrato 139,8 → 152 — na safra o furo era de
+  centenas de ordens. **Peso do bag da demanda sem lote** (2ª decisão dele): era a referência
+  fixa 850/425 kg, e a média real das ordens desde agosto era 812 kg o BAG e 388 o meio bag;
+  agora `pmsReferencia(lotes)` = PMS médio dos lotes brancos em estoque **do cultivar**,
+  ponderado pelas sementes (Σ kg ÷ Σ kg/PMS — por bag misturaria saco de 200 mil com bag de 5
+  mi), × fator da embalagem (`pesoBagDaDemanda`: peso fixo → cultivar → média dos lotes →
+  850/425); a tabela de demanda mostra o "Bag (kg)" usado, com "*" quando não veio do
+  cultivar (em 12/10: 181 combinações pelo cultivar, 9 pela média). **Embalagens do mesmo
+  produto no SAP somam**: "DISCO BLACK L 1906 1000L" e "DISCO BLACK L1905 500 L" (1.500 L)
+  ficavam fora porque o nome exato vencia — o nível 1 do casamento passou a aceitar o exato
+  mais o nome seguido de sufixo SÓ de embalagem (`SUFIXO_EMBALAGEM`: "L 1906 1000L", "500 L",
+  "1000L BRA", "12X1L"); "F PLUS"/"(inativo)" continuam nos níveis seguintes. Tela: cartão
+  "Ordens abertas", colunas "Ordens abertas · Falta produzir · Aguardando · Total", o
+  "detalhar" lista as ordens (azul) antes das combinações, e o export ganhou a coluna.
+  Conferido montando a tela com os dados reais num harness local.
 - **Etiquetas**: a planilha antiga tinha ~15 abas de etiquetas; ficaram fora do escopo —
   EXCETO a **etiqueta DM** (25/08/2026): menu "Etiqueta DM ▾" no detalhe da ordem
   (`imprimirEtiquetaDm` em `exportar.ts`), tamanho físico 97 × 63 mm, com

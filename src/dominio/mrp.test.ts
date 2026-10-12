@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calcularMrp, chaveCombinacao, conferirCadastro, cruzarEstoqueQuimico,
-  estoqueSapPorCombinacao, pesoRefBagKg,
+  estoqueSapPorCombinacao, necessidadeNativa, pesoBagDaDemanda, pesoRefBagKg, pmsReferencia,
   type EstoqueQuimicoItem, type NecessidadeProduto,
 } from './mrp'
 import type { BalancoLinha, EmbalagemLinha, ReceitaCompleta } from '@/dados/api-gestao'
@@ -240,10 +240,73 @@ describe('calcularMrp', () => {
   })
 })
 
+describe('ordens abertas e peso do bag pelo PMS (12/10/2026)', () => {
+  it('o químico das ordens não apontadas soma pelo peso real da ordem', () => {
+    const r = calcularMrp([balanco({ saldo: 10 })], [FTZ60], EMBALAGENS, {
+      ordens: [
+        { numero: '172756', receita_id: 'r1', peso_kg: 4000, status: 'Pronto para produzir' },
+        { numero: '172304', receita_id: 'r1', peso_kg: 2000, status: 'Qualidade apontada' },
+        { numero: 'X', receita_id: 'sem-receita', peso_kg: 1000, status: 'Programada' },
+      ],
+    })
+    const disco = r.produtos.find((p) => p.nome === 'DISCO BLACK')!
+    // 250 ml/100 kg × 6.000 kg das ordens ÷ 1000 ÷ 100 = 15 L
+    expect(disco.totalLOrdens).toBeCloseTo(15, 4)
+    expect(disco.ordens.map((o) => o.numero)).toEqual(['172756', '172304'])
+    expect(necessidadeNativa(disco)).toMatchObject({ ordens: 15, firme: 21.25 })
+    expect(necessidadeNativa(disco).total).toBeCloseTo(36.25, 4)
+    // pó: 300 g/100 kg × 6.000 = 18 kg
+    expect(r.produtos.find((p) => p.nome === 'FLUIDUS F047 PO SECANTE')!.totalKgOrdens).toBeCloseTo(18, 4)
+    expect(r.totais).toMatchObject({ ordens: 2, kgSementeOrdens: 6000 })
+  })
+
+  it('produto que só aparece nas ordens também entra', () => {
+    const r = calcularMrp([], [FTZ60], EMBALAGENS, {
+      ordens: [{ numero: '1', receita_id: 'r1', peso_kg: 1000, status: 'Em producao' }],
+    })
+    expect(r.produtos).toHaveLength(2)
+    expect(r.produtos.every((p) => p.totalKg === 0 && p.totalKgOrdens > 0)).toBe(true)
+  })
+
+  it('PMS médio ponderado pelas sementes, por cultivar e geral', () => {
+    const pms = pmsReferencia([
+      { cultivar: 'NEO680 IPRO', pms: 200, peso_bag_kg: 1000, bags_disp: 10 }, // 10 t
+      { cultivar: 'neo680  ipro', pms: 100, peso_bag_kg: 500, bags_disp: 20 }, // 10 t
+      { cultivar: 'NEO799 I2X', pms: 140, peso_bag_kg: 28, bags_disp: 75 },
+      { cultivar: 'SEM PMS', pms: null, peso_bag_kg: 800, bags_disp: 5 },
+      { cultivar: 'ZERADO', pms: 180, peso_bag_kg: 900, bags_disp: 0 },
+    ])
+    // 20 t em 50 mil + 100 mil milhares de sementes = 133,3 g
+    expect(pms.porCultivar.get('NEO680 IPRO')).toBeCloseTo(133.33, 1)
+    expect(pms.porCultivar.get('NEO799 I2X')).toBeCloseTo(140, 4)
+    expect(pms.porCultivar.has('SEM PMS')).toBe(false)
+    expect(pms.porCultivar.has('ZERADO')).toBe(false)
+    expect(pms.geral).toBeGreaterThan(133)
+  })
+
+  it('peso do bag: peso fixo → PMS do cultivar → média geral → referência', () => {
+    const pms = { porCultivar: new Map([['NEO680 IPRO', 160]]), geral: 170 }
+    expect(pesoBagDaDemanda('NEO680 IPRO', 'BG5M', EMBALAGENS, pms)).toEqual({ kg: 800, origem: 'lotes do cultivar', pms: 160 })
+    expect(pesoBagDaDemanda('NEO680 IPRO', 'MEIOBAG', EMBALAGENS, pms)).toMatchObject({ kg: 400 })
+    expect(pesoBagDaDemanda('OUTRO', 'BG5M', EMBALAGENS, pms)).toMatchObject({ kg: 850, origem: 'média dos lotes' })
+    expect(pesoBagDaDemanda('OUTRO', 'BG5M', EMBALAGENS)).toMatchObject({ kg: 850, origem: 'referência fixa' })
+    expect(pesoBagDaDemanda('OUTRO', 'SC10', EMBALAGENS, pms)).toMatchObject({ kg: 10, origem: 'peso fixo' })
+    expect(pesoBagDaDemanda('OUTRO', 'XX', EMBALAGENS, pms)).toBeNull()
+  })
+
+  it('o MRP usa o peso do cultivar na demanda', () => {
+    const r = calcularMrp([balanco({ cultivar: 'NEO680 IPRO', saldo: 10 })], [FTZ60], EMBALAGENS, {
+      pms: { porCultivar: new Map([['NEO680 IPRO', 160]]), geral: 170 },
+    })
+    expect(r.combinacoes[0]).toMatchObject({ pesoBagKg: 800, kgSemente: 8000, origemPeso: 'lotes do cultivar' })
+  })
+})
+
 describe('cruzarEstoqueQuimico', () => {
   const produto = (parcial: Partial<NecessidadeProduto>): NecessidadeProduto => ({
     codigo: 'X', nome: 'X', unidade: 'ml/100kg', densidade: 1.2,
     totalKg: 0, totalKgAguardando: 0, totalL: 0, totalLAguardando: 0,
+    totalKgOrdens: 0, totalLOrdens: 0, ordens: [],
     combinacoes: [],
     ...parcial,
   })
@@ -292,6 +355,35 @@ describe('cruzarEstoqueQuimico', () => {
     expect(caso('ACRESCENT RAIZ F').disponivel).toBe(774.15)
     expect(caso('ACRESCENT RAIZ F').nomesSap).toEqual(['ACRESCENT RAIZ F PLUS'])
     expect(caso('DISCO BLACK').disponivel).toBe(17469.91)
+  })
+
+  it('soma o mesmo produto em outra embalagem do SAP, sem puxar produto diferente (12/10/2026)', () => {
+    const estoque = [
+      item('DISCO BLACK', 'LT', 14214.8),
+      item('DISCO BLACK L 1906 1000L', 'LT', 1000),
+      item('DISCO BLACK L1905 500 L', 'LT', 500),
+      item('DISCO BLACK (inativo)', 'KG', 0),
+      item('CRUISER 600 FS', 'LT', 1616.1),
+      item('CRUISER 600 FS 1000L BRA', 'LT', 10),
+      item('CRUISER 350 FS 1000 L BRA', 'LT', 827.89), // outro produto
+      item('ACRESCENT RAIZ F PLUS', 'LT', 232.7),
+      item('ACRESCENT RAIZ', 'LT', 0),
+    ]
+    const caso = (nome: string) => cruzarEstoqueQuimico(produto({ nome, totalL: 1 }), estoque)
+    expect(caso('DISCO BLACK').disponivel).toBeCloseTo(15714.8)
+    expect(caso('DISCO BLACK').nomesSap).toHaveLength(3)
+    expect(caso('CRUISER 600 FS').disponivel).toBeCloseTo(1626.1)
+    expect(caso('ACRESCENT RAIZ F').nomesSap).toEqual(['ACRESCENT RAIZ F PLUS'])
+  })
+
+  it('ordens abertas entram no falta comprar e no saldo (12/10/2026)', () => {
+    const cz = cruzarEstoqueQuimico(
+      produto({ nome: 'KELMAX RN', totalL: 100, totalLAguardando: 20, totalLOrdens: 30 }),
+      [item('KELMAX RN', 'LT', 110)],
+    )
+    expect(cz.faltaFirme).toBe(20) // 30 das ordens + 100 firmes − 110
+    expect(cz.faltaTotal).toBe(40) // + 20 aguardando
+    expect(cz.saldoFirme).toBe(-20)
   })
 
   it('item achado com unidade errada marca incompativel em vez de somar', () => {
