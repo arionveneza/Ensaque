@@ -127,6 +127,33 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   `Baixado` sem **nenhuma** ordem dependente (ex.: a única ordem que dependia dele foi
   excluída depois de liberada) — não tem ordem para o estorno agir; a tela "Baixados sem
   ordem — devolver" cobre só esse caso, devolvendo o lote direto.
+- **Lote AVULSO — fora do SAP, criado na própria ordem** (12/10/2026, pedido do Arion:
+  "preciso, na tela de ordem de produção, poder criar ordens com lotes que não estão no SAP;
+  colocar todas as informações de forma avulsa, mas de maneira que não gere confusão com o
+  sistema atual"). No formulário Nova/Editar ordem, embaixo do lote, o link **"+ lote fora do
+  SAP (avulso)"** abre um quadro (`FormLoteAvulso`, `src/componentes/LoteAvulso.tsx`): nº do
+  lote, cultivar (com sugestão dos nomes que o sistema já usa — lotes + pedidos), embalagem do
+  lote (BB5M ×5 · BMB ×2,5 · SC200MS ×0,2), PMS, peso do bag (em branco = PMS × fator) e bags no
+  lote; "Criar lote avulso e usar nesta ordem" grava pelo `criarLote` de sempre
+  (`origem_manual = true`, semente branca `SEM TSI`) e já escolhe o lote na ordem. Regras puras
+  em `src/dominio/loteAvulso.ts` (`validarLoteAvulso`, testada): nº que já existe é recusado,
+  dizendo se é do SAP ou avulso ("escolha ele na lista"); cultivar fora dos nomes conhecidos só
+  AVISA (grafia diferente quebra o balanço — "751 CE" ≠ "NEO751 CE"); o PMS é sempre gravado,
+  derivado do peso quando não vem (sem ele, ordem MEIOBAG do lote usaria o peso do bag inteiro);
+  peso digitado que diverge mais de 5% de PMS × fator avisa. **Para não confundir com o SAP**:
+  (1) etiqueta azul **"avulso"** (`TagLoteAvulso`, tooltip com a data) em toda tela onde o lote
+  aparece — select do formulário e do Programar ("· AVULSO (fora do SAP)"), lista de Ordens
+  (coluna e sub-linha do tablet), cartões e tabela da Logística, Cadastros ▸ Lotes — e uma linha
+  explicativa no formulário quando o lote escolhido é avulso; (2) a **Expedição ignora** lote
+  `origem_manual` no saldo de semente branca ("atende" é estoque do SAP); (3) o upload do SAP
+  nunca zera lote avulso, e **quando o SAP trouxer o mesmo número ele passa a ser lote do SAP**
+  (`importar_lotes_semente` grava `origem_manual = false` no conflito; antes o lote manual
+  ficava manual pra sempre e nunca mais era zerado) — as ordens continuam no mesmo id; a
+  mensagem da importação diz quantos "agora vieram do SAP". Migração `lote-avulso.sql`
+  (aplicada; base da função: `lotes-semente-zerar-ausentes.sql`, a única definição) também pôs
+  `criado_por`/`criado_em` em `lotes_semente` (só linha nova; a carga antiga fica sem data).
+  Conferido numa transação desfeita: o upload assumiu o avulso e não tocou outro lote manual.
+  Os 2 lotes do 751 cadastrados em 09/10 já são `origem_manual` e aparecem como avulsos.
 
 ### Produtos químicos e receitas
 - Cada químico tem **unidade de dose** (`ml/kg` ou `g/kg`) e **densidade em g/ml** (só para ml/kg).

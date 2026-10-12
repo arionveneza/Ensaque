@@ -490,6 +490,9 @@ export interface LoteSementeLinha {
    *  tela nunca mostrava; "quem baixou este lote?" só tinha resposta via SQL. */
   baixado_por: string | null
   baixado_em: string | null
+  /** Fora do SAP: cadastro manual ou lote AVULSO criado na ordem (12/10/2026). */
+  origem_manual?: boolean
+  criado_em?: string | null
 }
 
 /**
@@ -503,7 +506,7 @@ export async function listarLotes(): Promise<LoteSementeLinha[]> {
   for (let de = 0; ; de += 1000) {
     const { data, error } = await supabase
       .from('lotes_semente')
-      .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver, baixado_por, baixado_em')
+      .select('id, cultivar, tratamento, pms, peso_bag_kg, bags_disp, status, devolver, baixado_por, baixado_em, origem_manual, criado_em')
       .order('id')
       .range(de, de + 999)
     erro('lotes de semente', error)
@@ -1169,6 +1172,8 @@ export interface ResumoImportacaoLotes {
    * saldo mostrado zerado (a linha e o histórico continuam intactos).
    */
   zerados: number
+  /** Lote avulso/manual que o SAP passou a trazer e virou lote do SAP (12/10/2026). */
+  assumidos?: number
 }
 
 /**

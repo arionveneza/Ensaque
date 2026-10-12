@@ -12,6 +12,7 @@ import {
 import { useAuth } from '@/auth/AuthProvider'
 import { useRascunho } from '@/lib/useRascunho'
 import { Aviso, Botao, Cartao, Erro, Pagina, Tabela, Tag, Vazio, inteiro, n } from '@/componentes/ui'
+import { TagLoteAvulso } from '@/componentes/LoteAvulso'
 
 /** Peso de referência usado só para exibir a receita numa escala legível. */
 const REFERENCIA_KG = 40_000
@@ -1457,7 +1458,10 @@ function AbaLotes({
       >
         {filtrados.slice(0, 300).map((l) => (
           <tr key={l.id} className="border-t border-stone-100 dark:border-stone-800/60">
-            <td className="px-2 py-1.5 font-medium">{l.id}</td>
+            <td className="px-2 py-1.5 font-medium">
+              {l.id}
+              {l.origem_manual && <span className="ml-1"><TagLoteAvulso desde={l.criado_em} /></span>}
+            </td>
             <td className="px-2 py-1.5">{l.cultivar}</td>
             <td className="px-2 py-1.5">
               {l.tratamento ? (

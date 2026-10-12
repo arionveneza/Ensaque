@@ -50,6 +50,7 @@ import type { StatusEfetivo } from '@/dominio/tipos'
 import { useAuth } from '@/auth/AuthProvider'
 import { Destinacao } from '@/componentes/Destinacao'
 import { ObservacaoOrdem } from '@/componentes/ObservacaoOrdem'
+import { FormLoteAvulso, TagLoteAvulso } from '@/componentes/LoteAvulso'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, SeletorMultiplo, Tabela, Tag, Vazio,
   corDoStatus, dataHoraCurta, diaCurto, diaCurtoComAno, enderecoLote, inteiro, n,
@@ -147,6 +148,11 @@ export default function Ordens() {
 
   const [ordens, setOrdens] = useState<OrdemVisao[]>([])
   const [lotes, setLotes] = useState<LoteSementeLinha[]>([])
+  // lotes fora do SAP (avulsos/manuais) — etiqueta "avulso" na lista (12/10/2026)
+  const lotesAvulsos = useMemo(
+    () => new Set(lotes.filter((l) => l.origem_manual).map((l) => l.id)),
+    [lotes],
+  )
   const [receitas, setReceitas] = useState<ReceitaCompleta[]>([])
   const [embalagens, setEmbalagens] = useState<g.EmbalagemLinha[]>([])
   const [maquinas, setMaquinas] = useState<api.LinhaMaquina[]>([])
@@ -769,6 +775,7 @@ export default function Ordens() {
                       setMsg(
                         `${r.importados} lote(s) importados` +
                           (r.zerados > 0 ? ` · ${r.zerados} zerado(s) por ter saído da planilha` : '') +
+                          (r.assumidos ? ` · ${r.assumidos} lote(s) avulso(s) agora vieram do SAP e passaram a ser do SAP` : '') +
                           '.',
                       )
                       setPreviaSaldos(null)
@@ -883,6 +890,7 @@ export default function Ordens() {
                       setMsg(
                         `${r.importados} lote(s) importados (via SAP)` +
                           (r.zerados > 0 ? ` · ${r.zerados} zerado(s) por ter saído da planilha` : '') +
+                          (r.assumidos ? ` · ${r.assumidos} lote(s) avulso(s) agora vieram do SAP e passaram a ser do SAP` : '') +
                           '.',
                       )
                       setPreviaSaldoSap(null)
@@ -1284,6 +1292,7 @@ export default function Ordens() {
                 onAbrir={abrirOrdem}
                 abrindoId={abrindoId}
                 onForaBalanco={(o) => comErro(() => g.definirForaBalanco(o.id, !o.fora_balanco))}
+                avulsos={lotesAvulsos}
               />
             ))}
           </Tabela>
@@ -2846,6 +2855,7 @@ function ModalProgramarDemanda({
                             {/* kg por unidade: lote em saco de 200 mil sementes (SC200MS, 09/10/2026) tem 28 kg, não ~700 */}
                             {lt.id}{lt.bags_disp != null ? ` (${lt.bags_disp} disp.)` : ''}
                             {lt.peso_bag_kg ? ` · ${n(lt.peso_bag_kg, 0)} kg` : ''}
+                            {lt.origem_manual ? ' · AVULSO (fora do SAP)' : ''}
                           </option>
                         ))}
                       </select>
@@ -3485,8 +3495,10 @@ function comparadorOrdenacao(
 function FragmentoDia({
   dia, lista, aberto, onToggle, maquinas, ordenacao, podeEditar, podeExcluir, podePriorizar,
   onEditar, onExcluir, onPrioridade, onRenumerar, onConfirmar, onAbrir, abrindoId,
-  onForaBalanco,
+  onForaBalanco, avulsos,
 }: {
+  /** Lotes fora do SAP (avulsos/manuais) — ganham a etiqueta "avulso" (12/10/2026). */
+  avulsos: Set<string>
   dia: string
   lista: OrdemVisao[]
   /** Fechado mostra só a faixa do dia com o total; aberto mostra as ordens. */
@@ -3626,6 +3638,7 @@ function FragmentoDia({
                         destaque na tela dela). */}
                     <p className="text-xs font-normal text-stone-500 lg:hidden">
                       {o.embalagem} · lote {o.lote_id}
+                      {avulsos.has(o.lote_id) && <> <TagLoteAvulso /></>}
                       {/* mesma marca vermelha da coluna grande: no tablet esta
                           sub-linha é o único lugar em que a expedição aparece */}
                       {o.data_expedicao && (
@@ -3652,7 +3665,10 @@ function FragmentoDia({
                   <td className="px-2 py-1.5">{o.cultivar}</td>
                   <td className="px-2 py-1.5">{o.receita_nome}</td>
                   <td className="hidden px-2 py-1.5 lg:table-cell">{o.embalagem}</td>
-                  <td className="hidden px-2 py-1.5 font-medium lg:table-cell">{o.lote_id}</td>
+                  <td className="hidden px-2 py-1.5 font-medium lg:table-cell">
+                    {o.lote_id}
+                    {avulsos.has(o.lote_id) && <span className="ml-1"><TagLoteAvulso /></span>}
+                  </td>
                   <td className="hidden px-2 py-1.5 text-xs text-stone-500 lg:table-cell">{enderecoLote(o)}</td>
                   <td className="num-tabular px-2 py-1.5 text-right">{o.bags}</td>
                   <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(o.peso_t, 1)} t</td>
@@ -3897,6 +3913,14 @@ function NovaOrdemForm({
   const [buscaLote, setBuscaLote] = useState('')
   const [buscaTrat, setBuscaTrat] = useState('')
   const [erro, setErro] = useState<string | null>(null)
+  // lote avulso (12/10/2026): lote fora do SAP digitado aqui mesmo
+  const [criandoAvulso, setCriandoAvulso] = useState(false)
+  const cultivaresConhecidos = useMemo(
+    () =>
+      [...new Set([...lotes.map((l) => l.cultivar), ...balanco.map((b) => b.cultivar)].filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })),
+    [lotes, balanco],
+  )
 
   // reserva no MAPA (08/09/2026): a branca do lote pode já estar tomada por
   // cargas montadas e outras ordens — aviso forte, nunca bloqueante (o mapa
@@ -4070,9 +4094,20 @@ function NovaOrdemForm({
             {lotesFiltrados.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.id} · {l.cultivar} · {n(l.peso_bag_kg, 0)} kg/bag
+                {l.origem_manual ? ' · AVULSO (fora do SAP)' : ''}
               </option>
             ))}
           </select>
+          {!criandoAvulso && (
+            <button
+              type="button"
+              onClick={() => setCriandoAvulso(true)}
+              className="mt-1 text-xs font-medium text-sky-700 underline dark:text-sky-400"
+              title="Lote de semente branca que ainda não está no saldo do SAP"
+            >
+              + lote fora do SAP (avulso)
+            </button>
+          )}
         </Campo>
         <Campo rotulo="Tratamento">
           <input
@@ -4251,6 +4286,34 @@ function NovaOrdemForm({
           </div>
         </Campo>
       </div>
+
+      {criandoAvulso && (
+        <FormLoteAvulso
+          existentes={lotes}
+          cultivaresConhecidos={cultivaresConhecidos}
+          onCancelar={() => setCriandoAvulso(false)}
+          onCriar={async (novo) => {
+            try {
+              setErro(null)
+              await g.criarLote(novo)
+              definir({ loteId: novo.id })
+              setBuscaLote('')
+              setCriandoAvulso(false)
+              onCriada(`Lote avulso ${novo.id} criado e escolhido na ordem.`)
+            } catch (e) {
+              setErro(e instanceof Error ? e.message : String(e))
+            }
+          }}
+        />
+      )}
+
+      {lote?.origem_manual && (
+        <p className="mt-2 flex flex-wrap items-center gap-1 text-xs text-sky-800 dark:text-sky-300">
+          <TagLoteAvulso desde={lote.criado_em} />
+          Lote {lote.id} é avulso: fora do SAP, não entra no saldo do SAP nem na Expedição. Se o SAP
+          trouxer este número, ele passa a ser lote do SAP.
+        </p>
+      )}
 
       {lote && (
         <p className="mt-2 text-xs text-stone-500">

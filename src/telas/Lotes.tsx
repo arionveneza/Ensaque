@@ -9,6 +9,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { somarEndereco } from '@/dados/api-mapa'
 import { loteBase } from '@/dominio/importacao/mapa'
 import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
+import { TagLoteAvulso } from '@/componentes/LoteAvulso'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, SeletorBloco, SeletorQuadra, Tabela, Tag, Vazio,
   corDoStatus, dataHoraCurta, diaCurto, enderecoLote, exportarCsv, inteiro, n, somaDias,
@@ -287,7 +288,10 @@ export default function Lotes() {
           <Tabela cabecalho={['Lote', 'Cultivar', '#Peso/bag', 'Baixado por', '']}>
             {orfaos.map((a) => (
               <tr key={a.lote.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-2 font-medium">{a.lote.id}</td>
+                <td className="px-2 py-2 font-medium">
+                  {a.lote.id}
+                  {a.lote.origem_manual && <span className="ml-1"><TagLoteAvulso desde={a.lote.criado_em} /></span>}
+                </td>
                 <td className="px-2 py-2">{a.lote.cultivar}</td>
                 <td className="num-tabular px-2 py-2 text-right">
                   {n(a.lote.peso_bag_kg, 0)} kg
@@ -614,6 +618,7 @@ function LinhaLote({
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
             <span>
               {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
+              {lote.origem_manual && <span className="ml-2"><TagLoteAvulso desde={lote.criado_em} /></span>}
             </span>
             {/* selos de prioridade do dia + urgência num grupo só, empurrado
                 pro fim da linha — mesma regra de alinhamento de 26/08/2026 */}
@@ -754,6 +759,7 @@ function LinhaLoteBaixado({
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
         <span>
           {lote.id} <span className="text-stone-400">·</span> {lote.cultivar}
+          {lote.origem_manual && <span className="ml-2"><TagLoteAvulso desde={lote.criado_em} /></span>}
         </span>
         {(aLiberar.length > 0 || iniciadas.length > 0) && (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:ml-auto">

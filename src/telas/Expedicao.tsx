@@ -235,7 +235,9 @@ export default function Expedicao() {
       saldosExpedicao(
         filtrados,
         lotes
-          .filter((l) => l.status === 'Em estoque')
+          // lote avulso/manual (fora do SAP, 12/10/2026) não é saldo do SAP:
+          // "atende" continua reservado ao estoque que o SAP mostra
+          .filter((l) => l.status === 'Em estoque' && !l.origem_manual)
           .map((l) => ({ cultivar: l.cultivar, bags: l.bags_disp ?? 0 })),
         estoquePa,
         ordens
