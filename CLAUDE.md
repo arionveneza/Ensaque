@@ -154,6 +154,36 @@ balança dos tanques; a qualidade avalia; o PCP encerra lançando no AGROTIS.
   `criado_por`/`criado_em` em `lotes_semente` (só linha nova; a carga antiga fica sem data).
   Conferido numa transação desfeita: o upload assumiu o avulso e não tocou outro lote manual.
   Os 2 lotes do 751 cadastrados em 09/10 já são `origem_manual` e aparecem como avulsos.
+- **Lote em SACO: a ordem trata em KG de semente** (12/10/2026, pedido do Arion: "eu cadastro o
+  lote em sacaria de 200k com peso de 38,8 kg, quero tratar isso e jogar em BAG ou mostrar
+  quantos kgs tratar, pra gerar a receita certa"; decisão dele, entre "tratar tudo em kg", "só
+  BAG inteiro" e "escolher na hora": **tratar tudo, em kg**). `ordens.bags` é inteiro e 35 sacos
+  de 200 mil sementes são 1,4 BAG: a DM1210 (2 BAGs) mandava receita para 1.910 kg com 1.337 kg
+  de semente, a DM1211 (1 BAG) para 970 kg com 582. Coluna nova **`ordens.peso_semente_kg`**
+  (migração `ordem-kg-semente.sql`, aplicada): nula = como sempre (bags × peso do bag da ordem);
+  preenchida = sacos × peso do saco, e é ESSE o peso de receita, ficha, tempo planejado,
+  ocupação, baixa do lote e branca consumida no mapa — `bags` fica só como as **embalagens que
+  saem** (as cheias + a parcial). No banco: `v_ordens.peso_kg/peso_t` = `coalesce(peso_semente_kg,
+  bags × peso)` (+ a coluna no fim; `v_ordem_tempos`, `v_ordem_etapas` e a trava de
+  `salvar_carga_montada` leem dela), `baixar_lote` e `fn_lote_tratado_no_mapa` pelos mesmos kg,
+  `fn_ordem_imutavel` trava a coluna depois de iniciar — as quatro recriadas sobre a definição
+  VIVA do banco (varredura de `pg_views`/`pg_proc` por `fator_peso`/`peso_bag`), com
+  `security_invoker` reaplicado e a soma de `peso_kg` das 753 ordens conferida igual antes e
+  depois. No front: `pesoOrdemKg` (adaptadores — Execução, detalhe, folha, Painel) usa os kg;
+  ensaque do bag **cheio** = peso do bag × 1,005 + químico por kg × peso do bag
+  (`ensaquePorBagKg(…, pesoSementeKg)`; ordem normal dá o mesmo de antes); detalhe mostra
+  "Semente a tratar (lote em saco)". Domínio puro `src/dominio/loteEmSaco.ts` (testado):
+  `loteEmSaco` = fator do lote (peso ÷ PMS) < 1, ou peso < 100 kg sem PMS; `contaSacos(sacos,
+  peso do saco, peso do bag da ordem)` → kg, BAGs equivalentes, cheias, parcial (folga de 0,005
+  para 75 × 28,04 fechar 3 BAGs sem parcial fantasma). **Formulário**: lote em saco ganha o campo
+  obrigatório **"Sacos do lote a tratar"** (+ "todos"), "Qtd emb" vira "Embalagens que saem" e
+  acompanha os sacos, "Peso resultante" diz "1.337 kg de semente a tratar = 1,40 BG5M de 955 kg →
+  1 cheia + 1 com 382 kg"; a lista de lotes mostra "38,2 kg/saco". **Programar pela demanda**:
+  na linha de lote em saco o número digitado é SACOS (dica embaixo com a conta), a ordem sai com
+  os kg e conta no alvo pelo equivalente. **As ordens DM1210 e DM1211 (Programadas) ficaram como
+  estavam**: o gatilho `fn_ordens_por_acao` exige a ação Editar, e o caminho é o PCP abrir
+  Editar — o formulário agora exige os sacos. A DM 25 (75 sacos = 3 BAGs exatos) já estava
+  certa. Importação de ordens por planilha não conhece sacos (segue em bags).
 
 ### Produtos químicos e receitas
 - Cada químico tem **unidade de dose** (`ml/kg` ou `g/kg`) e **densidade em g/ml** (só para ml/kg).

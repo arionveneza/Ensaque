@@ -56,6 +56,8 @@ export interface LinhaOrdem {
   status: StatusPersistido
   fim_pendente: boolean
   bags_produzidos: number | null
+  /** kg de semente a tratar (lote em saco, 12/10/2026); nulo = bags × peso do bag. */
+  peso_semente_kg: number | null
   /**
    * Faixa "Prioridades do dia" (16/09/2026): objeto único (a FK é a PK da
    * tabela filha) ou nulo. Use `prioridadeDiaDe` — o PostgREST pode devolver
@@ -105,7 +107,7 @@ const SELECT_ORDEM = `
   id, numero, cultivar, receita_id, embalagem, bags, lote_id, cliente, observacao,
   destinacao, armazem, bloco, quadra,
   prioridade, maquina_id, data_prog, data_expedicao, seq, turno_id, status, fim_pendente,
-  bags_produzidos, lote_liberado_em, confirmada_em,
+  bags_produzidos, lote_liberado_em, confirmada_em, peso_semente_kg,
   ordem_prioridades_dia ( posicao ),
   embalagens ( fator_peso, peso_fixo_kg ),
   lotes_semente ( id, cultivar, pms, peso_bag_kg, status, peneira, categoria ),

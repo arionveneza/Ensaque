@@ -138,9 +138,19 @@ export function ensaquePorBagKg(
   pesoBagOrdemKg: number,
   pesoQuimicoTotalKg: number,
   bags: number,
+  /**
+   * kg de semente quando a ordem é tratada em kg (lote em saco, 12/10/2026):
+   * os bags não saem todos cheios, então a parcela de químico de um bag
+   * CHEIO é o químico por kg × peso do bag — e não químico ÷ embalagens.
+   */
+  pesoSementeKg?: number | null,
 ): number {
   if (bags <= 0) throw new Error('Ordem sem bags: ensaque indefinido.')
-  return pesoBagOrdemKg * (1 + MARGEM_ENSAQUE) + pesoQuimicoTotalKg / bags
+  const quimicoPorBag =
+    pesoSementeKg != null && pesoSementeKg > 0
+      ? (pesoQuimicoTotalKg * pesoBagOrdemKg) / pesoSementeKg
+      : pesoQuimicoTotalKg / bags
+  return pesoBagOrdemKg * (1 + MARGEM_ENSAQUE) + quimicoPorBag
 }
 
 /**

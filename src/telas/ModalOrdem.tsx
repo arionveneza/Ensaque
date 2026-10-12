@@ -286,7 +286,7 @@ export default function ModalOrdem({
       ensaqueBagKg:
         quimicoTotal == null
           ? '—'
-          : num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags), 1),
+          : num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags, ordem.peso_semente_kg), 1),
       tanques: linhasGrade,
     })
   }
@@ -617,13 +617,19 @@ export default function ModalOrdem({
               valor={quimicoTotal == null ? '—' : `${num(quimicoTotal)} kg`}
             />
             <Info
-              rotulo="Ensaque por bag"
+              rotulo={ordem.peso_semente_kg ? 'Ensaque por bag cheio' : 'Ensaque por bag'}
               valor={
                 quimicoTotal == null
                   ? '—'
-                  : `${num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags), 1)} kg`
+                  : `${num(ensaquePorBagKg(pesoBagOrdemKg(ordem), quimicoTotal, ordem.bags, ordem.peso_semente_kg), 1)} kg`
               }
             />
+            {ordem.peso_semente_kg != null && (
+              <Info
+                rotulo="Semente a tratar (lote em saco)"
+                valor={`${num(ordem.peso_semente_kg, 0)} kg · ${ordem.lotes_semente.peso_bag_kg > 0 ? `${num(ordem.peso_semente_kg / ordem.lotes_semente.peso_bag_kg, 1)} sacos` : ''}`}
+              />
+            )}
             {ordem.bags_produzidos != null && (
               <Info
                 rotulo="Bags produzidos"

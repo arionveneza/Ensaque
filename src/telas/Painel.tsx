@@ -139,7 +139,8 @@ export default function Painel({ onSair }: { onSair: () => void }) {
       // que foi produzido, não o que foi planejado.
       const bagsReais = o.bags_produzidos ?? o.bags
       bags += bagsReais
-      const t = (bagsReais * pesoBagOrdemKg(o)) / 1000
+      // ordem em kg (lote em saco, 12/10/2026): a semente tratada é a dos kg, não embalagens × bag cheio
+      const t = (o.peso_semente_kg ?? bagsReais * pesoBagOrdemKg(o)) / 1000
       pesoT += t
       /**
        * O OEE inteiro sai da MESMA população: só ordens com qualidade final

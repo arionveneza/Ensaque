@@ -51,6 +51,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { Destinacao } from '@/componentes/Destinacao'
 import { ObservacaoOrdem } from '@/componentes/ObservacaoOrdem'
 import { FormLoteAvulso, TagLoteAvulso } from '@/componentes/LoteAvulso'
+import { contaSacos, loteEmSaco, type ContaSacos } from '@/dominio/loteEmSaco'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, SeletorMultiplo, Tabela, Tag, Vazio,
   corDoStatus, dataHoraCurta, diaCurto, diaCurtoComAno, enderecoLote, inteiro, n,
@@ -1181,6 +1182,7 @@ export default function Ordens() {
         lotes={lotes}
         receitas={receitas}
         maquinas={maquinas}
+        embalagens={embalagens}
         montagem={montagem}
         montagemErro={montagemErro}
         saldoCriadoEm={saldoCriadoEm}
@@ -1453,12 +1455,15 @@ function PainelDemanda({
   lotes,
   receitas,
   maquinas,
+  embalagens,
   montagem,
   montagemErro,
   saldoCriadoEm,
   ordensFuturo,
   onProgramado,
 }: {
+  /** Pro Programar converter lote em saco em kg (12/10/2026). */
+  embalagens: g.EmbalagemLinha[]
   balanco: BalancoLinha[]
   /** Embalagens de peso fixo (saco 10/20 kg): pedido/saldo fora dos ERPs — mesma isenção do SEM TSI. */
   foraDoBalanco: Set<string>
@@ -2452,6 +2457,7 @@ function PainelDemanda({
           lotes={lotes}
           receitas={receitas}
           maquinas={maquinas}
+          embalagens={embalagens}
           onFechar={() => setProgramando(null)}
           // só atualiza a lista por trás — o modal continua aberto mostrando
           // o resultado (nºs provisórios, o que não pôde ser criado) até a
@@ -2673,8 +2679,10 @@ function PainelFilaProgramacao({
  * aqui (pedido do Arion, 25/08/2026).
  */
 function ModalProgramarDemanda({
-  id, cultivar, tratamento, embalagem, alvo, cooperado, lotes, receitas, maquinas, onFechar, onCriado,
+  id, cultivar, tratamento, embalagem, alvo, cooperado, lotes, receitas, maquinas, embalagens, onFechar, onCriado,
 }: {
+  /** Pra converter lote em saco (12/10/2026) em kg e embalagens da ordem. */
+  embalagens: g.EmbalagemLinha[]
   id: string
   cultivar: string
   tratamento: string
@@ -2723,7 +2731,15 @@ function ModalProgramarDemanda({
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<g.ResultadoLote | null>(null)
 
-  const total = linhas.reduce((a, l) => a + (Number(l.bags) || 0), 0)
+  // lote em saco (12/10/2026): na linha dele o número digitado é SACOS; a
+  // ordem sai em kg (sacos × peso do saco) e conta no alvo pelo equivalente
+  const contaDaLinha = (l: LinhaLote): ContaSacos | null => {
+    const lt = lotes.find((x) => x.id === l.loteId)
+    if (!lt || !loteEmSaco(lt)) return null
+    const pesoBag = pesoBagDaOrdemKg(lt.pms, embalagens.find((e) => e.codigo === embalagem) ?? null, lt.peso_bag_kg)
+    return contaSacos(Number(l.bags), lt.peso_bag_kg, pesoBag)
+  }
+  const total = linhas.reduce((a, l) => a + (contaDaLinha(l)?.bagsEquivalentes ?? (Number(l.bags) || 0)), 0)
   const validas = linhas.filter((l) => l.loteId && Number(l.bags) > 0)
   // destinação lote a lote OU uma geral pra todos (pedido do Arion,
   // 12/09/2026): a da linha vence; em branco, herda a geral. Obrigatória
@@ -2771,7 +2787,10 @@ function ModalProgramarDemanda({
         cultivar,
         receita_id: receita.id,
         embalagem,
-        bags: Number(l.bags),
+        ...(() => {
+          const c = contaDaLinha(l)
+          return c ? { bags: c.embalagens, peso_semente_kg: c.kg } : { bags: Number(l.bags) }
+        })(),
         lote_id: l.loteId,
         destinacao: destinacaoDe(l),
         ...comuns,
@@ -2833,6 +2852,8 @@ function ModalProgramarDemanda({
               {linhas.map((l, i) => {
                 const lotesFiltradosDaLinha = lotesParaLinha(l)
                 const lote = lotesDoCultivar.find((x) => x.id === l.loteId)
+                const contaLinha = contaDaLinha(l)
+                const linhaEmSaco = lote ? loteEmSaco(lote) : false
                 return (
                   <div key={i} className="space-y-1">
                     <input
@@ -2854,7 +2875,7 @@ function ModalProgramarDemanda({
                           <option key={lt.id} value={lt.id}>
                             {/* kg por unidade: lote em saco de 200 mil sementes (SC200MS, 09/10/2026) tem 28 kg, não ~700 */}
                             {lt.id}{lt.bags_disp != null ? ` (${lt.bags_disp} disp.)` : ''}
-                            {lt.peso_bag_kg ? ` · ${n(lt.peso_bag_kg, 0)} kg` : ''}
+                            {lt.peso_bag_kg ? ` · ${n(lt.peso_bag_kg, loteEmSaco(lt) ? 1 : 0)} kg${loteEmSaco(lt) ? '/saco' : ''}` : ''}
                             {lt.origem_manual ? ' · AVULSO (fora do SAP)' : ''}
                           </option>
                         ))}
@@ -2865,7 +2886,8 @@ function ModalProgramarDemanda({
                         max={lote?.bags_disp ?? undefined}
                         value={l.bags}
                         onChange={(e) => atualizarLinha(i, 'bags', e.target.value)}
-                        placeholder="bags"
+                        placeholder={linhaEmSaco ? 'sacos' : 'bags'}
+                        title={linhaEmSaco ? 'Lote em saco: quantos SACOS do lote tratar — a ordem sai em kg' : undefined}
                         className="w-24 rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-800"
                       />
                       {/* destinação SÓ desta ordem — em branco herda a geral abaixo */}
@@ -2891,6 +2913,14 @@ function ModalProgramarDemanda({
                         </button>
                       )}
                     </div>
+                    {linhaEmSaco && (
+                      <p className="text-xs text-sky-800 dark:text-sky-300">
+                        Lote em saco: digite os <b>sacos</b> a tratar.
+                        {contaLinha &&
+                          ` ${n(Number(l.bags), 0)} sacos = ${n(contaLinha.kg, 0)} kg de semente = ${n(contaLinha.bagsEquivalentes, 2)} ${embalagem}` +
+                            ` → ${contaLinha.embalagens} embalagem(ns)${contaLinha.parcialKg > 0 ? ` (${contaLinha.cheias} cheia(s) + 1 com ${n(contaLinha.parcialKg, 0)} kg)` : ''}.`}
+                      </p>
+                    )}
                   </div>
                 )
               })}
@@ -3896,7 +3926,15 @@ function NovaOrdemForm({
       foraBalanco: editando?.fora_balanco ?? false,
       urgente: editando?.prioridade === 'Urgente',
       dataExpedicao: editando?.data_expedicao ?? '',
+      // lote em saco (12/10/2026): a ordem guarda kg; o form mostra em sacos
+      sacos: (() => {
+        const l = editando ? lotes.find((x) => x.id === editando.lote_id) : null
+        return editando?.peso_semente_kg && l && l.peso_bag_kg > 0
+          ? String(Math.round((editando.peso_semente_kg / l.peso_bag_kg) * 100) / 100).replace('.', ',')
+          : ''
+      })(),
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [editando, embalagens],
   )
   const chaveRascunho = editando ? `ordem.${editando.id}` : 'ordem.nova'
@@ -3905,6 +3943,7 @@ function NovaOrdemForm({
     numero, loteId, receitaId, embalagem, bags, cliente, observacao, destinacao,
     armazem, bloco, quadra, maquinaId, dataProg, foraBalanco, urgente, dataExpedicao,
   } = f
+  const sacos = f.sacos ?? ''
 
   // rascunho com nº digitado reabre o formulário sozinho — senão o trabalho
   // ficaria escondido atrás do botão "Nova ordem". O contexto que sobra depois
@@ -3955,6 +3994,15 @@ function NovaOrdemForm({
 
   const lote = lotes.find((l) => l.id === loteId)
   const receita = receitas.find((r) => r.id === receitaId)
+  // lote em saco (12/10/2026, decisão do Arion: "tratar tudo, em kg"): a
+  // ordem trata sacos × peso do saco; bags vira as embalagens que saem
+  const emSaco = lote ? loteEmSaco(lote) : false
+  const pesoBagOrdem = lote
+    ? pesoBagDaOrdemKg(lote.pms, embalagens.find((e) => e.codigo === embalagem) ?? null, lote.peso_bag_kg)
+    : 0
+  const contaDe = (txt: string): ContaSacos | null =>
+    emSaco && lote ? contaSacos(Number(txt.replace(',', '.')), lote.peso_bag_kg, pesoBagOrdem) : null
+  const conta = contaDe(sacos)
 
   // com centenas de lotes o select puro não dá: filtro por texto acima de
   // cada um. O item já escolhido nunca some da lista.
@@ -4034,7 +4082,7 @@ function NovaOrdemForm({
       lote.peso_bag_kg,
     )
     if (!(pesoBagOrdem > 0)) return null
-    const necessidade = (bags * pesoBagOrdem) / branca.peso_bag_kg
+    const necessidade = (conta ? conta.kg : bags * pesoBagOrdem) / branca.peso_bag_kg
     if (necessidade <= livre + 0.01) return null
     return (
       `No MAPA, o lote ${lote.id} tem ${Math.round(branca.bags)} bg de semente branca, mas ` +
@@ -4042,7 +4090,7 @@ function NovaOrdemForm({
       `reservados por outras ordens — livre ~${Math.max(0, Math.floor(livre))} bg, e esta ordem ` +
       `precisa de ~${Math.ceil(necessidade)} bg do lote. Confira o galpão antes de programar.`
     )
-  }, [reservaMapa, lote, bags, embalagem, embalagens, editando])
+  }, [reservaMapa, lote, bags, embalagem, embalagens, editando, conta])
 
   if (!aberto && !editando) {
     return (
@@ -4093,7 +4141,8 @@ function NovaOrdemForm({
             </option>
             {lotesFiltrados.map((l) => (
               <option key={l.id} value={l.id}>
-                {l.id} · {l.cultivar} · {n(l.peso_bag_kg, 0)} kg/bag
+                {l.id} · {l.cultivar} ·{' '}
+                {loteEmSaco(l) ? `${n(l.peso_bag_kg, 1)} kg/saco` : `${n(l.peso_bag_kg, 0)} kg/bag`}
                 {l.origem_manual ? ' · AVULSO (fora do SAP)' : ''}
               </option>
             ))}
@@ -4134,9 +4183,38 @@ function NovaOrdemForm({
             ))}
           </select>
         </Campo>
+        {emSaco && lote && (
+          <Campo rotulo="Sacos do lote a tratar *">
+            <div className="flex gap-2">
+              <input
+                value={sacos}
+                inputMode="decimal"
+                onChange={(e) => {
+                  const c = contaDe(e.target.value)
+                  // as embalagens que saem acompanham os sacos (dá pra corrigir depois)
+                  definir({ sacos: e.target.value, ...(c ? { bags: c.embalagens } : {}) })
+                }}
+                placeholder={`de ${n(lote.bags_disp ?? 0, 0)} sacos`}
+                className={`${INPUT} ${!conta ? 'border-red-400 dark:border-red-700' : ''}`}
+              />
+              {(lote.bags_disp ?? 0) > 0 && (
+                <Botao
+                  titulo="Tratar todos os sacos do lote"
+                  onClick={() => {
+                    const v = String(lote.bags_disp).replace('.', ',')
+                    const c = contaDe(v)
+                    definir({ sacos: v, ...(c ? { bags: c.embalagens } : {}) })
+                  }}
+                >
+                  todos
+                </Botao>
+              )}
+            </div>
+          </Campo>
+        )}
         {/* "Qtd emb", não "Bags": com SC10/SC20 a unidade pode ser saco
             (pedido do Arion, 24/08/2026) — o campo continua ordens.bags */}
-        <Campo rotulo="Qtd emb (bags ou sacos)">
+        <Campo rotulo={emSaco ? `Embalagens que saem (${embalagem})` : 'Qtd emb (bags ou sacos)'}>
           <input
             type="number" min={1} value={bags || ''}
             onChange={(e) => definir({ bags: Number(e.target.value) })} className={INPUT}
@@ -4144,6 +4222,25 @@ function NovaOrdemForm({
         </Campo>
         <Campo rotulo="Peso resultante">
           {(() => {
+            if (emSaco) {
+              if (!conta) return <p className="py-1.5 text-sm text-red-600 dark:text-red-400">informe os sacos</p>
+              return (
+                <div className="py-1.5">
+                  <p className="num-tabular text-sm font-semibold">
+                    {n(conta.kg, conta.kg % 1 === 0 ? 0 : 1)} kg de semente a tratar
+                  </p>
+                  <p
+                    className="num-tabular text-xs text-stone-500"
+                    title="A receita, o tempo e a baixa do lote usam estes kg; as embalagens são só o que sai"
+                  >
+                    = {n(conta.bagsEquivalentes, 2)} {embalagem} de {n(pesoBagOrdem, 0)} kg
+                    {conta.parcialKg > 0
+                      ? ` → ${conta.cheias} cheia(s) + 1 com ${n(conta.parcialKg, 0)} kg`
+                      : ''}
+                  </p>
+                </div>
+              )
+            }
             if (!lote || !(bags > 0)) {
               return <p className="num-tabular py-1.5 text-sm font-medium">—</p>
             }
@@ -4347,7 +4444,7 @@ function NovaOrdemForm({
         <Botao
           variante="primario"
           disabled={!numero || !loteId || !receitaId || bags <= 0 || !destinacao.trim() ||
-            (analise ? !podeCriarOrdem(analise) : false)}
+            (emSaco && !conta) || (analise ? !podeCriarOrdem(analise) : false)}
           onClick={async () => {
             try {
               setErro(null)
@@ -4384,6 +4481,8 @@ function NovaOrdemForm({
                 data_prog: dataProg || null,
                 data_expedicao: dataExpedicao || null,
                 fora_balanco: foraBalanco,
+                // lote em saco: os kg a tratar; senão nulo (bags × peso do bag)
+                peso_semente_kg: emSaco && conta ? conta.kg : null,
                 ...prioridadeCampos,
               }
               if (editando) {
@@ -4397,7 +4496,7 @@ function NovaOrdemForm({
                 // repetir na próxima e ficam preenchidos
                 definir({
                   numero: '', bags: 0, cliente: '', observacao: '', destinacao: '',
-                  urgente: false, dataExpedicao: '',
+                  urgente: false, dataExpedicao: '', sacos: '',
                 })
                 onCriada(`Ordem criada.`)
               }
@@ -4410,13 +4509,14 @@ function NovaOrdemForm({
         </Botao>
         {/* botão travado e mudo confundia — ordem antiga não tem Destinação
             e o Editar exigia sem dizer (achado do Arion, 03/09/2026) */}
-        {(!numero || !loteId || !receitaId || bags <= 0 || !destinacao.trim()) && (
+        {(!numero || !loteId || !receitaId || bags <= 0 || !destinacao.trim() || (emSaco && !conta)) && (
           <p className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
             Falta preencher:{' '}
             {[
               !numero && 'nº da ordem',
               !loteId && 'lote',
               !receitaId && 'tratamento',
+              emSaco && !conta && 'sacos do lote a tratar',
               bags <= 0 && 'bags',
               !destinacao.trim() && 'Destinação (obrigatória desde 31/08)',
             ]

@@ -46,6 +46,8 @@ export interface OrdemVisao {
   status_efetivo: string
   peso_kg: number
   peso_t: number
+  /** kg a tratar (lote em saco, 12/10/2026) — quando preenchido, é o peso_kg. */
+  peso_semente_kg?: number | null
   peso_bag_kg: number
   agrotis_num: string | null
   /** Informado pela produção ao confirmar a finalização. */
@@ -199,6 +201,11 @@ export interface NovaOrdem {
    * Não é a data programada (`data_prog`, que é quando a máquina roda).
    */
   data_expedicao?: string | null
+  /**
+   * kg de semente a tratar quando o lote está em saco (12/10/2026): sacos ×
+   * peso do saco. Nulo = bags × peso do bag da ordem (como sempre).
+   */
+  peso_semente_kg?: number | null
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { LinhaMotivo, LinhaOrdem, LinhaProduto } from './api'
 import { pesoBagDaOrdemKg } from '@/dominio/calculos'
+import { pesoSementeDaOrdemKg } from '@/dominio/loteEmSaco'
 import type {
   AlocacaoProduto, MotivoParada, Ordem, ProdutoQuimico, Receita,
 } from '@/dominio/tipos'
@@ -97,4 +98,6 @@ export const mapaMotivos = (linhas: LinhaMotivo[]): Map<string, MotivoParada> =>
 export const pesoBagOrdemKg = (l: LinhaOrdem): number =>
   pesoBagDaOrdemKg(l.lotes_semente.pms, l.embalagens, l.lotes_semente.peso_bag_kg)
 
-export const pesoOrdemKg = (l: LinhaOrdem): number => l.bags * pesoBagOrdemKg(l)
+/** kg de semente da ordem: os kg a tratar (lote em saco, 12/10/2026) ou bags × peso do bag. */
+export const pesoOrdemKg = (l: LinhaOrdem): number =>
+  pesoSementeDaOrdemKg(l.bags, pesoBagOrdemKg(l), l.peso_semente_kg)
