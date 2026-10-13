@@ -34,6 +34,7 @@ import {
   type LinhaInventario, type SituacaoInventario,
 } from '@/dominio/inventario'
 import { listarLotesMapa } from '@/dados/api-mapa'
+import { RelatorioArmazens } from '@/telas/InventarioRelatorioArmazens'
 import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
 import {
   Aviso, Botao, Cartao, Erro, Pagina, SeletorArmazem, SeletorBloco, SeletorQuadra, Tabela,
@@ -102,6 +103,8 @@ export default function Inventario() {
   // null = migração inventario.sql pendente
   const [invs, setInvs] = useState<api.InventarioLinha[] | null>([])
   const [selId, setSelId] = useState<string | null>(null)
+  // relatório dos armazéns × SAP (13/10/2026) no lugar do detalhe
+  const [relatorio, setRelatorio] = useState(false)
   const [saldos, setSaldos] = useState<api.SaldoInventarioLinha[]>([])
   const [itens, setItens] = useState<api.ItemInventario[]>([])
   const [resultados, setResultados] = useState<api.ResultadoInventario[]>([])
@@ -219,6 +222,15 @@ export default function Inventario() {
     <Pagina
       titulo="Inventário"
       descricao="Contagem física × estoque do SAP — o PCP insere a lista, o operador conta por endereço, e a conferência mostra o que bate. Nenhum saldo é ajustado."
+      acoes={
+        <Botao
+          variante={relatorio ? 'primario' : 'normal'}
+          titulo="Junta a contagem dos inventários de armazém e compara com a lista do SAP"
+          onClick={() => setRelatorio(true)}
+        >
+          Relatório dos armazéns × SAP
+        </Botao>
+      }
     >
       {erro && <Erro>{erro}</Erro>}
       {msg && (
@@ -231,7 +243,10 @@ export default function Inventario() {
         <ListaInventarios
           invs={invs}
           selId={selId}
-          onSelecionar={setSelId}
+          onSelecionar={(id) => {
+            setSelId(id)
+            setRelatorio(false)
+          }}
           podeAbrir={podeAbrir}
           onCriar={(titulo, alimentaMapa, armazem) =>
             acao(async () => {
@@ -241,7 +256,9 @@ export default function Inventario() {
           }
         />
 
-        {!sel ? (
+        {relatorio ? (
+          <RelatorioArmazens invs={invs} onFechar={() => setRelatorio(false)} />
+        ) : !sel ? (
           <Vazio>
             {invs.length === 0
               ? podeAbrir

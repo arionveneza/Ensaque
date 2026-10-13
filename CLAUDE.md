@@ -1991,6 +1991,26 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    origem sap), lançamento em outro armazém recusado, mapa intocado na contagem, inserir mapa
    depois (131 linhas, origem mapa, lançamento preservado), SAP de novo (origem sap), fechar +
    substituir OK; inserir mapa no galpão continua recusado.
+   **Relatório dos armazéns × SAP** (13/10/2026, pedido do Arion: "preciso de um relatório dos 5
+   armazéns para cruzar com o relatório do SAP e verificar as divergências"). Botão no cabeçalho
+   da tela Inventário, abre no lugar do detalhe (`src/telas/InventarioRelatorioArmazens.tsx`;
+   domínio puro `conferenciaArmazens`/`resumoConferenciaArmazens`/`inventarioPorArmazem` em
+   `src/dominio/inventario.ts`, testados). **Nada é gravado** — é só ver e exportar. Junta a
+   contagem dos inventários de armazém — **um por armazém, o mais recente COM lançamento**
+   (`inventarioPorArmazem`: o "Inventário armazém A" criado vazio às 14:00 não pode esconder o
+   "INVENTARIO A" contado; trocável num `<select>` por armazém, com etiqueta em contagem/
+   fechado/substituído e os bags contados) — e compara o TOTAL de cada lote base + tratamento +
+   embalagem com a **lista do SAP**, que não sabe o armazém: por padrão a do inventário mais
+   recente que já tem a planilha (`lista_origem = 'sap'`), ou o export de saldo do SAP subido ali
+   (`converterEstoqueInventario`, só na memória). Reusa `compararInventario` (mesma régua de
+   bate/sobra/falta/não contado/fora do SAP) acrescentando `porArmazem` (bags de cada armazém na
+   combinação) e `descarte`. Tabela: Cultivar · Lote · Trat. · Emb. · A B C D E · Contado · SAP ·
+   Dif. · Situação, chips por situação (padrão **Divergentes**), busca, cartões de resumo (bags por
+   situação, contado × SAP), rodapé com os totais do filtro e export .xlsx com as mesmas colunas.
+   Avisos que mudam a leitura: armazém **sem inventário escolhido** (o que está lá vira "não
+   contado"/"falta" contra o SAP) e inventário **ainda em contagem**. Armadilha achada no
+   harness: o contador de "carregando…" ficava preso em 1 no StrictMode (o efeito roda, limpa e
+   roda de novo; o `finally` com guard de `vivo` só decrementava uma vez) — decrementa sempre.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

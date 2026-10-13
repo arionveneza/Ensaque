@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  alocacoesDaContagem, chaveInventario, compararInventario, planoAplicacao, situacaoDe,
+  alocacoesDaContagem, chaveInventario, compararInventario, conferenciaArmazens,
+  inventarioPorArmazem, planoAplicacao, resumoConferenciaArmazens, situacaoDe,
 } from './inventario'
 
 describe('chave de comparacao', () => {
@@ -132,6 +133,51 @@ describe('compararInventario', () => {
     const situacoes = linhas.map((l) => l.situacao)
     expect(situacoes.indexOf('sobra')).toBeLessThan(situacoes.indexOf('bate'))
     expect(situacoes.indexOf('nao_contado')).toBeLessThan(situacoes.indexOf('bate'))
+  })
+})
+
+describe('conferenciaArmazens (relatorio dos armazens x SAP, 13/10/2026)', () => {
+  const saldos = [
+    { lote: 'SV1', tratamento: 'SEM TSI', embalagem: 'BG5M', cultivar: 'X', bags: 30 },
+    { lote: 'SV2', tratamento: 'FTZ60', embalagem: 'BG5M', cultivar: 'Y', bags: 10 },
+    { lote: 'SV3', tratamento: 'SEM TSI', embalagem: 'BG5M', cultivar: 'Z', bags: 5 },
+  ]
+  const contagens = [
+    { lote: 'SV1-1', tratamento: 'SEM TSI', embalagem: 'BG5M', armazem: 'A', bags: 20 },
+    { lote: 'SV1', tratamento: 'SEM TSI', embalagem: 'BG5M', armazem: 'a', bags: 4 },
+    { lote: 'SV1', tratamento: 'SEM TSI', embalagem: 'BG5M', armazem: 'B', bags: 6 },
+    { lote: 'SV2', tratamento: 'FTZ60', embalagem: 'BG5M', armazem: 'C', bags: 7 },
+    { lote: 'NOVO', tratamento: 'SEM TSI', embalagem: 'BG5M', armazem: 'B', bags: 2, descarte: true, cultivar: 'W' },
+  ]
+
+  it('soma por armazem e compara o total com o SAP', () => {
+    const r = conferenciaArmazens(contagens, saldos)
+    const sv1 = r.find((l) => l.lote === 'SV1')!
+    expect(sv1.porArmazem).toEqual({ A: 24, B: 6 })
+    expect(sv1).toMatchObject({ contado: 30, sistema: 30, situacao: 'bate', descarte: 0 })
+    expect(r.find((l) => l.lote === 'SV2')).toMatchObject({ porArmazem: { C: 7 }, diferenca: -3, situacao: 'falta' })
+    expect(r.find((l) => l.lote === 'SV3')).toMatchObject({ porArmazem: {}, contado: null, situacao: 'nao_contado' })
+    expect(r.find((l) => l.lote === 'NOVO')).toMatchObject({ porArmazem: { B: 2 }, descarte: 2, situacao: 'fora_do_sap', cultivar: 'W' })
+  })
+
+  it('resumo: bags por situacao, por armazem e geral', () => {
+    const res = resumoConferenciaArmazens(conferenciaArmazens(contagens, saldos))
+    expect(res.porArmazem).toEqual({ A: 24, B: 8, C: 7 })
+    expect(res).toMatchObject({ contado: 39, sistema: 45, diferenca: -6 })
+    expect(res.porSituacao.bate).toEqual({ linhas: 1, bags: 30 })
+    expect(res.porSituacao.falta).toEqual({ linhas: 1, bags: 3 })
+    expect(res.porSituacao.nao_contado).toEqual({ linhas: 1, bags: 5 })
+    expect(res.porSituacao.fora_do_sap).toEqual({ linhas: 1, bags: 2 })
+  })
+
+  it('inventarioPorArmazem: o mais recente COM lancamento vence o vazio mais novo', () => {
+    const invs = [
+      { id: 'a-vazio', armazem: 'A', criado_em: '2026-10-13T14:00:00Z', lancamentos: 0 },
+      { id: 'a-contado', armazem: 'A', criado_em: '2026-10-13T11:00:00Z', lancamentos: 71 },
+      { id: 'b-vazio', armazem: 'B', criado_em: '2026-10-13T15:00:00Z', lancamentos: 0 },
+      { id: 'galpao', armazem: null, criado_em: '2026-10-13T16:00:00Z', lancamentos: 9 },
+    ]
+    expect(inventarioPorArmazem(invs, ['A', 'B', 'C'])).toEqual({ A: 'a-contado', B: 'b-vazio', C: null })
   })
 })
 

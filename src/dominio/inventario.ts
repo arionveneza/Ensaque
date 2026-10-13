@@ -180,6 +180,97 @@ export function compararInventario(
 }
 
 // ================================================================
+// Relatório dos armazéns × SAP (13/10/2026, pedido do Arion: "um relatório
+// dos 5 armazéns para cruzar com o relatório do SAP e verificar as
+// divergências"). Junta a contagem dos inventários de armazém — um por
+// armazém — e compara o TOTAL com a lista do SAP (que não sabe o armazém),
+// mostrando quanto cada armazém contou de cada combinação.
+// ================================================================
+
+export interface ContagemPorArmazem extends ContagemInventario {
+  armazem: string | null
+  descarte?: boolean
+}
+
+export interface LinhaConferenciaArmazens extends LinhaInventario {
+  /** Bags contados em cada armazém (só os que lançaram a combinação). */
+  porArmazem: Record<string, number>
+  /** Bags da combinação marcados como descarte na contagem. */
+  descarte: number
+}
+
+export function conferenciaArmazens(
+  contagens: ContagemPorArmazem[],
+  saldos: SaldoInventario[],
+): LinhaConferenciaArmazens[] {
+  const extra = new Map<string, { porArmazem: Record<string, number>; descarte: number }>()
+  for (const c of contagens) {
+    const chave = chaveInventario(c.lote, c.tratamento, c.embalagem)
+    const e = extra.get(chave) ?? { porArmazem: {}, descarte: 0 }
+    const arm = (c.armazem ?? '').trim().toUpperCase() || '?'
+    e.porArmazem[arm] = (e.porArmazem[arm] ?? 0) + c.bags
+    if (c.descarte) e.descarte += c.bags
+    extra.set(chave, e)
+  }
+  return compararInventario(contagens, saldos).map((l) => {
+    const e = extra.get(chaveInventario(l.lote, l.tratamento, l.embalagem))
+    return { ...l, porArmazem: e?.porArmazem ?? {}, descarte: e?.descarte ?? 0 }
+  })
+}
+
+export interface ResumoConferenciaArmazens {
+  porSituacao: Record<SituacaoInventario, { linhas: number; bags: number }>
+  contado: number
+  sistema: number
+  diferenca: number
+  porArmazem: Record<string, number>
+}
+
+/** Totais do relatório: bags por situação (a diferença, em módulo), por armazém e geral. */
+export function resumoConferenciaArmazens(linhas: LinhaConferenciaArmazens[]): ResumoConferenciaArmazens {
+  const porSituacao = Object.fromEntries(
+    (Object.keys(ROTULO_SITUACAO) as SituacaoInventario[]).map((s) => [s, { linhas: 0, bags: 0 }]),
+  ) as Record<SituacaoInventario, { linhas: number; bags: number }>
+  const porArmazem: Record<string, number> = {}
+  let contado = 0
+  let sistema = 0
+  for (const l of linhas) {
+    porSituacao[l.situacao].linhas += 1
+    porSituacao[l.situacao].bags += l.situacao === 'bate' ? l.contado ?? 0 : Math.abs(l.diferenca)
+    contado += l.contado ?? 0
+    sistema += l.sistema ?? 0
+    for (const [a, b] of Object.entries(l.porArmazem)) porArmazem[a] = (porArmazem[a] ?? 0) + b
+  }
+  return { porSituacao, contado, sistema, diferenca: contado - sistema, porArmazem }
+}
+
+export interface InventarioEscolhivel {
+  id: string
+  armazem: string | null
+  criado_em: string
+  lancamentos: number
+}
+
+/**
+ * Qual inventário representa cada armazém no relatório: o mais recente COM
+ * lançamento (o "Inventário armazém A" criado vazio às 14:00 não pode
+ * esconder o "INVENTARIO A" contado); sem nenhum contado, o mais recente.
+ */
+export function inventarioPorArmazem(
+  invs: InventarioEscolhivel[],
+  armazens: readonly string[],
+): Record<string, string | null> {
+  const escolha: Record<string, string | null> = {}
+  for (const a of armazens) {
+    const doArmazem = invs
+      .filter((i) => i.armazem === a)
+      .sort((x, y) => y.criado_em.localeCompare(x.criado_em))
+    escolha[a] = (doArmazem.find((i) => i.lancamentos > 0) ?? doArmazem[0])?.id ?? null
+  }
+  return escolha
+}
+
+// ================================================================
 // Grade do "armazém X inventário" (13/10/2026): a contagem desenhada como
 // o mapa — uma célula por lote × endereço, somando lançamentos repetidos
 // no mesmo endereço; contagem zero não ocupa quadra.
