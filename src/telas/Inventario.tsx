@@ -313,7 +313,7 @@ function ListaInventarios({
             <select value={armazem} onChange={(e) => setArmazem(e.target.value)} className={INPUT}>
               <option value="">Galpão inteiro (lista do SAP)</option>
               {ARMAZENS_INVENTARIO.map((a) => (
-                <option key={a} value={a}>Armazém {a} inventário (lista do mapa)</option>
+                <option key={a} value={a}>Armazém {a} inventário</option>
               ))}
             </select>
           </label>
@@ -357,7 +357,7 @@ function ListaInventarios({
                   {i.armazem && <Tag cor="roxo">armazém {i.armazem} inventário</Tag>}
                   {i.alimenta_mapa && <Tag cor="info">monta o mapa</Tag>}
                   <span>
-                    {inteiro(i.inventario_saldos?.[0]?.count ?? 0)} {i.armazem ? 'do mapa' : 'do SAP'} ·{' '}
+                    {inteiro(i.inventario_saldos?.[0]?.count ?? 0)} {i.lista_origem === 'mapa' ? 'do mapa' : 'do SAP'} ·{' '}
                     {inteiro(i.inventario_itens?.[0]?.count ?? 0)} lançados
                   </span>
                 </span>
@@ -515,14 +515,18 @@ function DetalheInventario({
           {inv.alimenta_mapa &&
             ' · cada lançamento já entra no mapa (saldo e endereço); editar ou excluir o lançamento corrige o mapa junto'}
           {inv.armazem
-            ? ` · lista do mapa do armazém ${inv.armazem} com ${inteiro(saldos.length)} combinação(ões) — a contagem só aceita o armazém ${inv.armazem} e fica guardada aqui (o Mapa mostra como "armazém ${inv.armazem} inventário"); ela só entra no mapa quando você fechar e substituir o armazém ${inv.armazem} por este inventário`
+            ? ` · ${
+                saldos.length === 0
+                  ? 'ainda sem lista'
+                  : `${inv.lista_origem === 'sap' ? 'lista do SAP' : `lista do mapa do armazém ${inv.armazem}`} com ${inteiro(saldos.length)} combinação(ões)`
+              } — a contagem só aceita o armazém ${inv.armazem} e fica guardada aqui (o Mapa mostra como "armazém ${inv.armazem} inventário"); ela só entra no mapa quando você fechar e substituir o armazém ${inv.armazem} por este inventário`
             : ` · lista do SAP com ${inteiro(saldos.length)} combinação(ões)`}
         </p>
       </Cartao>
 
       {!aberto && podeAbrir && !aplicado && !inv.alimenta_mapa && (
         inv.armazem ? (
-          <SubstituirArmazemCartao inv={inv} armazem={inv.armazem} itens={itens} saldos={saldos} onAcao={onAcao} onMsg={onMsg} />
+          <SubstituirArmazemCartao inv={inv} armazem={inv.armazem} itens={itens} onAcao={onAcao} onMsg={onMsg} />
         ) : (
           <AplicarMapaCartao inv={inv} resultados={resultados} itens={itens} onAcao={onAcao} onMsg={onMsg} />
         )
@@ -535,13 +539,12 @@ function DetalheInventario({
         </Aviso>
       )}
 
-      {aberto && podeAbrir && (
-        inv.armazem ? (
-          <ListaDoMapaCartao inv={inv} armazem={inv.armazem} saldos={saldos} onAcao={onAcao} />
-        ) : (
-          <EstoqueSapCartao inv={inv} saldos={saldos} onAcao={onAcao} />
-        )
+      {/* armazém: lista do mapa OU planilha do SAP, "como já era realizado antes"
+          (13/10/2026) — a última inserida é a referência (inv.lista_origem) */}
+      {aberto && podeAbrir && inv.armazem && (
+        <ListaDoMapaCartao inv={inv} armazem={inv.armazem} saldos={saldos} onAcao={onAcao} />
       )}
+      {aberto && podeAbrir && <EstoqueSapCartao inv={inv} saldos={saldos} onAcao={onAcao} />}
 
       {aberto && podeLancar && (
         <ContagemCartao
@@ -560,7 +563,7 @@ function DetalheInventario({
         inv={inv}
         linhas={linhas}
         aberto={aberto}
-        referencia={inv.armazem ? 'mapa' : 'SAP'}
+        referencia={inv.lista_origem === 'mapa' ? 'mapa' : 'SAP'}
         extras={extrasPorCombinacao}
         recontagem={
           !aberto
@@ -708,24 +711,43 @@ function AplicarMapaCartao({
 // ================================================================
 
 function SubstituirArmazemCartao({
-  inv, armazem, itens, saldos, onAcao, onMsg,
+  inv, armazem, itens, onAcao, onMsg,
 }: {
   inv: api.InventarioLinha
   armazem: string
   itens: api.ItemInventario[]
-  saldos: api.SaldoInventarioLinha[]
   onAcao: (fn: () => Promise<void>) => Promise<boolean>
   onMsg: (m: string) => void
 }) {
   const [letra, setLetra] = useState('')
   const [substituindo, setSubstituindo] = useState(false)
-  const contadas = new Set(
-    itens.filter((i) => i.bags > 0).map((i) => chaveInventario(i.lote, i.tratamento, i.embalagem)),
-  )
+  // o que SAI do armazém é o que o MAPA tem lá e não foi contado — não a lista
+  // do inventário, que pode ser a do SAP (galpão inteiro; 13/10/2026)
+  const [noMapa, setNoMapa] = useState<{ lote: string; tratamento: string }[] | null>(null)
+  const [erroMapa, setErroMapa] = useState(false)
+  useEffect(() => {
+    let vivo = true
+    listarLotesMapa()
+      .then((ls) => {
+        if (!vivo) return
+        setNoMapa(
+          (ls ?? [])
+            .filter((l) => l.lote_enderecos.some((e) => e.armazem === armazem))
+            .map((l) => ({ lote: l.lote, tratamento: l.tratamento })),
+        )
+      })
+      .catch(() => {
+        if (vivo) setErroMapa(true)
+      })
+    return () => {
+      vivo = false
+    }
+  }, [armazem])
+  const chaveLT = (lote: string, tratamento: string) =>
+    `${loteBaseMaiusculo(lote)}|${tratamento.trim().toUpperCase()}`
+  const contadas = new Set(itens.filter((i) => i.bags > 0).map((i) => chaveLT(i.lote, i.tratamento)))
   const bagsContados = itens.reduce((s, i) => s + i.bags, 0)
-  const naoContadas = saldos.filter(
-    (s) => !contadas.has(chaveInventario(s.lote, s.tratamento, s.embalagem)),
-  )
+  const naoContadas = (noMapa ?? []).filter((l) => !contadas.has(chaveLT(l.lote, l.tratamento)))
   const foraDaLista = itens.filter((i) => i.fora_da_lista && i.bags > 0).length
   const confirmado = letra.trim().toUpperCase() === armazem
   return (
@@ -757,9 +779,15 @@ function SubstituirArmazemCartao({
           {foraDaLista > 0 && <> — {inteiro(foraDaLista)} lançamento(s) fora da lista viram lote novo no mapa</>}.
         </li>
         <li>
-          <b>{inteiro(naoContadas.length)}</b> combinação(ões) da lista <b>não foram contadas</b>: saem do
-          armazém {armazem} — lote que só estava nele fica zerado; o que o mapa sabe que está em outro
-          armazém continua lá.
+          {noMapa === null ? (
+            erroMapa ? 'Não consegui ler o mapa pra dizer quantos lotes saem do armazém.' : 'Lendo o mapa…'
+          ) : (
+            <>
+              <b>{inteiro(naoContadas.length)}</b> de {inteiro(noMapa.length)} lote(s) que o mapa tem no
+              armazém {armazem} <b>não foram contados</b>: saem dele — lote que só estava nele fica
+              zerado; o que o mapa sabe que está em outro armazém continua lá.
+            </>
+          )}
         </li>
       </ul>
       <div className="mt-3">
@@ -800,9 +828,10 @@ function ListaDoMapaCartao({
   const [gravando, setGravando] = useState(false)
   const itensExistem = (inv.inventario_itens?.[0]?.count ?? 0) > 0
   const totalBags = saldos.reduce((s, x) => s + x.bags, 0)
+  const doMapa = inv.lista_origem === 'mapa'
   return (
     <Cartao
-      titulo={`Lista do mapa — armazém ${armazem} (a referência da contagem)`}
+      titulo={`Lista do mapa — armazém ${armazem}`}
       acoes={
         <Botao
           variante="primario"
@@ -811,7 +840,7 @@ function ListaDoMapaCartao({
             if (
               saldos.length > 0 &&
               !confirm(
-                `Inserir de novo substitui a lista atual de ${inteiro(saldos.length)} combinação(ões) pelo que o mapa tem AGORA no armazém ${armazem}.${
+                `Inserir substitui a lista atual (${doMapa ? 'do mapa' : 'do SAP'}, ${inteiro(saldos.length)} combinação(ões)) pelo que o mapa tem AGORA no armazém ${armazem}.${
                   itensExistem ? ' Os lançamentos já feitos continuam.' : ''
                 }\n\nContinuar?`,
               )
@@ -823,22 +852,28 @@ function ListaDoMapaCartao({
             }).finally(() => setGravando(false))
           }}
         >
-          {gravando ? 'Inserindo…' : saldos.length > 0 ? 'Inserir o mapa de novo' : `Inserir o mapa do armazém ${armazem}`}
+          {gravando ? 'Inserindo…' : doMapa && saldos.length > 0 ? 'Inserir o mapa de novo' : `Inserir o mapa do armazém ${armazem}`}
         </Botao>
       }
     >
       {saldos.length === 0 ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">
           Nenhuma lista inserida ainda. Clique em <b>Inserir o mapa do armazém {armazem}</b>: a
-          lista vira uma linha por lote endereçado nesse armazém, com os bags que o mapa tem lá.
-          A contagem só começa depois disso. Achado que não está na lista entra por “Não está
-          na lista”.
+          lista vira uma linha por lote endereçado nesse armazém, com os bags que o mapa tem lá —
+          ou suba a <b>planilha do SAP</b> no cartão abaixo, como no inventário do galpão. A última
+          lista inserida é a referência da contagem. Achado que não está na lista entra por “Não
+          está na lista”.
         </p>
-      ) : (
+      ) : doMapa ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">
           Lista inserida: <b>{inteiro(saldos.length)}</b> combinação(ões) lote + tratamento +
           embalagem, <b>{fmtBg(totalBags)} bags</b> que o mapa tinha no armazém {armazem} na
           hora de inserir. Inserir de novo <b>substitui</b> a lista inteira.
+        </p>
+      ) : (
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          A lista atual veio do <b>SAP</b> ({inteiro(saldos.length)} combinação(ões)). Inserir o
+          mapa <b>troca</b> pela lista do que o mapa tem no armazém {armazem}.
         </p>
       )}
     </Cartao>
@@ -946,6 +981,12 @@ function EstoqueSapCartao({
         <p className="text-sm text-stone-500 dark:text-stone-400">
           Nenhuma lista inserida ainda — suba o export de saldo do SAP (a mesma planilha do
           Mapa). A contagem só começa depois disso.
+        </p>
+      ) : inv.lista_origem === 'mapa' ? (
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          A lista atual veio do <b>mapa do armazém {inv.armazem}</b> ({inteiro(saldos.length)}{' '}
+          combinação(ões)). Subir a planilha do SAP <b>troca</b> pela lista do SAP — o galpão
+          inteiro, porque o SAP não sabe o armazém; a contagem continua só no armazém {inv.armazem}.
         </p>
       ) : (
         <p className="text-sm text-stone-500 dark:text-stone-400">

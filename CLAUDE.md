@@ -1971,6 +1971,26 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    sem endereço; 133 ajustes, delta −1.508; substituir de novo deu o mesmo; a contagem antes de
    substituir não mexeu no mapa. `substituir_saldos_inventario` segue recusando SAP no
    inventário de armazém; o "Esvaziar armazém" continua pra quem quer zerar sem contar.
+   **Lista do SAP também no inventário de armazém** (13/10/2026, pedido do Arion: "pra cada
+   armazém possibilitar a inserção da lista de lotes do SAP, como já era realizado antes"). O
+   inventário de armazém nasceu só com a lista do mapa daquele armazém (`inserir_mapa_no_inventario`)
+   e o upload do SAP era recusado; agora os DOIS cartões aparecem no inventário de armazém e **a
+   última lista inserida é a referência** — `inventarios.lista_origem` ('sap' | 'mapa' | nulo,
+   migração `inventario-lista-sap-por-armazem.sql`, aplicada; as duas RPCs marcam a origem ao
+   gravar, base nas definições vivas; backfill: galpão com lista = 'sap', armazém com lista =
+   'mapa'). A lista do SAP é do galpão inteiro (o SAP não sabe o armazém) — a contagem continua
+   presa ao armazém (`tg_inventario_item_armazem`), guardada no inventário até o Substituir, e a
+   conferência compara com a origem que está valendo (`ConferenciaCartao.referencia` lê
+   `lista_origem`, não mais `armazem`; "Fora do mapa" × "Fora do SAP"). Por isso o cartão
+   **Substituir** deixou de contar "não contadas" pela lista — com a lista do SAP isso seria o
+   galpão inteiro — e passou a ler o MAPA: "N de M lotes que o mapa tem no armazém X não foram
+   contados: saem dele" (`listarLotesMapa` filtrado por endereço no armazém, chave lote base +
+   tratamento, a mesma da RPC). Lote fora da lista que nasce no mapa pela substituição pega
+   pms/peso da `inventario_saldos` — com a lista do SAP vem o PMS do SAP (conferido no teste:
+   ZZ1 nasceu com pms 170). Teste no banco (desfeito): SAP aceito no inventário do D (2 linhas,
+   origem sap), lançamento em outro armazém recusado, mapa intocado na contagem, inserir mapa
+   depois (131 linhas, origem mapa, lançamento preservado), SAP de novo (origem sap), fechar +
+   substituir OK; inserir mapa no galpão continua recusado.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

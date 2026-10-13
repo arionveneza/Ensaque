@@ -37,6 +37,12 @@ export interface InventarioLinha {
    * mapa) até o PCP substituir o armazém real por ela. Nulo = galpão inteiro.
    */
   armazem: string | null
+  /**
+   * De onde veio a lista de referência (13/10/2026): 'sap' = planilha do SAP,
+   * 'mapa' = o que o mapa tinha no armazém. A última inserção vale; nulo = sem
+   * lista ainda. No inventário de armazém as duas são possíveis.
+   */
+  lista_origem: 'sap' | 'mapa' | null
   inventario_saldos: { count: number }[]
   inventario_itens: { count: number }[]
 }
@@ -45,10 +51,20 @@ export async function listarInventarios(): Promise<InventarioLinha[] | null> {
   let r = await supabase
     .from('inventarios')
     .select(
-      'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, armazem, inventario_saldos ( count ), inventario_itens ( count )',
+      'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, armazem, lista_origem, inventario_saldos ( count ), inventario_itens ( count )',
     )
     .order('criado_em', { ascending: false })
     .limit(100)
+  if (r.error?.code === '42703') {
+    // janela pré-migração inventario-lista-sap-por-armazem.sql (sem lista_origem)
+    r = (await supabase
+      .from('inventarios')
+      .select(
+        'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, armazem, inventario_saldos ( count ), inventario_itens ( count )',
+      )
+      .order('criado_em', { ascending: false })
+      .limit(100)) as unknown as typeof r
+  }
   if (r.error?.code === '42703') {
     // janela pré-migração inventario-por-armazem.sql (sem armazem)
     r = (await supabase
