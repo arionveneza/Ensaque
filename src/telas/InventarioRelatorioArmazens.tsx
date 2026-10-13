@@ -68,6 +68,9 @@ export function RelatorioArmazens({
     comSap[0] ? { tipo: 'inventario', id: comSap[0].id } : null,
   )
   const [saldosInv, setSaldosInv] = useState<SaldoInventario[]>([])
+  // "só a contagem" (13/10/2026, pedido do Arion: "uma lista apenas dos
+  // inventários, sem a comparação com o SAP"): mesma tabela, sem SAP/dif/situação
+  const [modo, setModo] = useState<'sap' | 'contagem'>('sap')
   const [filtro, setFiltro] = useState<Filtro>('divergentes')
   const [busca, setBusca] = useState('')
   const [erro, setErro] = useState('')
@@ -160,21 +163,25 @@ export function RelatorioArmazens({
       }),
     [escolha, itensPor],
   )
-  const linhas = useMemo(() => conferenciaArmazens(contagens, saldos), [contagens, saldos])
+  const linhas = useMemo(
+    () => conferenciaArmazens(contagens, modo === 'sap' ? saldos : []),
+    [contagens, saldos, modo],
+  )
   const resumo = useMemo(() => resumoConferenciaArmazens(linhas), [linhas])
 
   const visiveis = useMemo(() => {
     const q = busca.trim().toUpperCase()
     return linhas.filter(
       (l) =>
-        (filtro === 'todas' ||
+        (modo === 'contagem' ||
+          filtro === 'todas' ||
           (filtro === 'divergentes' ? l.situacao !== 'bate' : l.situacao === filtro)) &&
         (!q ||
           l.lote.includes(q) ||
           (l.cultivar ?? '').toUpperCase().includes(q) ||
           l.tratamento.includes(q)),
     )
-  }, [linhas, filtro, busca])
+  }, [linhas, filtro, busca, modo])
 
   const invDe = (id: string | null) => (id ? invs.find((i) => i.id === id) ?? null : null)
   const semInventario = ARMAZENS_GALPAO.filter((a) => !escolha[a])
@@ -190,15 +197,21 @@ export function RelatorioArmazens({
     { titulo: 'Tratamento', largura: 18 },
     { titulo: 'Embalagem', largura: 10 },
     ...ARMAZENS_GALPAO.map((a) => ({ titulo: `Armazém ${a}`, tipo: 'numero' as const, casas: 2, largura: 11 })),
-    { titulo: 'Contado', tipo: 'numero' as const, casas: 2, largura: 10 },
-    { titulo: 'SAP', tipo: 'numero' as const, casas: 2, largura: 10 },
-    { titulo: 'Diferença', tipo: 'numero' as const, casas: 2, largura: 11 },
-    { titulo: 'Situação', largura: 14 },
+    { titulo: modo === 'sap' ? 'Contado' : 'Total', tipo: 'numero' as const, casas: 2, largura: 10 },
+    ...(modo === 'sap'
+      ? [
+          { titulo: 'SAP', tipo: 'numero' as const, casas: 2, largura: 10 },
+          { titulo: 'Diferença', tipo: 'numero' as const, casas: 2, largura: 11 },
+          { titulo: 'Situação', largura: 14 },
+        ]
+      : []),
     { titulo: 'Descarte', tipo: 'numero' as const, casas: 2, largura: 10 },
   ]
   const exportar = () =>
     exportarXlsx(
-      `armazens-x-sap-${new Date().toISOString().slice(0, 10)}${filtro === 'todas' ? '' : `-${filtro}`}`,
+      modo === 'sap'
+        ? `armazens-x-sap-${new Date().toISOString().slice(0, 10)}${filtro === 'todas' ? '' : `-${filtro}`}`
+        : `contagem-armazens-${new Date().toISOString().slice(0, 10)}`,
       colunasExport,
       visiveis.map((l) => [
         l.cultivar ?? '',
@@ -207,9 +220,7 @@ export function RelatorioArmazens({
         l.embalagem,
         ...ARMAZENS_GALPAO.map((a) => l.porArmazem[a] ?? null),
         l.contado,
-        l.sistema,
-        l.diferenca,
-        ROTULO_SITUACAO[l.situacao],
+        ...(modo === 'sap' ? [l.sistema, l.diferenca, ROTULO_SITUACAO[l.situacao]] : []),
         l.descarte > 0 ? l.descarte : null,
       ]),
     ).catch((e) => setErro((e as Error).message))
@@ -237,10 +248,32 @@ export function RelatorioArmazens({
           </div>
         }
       >
+        <div className="mb-2 flex flex-wrap gap-2 text-sm">
+          {(
+            [
+              ['sap', 'Contagem × SAP'],
+              ['contagem', 'Só a contagem (lista dos inventários)'],
+            ] as const
+          ).map(([id, rotulo]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setModo(id)}
+              className={`rounded-full border px-3 py-1 ${
+                modo === id
+                  ? 'border-green-700 bg-green-700 text-white'
+                  : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+              }`}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
         <p className="text-xs text-stone-500 dark:text-stone-400">
-          A contagem de cada armazém vem do inventário escolhido abaixo; o total de cada lote +
-          tratamento + embalagem é comparado com a lista do SAP (que não sabe o armazém). Nada é
-          gravado por aqui — é só pra ver e exportar.
+          {modo === 'sap'
+            ? 'A contagem de cada armazém vem do inventário escolhido abaixo; o total de cada lote + tratamento + embalagem é comparado com a lista do SAP (que não sabe o armazém).'
+            : 'Só a contagem: um lote por linha com o que cada armazém contou e o total — sem comparar com o SAP.'}{' '}
+          Nada é gravado por aqui — é só pra ver e exportar.
         </p>
         {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
 
@@ -285,7 +318,7 @@ export function RelatorioArmazens({
             </div>
           </div>
 
-          <div>
+          {modo === 'sap' && (<div>
             <p className="mb-1 text-xs font-medium text-stone-500 dark:text-stone-400">Lista do SAP</p>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <select
@@ -317,7 +350,7 @@ export function RelatorioArmazens({
                   ? `Lista do SAP inserida no "${fonteInv.titulo}" (criado em ${dataHoraCurta(fonteInv.criado_em)}): ${inteiro(saldos.length)} combinação(ões).`
                   : 'Sem lista do SAP: escolha um inventário que já tenha a planilha ou suba o export de saldo do SAP.'}
             </p>
-          </div>
+          </div>)}
         </div>
 
         {(semInventario.length > 0 || emContagem.length > 0) && (
@@ -325,7 +358,8 @@ export function RelatorioArmazens({
             {semInventario.length > 0 && (
               <Aviso>
                 Sem inventário escolhido para o(s) armazém(ns) <b>{semInventario.join(', ')}</b>: o que
-                está lá não entra no contado, então aparece como "não contado" ou "falta" contra o SAP.
+                está lá não entra na lista
+                {modo === 'sap' ? ' — contra o SAP aparece como "não contado" ou "falta".' : '.'}
               </Aviso>
             )}
             {emContagem.length > 0 && (
@@ -339,7 +373,7 @@ export function RelatorioArmazens({
       </Cartao>
 
       <Cartao
-        titulo={`Conferência — ${inteiro(linhas.length)} combinação(ões)${carregando > 0 ? ' · carregando…' : ''}`}
+        titulo={`${modo === 'sap' ? 'Conferência' : 'Contagem dos armazéns'} — ${inteiro(linhas.length)} lote(s)${carregando > 0 ? ' · carregando…' : ''}`}
         acoes={
           <input
             value={busca}
@@ -349,6 +383,7 @@ export function RelatorioArmazens({
           />
         }
       >
+        {modo === 'sap' && (<>
         <div className="mb-3 flex flex-wrap gap-2 text-sm">
           {chips.map((c) => (
             <button
@@ -385,20 +420,44 @@ export function RelatorioArmazens({
             </p>
           </div>
         </div>
+        </>)}
+        {modo === 'contagem' && (
+          <p className="num-tabular mb-3 text-sm">
+            <b>{fmtBg(resumo.contado)} bags</b> em {inteiro(linhas.length)} lote(s)
+            {ARMAZENS_GALPAO.filter((a) => resumo.porArmazem[a]).map((a) => (
+              <span key={a} className="ml-3 text-stone-600 dark:text-stone-300">
+                {a}: {fmtBg(resumo.porArmazem[a])}
+              </span>
+            ))}
+            {linhas.some((l) => l.descarte > 0) && (
+              <span className="ml-3 text-red-700 dark:text-red-400">
+                descarte: {fmtBg(linhas.reduce((t, l) => t + l.descarte, 0))}
+              </span>
+            )}
+          </p>
+        )}
 
         {visiveis.length === 0 ? (
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            {linhas.length === 0 ? 'Nada pra comparar ainda — escolha os inventários e a lista do SAP.' : 'Nenhuma linha neste filtro.'}
+            {linhas.length === 0
+              ? modo === 'sap'
+                ? 'Nada pra comparar ainda — escolha os inventários e a lista do SAP.'
+                : 'Nenhum lançamento nos inventários escolhidos.'
+              : 'Nenhuma linha neste filtro.'}
           </p>
         ) : (
           <Tabela
             cabecalho={[
               'Cultivar', 'Lote', 'Trat.', 'Emb.',
               ...ARMAZENS_GALPAO.map((a) => ({ texto: a, className: 'text-right' })),
-              { texto: 'Contado', className: 'text-right' },
-              { texto: 'SAP', className: 'text-right' },
-              { texto: 'Dif.', className: 'text-right' },
-              'Situação',
+              { texto: modo === 'sap' ? 'Contado' : 'Total', className: 'text-right' },
+              ...(modo === 'sap'
+                ? [
+                    { texto: 'SAP', className: 'text-right' },
+                    { texto: 'Dif.', className: 'text-right' },
+                    'Situação',
+                  ]
+                : ['Descarte']),
             ]}
             rodape={
               <tr className="font-semibold">
@@ -409,14 +468,22 @@ export function RelatorioArmazens({
                   </td>
                 ))}
                 <td className="num-tabular px-3 py-2 text-right">{fmtBg(visiveis.reduce((s, l) => s + (l.contado ?? 0), 0))}</td>
-                <td className="num-tabular px-3 py-2 text-right">{fmtBg(visiveis.reduce((s, l) => s + (l.sistema ?? 0), 0))}</td>
-                <td className="num-tabular px-3 py-2 text-right">{fmtBg(visiveis.reduce((s, l) => s + l.diferenca, 0))}</td>
-                <td />
+                {modo === 'sap' ? (
+                  <>
+                    <td className="num-tabular px-3 py-2 text-right">{fmtBg(visiveis.reduce((s, l) => s + (l.sistema ?? 0), 0))}</td>
+                    <td className="num-tabular px-3 py-2 text-right">{fmtBg(visiveis.reduce((s, l) => s + l.diferenca, 0))}</td>
+                    <td />
+                  </>
+                ) : (
+                  <td className="num-tabular px-3 py-2 text-right">
+                    {fmtBg(visiveis.reduce((s, l) => s + l.descarte, 0))}
+                  </td>
+                )}
               </tr>
             }
           >
             {visiveis.map((l) => (
-              <LinhaRelatorio key={`${l.lote}|${l.tratamento}|${l.embalagem}`} l={l} />
+              <LinhaRelatorio key={`${l.lote}|${l.tratamento}|${l.embalagem}`} l={l} modo={modo} />
             ))}
           </Tabela>
         )}
@@ -425,7 +492,7 @@ export function RelatorioArmazens({
   )
 }
 
-function LinhaRelatorio({ l }: { l: LinhaConferenciaArmazens }) {
+function LinhaRelatorio({ l, modo }: { l: LinhaConferenciaArmazens; modo: 'sap' | 'contagem' }) {
   return (
     <tr>
       <td className="px-3 py-1.5">{l.cultivar || '—'}</td>
@@ -440,6 +507,11 @@ function LinhaRelatorio({ l }: { l: LinhaConferenciaArmazens }) {
         </td>
       ))}
       <td className="num-tabular px-3 py-1.5 text-right font-semibold">{fmtBg(l.contado)}</td>
+      {modo === 'contagem' ? (
+        <td className="num-tabular px-3 py-1.5 text-right">
+          {l.descarte > 0 ? <Tag cor="perigo">{fmtBg(l.descarte)}</Tag> : <span className="text-stone-300 dark:text-stone-600">—</span>}
+        </td>
+      ) : (<>
       <td className="num-tabular px-3 py-1.5 text-right">{fmtBg(l.sistema)}</td>
       <td
         className={`num-tabular px-3 py-1.5 text-right ${
@@ -455,6 +527,7 @@ function LinhaRelatorio({ l }: { l: LinhaConferenciaArmazens }) {
           <Tag cor="perigo" className="ml-1">descarte {fmtBg(l.descarte)}</Tag>
         )}
       </td>
+      </>)}
     </tr>
   )
 }

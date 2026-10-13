@@ -2011,6 +2011,12 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    contado"/"falta" contra o SAP) e inventário **ainda em contagem**. Armadilha achada no
    harness: o contador de "carregando…" ficava preso em 1 no StrictMode (o efeito roda, limpa e
    roda de novo; o `finally` com guard de `vivo` só decrementava uma vez) — decrementa sempre.
+   **Modo "Só a contagem (lista dos inventários)"** (mesmo dia, pedido do Arion: "eu quero uma
+   lista apenas dos inventários, sem a comparação com o SAP"): toggle no topo do relatório
+   (`modo`); a mesma tabela sem a lista do SAP — a comparação roda com `saldos = []`, então
+   toda linha é "fora do SAP" e some junto com os chips/situação —, colunas Cultivar · Lote ·
+   Trat. · Emb. · A–E · Total · Descarte, resumo "N bags em M lotes · A: x · B: y", e export
+   `contagem-armazens-<data>.xlsx` com as mesmas colunas. "Contagem × SAP" continua o padrão.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS
