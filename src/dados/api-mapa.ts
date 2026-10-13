@@ -272,6 +272,27 @@ export async function excluirLoteMapa(lote: string, tratamento: string, motivo: 
   erro('excluir o lote do mapa — a migração mapa-excluir-lote.sql já rodou?', error)
 }
 
+export interface ResumoEsvaziar {
+  combinacoes: number
+  zerados: number
+  bags_retirados: number
+}
+
+/**
+ * Esvazia um armazém do mapa (13/10/2026, pedido do Arion: "deletar todos os
+ * lotes de um armazém"): tira todos os endereços daquele armazém e desconta
+ * dos lotes o que estava lá — lote que só estava lá fica zerado. Rastro em
+ * mapa_ajustes por combinação. RPC esvaziar_armazem_mapa.
+ */
+export async function esvaziarArmazemMapa(armazem: string, motivo: string): Promise<ResumoEsvaziar> {
+  const { data, error } = await supabase.rpc('esvaziar_armazem_mapa', {
+    p_armazem: armazem,
+    p_motivo: motivo,
+  })
+  erro('esvaziar o armazém — a migração inventario-por-armazem.sql já rodou?', error)
+  return data as ResumoEsvaziar
+}
+
 export interface AjusteMapa {
   id: string
   lote: string

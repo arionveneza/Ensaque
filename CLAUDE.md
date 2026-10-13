@@ -1893,6 +1893,44 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    endereço, desmarca, remarca, exclui). Na tela: etiqueta "descarte" e "obs: …" nos
    lançamentos e na conferência (por combinação, juntando os lançamentos), e o CSV ganhou as
    colunas Descarte e Observações.
+   **Inventário POR ARMAZÉM e "Esvaziar armazém" no Mapa** (13/10/2026, pedido do Arion:
+   "preciso habilitar o inventário por armazém e também a opção de deletar todos os lotes de
+   um armazém"; decisões dele: a referência do inventário de um armazém é **o que o mapa tem
+   naquele armazém** — não o SAP, que não diz o armazém —, e o esvaziar fica no Mapa, no
+   cabeçalho do armazém). Migração `inventario-por-armazem.sql` (aplicada):
+   `inventarios.armazem` (A–E; nulo = galpão inteiro, como sempre; CHECK exige `alimenta_mapa`;
+   não muda depois que há contagem — `fn_inventario_alimenta_fixo` recriada cobrindo as duas
+   colunas). Na criação, "Abrangência: Galpão inteiro (lista do SAP) | Só o armazém X (lista do
+   mapa)" — com armazém, a caixa "cada contagem entra no mapa" fica marcada e travada. **A
+   lista vem do mapa**: `inserir_mapa_no_inventario(p_id)` (DEFINER, `inventario/abrir`) grava
+   em `inventario_saldos` uma linha por combinação endereçada no armazém com os bags que o mapa
+   tem LÁ (soma dos endereços; se algum endereço de lá está sem quantidade, saldo − bags
+   conhecidos fora) e pms/peso/destinação da `lotes_mapa`; só lote com saldo > 0. O upload do
+   SAP é RECUSADO nesse inventário (`substituir_saldos_inventario`, base viva). **A contagem só
+   aceita o armazém do inventário** (gatilho `tg_inventario_item_armazem`); nos formulários o
+   armazém vem travado (`ArmazemFixo`). **A 1ª contagem só substitui os endereços daquele
+   armazém** (`inventario_mapa_poe`, base VIVA = a de `inventario-descarte.sql`): o saldo vira
+   (o que o mapa tem nos OUTROS armazéns) + contado — soma dos endereços de fora; se algum
+   está sem quantidade, saldo − bags conhecidos daqui. Antes ela apagava TODOS os endereços e o
+   saldo virava só o contado: um lote em A e E contado no inventário de E perdia o A
+   (conferido numa transação desfeita: NEO791MGA2002, A=26 E=4 saldo 30, contado 7 no E →
+   saldo 33, A intacto). Galpão inteiro continua como era. Conferência: "Fora do SAP" vira
+   "Fora do mapa" e a coluna SAP vira Mapa (`referencia` do `ConferenciaCartao`); fechar/
+   reabrir/recontar não mudaram. **Esvaziar armazém** — botão vermelho no cabeçalho de cada
+   armazém da grade do Mapa (ação `mapa/ajustar`), modal com motivo obrigatório (3 atalhos) e
+   confirmação digitando a letra: RPC `esvaziar_armazem_mapa(armazem, motivo)` trava cada
+   combinação com endereço lá (`for update` SEM `group by` — os totais saem numa consulta à
+   parte, o Postgres recusa os dois juntos), apaga os endereços do armazém e o saldo vira: 0 se
+   não há endereço em outro armazém (só estava lá, ou o resto nem tem endereço); a soma dos
+   endereços de fora quando todos têm quantidade; senão saldo − o que se sabia que estava aqui.
+   Rastro em `mapa_ajustes` por combinação ("Armazém X esvaziado: motivo", `armazem` = X). Não
+   mexe no inventário — pra recontar, criar um inventário "só o armazém X" depois. Teste no
+   banco (desfeito): B com 129 combinações, 907,5 bg endereçados → 108 zeradas, 860,5 bg
+   retirados, SV1351046560436 21 → 12 (os 12 conhecidos fora). **Endereço órfão de lote
+   zerado**: 38 combinações com saldo 0 ainda tinham endereço (`inventario_mapa_tira` só apaga
+   o endereço quando a quantidade bate; sem quantidade ficava) — a migração limpa, como a
+   `mapa-excluir-lote.sql` fez; era por isso que a lista do E vinha com 187 das 207
+   combinações que os endereços sugeriam.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

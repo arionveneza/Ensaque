@@ -83,11 +83,14 @@ const COR_NUMERO: Record<SituacaoInventario, string> = {
   fora_do_sap: 'text-sky-600 dark:text-sky-400',
 }
 
-const tituloSugerido = (): string => {
+const tituloSugerido = (armazem = ''): string => {
   const d = new Date()
   const p2 = (v: number) => String(v).padStart(2, '0')
-  return `Inventário ${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`
+  return `Inventário${armazem ? ` armazém ${armazem}` : ''} ${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`
 }
+
+/** Armazéns do galpão — o inventário de UM armazém (13/10/2026) escolhe daqui. */
+const ARMAZENS_INVENTARIO = ['A', 'B', 'C', 'D', 'E']
 
 export default function Inventario() {
   const { permitido } = useAuth()
@@ -230,9 +233,9 @@ export default function Inventario() {
           selId={selId}
           onSelecionar={setSelId}
           podeAbrir={podeAbrir}
-          onCriar={(titulo, alimentaMapa) =>
+          onCriar={(titulo, alimentaMapa, armazem) =>
             acao(async () => {
-              const id = await api.criarInventario(titulo, alimentaMapa)
+              const id = await api.criarInventario(titulo, alimentaMapa, armazem)
               setSelId(id)
             })
           }
@@ -274,12 +277,16 @@ function ListaInventarios({
   selId: string | null
   onSelecionar: (id: string) => void
   podeAbrir: boolean
-  onCriar: (titulo: string, alimentaMapa: boolean) => void
+  onCriar: (titulo: string, alimentaMapa: boolean, armazem: string | null) => void
 }) {
   const [titulo, setTitulo] = useState('')
   // padrão desde 04/10/2026: a contagem monta o mapa (implantação). Só
   // comparar com o SAP, sem mexer no mapa, continua possível desmarcando.
   const [alimentaMapa, setAlimentaMapa] = useState(true)
+  // inventário de UM armazém (13/10/2026): a lista vem do mapa e a contagem
+  // volta pro mapa — por isso exige "cada contagem entra no mapa"
+  const [armazem, setArmazem] = useState('')
+  const alimenta = armazem ? true : alimentaMapa
   return (
     <Cartao titulo="Inventários" semPadding className="self-start">
       {podeAbrir && (
@@ -287,7 +294,7 @@ function ListaInventarios({
           className="flex flex-col gap-2 border-b border-stone-200 p-3 dark:border-stone-800"
           onSubmit={(e) => {
             e.preventDefault()
-            onCriar(titulo.trim() || tituloSugerido(), alimentaMapa)
+            onCriar(titulo.trim() || tituloSugerido(armazem), alimenta, armazem || null)
             setTitulo('')
           }}
         >
@@ -295,21 +302,33 @@ function ListaInventarios({
             <input
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
-              placeholder={tituloSugerido()}
+              placeholder={tituloSugerido(armazem)}
               className={INPUT}
             />
             <Botao tipo="submit" variante="primario">Novo</Botao>
           </div>
+          <label className="text-xs text-stone-600 dark:text-stone-300">
+            <span className="mb-1 block font-medium">Abrangência</span>
+            <select value={armazem} onChange={(e) => setArmazem(e.target.value)} className={INPUT}>
+              <option value="">Galpão inteiro (lista do SAP)</option>
+              {ARMAZENS_INVENTARIO.map((a) => (
+                <option key={a} value={a}>Só o armazém {a} (lista do mapa)</option>
+              ))}
+            </select>
+          </label>
           <label className="flex items-start gap-2 text-xs text-stone-600 dark:text-stone-300">
             <input
               type="checkbox"
-              checked={alimentaMapa}
+              checked={alimenta}
+              disabled={!!armazem}
               onChange={(e) => setAlimentaMapa(e.target.checked)}
               className="mt-0.5"
             />
             <span>
-              <b>Cada contagem entra no mapa</b> na hora, com o endereço — desmarque para só
-              comparar com o SAP
+              <b>Cada contagem entra no mapa</b> na hora, com o endereço
+              {armazem
+                ? ' — obrigatório no inventário de um armazém'
+                : ' — desmarque para só comparar com o SAP'}
             </span>
           </label>
         </form>
@@ -334,6 +353,7 @@ function ListaInventarios({
                   <Tag cor={i.fechado_em ? 'ok' : 'alerta'}>
                     {i.fechado_em ? 'fechado' : 'em contagem'}
                   </Tag>
+                  {i.armazem && <Tag cor="roxo">armazém {i.armazem}</Tag>}
                   {i.alimenta_mapa && <Tag cor="info">monta o mapa</Tag>}
                   <span>
                     {inteiro(i.inventario_saldos?.[0]?.count ?? 0)} do SAP ·{' '}
@@ -414,6 +434,7 @@ function DetalheInventario({
           <span className="flex items-center gap-2">
             {inv.titulo}
             <Tag cor={aberto ? 'alerta' : 'ok'}>{aberto ? 'em contagem' : 'fechado'}</Tag>
+            {inv.armazem && <Tag cor="roxo">só o armazém {inv.armazem}</Tag>}
             {inv.alimenta_mapa && <Tag cor="info">cada contagem entra no mapa</Tag>}
             {aplicado && <Tag cor="info">aplicado no mapa</Tag>}
           </span>
@@ -490,7 +511,9 @@ function DetalheInventario({
           {inv.aplicado_em && ` · endereços aplicados no mapa em ${dataHoraCurta(inv.aplicado_em)}`}
           {inv.alimenta_mapa &&
             ' · cada lançamento já entra no mapa (saldo e endereço); editar ou excluir o lançamento corrige o mapa junto'}
-          {` · lista do SAP com ${inteiro(saldos.length)} combinação(ões)`}
+          {inv.armazem
+            ? ` · lista do mapa do armazém ${inv.armazem} com ${inteiro(saldos.length)} combinação(ões) — a contagem só aceita o armazém ${inv.armazem}, e a 1ª contagem de cada lote substitui só os endereços dele nesse armazém`
+            : ` · lista do SAP com ${inteiro(saldos.length)} combinação(ões)`}
         </p>
       </Cartao>
 
@@ -499,7 +522,11 @@ function DetalheInventario({
       )}
 
       {aberto && podeAbrir && (
-        <EstoqueSapCartao inv={inv} saldos={saldos} onAcao={onAcao} />
+        inv.armazem ? (
+          <ListaDoMapaCartao inv={inv} armazem={inv.armazem} saldos={saldos} onAcao={onAcao} />
+        ) : (
+          <EstoqueSapCartao inv={inv} saldos={saldos} onAcao={onAcao} />
+        )
       )}
 
       {aberto && podeLancar && (
@@ -511,6 +538,7 @@ function DetalheInventario({
           embalagens={embalagens}
           podeAbrir={podeAbrir}
           onAcao={onAcao}
+          armazemFixo={inv.armazem}
         />
       )}
 
@@ -518,6 +546,7 @@ function DetalheInventario({
         inv={inv}
         linhas={linhas}
         aberto={aberto}
+        referencia={inv.armazem ? 'mapa' : 'SAP'}
         extras={extrasPorCombinacao}
         recontagem={
           !aberto
@@ -661,6 +690,67 @@ function AplicarMapaCartao({
 }
 
 // ================================================================
+// Lista do MAPA do armazém (13/10/2026, ação `abrir`): inventário de um
+// armazém só — a referência é o que o mapa tem lá, não o SAP
+// ================================================================
+
+function ListaDoMapaCartao({
+  inv, armazem, saldos, onAcao,
+}: {
+  inv: api.InventarioLinha
+  armazem: string
+  saldos: api.SaldoInventarioLinha[]
+  onAcao: (fn: () => Promise<void>) => Promise<boolean>
+}) {
+  const [gravando, setGravando] = useState(false)
+  const itensExistem = (inv.inventario_itens?.[0]?.count ?? 0) > 0
+  const totalBags = saldos.reduce((s, x) => s + x.bags, 0)
+  return (
+    <Cartao
+      titulo={`Lista do mapa — armazém ${armazem} (a referência da contagem)`}
+      acoes={
+        <Botao
+          variante="primario"
+          disabled={gravando}
+          onClick={() => {
+            if (
+              saldos.length > 0 &&
+              !confirm(
+                `Inserir de novo substitui a lista atual de ${inteiro(saldos.length)} combinação(ões) pelo que o mapa tem AGORA no armazém ${armazem}.${
+                  itensExistem ? ' Os lançamentos já feitos continuam.' : ''
+                }\n\nContinuar?`,
+              )
+            )
+              return
+            setGravando(true)
+            void onAcao(async () => {
+              await api.inserirMapaNoInventario(inv.id)
+            }).finally(() => setGravando(false))
+          }}
+        >
+          {gravando ? 'Inserindo…' : saldos.length > 0 ? 'Inserir o mapa de novo' : `Inserir o mapa do armazém ${armazem}`}
+        </Botao>
+      }
+    >
+      {saldos.length === 0 ? (
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          Nenhuma lista inserida ainda. Clique em <b>Inserir o mapa do armazém {armazem}</b>: a
+          lista vira uma linha por lote endereçado nesse armazém, com os bags que o mapa tem lá.
+          A contagem só começa depois disso. Achado que não está na lista entra por “Não está
+          na lista”.
+        </p>
+      ) : (
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          Lista inserida: <b>{inteiro(saldos.length)}</b> combinação(ões) lote + tratamento +
+          embalagem, <b>{fmtBg(totalBags)} bags</b> que o mapa tinha no armazém {armazem} na
+          hora de inserir. Inserir de novo <b>substitui</b> a lista inteira.
+        </p>
+      )}
+    </Cartao>
+  )
+}
+
+// ================================================================
 // Estoque do SAP (ação `abrir`): upload da mesma planilha do mapa
 // ================================================================
 
@@ -794,7 +884,7 @@ const FORM_VAZIO: FormLancamento = {
 }
 
 function ContagemCartao({
-  inv, saldos, itens, tratamentos, embalagens, podeAbrir, onAcao,
+  inv, saldos, itens, tratamentos, embalagens, podeAbrir, onAcao, armazemFixo,
 }: {
   inv: api.InventarioLinha
   saldos: api.SaldoInventarioLinha[]
@@ -803,6 +893,8 @@ function ContagemCartao({
   embalagens: string[]
   podeAbrir: boolean
   onAcao: (fn: () => Promise<void>) => Promise<boolean>
+  /** Inventário de um armazém (13/10/2026): todo lançamento é dele. */
+  armazemFixo?: string | null
 }) {
   const [busca, setBusca] = useState('')
   // combinação da lista escolhida pra lançar (chave), ou 'manual'
@@ -846,8 +938,14 @@ function ContagemCartao({
     return (
       <Cartao titulo="Contagem">
         <Aviso>
-          A lista do SAP ainda não foi inserida neste inventário
-          {podeAbrir ? ' — suba a planilha no cartão acima.' : ' — peça ao PCP para inserir.'}{' '}
+          {armazemFixo
+            ? `A lista do armazém ${armazemFixo} ainda não foi inserida neste inventário`
+            : 'A lista do SAP ainda não foi inserida neste inventário'}
+          {podeAbrir
+            ? armazemFixo
+              ? ' — clique em "Inserir o mapa do armazém" no cartão acima.'
+              : ' — suba a planilha no cartão acima.'
+            : ' — peça ao PCP para inserir.'}{' '}
           A contagem começa depois disso.
         </Aviso>
       </Cartao>
@@ -873,7 +971,13 @@ function ContagemCartao({
     <Cartao titulo={`Contagem — ${itens.length} lançamento(s)`}>
       <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
         Ache a combinação na lista e lance <b>endereço + quantidade</b> — um lançamento por
-        endereço; a conferência soma. Contagem cega: a quantidade do SAP não aparece aqui.
+        endereço; a conferência soma. Contagem cega: a quantidade da lista não aparece aqui.
+        {armazemFixo && (
+          <>
+            {' '}
+            <b>Só o armazém {armazemFixo}</b>: o armazém já vem fixo em cada lançamento.
+          </>
+        )}
         {inv.alimenta_mapa && (
           <>
             {' '}
@@ -907,6 +1011,7 @@ function ContagemCartao({
             cultivares={cultivares}
             embalagens={embalagens}
             enderecoInicial={ultimoEndereco}
+            armazemFixo={armazemFixo}
             aoSalvar={async (item) => {
               const ok = await salvarLancamento(item, null)
               if (ok) setLancandoEm(null)
@@ -948,6 +1053,7 @@ function ContagemCartao({
                   <div className="border-t border-stone-100 bg-stone-50/60 px-3 py-3 dark:border-stone-800/60 dark:bg-stone-800/30">
                     <FormEnderecoQuantidade
                       enderecoInicial={ultimoEndereco}
+                      armazemFixo={armazemFixo}
                       aoSalvar={(campos) =>
                         salvarLancamento(
                           {
@@ -969,7 +1075,7 @@ function ContagemCartao({
           })}
           {visiveis.length === 0 && (
             <li className="px-3 py-4 text-center text-sm text-stone-500">
-              Nada na lista do SAP com essa busca — se achou no galpão, use “Não está na lista”.
+              Nada na lista com essa busca — se achou no galpão, use “Não está na lista”.
             </li>
           )}
         </ul>
@@ -988,6 +1094,7 @@ function ContagemCartao({
               cultivares={cultivares}
               embalagens={embalagens}
               inicial={editando}
+              armazemFixo={armazemFixo}
               aoSalvar={(item) => salvarLancamento(item, editando.id)}
               aoCancelar={() => setEditando(null)}
             />
@@ -998,6 +1105,7 @@ function ContagemCartao({
               <FormEnderecoQuantidade
                 key={editando.id}
                 inicial={editando}
+                armazemFixo={armazemFixo}
                 rotuloSalvar="Salvar alterações"
                 aoCancelar={() => setEditando(null)}
                 aoSalvar={(campos) =>
@@ -1100,11 +1208,13 @@ function ContagemCartao({
 
 /** Endereço (Armazém/Bloco/Quadra, como no mapa) + quantidade. */
 function FormEnderecoQuantidade({
-  inicial, enderecoInicial, rotuloSalvar = 'Adicionar', aoSalvar, aoCancelar,
+  inicial, enderecoInicial, armazemFixo, rotuloSalvar = 'Adicionar', aoSalvar, aoCancelar,
 }: {
   inicial?: { armazem: string | null; bloco: string | null; quadra: string | null; bags: number }
   /** Lançamento novo: armazém e bloco do último lançamento gravado. */
   enderecoInicial?: { armazem: string; bloco: string } | null
+  /** Inventário de um armazém (13/10/2026): o armazém não se escolhe. */
+  armazemFixo?: string | null
   rotuloSalvar?: string
   aoSalvar: (campos: {
     armazem: string | null
@@ -1114,7 +1224,9 @@ function FormEnderecoQuantidade({
   }) => Promise<boolean>
   aoCancelar?: () => void
 }) {
-  const [armazem, setArmazem] = useState(inicial?.armazem ?? enderecoInicial?.armazem ?? '')
+  const [armazem, setArmazem] = useState(
+    armazemFixo ?? inicial?.armazem ?? enderecoInicial?.armazem ?? '',
+  )
   const [bloco, setBloco] = useState(inicial?.bloco ?? enderecoInicial?.bloco ?? '')
   const [quadra, setQuadra] = useState(inicial?.quadra ?? '')
   const [bags, setBags] = useState(inicial ? String(inicial.bags).replace('.', ',') : '')
@@ -1153,7 +1265,11 @@ function FormEnderecoQuantidade({
     >
       <div>
         <label className={ROTULO_CAMPO}>Armazém *</label>
-        <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+        {armazemFixo ? (
+          <ArmazemFixo armazem={armazemFixo} />
+        ) : (
+          <SeletorArmazem valor={armazem} aoMudar={setArmazem} />
+        )}
       </div>
       <div>
         <label className={ROTULO_CAMPO}>Bloco * (1–44)</label>
@@ -1192,10 +1308,22 @@ function FormEnderecoQuantidade({
   )
 }
 
-/** Lançamento manual completo — achado no galpão fora da lista do SAP. */
+/** Armazém travado do inventário de um armazém (13/10/2026) — no lugar do seletor. */
+function ArmazemFixo({ armazem }: { armazem: string }) {
+  return (
+    <div
+      className="rounded-md border border-violet-300 bg-violet-50 px-2 py-2 text-sm font-semibold text-violet-900 sm:py-1.5 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+      title="Inventário de um armazém só: todo lançamento é dele"
+    >
+      {armazem}
+    </div>
+  )
+}
+
+/** Lançamento manual completo — achado no galpão fora da lista. */
 function FormLancamentoManual({
-  titulo = 'Fora da lista do SAP — lançamento manual',
-  tratamentos, cultivares, embalagens, inicial, enderecoInicial, aoSalvar, aoCancelar,
+  titulo = 'Fora da lista — lançamento manual',
+  tratamentos, cultivares, embalagens, inicial, enderecoInicial, armazemFixo, aoSalvar, aoCancelar,
 }: {
   titulo?: string
   tratamentos: string[]
@@ -1203,6 +1331,8 @@ function FormLancamentoManual({
   embalagens: string[]
   inicial?: api.ItemInventario
   enderecoInicial?: { armazem: string; bloco: string } | null
+  /** Inventário de um armazém (13/10/2026): o armazém não se escolhe. */
+  armazemFixo?: string | null
   aoSalvar: (item: api.NovoItemInventario) => Promise<boolean>
   aoCancelar: () => void
 }) {
@@ -1213,7 +1343,7 @@ function FormLancamentoManual({
           tratamento: inicial.tratamento,
           cultivar: inicial.cultivar ?? '',
           embalagem: inicial.embalagem,
-          armazem: inicial.armazem ?? '',
+          armazem: armazemFixo ?? inicial.armazem ?? '',
           bloco: inicial.bloco ?? '',
           quadra: inicial.quadra ?? '',
           bags: String(inicial.bags).replace('.', ','),
@@ -1222,7 +1352,7 @@ function FormLancamentoManual({
       : {
           ...FORM_VAZIO,
           embalagem: embalagens[0] ?? '',
-          armazem: enderecoInicial?.armazem ?? '',
+          armazem: armazemFixo ?? enderecoInicial?.armazem ?? '',
           bloco: enderecoInicial?.bloco ?? '',
         },
   )
@@ -1280,7 +1410,7 @@ function FormLancamentoManual({
           />
         </div>
         <div>
-          <label className={ROTULO_CAMPO}>Cultivar * (da planilha do SAP)</label>
+          <label className={ROTULO_CAMPO}>Cultivar * (da lista)</label>
           <select
             value={f.cultivar}
             onChange={(e) => muda('cultivar')(e.target.value)}
@@ -1313,7 +1443,11 @@ function FormLancamentoManual({
         </div>
         <div>
           <label className={ROTULO_CAMPO}>Armazém *</label>
-          <SeletorArmazem valor={f.armazem} aoMudar={muda('armazem')} />
+          {armazemFixo ? (
+            <ArmazemFixo armazem={armazemFixo} />
+          ) : (
+            <SeletorArmazem valor={f.armazem} aoMudar={muda('armazem')} />
+          )}
         </div>
         <div>
           <label className={ROTULO_CAMPO}>Bloco * (1–44)</label>
@@ -1397,11 +1531,13 @@ interface ExtrasCombinacao {
 }
 
 function ConferenciaCartao({
-  inv, linhas, aberto, extras, recontagem,
+  inv, linhas, aberto, referencia, extras, recontagem,
 }: {
   inv: api.InventarioLinha
   linhas: LinhaInventario[]
   aberto: boolean
+  /** Contra o que se compara: a lista do SAP ou o mapa do armazém (13/10/2026). */
+  referencia: 'SAP' | 'mapa'
   extras: Map<string, ExtrasCombinacao>
   /** Recontagem no físico (10/09/2026) — só com o inventário FECHADO. */
   recontagem?: {
@@ -1418,6 +1554,10 @@ function ConferenciaCartao({
   // só os cartões-resumo à vista; a lista completa abre sob demanda — com o
   // galpão inteiro ela passa de 700 linhas (pedido do Arion, 05/09/2026)
   const [mostrarLista, setMostrarLista] = useState(false)
+  // inventário de um armazém compara com o MAPA: "fora do SAP" vira "fora do mapa"
+  const ref = referencia === 'mapa' ? 'Mapa' : 'SAP'
+  const rotulo = (sit: SituacaoInventario) =>
+    sit === 'fora_do_sap' && referencia === 'mapa' ? 'Fora do mapa' : ROTULO_SITUACAO[sit]
 
   const porSituacao = useMemo(() => {
     const c = new Map<SituacaoInventario, number>()
@@ -1452,7 +1592,7 @@ function ConferenciaCartao({
     <Cartao
       titulo={
         aberto
-          ? 'Conferência — ao vivo (contagem × lista do SAP até agora)'
+          ? `Conferência — ao vivo (contagem × ${referencia === 'mapa' ? 'mapa do armazém' : 'lista do SAP'} até agora)`
           : 'Conferência — resultado congelado no fechamento'
       }
       acoes={
@@ -1460,11 +1600,11 @@ function ConferenciaCartao({
           disabled={linhas.length === 0}
           onClick={() =>
             exportarCsv(`inventario-${inv.titulo.replace(/[^\p{L}\p{N}]+/gu, '-')}`, [
-              ['Situação', 'Cultivar', 'Lote', 'Tratamento', 'Embalagem', 'Contado (bg)', 'SAP (bg)', 'Diferença (bg)', 'Descarte', 'Observações'],
+              ['Situação', 'Cultivar', 'Lote', 'Tratamento', 'Embalagem', 'Contado (bg)', `${ref} (bg)`, 'Diferença (bg)', 'Descarte', 'Observações'],
               ...linhas.map((l) => {
                 const ex = extras.get(chaveInventario(l.lote, l.tratamento, l.embalagem))
                 return [
-                  ROTULO_SITUACAO[l.situacao],
+                  rotulo(l.situacao),
                   l.cultivar ?? '',
                   l.lote,
                   l.tratamento,
@@ -1484,7 +1624,7 @@ function ConferenciaCartao({
       }
     >
       {linhas.length === 0 ? (
-        <Vazio>Nada pra comparar ainda — insira a lista do SAP e lance a contagem.</Vazio>
+        <Vazio>Nada pra comparar ainda — insira a lista e lance a contagem.</Vazio>
       ) : (
         <>
           <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -1513,7 +1653,7 @@ function ConferenciaCartao({
                     {inteiro(qtd)}
                   </span>
                   <span className="text-xs text-stone-500 dark:text-stone-400">
-                    {ROTULO_SITUACAO[s]}
+                    {rotulo(s)}
                   </span>
                 </button>
               )
@@ -1551,7 +1691,7 @@ function ConferenciaCartao({
 
           <Tabela
             cabecalho={[
-              'Situação', 'Cultivar', 'Lote', 'Tratamento', 'Emb.', '#Contado', '#SAP', '#Diferença',
+              'Situação', 'Cultivar', 'Lote', 'Tratamento', 'Emb.', '#Contado', `#${ref}`, '#Diferença',
               ...(recontagem ? [''] : []),
             ]}
           >
@@ -1565,7 +1705,7 @@ function ConferenciaCartao({
                 className="border-t border-stone-100 dark:border-stone-800/60"
               >
                 <td className="px-2 py-1.5">
-                  <Tag cor={COR_SITUACAO[l.situacao]}>{ROTULO_SITUACAO[l.situacao]}</Tag>
+                  <Tag cor={COR_SITUACAO[l.situacao]}>{rotulo(l.situacao)}</Tag>
                   {info?.recontadoEm && (
                     <span
                       title={`1ª contagem: ${info.primeira != null ? fmtBg(info.primeira) : 'não contado'} · recontado em ${dataHoraCurta(info.recontadoEm)}`}

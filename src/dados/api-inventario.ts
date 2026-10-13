@@ -31,6 +31,11 @@ export interface InventarioLinha {
    * existe "Aplicar no mapa". Falso = só compara com o SAP, como antes.
    */
   alimenta_mapa: boolean
+  /**
+   * Inventário de UM armazém (13/10/2026): a lista vem do mapa daquele
+   * armazém, a contagem só aceita esse armazém. Nulo = galpão inteiro.
+   */
+  armazem: string | null
   inventario_saldos: { count: number }[]
   inventario_itens: { count: number }[]
 }
@@ -39,10 +44,20 @@ export async function listarInventarios(): Promise<InventarioLinha[] | null> {
   let r = await supabase
     .from('inventarios')
     .select(
-      'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, inventario_saldos ( count ), inventario_itens ( count )',
+      'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, armazem, inventario_saldos ( count ), inventario_itens ( count )',
     )
     .order('criado_em', { ascending: false })
     .limit(100)
+  if (r.error?.code === '42703') {
+    // janela pré-migração inventario-por-armazem.sql (sem armazem)
+    r = (await supabase
+      .from('inventarios')
+      .select(
+        'id, titulo, criado_em, fechado_em, aplicado_em, alimenta_mapa, inventario_saldos ( count ), inventario_itens ( count )',
+      )
+      .order('criado_em', { ascending: false })
+      .limit(100)) as unknown as typeof r
+  }
   if (r.error?.code === '42703') {
     // janela pré-migração inventario-implantacao-mapa.sql (sem alimenta_mapa)
     r = (await supabase
@@ -67,17 +82,37 @@ export async function listarInventarios(): Promise<InventarioLinha[] | null> {
     if (PRE_MIGRACAO.includes(r.error.code ?? '')) return null
     throw new Error(`listar inventários: ${r.error.message}`)
   }
-  return (r.data ?? []).map((i) => ({ aplicado_em: null, alimenta_mapa: false, ...(i as object) })) as unknown as InventarioLinha[]
+  return (r.data ?? []).map((i) => ({ aplicado_em: null, alimenta_mapa: false, armazem: null, ...(i as object) })) as unknown as InventarioLinha[]
 }
 
-export async function criarInventario(titulo: string, alimentaMapa = false): Promise<string> {
+export async function criarInventario(
+  titulo: string,
+  alimentaMapa = false,
+  /** Inventário de um armazém só (A–E) — exige alimentaMapa (13/10/2026). */
+  armazem: string | null = null,
+): Promise<string> {
   const { data, error } = await supabase
     .from('inventarios')
-    .insert(alimentaMapa ? { titulo, alimenta_mapa: true } : { titulo })
+    .insert({
+      titulo,
+      ...(alimentaMapa ? { alimenta_mapa: true } : {}),
+      ...(armazem ? { armazem } : {}),
+    })
     .select('id')
     .single()
   erro('criar inventário — a migração inventario.sql já rodou?', error)
   return (data as { id: string }).id
+}
+
+/**
+ * Inventário de um armazém (13/10/2026): a lista de referência vem do MAPA
+ * daquele armazém — uma linha por combinação endereçada lá, com os bags que
+ * o mapa tem lá. Substitui a lista inteira. Devolve quantas combinações.
+ */
+export async function inserirMapaNoInventario(id: string): Promise<number> {
+  const { data, error } = await supabase.rpc('inserir_mapa_no_inventario', { p_id: id })
+  erro('inserir o mapa do armazém — a migração inventario-por-armazem.sql já rodou?', error)
+  return (data as number) ?? 0
 }
 
 export async function excluirInventario(id: string): Promise<void> {

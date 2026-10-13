@@ -283,6 +283,8 @@ export default function Mapa() {
   // o endereço daquela posição (04/10/2026)
   const [ajusteInicial, setAjusteInicial] = useState<AjusteInicial | undefined>(undefined)
   const [excluindo, setExcluindo] = useState<LoteMapaLinha | null>(null)
+  // esvaziar um armazém inteiro (13/10/2026): o que a grade mostra naquele armazém
+  const [esvaziando, setEsvaziando] = useState<{ armazem: string; bags: number; combinacoes: number } | null>(null)
   // prefill do modal de ajuste quando vem do cartão de divergências
   const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
   // último inventário APLICADO — referência do cartão de pendências
@@ -1541,6 +1543,11 @@ export default function Mapa() {
           gradeDivergentes={gradeDivergentes}
           gradeForaDoSap={gradeForaDoSap}
           onPosicao={setPosicao}
+          onEsvaziar={
+            podeAjustar
+              ? (armazem, bags, combinacoes) => setEsvaziando({ armazem, bags, combinacoes })
+              : undefined
+          }
         />
       </Cartao>
 
@@ -1816,6 +1823,23 @@ export default function Mapa() {
             await m.excluirLoteMapa(excluindo.lote, excluindo.tratamento, motivo)
             setExcluindo(null)
             setMsg(`${excluindo.lote} · ${rotuloTratamento(excluindo.tratamento)} saiu do mapa (${inteiro(excluindo.bags)} bg).`)
+            await recarregar()
+          }}
+        />
+      )}
+
+      {esvaziando && (
+        <ModalEsvaziarArmazem
+          armazem={esvaziando.armazem}
+          bags={esvaziando.bags}
+          combinacoes={esvaziando.combinacoes}
+          onFechar={() => setEsvaziando(null)}
+          onEsvaziar={async (motivo) => {
+            const r = await m.esvaziarArmazemMapa(esvaziando.armazem, motivo)
+            setEsvaziando(null)
+            setMsg(
+              `Armazém ${esvaziando.armazem} esvaziado: ${inteiro(r.combinacoes)} lote(s) saíram dele, ${inteiro(Math.round(r.bags_retirados))} bg retirados do mapa (${inteiro(r.zerados)} lote(s) zerado(s)).`,
+            )
             await recarregar()
           }}
         />
@@ -2294,7 +2318,7 @@ function FiltroMulti({
  * rateados da posição; clicar abre o detalhe com os lotes dali.
  */
 function MapaGrade({
-  alocacoes, casaFiltro, filtroAtivo, gradeDivergentes, gradeForaDoSap, onPosicao,
+  alocacoes, casaFiltro, filtroAtivo, gradeDivergentes, gradeForaDoSap, onPosicao, onEsvaziar,
 }: {
   alocacoes: Alocacao[]
   casaFiltro: (l: LoteMapaLinha) => boolean
@@ -2303,6 +2327,8 @@ function MapaGrade({
   gradeDivergentes: Set<string>
   gradeForaDoSap: Set<string>
   onPosicao: (p: Posicao) => void
+  /** Esvaziar o armazém inteiro (13/10/2026) — só com a ação mapa/ajustar. */
+  onEsvaziar?: (armazem: string, bags: number, combinacoes: number) => void
 }) {
   const porArmazem = useMemo(() => {
     const arm = new Map<string, Alocacao[]>()
@@ -2359,6 +2385,7 @@ function MapaGrade({
           ...[...celulas.values()].map((cs) => cs.reduce((s, c) => s + c.bags, 0)),
         )
         const totalBags = itens.reduce((s, a) => s + a.bags, 0)
+        const combinacoes = new Set(itens.map((a) => chaveDe(a.lote))).size
         const posicoesEncontradas = filtroAtivo
           ? [...celulas.values()].filter((cs) => cs.some((c) => casaFiltro(c.lote))).length
           : 0
@@ -2367,12 +2394,22 @@ function MapaGrade({
           <div key={armazem} className="overflow-hidden rounded-lg border border-stone-300 dark:border-stone-700">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-300 bg-stone-100 px-3 py-2 dark:border-stone-700 dark:bg-stone-800">
               <p className="text-sm font-bold tracking-wide">ARMAZÉM {armazem}</p>
-              <p className="text-xs text-stone-600 dark:text-stone-300">
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 dark:text-stone-300">
                 <span className="num-tabular font-semibold">{inteiro(Math.round(totalBags))} bags</span>
                 {filtroAtivo && (
-                  <span className="ml-3 font-medium text-green-700 dark:text-green-400">
+                  <span className="font-medium text-green-700 dark:text-green-400">
                     {posicoesEncontradas} posição(ões) encontrada(s)
                   </span>
+                )}
+                {onEsvaziar && (
+                  <button
+                    type="button"
+                    onClick={() => onEsvaziar(armazem, totalBags, combinacoes)}
+                    title="Tira do mapa todos os lotes deste armazém (os outros armazéns ficam) — fica registrado nos ajustes"
+                    className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+                  >
+                    Esvaziar armazém
+                  </button>
                 )}
               </p>
             </div>
@@ -3002,6 +3039,111 @@ function ModalExcluirLote({
             }}
           >
             {salvando ? 'Excluindo…' : 'Excluir do mapa'}
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const MOTIVOS_ESVAZIAR = ['Recontagem do armazém', 'Armazém carregado — saiu tudo', 'Lançado por engano']
+
+/**
+ * Esvaziar um armazém (13/10/2026, pedido do Arion: "deletar todos os lotes
+ * de um armazém"): tira todos os endereços daquele armazém e desconta dos
+ * lotes o que estava lá — lote que só estava lá fica zerado; o que o mapa
+ * sabe que está em outro armazém fica. Confirmação digitando a letra, motivo
+ * obrigatório, rastro em Ajustes (RPC esvaziar_armazem_mapa).
+ */
+function ModalEsvaziarArmazem({
+  armazem, bags, combinacoes, onFechar, onEsvaziar,
+}: {
+  armazem: string
+  bags: number
+  combinacoes: number
+  onFechar: () => void
+  onEsvaziar: (motivo: string) => Promise<void>
+}) {
+  const [motivo, setMotivo] = useState('')
+  const [confirmacao, setConfirmacao] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const gravandoRef = useRef(false)
+  const confirmado = confirmacao.trim().toUpperCase() === armazem
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold text-red-700 dark:text-red-400">
+          Esvaziar o armazém {armazem}
+        </h3>
+        <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+          <b>{inteiro(combinacoes)} lote(s)</b> e <b>{inteiro(Math.round(bags))} bags</b> estão
+          endereçados neste armazém agora.
+        </p>
+        <p className="mt-2 text-sm">
+          Todos os endereços do armazém {armazem} saem do mapa e o saldo de cada lote perde o
+          que estava aqui. Lote que só estava neste armazém fica <b>zerado</b>; o que o mapa sabe
+          que está em outro armazém continua lá. Cada lote fica registrado no histórico de
+          ajustes (quem, quando e por quê).
+        </p>
+        <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+          O inventário não muda: os lançamentos continuam como registro. Para recontar este
+          armazém, crie um inventário “só o armazém {armazem}” depois de esvaziar.
+        </p>
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {MOTIVOS_ESVAZIAR.map((mt) => (
+            <button
+              key={mt}
+              type="button"
+              onClick={() => setMotivo(mt)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                motivo === mt
+                  ? 'border-red-500 bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300'
+                  : 'border-stone-300 hover:bg-stone-50 dark:border-stone-700 dark:hover:bg-stone-800'
+              }`}
+            >
+              {mt}
+            </button>
+          ))}
+        </div>
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="motivo * (obrigatório)"
+          className={`${INPUT} mt-2 w-full`}
+        />
+        <label className="mt-3 block text-sm">
+          Para confirmar, digite a letra do armazém: <b>{armazem}</b>
+          <input
+            value={confirmacao}
+            onChange={(e) => setConfirmacao(e.target.value)}
+            maxLength={1}
+            autoCapitalize="characters"
+            className={`${INPUT} mt-1 w-24 text-center font-bold uppercase`}
+          />
+        </label>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante="perigo"
+            disabled={!motivo.trim() || !confirmado || salvando}
+            onClick={() => {
+              if (!motivo.trim() || !confirmado || gravandoRef.current) return
+              gravandoRef.current = true
+              setSalvando(true)
+              setErro(null)
+              onEsvaziar(motivo.trim()).catch((e) => {
+                setErro(e instanceof Error ? e.message : String(e))
+                gravandoRef.current = false
+                setSalvando(false)
+              })
+            }}
+          >
+            {salvando ? 'Esvaziando…' : `Esvaziar o armazém ${armazem}`}
           </Botao>
         </div>
       </div>
