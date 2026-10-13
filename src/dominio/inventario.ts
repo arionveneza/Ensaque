@@ -180,6 +180,73 @@ export function compararInventario(
 }
 
 // ================================================================
+// Grade do "armazém X inventário" (13/10/2026): a contagem desenhada como
+// o mapa — uma célula por lote × endereço, somando lançamentos repetidos
+// no mesmo endereço; contagem zero não ocupa quadra.
+// ================================================================
+
+export interface AlocacaoContagem {
+  lote: string
+  tratamento: string
+  cultivar: string | null
+  embalagem: string
+  armazem: string
+  bloco: string
+  quadra: string
+  bags: number
+  /** Bags da combinação no inventário inteiro (todos os endereços). */
+  bagsCombinacao: number
+  descarte: boolean
+}
+
+export function alocacoesDaContagem(
+  itens: {
+    lote: string
+    tratamento: string
+    cultivar?: string | null
+    embalagem: string
+    armazem: string | null
+    bloco: string | null
+    quadra: string | null
+    bags: number
+    descarte?: boolean
+  }[],
+): AlocacaoContagem[] {
+  const por = new Map<string, AlocacaoContagem>()
+  const total = new Map<string, number>()
+  for (const i of itens) {
+    if (!(i.bags > 0) || !i.armazem || !i.bloco || !i.quadra) continue
+    const lote = loteBaseMaiusculo(i.lote)
+    const tratamento = i.tratamento.trim().toUpperCase()
+    const chaveComb = `${lote}|${tratamento}`
+    total.set(chaveComb, (total.get(chaveComb) ?? 0) + i.bags)
+    const armazem = i.armazem.trim().toUpperCase()
+    const bloco = i.bloco.trim().toUpperCase()
+    const quadra = i.quadra.trim().toUpperCase()
+    const chave = `${chaveComb}|${armazem}|${bloco}|${quadra}`
+    const atual = por.get(chave)
+    if (atual) {
+      atual.bags += i.bags
+      atual.descarte = atual.descarte || !!i.descarte
+      atual.cultivar = atual.cultivar ?? i.cultivar ?? null
+    } else {
+      por.set(chave, {
+        lote, tratamento, cultivar: i.cultivar ?? null, embalagem: i.embalagem.trim().toUpperCase(),
+        armazem, bloco, quadra, bags: i.bags, bagsCombinacao: 0, descarte: !!i.descarte,
+      })
+    }
+  }
+  for (const a of por.values()) a.bagsCombinacao = total.get(`${a.lote}|${a.tratamento}`) ?? a.bags
+  return [...por.values()].sort(
+    (a, b) =>
+      a.armazem.localeCompare(b.armazem) ||
+      a.bloco.localeCompare(b.bloco, undefined, { numeric: true }) ||
+      a.quadra.localeCompare(b.quadra, undefined, { numeric: true }) ||
+      a.lote.localeCompare(b.lote),
+  )
+}
+
+// ================================================================
 // Aplicação no MAPA (08/09/2026): SÓ ENDEREÇOS — o saldo continua o do
 // SAP; sobra/falta é ajuste lá (e depois Ajuste de estoque no mapa).
 // Esta prévia é o ESPELHO da RPC aplicar_inventario_no_mapa

@@ -12,9 +12,11 @@ import {
 import type { Linha } from '@/dominio/importacao/simpleagro'
 import { useAuth } from '@/auth/AuthProvider'
 import {
-  listarResultadosInventario, recontarInventario, ultimoInventarioAplicado,
-  type ResultadoInventario,
+  listarInventarios, listarItensInventario, listarResultadosInventario, recontarInventario,
+  substituirArmazemPeloInventario, ultimoInventarioAplicado,
+  type InventarioLinha, type ItemInventario, type ResultadoInventario,
 } from '@/dados/api-inventario'
+import { alocacoesDaContagem } from '@/dominio/inventario'
 import { situacaoDe } from '@/dominio/inventario'
 import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
@@ -285,6 +287,10 @@ export default function Mapa() {
   const [excluindo, setExcluindo] = useState<LoteMapaLinha | null>(null)
   // esvaziar um armazém inteiro (13/10/2026): o que a grade mostra naquele armazém
   const [esvaziando, setEsvaziando] = useState<{ armazem: string; bags: number; combinacoes: number } | null>(null)
+  // "armazém X inventário" (13/10/2026): inventários de um armazém ainda não
+  // aplicados, com a contagem — viram grades próprias ao lado das reais
+  const [inventariosArmazem, setInventariosArmazem] = useState<{ inv: InventarioLinha; itens: ItemInventario[] }[]>([])
+  const [substituindo, setSubstituindo] = useState<{ inv: InventarioLinha; bags: number } | null>(null)
   // prefill do modal de ajuste quando vem do cartão de divergências
   const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
   // último inventário APLICADO — referência do cartão de pendências
@@ -435,6 +441,23 @@ export default function Mapa() {
     ['lotes_mapa', 'lote_enderecos', 'cargas_montadas', 'carga_montada_produtos', 'carga_montada_itens'],
     () => void recarregar(),
   )
+
+  // inventários de armazém em curso (não aplicados) e a contagem de cada um —
+  // à parte do recarregar do mapa: falha aqui não derruba a grade real
+  const recarregarInventariosArmazem = async () => {
+    try {
+      const lista = (await listarInventarios()) ?? []
+      const abertos = lista.filter((i) => i.armazem && !i.aplicado_em)
+      const itens = await Promise.all(abertos.map((i) => listarItensInventario(i.id)))
+      setInventariosArmazem(abertos.map((inv, k) => ({ inv, itens: itens[k] })))
+    } catch {
+      // cortesia: sem os inventários ao alcance, só as grades reais
+    }
+  }
+  useEffect(() => {
+    void recarregarInventariosArmazem()
+  }, [])
+  useRealtime(['inventarios', 'inventario_itens'], () => void recarregarInventariosArmazem())
 
   // rascunhos moram AQUI (não nos cartões) de propósito: o "editar" e o
   // "lotear" das cargas salvas escrevem neles de fora (28–29/08/2026)
@@ -1549,6 +1572,70 @@ export default function Mapa() {
               : undefined
           }
         />
+
+        {/* "armazém X inventário" (13/10/2026): a contagem de cada inventário de
+            armazém ainda não aplicado, desenhada como o mapa — ao lado da grade
+            real, até o PCP substituir o armazém por ela */}
+        {inventariosArmazem.map(({ inv, itens }) => {
+          const alocs = alocacoesDaContagem(itens)
+          const bags = alocs.reduce((s, a) => s + a.bags, 0)
+          const fechado = inv.fechado_em != null
+          const alocacoes: Alocacao[] = alocs.map((a, k) => ({
+            lote: {
+              lote: a.lote, tratamento: a.tratamento, cultivar: a.cultivar ?? '', embalagem: a.embalagem,
+              pms: null, peso_bag_kg: 0, bags: a.bagsCombinacao, destinacao: a.descarte ? 'DESCARTE' : null,
+              classificacao: null, peneira: null, categoria: null, nao_encontrado_inventario_em: null,
+              lote_enderecos: [],
+            },
+            endereco: { id: `inv-${k}`, armazem: a.armazem, bloco: a.bloco, quadra: a.quadra, bags: a.bags },
+            bags: a.bags,
+            estimado: false,
+          }))
+          return (
+            <div key={inv.id} className="mt-5 rounded-lg border-2 border-dashed border-amber-400 p-2 dark:border-amber-700">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+                <p className="text-sm">
+                  <b>ARMAZÉM {inv.armazem} INVENTÁRIO</b>
+                  <span className="ml-2 text-stone-600 dark:text-stone-300">
+                    {inv.titulo} · <Tag cor={fechado ? 'ok' : 'alerta'}>{fechado ? 'fechado' : 'em contagem'}</Tag>
+                    {' '}· <span className="num-tabular font-semibold">{inteiro(Math.round(bags))} bags</span> contados
+                    em {inteiro(new Set(alocs.map((a) => `${a.lote}|${a.tratamento}`)).size)} lote(s)
+                  </span>
+                </p>
+                {podeAjustar && permitido('inventario', 'abrir') && (
+                  <Botao
+                    variante="perigo"
+                    disabled={!fechado || alocs.length === 0}
+                    titulo={
+                      !fechado
+                        ? 'Feche o inventário na tela Inventário antes de substituir'
+                        : `Troca tudo que o mapa tem no armazém ${inv.armazem} por esta contagem`
+                    }
+                    onClick={() => setSubstituindo({ inv, bags })}
+                  >
+                    Substituir o armazém {inv.armazem} por este inventário
+                  </Botao>
+                )}
+              </div>
+              {alocacoes.length === 0 ? (
+                <p className="px-1 pb-1 text-sm text-stone-500 dark:text-stone-400">
+                  Nenhum lançamento com quantidade ainda — a grade aparece conforme a contagem avança.
+                </p>
+              ) : (
+                <MapaGrade
+                  alocacoes={alocacoes}
+                  casaFiltro={casaFiltro}
+                  filtroAtivo={filtroAtivo}
+                  gradeDivergentes={new Set()}
+                  gradeForaDoSap={new Set()}
+                  onPosicao={() => {}}
+                  rotulo="INVENTÁRIO"
+                  semLegenda
+                />
+              )}
+            </div>
+          )
+        })}
       </Cartao>
 
       {/* -------- 1ª etapa: montagem de carga (some se o mapa não carregou) -------- */}
@@ -1824,6 +1911,25 @@ export default function Mapa() {
             setExcluindo(null)
             setMsg(`${excluindo.lote} · ${rotuloTratamento(excluindo.tratamento)} saiu do mapa (${inteiro(excluindo.bags)} bg).`)
             await recarregar()
+          }}
+        />
+      )}
+
+      {substituindo && (
+        <ModalSubstituirArmazem
+          inv={substituindo.inv}
+          bags={substituindo.bags}
+          onFechar={() => setSubstituindo(null)}
+          onSubstituir={async () => {
+            const r = await substituirArmazemPeloInventario(substituindo.inv.id)
+            setSubstituindo(null)
+            setMsg(
+              `Armazém ${substituindo.inv.armazem} substituído pelo inventário "${substituindo.inv.titulo}": ${inteiro(r.contadas)} lote(s) contado(s) no lugar de ${inteiro(r.retiradas)} que o mapa tinha lá` +
+                (r.criadas > 0 ? ` · ${inteiro(r.criadas)} lote(s) novo(s)` : '') +
+                ` · ${inteiro(Math.round(r.bags_antes))} → ${inteiro(Math.round(r.bags_depois))} bags no armazém.`,
+            )
+            await recarregar()
+            await recarregarInventariosArmazem()
           }}
         />
       )}
@@ -2318,7 +2424,7 @@ function FiltroMulti({
  * rateados da posição; clicar abre o detalhe com os lotes dali.
  */
 function MapaGrade({
-  alocacoes, casaFiltro, filtroAtivo, gradeDivergentes, gradeForaDoSap, onPosicao, onEsvaziar,
+  alocacoes, casaFiltro, filtroAtivo, gradeDivergentes, gradeForaDoSap, onPosicao, onEsvaziar, rotulo, semLegenda,
 }: {
   alocacoes: Alocacao[]
   casaFiltro: (l: LoteMapaLinha) => boolean
@@ -2329,6 +2435,9 @@ function MapaGrade({
   onPosicao: (p: Posicao) => void
   /** Esvaziar o armazém inteiro (13/10/2026) — só com a ação mapa/ajustar. */
   onEsvaziar?: (armazem: string, bags: number, combinacoes: number) => void
+  /** Sufixo do cabeçalho ("INVENTÁRIO" na grade do armazém de inventário). */
+  rotulo?: string
+  semLegenda?: boolean
 }) {
   const porArmazem = useMemo(() => {
     const arm = new Map<string, Alocacao[]>()
@@ -2346,6 +2455,7 @@ function MapaGrade({
 
   return (
     <div className="space-y-6">
+      {!semLegenda && (<>
       {/* legenda VISUAL das bordas (pedido do Arion, 10/09/2026) — cada
           amostra usa exatamente o estilo da célula correspondente */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-600 dark:border-stone-800 dark:text-stone-300">
@@ -2367,6 +2477,8 @@ function MapaGrade({
           sem pendência (cor = volume de bags)
         </span>
       </div>
+
+      </>)}
 
       {porArmazem.map(([armazem, itens]) => {
         const blocos = [...new Set(itens.map((a) => a.endereco.bloco))].sort((a, b) =>
@@ -2393,7 +2505,10 @@ function MapaGrade({
         return (
           <div key={armazem} className="overflow-hidden rounded-lg border border-stone-300 dark:border-stone-700">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-300 bg-stone-100 px-3 py-2 dark:border-stone-700 dark:bg-stone-800">
-              <p className="text-sm font-bold tracking-wide">ARMAZÉM {armazem}</p>
+              <p className="text-sm font-bold tracking-wide">
+                ARMAZÉM {armazem}
+                {rotulo && <span className="ml-2 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-900 dark:text-amber-100">{rotulo}</span>}
+              </p>
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 dark:text-stone-300">
                 <span className="num-tabular font-semibold">{inteiro(Math.round(totalBags))} bags</span>
                 {filtroAtivo && (
@@ -2503,12 +2618,14 @@ function MapaGrade({
           </div>
         )
       })}
-      <p className="text-xs text-stone-500">
-        Quadra maior no topo = frente do bloco (acesso mais fácil); CORREDOR/SILO no fim.
-        Clique numa posição pra ver os lotes dali — com a destinação do SAP (ou livre) e as
-        ações de mover e endereçar. As bordas da legenda acima se resolvem recontando no
-        cartão "Pendências do inventário".
-      </p>
+      {!semLegenda && (
+        <p className="text-xs text-stone-500">
+          Quadra maior no topo = frente do bloco (acesso mais fácil); CORREDOR/SILO no fim.
+          Clique numa posição pra ver os lotes dali — com a destinação do SAP (ou livre) e as
+          ações de mover e endereçar. As bordas da legenda acima se resolvem recontando no
+          cartão "Pendências do inventário".
+        </p>
+      )}
     </div>
   )
 }
@@ -3039,6 +3156,83 @@ function ModalExcluirLote({
             }}
           >
             {salvando ? 'Excluindo…' : 'Excluir do mapa'}
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Substituir o armazém real pelo "armazém X inventário" (13/10/2026):
+ * confirmação pela letra; o motivo é o próprio inventário. RPC
+ * substituir_armazem_pelo_inventario — só com o inventário fechado.
+ */
+function ModalSubstituirArmazem({
+  inv, bags, onFechar, onSubstituir,
+}: {
+  inv: InventarioLinha
+  bags: number
+  onFechar: () => void
+  onSubstituir: () => Promise<void>
+}) {
+  const [confirmacao, setConfirmacao] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const gravandoRef = useRef(false)
+  const armazem = inv.armazem ?? ''
+  const confirmado = confirmacao.trim().toUpperCase() === armazem
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold text-red-700 dark:text-red-400">
+          Substituir o armazém {armazem} pelo inventário
+        </h3>
+        <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+          <b>{inv.titulo}</b> · {inteiro(Math.round(bags))} bags contados
+        </p>
+        <p className="mt-2 text-sm">
+          Tudo que o mapa tem hoje no armazém {armazem} — endereços e saldos — é trocado pela
+          contagem deste inventário. Lote que estava no armazém e não foi contado sai dele (fica
+          zerado se só estava lá; o que o mapa sabe que está em outro armazém continua). Cada lote
+          fica no histórico de Ajustes com a diferença.
+        </p>
+        <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+          Dá pra repetir: na tela Inventário, Reabrir, corrigir, Fechar e Substituir de novo refaz
+          o armazém inteiro.
+        </p>
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        <label className="mt-3 block text-sm">
+          Para confirmar, digite a letra do armazém: <b>{armazem}</b>
+          <input
+            value={confirmacao}
+            onChange={(e) => setConfirmacao(e.target.value)}
+            maxLength={1}
+            autoCapitalize="characters"
+            className={`${INPUT} mt-1 w-24 text-center font-bold uppercase`}
+          />
+        </label>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante="perigo"
+            disabled={!confirmado || salvando}
+            onClick={() => {
+              if (!confirmado || gravandoRef.current) return
+              gravandoRef.current = true
+              setSalvando(true)
+              setErro(null)
+              onSubstituir().catch((e) => {
+                setErro(e instanceof Error ? e.message : String(e))
+                gravandoRef.current = false
+                setSalvando(false)
+              })
+            }}
+          >
+            {salvando ? 'Substituindo…' : `Substituir o armazém ${armazem}`}
           </Botao>
         </div>
       </div>

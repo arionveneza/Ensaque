@@ -1931,6 +1931,46 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    o endereço quando a quantidade bate; sem quantidade ficava) — a migração limpa, como a
    `mapa-excluir-lote.sql` fez; era por isso que a lista do E vinha com 187 das 207
    combinações que os endereços sugeriam.
+   **"Armazém X inventário" — a contagem fica guardada e SUBSTITUI o armazém no fim** (13/10/2026,
+   pedido do Arion, uma hora depois do item acima: "preciso de um armazém de inventário, por
+   exemplo, criar o armazém A inventário, B inventário etc. Depois de inventariado, vamos
+   substituir o armazém A pelo armazém A inventário e assim vai"). Inverte a regra de cima: o
+   inventário de um armazém **NÃO alimenta o mapa** enquanto conta (CHECK virou `armazem is null
+   or not alimenta_mapa`; o inventário do A criado às 14:00, ainda sem contagem, foi virado na
+   migração `armazem-de-inventario.sql`, aplicada — o CHECK antigo cai ANTES do update, senão
+   ele barra a própria correção). A lista continua vindo do mapa do armazém
+   (`inserir_mapa_no_inventario`), a contagem só aceita aquele armazém e a conferência compara
+   contado × mapa — mas o mapa real fica intocado até o PCP mandar substituir. **O Mapa mostra
+   cada inventário de armazém não aplicado como uma grade própria** ("ARMAZÉM A INVENTÁRIO",
+   borda âmbar tracejada, etiqueta em contagem/fechado, bags e lotes contados) logo abaixo das
+   grades reais: `alocacoesDaContagem` (`src/dominio/inventario.ts`, testada) soma os
+   lançamentos por lote × endereço, contagem zero não ocupa quadra, descarte sai como destinação
+   DESCARTE (vermelho); `MapaGrade` ganhou `rotulo`/`semLegenda`; leitura em
+   `recarregarInventariosArmazem`, à parte do `recarregar` (falha não derruba a grade real), com
+   realtime em `inventarios`/`inventario_itens` (as duas já estavam na publicação). **Substituir**
+   = RPC `substituir_armazem_pelo_inventario(p_id)` (DEFINER; exige `inventario/abrir` E
+   `mapa/ajustar`; só com o inventário FECHADO; recusa inventário do galpão e `alimenta_mapa`):
+   (a) tira do mapa o que estava no armazém com a MESMA régua do `esvaziar_armazem_mapa` (lote
+   só de lá zera; o que o mapa sabe que está em outro armazém fica); (b) zera
+   `inventario_mapa_assumido` do inventário e chama `inventario_mapa_poe(item)` lançamento a
+   lançamento — o ramo "1ª contagem de um armazém" já faz saldo = fora + contado, endereços só
+   deste armazém, lote fora da lista nasce no mapa, descarte marca; (c) rastro em `mapa_ajustes`
+   com o delta LÍQUIDO por combinação que mudou ("Armazém X substituído pelo inventário
+   «título»", mais "(lote novo no mapa)" pras criadas); carimba `aplicado_em/por`.
+   **Repetível**: Reabrir, corrigir, Fechar e Substituir de novo refaz o armazém inteiro — e
+   achado junto: a `inventario-reabrir-aplicado.sql` (10/09, reabrir limpa `aplicado_em/por`)
+   NUNCA tinha chegado ao banco — a definição viva ainda recusava inventário aplicado, enquanto
+   o front já mostrava "Reabrir pra corrigir"; esta migração aplica aquela versão, pro galpão e
+   pro armazém (o aviso do Reabrir fala em Substituir quando é de armazém). Botão nos dois lugares —
+   cartão "Substituir o armazém X do mapa por este inventário" no detalhe do Inventário (no
+   lugar do "Aplicar no mapa", que agora recusa inventário de armazém) e no cabeçalho da grade
+   do Mapa (travado enquanto o inventário está aberto) — os dois com a letra do armazém digitada
+   pra confirmar. Teste no banco (desfeito): C com 132 combinações/1.611,5 bg; contado 5 do
+   4260084 (saldo 4, A=1, C=4) e um lote novo fora da lista → 132 retiradas, 2 contadas, 1
+   criada; o 4260084 ficou saldo 6 com A=1 intacto e C 40·19=5; lote só do C não contado zerou
+   sem endereço; 133 ajustes, delta −1.508; substituir de novo deu o mesmo; a contagem antes de
+   substituir não mexeu no mapa. `substituir_saldos_inventario` segue recusando SAP no
+   inventário de armazém; o "Esvaziar armazém" continua pra quem quer zerar sem contar.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

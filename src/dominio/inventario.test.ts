@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  chaveInventario, compararInventario, planoAplicacao, situacaoDe,
+  alocacoesDaContagem, chaveInventario, compararInventario, planoAplicacao, situacaoDe,
 } from './inventario'
 
 describe('chave de comparacao', () => {
@@ -132,6 +132,29 @@ describe('compararInventario', () => {
     const situacoes = linhas.map((l) => l.situacao)
     expect(situacoes.indexOf('sobra')).toBeLessThan(situacoes.indexOf('bate'))
     expect(situacoes.indexOf('nao_contado')).toBeLessThan(situacoes.indexOf('bate'))
+  })
+})
+
+describe('alocacoesDaContagem (grade do armazem de inventario, 13/10/2026)', () => {
+  it('soma lancamentos do mesmo endereco, separa enderecos e ignora contagem zero', () => {
+    const r = alocacoesDaContagem([
+      { lote: 'sv1-1', tratamento: 'sem tsi', cultivar: 'X', embalagem: 'bg5m', armazem: 'c', bloco: '40', quadra: '19', bags: 5 },
+      { lote: 'SV1', tratamento: 'SEM TSI', cultivar: null, embalagem: 'BG5M', armazem: 'C', bloco: '40', quadra: '19', bags: 2 },
+      { lote: 'SV1', tratamento: 'SEM TSI', cultivar: 'X', embalagem: 'BG5M', armazem: 'C', bloco: '3', quadra: '2', bags: 4 },
+      { lote: 'SV2', tratamento: 'SEM TSI', cultivar: 'Y', embalagem: 'BG5M', armazem: 'C', bloco: '1', quadra: '1', bags: 0 },
+      { lote: 'SV3', tratamento: 'FTZ60', cultivar: 'Z', embalagem: 'BG5M', armazem: 'C', bloco: '2', quadra: '2', bags: 1, descarte: true },
+    ])
+    expect(r.map((a) => `${a.lote} ${a.bloco}·${a.quadra}=${a.bags}`)).toEqual([
+      'SV3 2·2=1', 'SV1 3·2=4', 'SV1 40·19=7',
+    ])
+    expect(r.find((a) => a.bloco === '40')).toMatchObject({ cultivar: 'X', bagsCombinacao: 11, descarte: false })
+    expect(r[0].descarte).toBe(true)
+  })
+
+  it('sem endereco completo nao vira celula', () => {
+    expect(alocacoesDaContagem([
+      { lote: 'A', tratamento: 'SEM TSI', embalagem: 'BG5M', armazem: 'C', bloco: null, quadra: '1', bags: 3 },
+    ])).toEqual([])
   })
 })
 

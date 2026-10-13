@@ -283,10 +283,11 @@ function ListaInventarios({
   // padrão desde 04/10/2026: a contagem monta o mapa (implantação). Só
   // comparar com o SAP, sem mexer no mapa, continua possível desmarcando.
   const [alimentaMapa, setAlimentaMapa] = useState(true)
-  // inventário de UM armazém (13/10/2026): a lista vem do mapa e a contagem
-  // volta pro mapa — por isso exige "cada contagem entra no mapa"
+  // "armazém X inventário" (13/10/2026): a lista vem do mapa e a contagem
+  // fica guardada no inventário até o PCP substituir o armazém real — por
+  // isso NUNCA alimenta o mapa na hora
   const [armazem, setArmazem] = useState('')
-  const alimenta = armazem ? true : alimentaMapa
+  const alimenta = armazem ? false : alimentaMapa
   return (
     <Cartao titulo="Inventários" semPadding className="self-start">
       {podeAbrir && (
@@ -312,7 +313,7 @@ function ListaInventarios({
             <select value={armazem} onChange={(e) => setArmazem(e.target.value)} className={INPUT}>
               <option value="">Galpão inteiro (lista do SAP)</option>
               {ARMAZENS_INVENTARIO.map((a) => (
-                <option key={a} value={a}>Só o armazém {a} (lista do mapa)</option>
+                <option key={a} value={a}>Armazém {a} inventário (lista do mapa)</option>
               ))}
             </select>
           </label>
@@ -327,7 +328,7 @@ function ListaInventarios({
             <span>
               <b>Cada contagem entra no mapa</b> na hora, com o endereço
               {armazem
-                ? ' — obrigatório no inventário de um armazém'
+                ? ` — não aqui: no armazém ${armazem} inventário a contagem fica guardada e só entra no mapa quando você substituir o armazém ${armazem} por ela`
                 : ' — desmarque para só comparar com o SAP'}
             </span>
           </label>
@@ -353,10 +354,10 @@ function ListaInventarios({
                   <Tag cor={i.fechado_em ? 'ok' : 'alerta'}>
                     {i.fechado_em ? 'fechado' : 'em contagem'}
                   </Tag>
-                  {i.armazem && <Tag cor="roxo">armazém {i.armazem}</Tag>}
+                  {i.armazem && <Tag cor="roxo">armazém {i.armazem} inventário</Tag>}
                   {i.alimenta_mapa && <Tag cor="info">monta o mapa</Tag>}
                   <span>
-                    {inteiro(i.inventario_saldos?.[0]?.count ?? 0)} do SAP ·{' '}
+                    {inteiro(i.inventario_saldos?.[0]?.count ?? 0)} {i.armazem ? 'do mapa' : 'do SAP'} ·{' '}
                     {inteiro(i.inventario_itens?.[0]?.count ?? 0)} lançados
                   </span>
                 </span>
@@ -434,7 +435,7 @@ function DetalheInventario({
           <span className="flex items-center gap-2">
             {inv.titulo}
             <Tag cor={aberto ? 'alerta' : 'ok'}>{aberto ? 'em contagem' : 'fechado'}</Tag>
-            {inv.armazem && <Tag cor="roxo">só o armazém {inv.armazem}</Tag>}
+            {inv.armazem && <Tag cor="roxo">armazém {inv.armazem} inventário</Tag>}
             {inv.alimenta_mapa && <Tag cor="info">cada contagem entra no mapa</Tag>}
             {aplicado && <Tag cor="info">aplicado no mapa</Tag>}
           </span>
@@ -470,7 +471,9 @@ function DetalheInventario({
                   onClick={() =>
                     onAcao(async () => {
                       const aviso = aplicado
-                        ? 'Reabrir este inventário APLICADO apaga a conferência congelada e o carimbo de aplicado.\n\nDepois de corrigir a contagem: Fechar e Aplicar de novo — os endereços do mapa serão regravados pela contagem corrigida.\n\nReabrir?'
+                        ? inv.armazem
+                          ? `Reabrir este inventário, que JÁ SUBSTITUIU o armazém ${inv.armazem} no mapa, apaga a conferência congelada e o carimbo.\n\nDepois de corrigir a contagem: Fechar e Substituir o armazém ${inv.armazem} de novo — ele é refeito inteiro pela contagem corrigida.\n\nReabrir?`
+                          : 'Reabrir este inventário APLICADO apaga a conferência congelada e o carimbo de aplicado.\n\nDepois de corrigir a contagem: Fechar e Aplicar de novo — os endereços do mapa serão regravados pela contagem corrigida.\n\nReabrir?'
                         : 'Reabrir apaga o resultado congelado. Reabrir?'
                       if (!confirm(aviso)) return
                       await api.reabrirInventario(inv.id)
@@ -512,13 +515,24 @@ function DetalheInventario({
           {inv.alimenta_mapa &&
             ' · cada lançamento já entra no mapa (saldo e endereço); editar ou excluir o lançamento corrige o mapa junto'}
           {inv.armazem
-            ? ` · lista do mapa do armazém ${inv.armazem} com ${inteiro(saldos.length)} combinação(ões) — a contagem só aceita o armazém ${inv.armazem}, e a 1ª contagem de cada lote substitui só os endereços dele nesse armazém`
+            ? ` · lista do mapa do armazém ${inv.armazem} com ${inteiro(saldos.length)} combinação(ões) — a contagem só aceita o armazém ${inv.armazem} e fica guardada aqui (o Mapa mostra como "armazém ${inv.armazem} inventário"); ela só entra no mapa quando você fechar e substituir o armazém ${inv.armazem} por este inventário`
             : ` · lista do SAP com ${inteiro(saldos.length)} combinação(ões)`}
         </p>
       </Cartao>
 
       {!aberto && podeAbrir && !aplicado && !inv.alimenta_mapa && (
-        <AplicarMapaCartao inv={inv} resultados={resultados} itens={itens} onAcao={onAcao} onMsg={onMsg} />
+        inv.armazem ? (
+          <SubstituirArmazemCartao inv={inv} armazem={inv.armazem} itens={itens} saldos={saldos} onAcao={onAcao} onMsg={onMsg} />
+        ) : (
+          <AplicarMapaCartao inv={inv} resultados={resultados} itens={itens} onAcao={onAcao} onMsg={onMsg} />
+        )
+      )}
+      {!aberto && aplicado && inv.armazem && (
+        <Aviso gravidade="ok">
+          O armazém {inv.armazem} do mapa já foi substituído por este inventário
+          {inv.aplicado_em ? ` em ${dataHoraCurta(inv.aplicado_em)}` : ''}. Para corrigir: Reabrir,
+          ajustar a contagem, Fechar e Substituir de novo — o armazém é refeito inteiro.
+        </Aviso>
       )}
 
       {aberto && podeAbrir && (
@@ -685,6 +699,87 @@ function AplicarMapaCartao({
           </div>
         </>
       )}
+    </Cartao>
+  )
+}
+
+// ================================================================
+// Substituir o armazém real pelo "armazém X inventário" (13/10/2026)
+// ================================================================
+
+function SubstituirArmazemCartao({
+  inv, armazem, itens, saldos, onAcao, onMsg,
+}: {
+  inv: api.InventarioLinha
+  armazem: string
+  itens: api.ItemInventario[]
+  saldos: api.SaldoInventarioLinha[]
+  onAcao: (fn: () => Promise<void>) => Promise<boolean>
+  onMsg: (m: string) => void
+}) {
+  const [letra, setLetra] = useState('')
+  const [substituindo, setSubstituindo] = useState(false)
+  const contadas = new Set(
+    itens.filter((i) => i.bags > 0).map((i) => chaveInventario(i.lote, i.tratamento, i.embalagem)),
+  )
+  const bagsContados = itens.reduce((s, i) => s + i.bags, 0)
+  const naoContadas = saldos.filter(
+    (s) => !contadas.has(chaveInventario(s.lote, s.tratamento, s.embalagem)),
+  )
+  const foraDaLista = itens.filter((i) => i.fora_da_lista && i.bags > 0).length
+  const confirmado = letra.trim().toUpperCase() === armazem
+  return (
+    <Cartao
+      titulo={`Substituir o armazém ${armazem} do mapa por este inventário`}
+      acoes={
+        <Botao
+          variante="perigo"
+          disabled={!confirmado || substituindo}
+          onClick={() => {
+            setSubstituindo(true)
+            void onAcao(async () => {
+              const r = await api.substituirArmazemPeloInventario(inv.id)
+              onMsg(
+                `Armazém ${armazem} substituído: ${inteiro(r.contadas)} lote(s) contado(s) no lugar de ${inteiro(r.retiradas)} que o mapa tinha lá` +
+                  (r.criadas > 0 ? ` · ${inteiro(r.criadas)} lote(s) novo(s) no mapa` : '') +
+                  ` · ${fmtBg(r.bags_antes)} → ${fmtBg(r.bags_depois)} bags no armazém.`,
+              )
+            }).finally(() => setSubstituindo(false))
+          }}
+        >
+          {substituindo ? 'Substituindo…' : `Substituir o armazém ${armazem}`}
+        </Botao>
+      }
+    >
+      <ul className="space-y-1 text-sm">
+        <li>
+          <b>{inteiro(contadas.size)}</b> combinação(ões) contada(s), <b>{fmtBg(bagsContados)} bags</b>
+          {foraDaLista > 0 && <> — {inteiro(foraDaLista)} lançamento(s) fora da lista viram lote novo no mapa</>}.
+        </li>
+        <li>
+          <b>{inteiro(naoContadas.length)}</b> combinação(ões) da lista <b>não foram contadas</b>: saem do
+          armazém {armazem} — lote que só estava nele fica zerado; o que o mapa sabe que está em outro
+          armazém continua lá.
+        </li>
+      </ul>
+      <div className="mt-3">
+        <Aviso>
+          Tudo que o mapa tem hoje no armazém {armazem} é trocado pela contagem deste inventário —
+          endereços e saldos. Cada lote fica no histórico de Ajustes com a diferença. Dá pra repetir:
+          Reabrir, corrigir, Fechar e Substituir de novo refaz o armazém inteiro.
+        </Aviso>
+      </div>
+      <label className="mt-3 block text-sm">
+        Para confirmar, digite a letra do armazém: <b>{armazem}</b>
+        <input
+          value={letra}
+          onChange={(e) => setLetra(e.target.value)}
+          maxLength={1}
+          autoCapitalize="characters"
+          className={`${INPUT} mt-1 w-24 text-center font-bold uppercase`}
+          style={{ width: '6rem' }}
+        />
+      </label>
     </Cartao>
   )
 }
@@ -975,7 +1070,8 @@ function ContagemCartao({
         {armazemFixo && (
           <>
             {' '}
-            <b>Só o armazém {armazemFixo}</b>: o armazém já vem fixo em cada lançamento.
+            <b>Armazém {armazemFixo} inventário</b>: o armazém já vem fixo em cada lançamento, e a
+            contagem fica guardada aqui — entra no mapa só quando o armazém for substituído.
           </>
         )}
         {inv.alimenta_mapa && (

@@ -32,8 +32,9 @@ export interface InventarioLinha {
    */
   alimenta_mapa: boolean
   /**
-   * Inventário de UM armazém (13/10/2026): a lista vem do mapa daquele
-   * armazém, a contagem só aceita esse armazém. Nulo = galpão inteiro.
+   * "Armazém X inventário" (13/10/2026): a lista vem do mapa daquele armazém,
+   * a contagem só aceita esse armazém e fica guardada aqui (não alimenta o
+   * mapa) até o PCP substituir o armazém real por ela. Nulo = galpão inteiro.
    */
   armazem: string | null
   inventario_saldos: { count: number }[]
@@ -109,6 +110,27 @@ export async function criarInventario(
  * daquele armazém — uma linha por combinação endereçada lá, com os bags que
  * o mapa tem lá. Substitui a lista inteira. Devolve quantas combinações.
  */
+export interface ResumoSubstituicao {
+  /** Combinações que estavam no armazém e saíram (as contadas voltam pela contagem). */
+  retiradas: number
+  contadas: number
+  /** Lotes fora da lista que nasceram no mapa. */
+  criadas: number
+  bags_antes: number
+  bags_depois: number
+}
+
+/**
+ * Substitui o armazém real pelo "armazém X inventário" (13/10/2026): tira
+ * do mapa o que estava no armazém e põe a contagem lançamento a lançamento.
+ * Só com o inventário FECHADO; repetível depois de reabrir/corrigir/fechar.
+ */
+export async function substituirArmazemPeloInventario(id: string): Promise<ResumoSubstituicao> {
+  const { data, error } = await supabase.rpc('substituir_armazem_pelo_inventario', { p_id: id })
+  erro('substituir o armazém pelo inventário — a migração armazem-de-inventario.sql já rodou?', error)
+  return data as ResumoSubstituicao
+}
+
 export async function inserirMapaNoInventario(id: string): Promise<number> {
   const { data, error } = await supabase.rpc('inserir_mapa_no_inventario', { p_id: id })
   erro('inserir o mapa do armazém — a migração inventario-por-armazem.sql já rodou?', error)
