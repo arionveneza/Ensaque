@@ -911,6 +911,26 @@ têm as duas. O resumo ganhou `pmsRecuperado` e a prévia da importação diz qu
 vieram por essa rede (vale pedir o acerto da coluna no SAP) — o aviso vermelho de
 `semPms` agora só sobra pra quem não tem **nem** PMS **nem** Peso Bruto. Correção dos 6
 lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
+**Upload do SAP sem PMS não apaga mais o peso que o lote já tinha** (14/10/2026, achado do
+Arion: "o lote final CB024 está sem o peso"). O MS19K05B3CB024 (71KA72, 15 bg) entrou em 12/10
+com PMS 118 — a ordem FAZENDA VENEZA01 foi pro mapa com 590 kg/bag — e o upload de 13/10 trouxe
+a coluna PMS vazia e sem Peso Bruto pra ele: `importar_lotes_semente` fazia `pms = excluded.pms`
+no conflito e **sobrescreveu o peso bom por vazio** (ordem a 0 t, ficha a 0 kg). Mais 11 lotes
+com saldo perderam o peso assim, inclusive os NEO751 CE 26B65C0162/0163 que eram manuais com
+770/950 kg (o "SAP assume o lote avulso" de 12/10 passava o peso digitado por cima). Migração
+`lotes-peso-nao-some-no-upload.sql` (aplicada; base: definição viva): no conflito, `pms =
+coalesce(nullif(excluded.pms, 0), lotes_semente.pms)` e o peso só troca quando vem > 0 — SAP
+com valor continua mandando, vazio mantém; lote NOVO sem PMS continua nascendo sem peso (a
+prévia do upload já avisa `semPms`). A migração devolveu o peso de 9 lotes pelo que o **mapa**
+ainda guardava (a combinação tratada copia pms/peso do lote no dia do apontamento; a branca com
+peso dá pms = peso ÷ fator): CB024 118/590, 0162 154/770, 0163 190/950, 0167 191/955, CB189
+144,8/724, 26B95C0001 126,4/632, 61526763P1128/P1133/P2122 161,8/809 · 161,2/806 · 201/1005;
+ficaram sem fonte 26B65C0168, 6152676391123 e SV0022036062020-1-1. **Cadastros ▸ Lotes ganhou
+"corrigir peso"** (`LinhaLote`, ação de quem edita cadastros): célula "sem peso" em vermelho,
+linha inline com PMS + embalagem do lote (BG5M ×5 · MEIOBAG ×2,5 · SC200MS ×0,2) e o peso
+calculado, grava por `atualizarPesoLote` (update direto em `lotes_semente`, mesma policy do
+upload). Teste no banco (desfeito): restauro → upload com o lote sem PMS mantém 118/590 →
+upload com 120/600 troca → lote novo sem PMS nasce 0.
 **SC200MS entra como lote de semente branca, contado em SACOS** (09/10/2026, pedido do Arion:
 "os lotes do cultivar 799 e 751 não estão aparecendo para montagem de ordem de produção"). O
 SAP traz o NEO799 I2X também em **SC200MS** (saco de 200 mil sementes; lote 26B98C0007, 75

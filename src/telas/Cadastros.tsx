@@ -1457,42 +1457,7 @@ function AbaLotes({
         cabecalho={['Lote', 'Cultivar', 'Tratamento', '#PMS', '#Peso/bag', '#Bags', 'Status', '']}
       >
         {filtrados.slice(0, 300).map((l) => (
-          <tr key={l.id} className="border-t border-stone-100 dark:border-stone-800/60">
-            <td className="px-2 py-1.5 font-medium">
-              {l.id}
-              {l.origem_manual && <span className="ml-1"><TagLoteAvulso desde={l.criado_em} /></span>}
-            </td>
-            <td className="px-2 py-1.5">{l.cultivar}</td>
-            <td className="px-2 py-1.5">
-              {l.tratamento ? (
-                <Tag cor={l.tratamento.toUpperCase() === 'SEM TSI' ? 'neutro' : 'info'}>
-                  {l.tratamento}
-                </Tag>
-              ) : (
-                <span className="text-stone-400">—</span>
-              )}
-            </td>
-            <td className="num-tabular px-2 py-1.5 text-right">{l.pms == null ? '—' : n(l.pms, 1)}</td>
-            <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">{n(l.peso_bag_kg, 0)} kg</td>
-            <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags_disp)}</td>
-            <td className="px-2 py-1.5">
-              <Tag cor={l.status === 'Baixado' ? 'ok' : 'neutro'}>{l.status}</Tag>
-            </td>
-            <td className="px-2 py-1.5 text-right">
-              {podeEditar && (
-                <button
-                  onClick={() => {
-                    if (!confirm(`Excluir o lote ${l.id}?`)) return
-                    acao(() => adm.excluirLoteSemente(l.id))
-                  }}
-                  className="-m-1.5 rounded p-1.5 text-xs text-red-600 underline"
-                  title="Só funciona se o lote não tem ordem nem baixa"
-                >
-                  excluir
-                </button>
-              )}
-            </td>
-          </tr>
+          <LinhaLote key={l.id} l={l} podeEditar={podeEditar} acao={acao} />
         ))}
       </Tabela>
       {filtrados.length > 300 && (
@@ -1507,6 +1472,136 @@ function AbaLotes({
  * PMS · Peso/bag · Bags. O peso/bag segue PMS × fator da embalagem
  * (5 no BG5M, 2,5 no MEIOBAG), editável para exceções.
  */
+/**
+ * Linha do lote com "corrigir peso" (14/10/2026, achado do Arion: "o lote
+ * CB024 está sem o peso"). O upload do SAP pode vir sem PMS e sem Peso Bruto
+ * e o lote fica com 0 kg — ordem com 0 t, ficha com 0 kg. Aqui o PCP digita
+ * o PMS (e o fator da embalagem) e o peso é PMS × fator; o próximo upload só
+ * troca o valor se o SAP trouxer um (importar_lotes_semente preserva vazio).
+ */
+function LinhaLote({
+  l, podeEditar, acao,
+}: {
+  l: g.LoteSementeLinha
+  podeEditar: boolean
+  acao: Acao
+}) {
+  const [editando, setEditando] = useState(false)
+  const [pms, setPms] = useState('')
+  const [fator, setFator] = useState(5)
+  const semPeso = !(l.peso_bag_kg > 0)
+  const pmsNum = parseFloat(pms.replace(',', '.'))
+  const pmsOk = Number.isFinite(pmsNum) && pmsNum > 0 && pmsNum < 1000
+  const peso = pmsOk ? Math.round(pmsNum * fator * 100) / 100 : null
+  return (
+    <>
+      <tr className="border-t border-stone-100 dark:border-stone-800/60">
+        <td className="px-2 py-1.5 font-medium">
+          {l.id}
+          {l.origem_manual && <span className="ml-1"><TagLoteAvulso desde={l.criado_em} /></span>}
+        </td>
+        <td className="px-2 py-1.5">{l.cultivar}</td>
+        <td className="px-2 py-1.5">
+          {l.tratamento ? (
+            <Tag cor={l.tratamento.toUpperCase() === 'SEM TSI' ? 'neutro' : 'info'}>
+              {l.tratamento}
+            </Tag>
+          ) : (
+            <span className="text-stone-400">—</span>
+          )}
+        </td>
+        <td className="num-tabular px-2 py-1.5 text-right">{l.pms == null ? '—' : n(l.pms, 1)}</td>
+        <td className="num-tabular px-2 py-1.5 text-right whitespace-nowrap">
+          {semPeso ? (
+            <Tag cor="perigo">sem peso</Tag>
+          ) : (
+            <>{n(l.peso_bag_kg, 0)} kg</>
+          )}
+        </td>
+        <td className="num-tabular px-2 py-1.5 text-right">{inteiro(l.bags_disp)}</td>
+        <td className="px-2 py-1.5">
+          <Tag cor={l.status === 'Baixado' ? 'ok' : 'neutro'}>{l.status}</Tag>
+        </td>
+        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+          {podeEditar && (
+            <button
+              onClick={() => {
+                setPms(l.pms != null && l.pms > 0 ? String(l.pms) : '')
+                setEditando((v) => !v)
+              }}
+              className={`-m-1.5 mr-2 rounded p-1.5 text-xs underline ${semPeso ? 'font-semibold text-red-700 dark:text-red-400' : 'text-stone-600 dark:text-stone-300'}`}
+              title="Digita o PMS do lote; o peso do bag sai de PMS × fator da embalagem"
+            >
+              {editando ? 'fechar' : 'corrigir peso'}
+            </button>
+          )}
+          {podeEditar && (
+            <button
+              onClick={() => {
+                if (!confirm(`Excluir o lote ${l.id}?`)) return
+                acao(() => adm.excluirLoteSemente(l.id))
+              }}
+              className="-m-1.5 rounded p-1.5 text-xs text-red-600 underline"
+              title="Só funciona se o lote não tem ordem nem baixa"
+            >
+              excluir
+            </button>
+          )}
+        </td>
+      </tr>
+      {editando && (
+        <tr className="bg-amber-50 dark:bg-amber-950/30">
+          <td colSpan={8} className="px-2 py-2">
+            <div className="flex flex-wrap items-end gap-3 text-sm">
+              <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                PMS (g) do lote {l.id}
+                <input
+                  value={pms}
+                  onChange={(e) => setPms(e.target.value)}
+                  placeholder="ex.: 171"
+                  inputMode="decimal"
+                  autoFocus
+                  className={`${INPUT} mt-1 w-32 normal-case`}
+                />
+              </label>
+              <label className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                Embalagem do lote
+                <select
+                  value={fator}
+                  onChange={(e) => setFator(Number(e.target.value))}
+                  className={`${INPUT} mt-1 w-36 normal-case`}
+                >
+                  <option value={5}>BG5M ×5</option>
+                  <option value={2.5}>MEIOBAG ×2,5</option>
+                  <option value={0.2}>SC200MS ×0,2</option>
+                </select>
+              </label>
+              <span className="num-tabular pb-2 text-stone-700 dark:text-stone-200">
+                peso do bag: <b>{peso != null ? `${n(peso, peso < 100 ? 2 : 0)} kg` : '—'}</b>
+              </span>
+              <Botao
+                variante="primario"
+                disabled={!pmsOk}
+                onClick={() =>
+                  void acao(async () => {
+                    await adm.atualizarPesoLote(l.id, pmsNum, peso ?? 0)
+                    setEditando(false)
+                  })
+                }
+              >
+                Salvar peso
+              </Botao>
+              <span className="pb-2 text-xs text-stone-500">
+                O próximo upload do SAP só troca este peso se trouxer PMS ou Peso Bruto pro lote.
+              </span>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
 function FormNovoLote({
   onSalvar,
 }: {

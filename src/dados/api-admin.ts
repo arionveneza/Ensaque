@@ -328,6 +328,27 @@ export async function excluirMotivo(id: string): Promise<void> {
  * Só apaga lote que nenhuma ordem e nenhum movimento referenciam. O banco
  * recusa o resto — e deve recusar: apagar quebraria o histórico da ordem.
  */
+/**
+ * Corrige PMS e peso do bag de um lote (14/10/2026): o upload do SAP pode
+ * vir sem PMS e sem Peso Bruto (o CB024 do 71KA72 chegou assim) e o lote
+ * fica com peso zero — ordem com 0 t, ficha com 0 kg. Mesma policy do
+ * upload (ordens/criar ou cadastros/editar); o próximo upload só troca o
+ * valor se o SAP trouxer um.
+ */
+export async function atualizarPesoLote(
+  id: string,
+  pms: number | null,
+  pesoBagKg: number,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('lotes_semente')
+    .update({ pms, peso_bag_kg: pesoBagKg, atualizado_em: new Date().toISOString() })
+    .eq('id', id)
+    .select('id')
+  erro('corrigir o peso do lote', error)
+  if ((data ?? []).length === 0) throw new Error('lote não encontrado ou sem permissão para corrigir')
+}
+
 export async function excluirLoteSemente(id: string): Promise<void> {
   const { error } = await supabase.from('lotes_semente').delete().eq('id', id)
   if (error?.code === '23503') {
