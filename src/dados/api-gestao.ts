@@ -1431,6 +1431,34 @@ export async function enderecarConferencia(
   erro('endereçar a ordem conferida', error)
 }
 
+/**
+ * Conferência + endereço numa transação (14/10/2026, armazéns TSI): grava a
+ * conferência e, com endereço, tira o produzido do TSI SAÍDA e põe no
+ * armazém contado (RPC conferir_e_enderecar). Substitui o par
+ * registrarConferencia + somarEndereco na tela Logística — eram duas
+ * escritas e a segunda podia falhar com a primeira já gravada.
+ */
+export async function conferirEEnderecar(
+  ordemId: string,
+  bagsContados: number,
+  observacao: string | null,
+  endereco: { armazem: string; bloco: string; quadra: string } | null,
+  enderecarDepois: boolean,
+): Promise<void> {
+  if (!Number.isFinite(bagsContados) || bagsContados < 0)
+    throw new Error('Informe a quantidade de bags contados (0 ou mais).')
+  const { error } = await supabase.rpc('conferir_e_enderecar', {
+    p_ordem: ordemId,
+    p_bags: Math.round(bagsContados),
+    p_obs: observacao,
+    p_armazem: endereco?.armazem ?? null,
+    p_bloco: endereco?.bloco ?? null,
+    p_quadra: endereco?.quadra ?? null,
+    p_enderecar_depois: enderecarDepois,
+  })
+  erro('registrar conferência — a migração armazens-tsi-entrada-saida.sql já rodou?', error)
+}
+
 export async function registrarConferencia(
   ordemId: string,
   bagsContados: number,

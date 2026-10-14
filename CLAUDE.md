@@ -635,7 +635,9 @@ padrão) · observação. Em processo tem ainda a **origem da amostra (BOWL/BAG)
 ### Encerramento (AGROTIS — tela própria)
 Após a **qualidade final** e a **conferência de estoque**, o **PCP** lança a ordem no AGROTIS e
 registra o **nº do lançamento** (obrigatório) → status `Apontada`, registro definitivo. Gancho
-natural para integração futura.
+natural para integração futura. **Desde 14/10/2026 a conferência de estoque NÃO é mais pré-requisito**
+(armazéns TSI Entrada/TSI Saída, §6d): basta a qualidade final e os pesos finais; a Logística confere
+e endereça depois, tirando o produzido do TSI Saída.
 
 ---
 
@@ -2059,6 +2061,49 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    toda linha é "fora do SAP" e some junto com os chips/situação —, colunas Cultivar · Lote ·
    Trat. · Emb. · A–E · Total · Descarte, resumo "N bags em M lotes · A: x · B: y", e export
    `contagem-armazens-<data>.xlsx` com as mesmas colunas. "Contagem × SAP" continua o padrão.
+   **Armazéns "TSI Entrada" e "TSI Saída" — o AGROTIS não espera mais a conferência** (14/10/2026,
+   pedido do Arion: "crie um armazém chamado TSI Entrada e TSI Saída; todo lote branco a ser
+   tratado será enviado ao TSI Entrada, e todo lote apontado como produzido automaticamente vai
+   para o TSI Saída, permitindo que o PCP lance as ordens no AGROTIS mesmo sem a conferência da
+   Logística — hoje a conferência é um gargalo"; decisões dele: a branca vai pro TSI Entrada **na
+   Baixa** da Logística, **só os bags das ordens liberadas**; a conferência **continua** (contar +
+   endereçar = tirar do TSI Saída) mas **não trava o AGROTIS**; lote em TSI Saída **pode** ser
+   loteado em carga). Migração `armazens-tsi-entrada-saida.sql` (aplicada; bases nas definições
+   VIVAS). São endereços do SISTEMA em `lote_enderecos`: `armazem` `TSI ENTRADA`/`TSI SAIDA` com
+   bloco e quadra `'0'` (o CHECK aceita só assim; o normalizador deixa o '0' passar), ninguém
+   digita — `armazemValido`/`normalizaEndereco` seguem A–E, `ARMAZENS_TSI`/`ehArmazemTsi`/
+   `rotuloArmazem`/`rotuloEndereco` em `src/dominio/endereco.ts` (testados), `enderecoLote` do
+   `ui.tsx` mostra "TSI Saída". **Fluxo**: (1) `baixar_lote` — pra cada ordem liberada, os bags DO
+   LOTE que ela vai consumir (`kg ÷ peso_bag_kg` do lote, a conta do consumo) saem do(s) endereço(s)
+   A–E da branca (do maior pro menor, só os com quantidade; endereço sem contagem fica e o rateio da
+   tela ajusta) e entram no `TSI ENTRADA` — `lotes_mapa.bags` não muda, a branca só mudou de lugar;
+   (2) `estornar_liberacao` devolve pelo rastro ao endereço de origem; (3) `fn_lote_tratado_no_mapa`
+   na Finalizada: o tratado nasce com endereço `TSI SAIDA` (na unidade da linha do mapa — embalagem
+   diferente converte pelo peso, como o saldo) e a branca consumida sai do `TSI ENTRADA` (sobra fica
+   lá pra Logística devolver); o "Voltar para produção" espelha; (4) `fn_valida_agrotis` exige só os
+   pesos finais; (5) conferência = RPC **`conferir_e_enderecar`** (DEFINER, `lotes/conferir`):
+   grava `ordem_conferencias` e, com endereço, soma os bags contados no A–E e tira `bags_produzidos`
+   do `TSI SAIDA` numa transação só (antes eram duas escritas no front, `registrarConferencia` +
+   `somarEndereco`, e a segunda podia falhar); `enderecar_conferencia` (A endereçar) faz o mesmo e
+   virou DEFINER com a checagem explícita; (6) `fn_endereco_achado` ignora endereço TSI. Helper
+   `mapa_tsi_somar(lote, trat, tsi, delta)` (só o dono executa): soma/subtrai e apaga a linha quando
+   zera; FK pro mapa — combinação que não está lá não ganha TSI. Rastro em **`mapa_movimentos_tsi`**
+   (sentidos entrada/estorno/consumo/saida/enderecado/desfeito, origem/destino, bags, ordem;
+   leitura `mapa/ver`, escrita só pelas funções). **Backfill**: 21 combinações tratadas com saldo e
+   sem endereço (81 bg) viraram `TSI SAIDA`; a branca das ordens liberadas antes da migração não
+   foi movida (a Logística já levou; o rastro começa aqui). **Telas**: Mapa com dois cartões acima
+   de "Sem localização" — "TSI Entrada — branca liberada pra tratar" (Devolver ao armazém) e "TSI
+   Saída — produzido, aguardando endereçamento" (Endereçar), os dois pelo `ModalMover` de sempre
+   (origem TSI, destino A–E), fora da grade (`alocGalpao`/`alocTsi`), sem "Esvaziar"; AGROTIS lista
+   como pronta toda `Qualidade apontada` (etiqueta "sem conferência da Logística · em TSI Saída"
+   quando falta); Etapas: a régua mantém a coluna Conferência, mas o AGROTIS só espera a q. final
+   (`etapasDaOrdem`, testes ajustados); Logística: o conferir chama a RPC nova (um clique, uma
+   transação). Inventário/relatório A–E não mudam — endereço TSI conta como "fora" do armazém, que
+   é o correto. Teste no banco (desfeito): baixa moveu 2 bg de E pro TSI Entrada e o estorno
+   devolveu; ordem 174343 finalizada com 17 → TSI Saída 17, TSI Entrada 20→3, branca 21→4; AGROTIS
+   passou sem conferência; conferir pôs 17 em A 1 1 e zerou o TSI Saída; CHECK recusa TSI com bloco
+   1. O "Voltar para produção" não foi exercitado no teste (o gatilho `fn_ordens_por_acao` barra o
+   status fora do fluxo) — a lógica é o espelho exato da entrada.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

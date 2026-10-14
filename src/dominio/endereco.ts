@@ -15,6 +15,29 @@ export const ARMAZENS_GALPAO = ['A', 'B', 'C', 'D', 'E'] as const
 export const BLOCO_MAX = 44
 export const QUADRA_MAX = 20
 
+/**
+ * Armazéns do SISTEMA (14/10/2026, pedido do Arion: "crie um armazém chamado
+ * TSI Entrada e TSI Saída"): a branca liberada pra uma ordem vai pro TSI
+ * ENTRADA na baixa da Logística; o tratado apontado pela produção nasce no
+ * TSI SAÍDA e a Logística o tira de lá pra A–E quando confere. Ninguém digita
+ * esses dois — só o banco grava (bloco e quadra '0'); por isso ficam fora de
+ * `armazemValido`/`normalizaEndereco`, da grade e dos inventários.
+ */
+export const TSI_ENTRADA = 'TSI ENTRADA'
+export const TSI_SAIDA = 'TSI SAIDA'
+export const ARMAZENS_TSI = [TSI_ENTRADA, TSI_SAIDA] as const
+
+export const ehArmazemTsi = (a: string | null | undefined): boolean =>
+  (ARMAZENS_TSI as readonly string[]).includes(String(a ?? '').trim().toUpperCase())
+
+/** "TSI Entrada"/"TSI Saída" pros do sistema; a letra pros demais. */
+export const rotuloArmazem = (a: string): string =>
+  a === TSI_ENTRADA ? 'TSI Entrada' : a === TSI_SAIDA ? 'TSI Saída' : a
+
+/** Endereço como a tela mostra: "A 3 Q05" ou "TSI Saída". */
+export const rotuloEndereco = (e: { armazem: string; bloco: string; quadra: string }): string =>
+  ehArmazemTsi(e.armazem) ? rotuloArmazem(e.armazem) : `${e.armazem} ${e.bloco} Q${e.quadra.padStart(2, '0')}`
+
 export const BLOCOS = Array.from({ length: BLOCO_MAX }, (_, i) => String(i + 1))
 export const QUADRAS = Array.from({ length: QUADRA_MAX }, (_, i) => String(i + 1))
 

@@ -28,7 +28,9 @@ import {
   Vazio, dataHoraCurta,
   enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
-import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
+import {
+  TSI_ENTRADA, TSI_SAIDA, ehArmazemTsi, normalizaEndereco, problemaEndereco, rotuloEndereco,
+} from '@/dominio/endereco'
 
 /**
  * Mapa e Montagem de Carga (28/08/2026).
@@ -522,6 +524,11 @@ export default function Mapa() {
   }, [visiveis])
   const semEndereco = visiveis.filter((l) => l.lote_enderecos.length === 0)
   const aloc = useMemo(() => alocar(visiveis), [visiveis])
+  // armazéns do SISTEMA (14/10/2026): TSI Entrada (branca liberada pra uma
+  // ordem) e TSI Saída (produzido, aguardando endereçamento) ficam FORA da
+  // grade, em cartões próprios — ninguém endereça neles, só o banco grava
+  const alocGalpao = useMemo(() => aloc.filter((a) => !ehArmazemTsi(a.endereco.armazem)), [aloc])
+  const alocTsi = useMemo(() => aloc.filter((a) => ehArmazemTsi(a.endereco.armazem)), [aloc])
 
   /**
    * Reserva da combinação (08/09/2026): cargas ativas + (na branca) ordens
@@ -1256,6 +1263,24 @@ export default function Mapa() {
         )}
       </Cartao>
 
+      {/* -------- armazéns do sistema: TSI Entrada / TSI Saída (14/10/2026) -------- */}
+      <CartaoTsi
+        titulo="TSI Entrada — branca liberada pra tratar"
+        descricao="O que a Logística baixou pra uma ordem e a produção ainda não consumiu. Sobrou depois do apontamento? Devolva ao armazém."
+        acao="Devolver ao armazém"
+        itens={alocTsi.filter((a) => a.endereco.armazem === TSI_ENTRADA)}
+        pode={podeEnderecar}
+        onMover={(a) => setMovendo(a)}
+      />
+      <CartaoTsi
+        titulo="TSI Saída — produzido, aguardando endereçamento"
+        descricao="Entrou aqui quando a produção apontou a quantidade. A conferência da Logística (tela Logística) tira daqui e põe no armazém — o AGROTIS não espera por isso. Dá pra endereçar daqui também."
+        acao="Endereçar"
+        itens={alocTsi.filter((a) => a.endereco.armazem === TSI_SAIDA)}
+        pode={podeEnderecar}
+        onMover={(a) => setMovendo(a)}
+      />
+
       {/* -------- fila de endereçamento (recolhida por padrão) -------- */}
       {semEndereco.length > 0 && (
         <CartaoRecolhivel
@@ -1560,7 +1585,7 @@ export default function Mapa() {
         </div>
 
         <MapaGrade
-          alocacoes={aloc}
+          alocacoes={alocGalpao}
           casaFiltro={casaFiltro}
           filtroAtivo={filtroAtivo}
           gradeDivergentes={gradeDivergentes}
@@ -3346,6 +3371,47 @@ function ModalEsvaziarArmazem({
 }
 
 /** Movimentação: o lote inteiro daquele endereço, ou uma parte. */
+/**
+ * Cartão de um armazém do SISTEMA (14/10/2026): lista o que está em TSI
+ * Entrada ou TSI Saída e deixa mover pra A–E pelo mesmo ModalMover da grade
+ * (origem TSI, destino obrigatoriamente uma letra). Some quando vazio.
+ */
+function CartaoTsi({
+  titulo, descricao, acao, itens, pode, onMover,
+}: {
+  titulo: string
+  descricao: string
+  acao: string
+  itens: Alocacao[]
+  pode: boolean
+  onMover: (a: Alocacao) => void
+}) {
+  if (itens.length === 0) return null
+  const total = itens.reduce((s, a) => s + a.bags, 0)
+  return (
+    <Cartao
+      titulo={`${titulo} (${inteiro(itens.length)} lote(s) · ${inteiro(Math.round(total))} bags)`}
+      className="mb-5 border-amber-300 dark:border-amber-800"
+    >
+      <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">{descricao}</p>
+      <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', { texto: '#Bags', className: 'text-right' }, '']}>
+        {itens.map((a) => (
+          <tr key={a.endereco.id} className="border-t border-stone-100 dark:border-stone-800/60">
+            <td className="px-2 py-1.5 font-medium">{a.lote.lote}</td>
+            <td className="px-2 py-1.5">{a.lote.cultivar}</td>
+            <td className="px-2 py-1.5">{rotuloTratamento(a.lote.tratamento)}</td>
+            <td className="px-2 py-1.5">{a.lote.embalagem}</td>
+            <td className="num-tabular px-2 py-1.5 text-right">{inteiro(Math.round(a.bags))}</td>
+            <td className="px-2 py-1.5 text-right">
+              {pode && <Botao onClick={() => onMover(a)}>{acao}</Botao>}
+            </td>
+          </tr>
+        ))}
+      </Tabela>
+    </Cartao>
+  )
+}
+
 function ModalMover({
   alocacao: a, onFechar, onMover,
 }: {
@@ -3371,7 +3437,7 @@ function ModalMover({
           Mover — {a.lote.lote} · {rotuloTratamento(a.lote.tratamento)}
         </h3>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-          De <b>{a.endereco.armazem} {a.endereco.bloco} {rotuloQuadra(a.endereco.quadra)}</b>
+          De <b>{rotuloEndereco(a.endereco)}</b>
           {' '}({a.estimado ? '~' : ''}{inteiro(Math.round(a.bags))} bg aqui). Deixe a
           quantidade em branco pra mover TUDO deste endereço.
         </p>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { BLOCO_MAX, QUADRA_MAX, numeroEndereco } from '@/dominio/endereco'
+import { BLOCO_MAX, QUADRA_MAX, ehArmazemTsi, numeroEndereco, rotuloArmazem } from '@/dominio/endereco'
 
 /** Peças visuais compartilhadas pelas telas. Nada de regra de negócio aqui. */
 
@@ -48,7 +48,10 @@ export const dataHoraCurta = (iso: string | null): string => {
 export const enderecoLote = (
   o: { armazem?: string | null; bloco?: string | null; quadra?: string | null },
   vazio = '—',
-): string => [o.armazem, o.bloco, o.quadra].filter(Boolean).join(' · ') || vazio
+): string =>
+  ehArmazemTsi(o.armazem)
+    ? rotuloArmazem(String(o.armazem).trim().toUpperCase())
+    : [o.armazem, o.bloco, o.quadra].filter(Boolean).join(' · ') || vazio
 
 const DOW = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 export const diaSemana = (iso: string): string =>

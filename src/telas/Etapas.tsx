@@ -59,7 +59,7 @@ export default function Etapas() {
   return (
     <Pagina
       titulo="Etapas"
-      descricao="Cada ordem e sua régua: Produção → Q. processo → Q. final → Conferência → AGROTIS. Verde feita, âmbar pendente, cinza ainda não se aplica."
+      descricao="Cada ordem e sua régua: Produção → Q. processo → Q. final → Conferência → AGROTIS. Verde feita, âmbar pendente, cinza ainda não se aplica. Desde 14/10/2026 a Conferência não trava o AGROTIS: o produzido vai pro TSI Saída do mapa e a Logística confere/endereça depois."
     >
       {erro && <Erro>{erro}</Erro>}
 

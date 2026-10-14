@@ -72,24 +72,20 @@ export function etapasDaOrdem(o: OrdemComEtapas): EtapaOrdem[] {
     {
       id: 'agrotis',
       rotulo: 'AGROTIS',
-      // pré-requisitos: qualidade final E conferência da logística
+      // pré-requisito: só a qualidade final. A conferência da Logística
+      // deixou de travar (14/10/2026, armazéns TSI Entrada/Saída): o
+      // produzido já está no mapa, em TSI Saída, e a Logística confere e
+      // endereça no tempo dela — a coluna Conferência fica só informativa.
       situacao:
         o.status_efetivo === 'Apontada'
           ? 'feita'
-          : qualFinal && o.conferida
+          : qualFinal
             ? 'pendente'
             : 'nao-aplicavel',
       detalhe:
-        o.status_efetivo === 'Apontada' || !finalizada
+        o.status_efetivo === 'Apontada' || !finalizada || qualFinal
           ? undefined
-          : qualFinal && o.conferida
-            ? undefined
-            : `aguarda ${[
-                !qualFinal ? 'q. final' : null,
-                !o.conferida ? 'conferência' : null,
-              ]
-                .filter(Boolean)
-                .join(' e ')}`,
+          : 'aguarda q. final',
     },
   ]
 }

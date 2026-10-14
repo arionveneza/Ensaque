@@ -51,23 +51,23 @@ describe('regua de etapas', () => {
     expect(e.detalhe).toBe('não realizada')
   })
 
-  it('finalizada crua: agrotis aguarda os dois pre-requisitos', () => {
+  it('finalizada crua: agrotis aguarda so a qualidade final (14/10/2026)', () => {
     const o = ordem('Finalizada')
     expect(situacao(o, 'producao')).toBe('feita')
     expect(situacao(o, 'q_final')).toBe('pendente')
     expect(situacao(o, 'conferencia')).toBe('pendente')
     const agrotis = etapasDaOrdem(o).find((x) => x.id === 'agrotis')!
     expect(agrotis.situacao).toBe('nao-aplicavel')
-    expect(agrotis.detalhe).toBe('aguarda q. final e conferência')
+    expect(agrotis.detalhe).toBe('aguarda q. final')
   })
 
-  it('qualidade apontada sem conferencia: agrotis segue travado', () => {
+  it('qualidade apontada sem conferencia: agrotis destrava — a conferencia nao trava mais', () => {
     const o = ordem('Qualidade apontada')
     expect(situacao(o, 'q_final')).toBe('feita')
     expect(situacao(o, 'conferencia')).toBe('pendente')
     const agrotis = etapasDaOrdem(o).find((x) => x.id === 'agrotis')!
-    expect(agrotis.situacao).toBe('nao-aplicavel')
-    expect(agrotis.detalhe).toBe('aguarda conferência')
+    expect(agrotis.situacao).toBe('pendente')
+    expect(agrotis.detalhe).toBeUndefined()
   })
 
   it('conferida sem q. final: agrotis aguarda a qualidade', () => {
@@ -105,8 +105,8 @@ describe('regua de etapas', () => {
   it('conta as pendencias para ordenar a visao geral', () => {
     // finalizada crua: q. final + conferencia (agrotis ainda nao abriu)
     expect(etapasPendentes(ordem('Finalizada'))).toBe(2)
-    // qualidade apontada sem conferencia: so a conferencia (agrotis travado)
-    expect(etapasPendentes(ordem('Qualidade apontada'))).toBe(1)
+    // qualidade apontada sem conferencia: conferencia + agrotis (que nao espera mais por ela, 14/10/2026)
+    expect(etapasPendentes(ordem('Qualidade apontada'))).toBe(2)
     // com os dois pre-requisitos, sobra so o agrotis
     expect(etapasPendentes(ordem('Qualidade apontada', { conferida: true }))).toBe(1)
   })

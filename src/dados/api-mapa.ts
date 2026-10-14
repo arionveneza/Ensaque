@@ -306,6 +306,37 @@ export interface AjusteMapa {
   criado_em: string
 }
 
+/** Rastro dos armazéns TSI Entrada/Saída (14/10/2026): o que cada ordem moveu. */
+export interface MovimentoTsi {
+  id: string
+  ordem_id: string | null
+  lote: string
+  tratamento: string
+  sentido: 'entrada' | 'estorno' | 'consumo' | 'saida' | 'enderecado' | 'desfeito'
+  de_armazem: string | null
+  de_bloco: string | null
+  de_quadra: string | null
+  para_armazem: string | null
+  para_bloco: string | null
+  para_quadra: string | null
+  bags: number
+  ts: string
+}
+
+export async function listarMovimentosTsi(limite = 300): Promise<MovimentoTsi[]> {
+  const { data, error } = await supabase
+    .from('mapa_movimentos_tsi')
+    .select('id, ordem_id, lote, tratamento, sentido, de_armazem, de_bloco, de_quadra, para_armazem, para_bloco, para_quadra, bags, ts')
+    .order('ts', { ascending: false })
+    .limit(limite)
+  if (error) {
+    // janela pré-migração: tabela ainda não existe — a tela esconde o rastro
+    if (['42P01', 'PGRST200', 'PGRST205'].includes(error.code ?? '')) return []
+    throw new Error(`listar movimentos TSI: ${error.message}`)
+  }
+  return (data ?? []) as unknown as MovimentoTsi[]
+}
+
 export async function listarAjustesMapa(limite = 50): Promise<AjusteMapa[]> {
   const { data, error } = await supabase
     .from('mapa_ajustes')

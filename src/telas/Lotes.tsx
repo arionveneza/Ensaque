@@ -6,8 +6,6 @@ import { jaIniciada } from '@/dominio/status'
 import type { StatusEfetivo } from '@/dominio/tipos'
 import { useRealtime } from '@/dados/useRealtime'
 import { useAuth } from '@/auth/AuthProvider'
-import { somarEndereco } from '@/dados/api-mapa'
-import { loteBase } from '@/dominio/importacao/mapa'
 import { normalizaEndereco, problemaEndereco } from '@/dominio/endereco'
 import { TagLoteAvulso } from '@/componentes/LoteAvulso'
 import {
@@ -72,7 +70,7 @@ const priorizadas = (ordens: OrdemVisao[]) =>
     .sort((a, b) => (a.prioridade_dia ?? 0) - (b.prioridade_dia ?? 0) || (a.maquina_id ?? '').localeCompare(b.maquina_id ?? ''))
 
 export default function Lotes() {
-  const { usuario, permitido } = useAuth()
+  const { permitido } = useAuth()
   const podeBaixar = permitido('lotes', 'baixar_lote')
   const podeConferir = permitido('lotes', 'conferir')
 
@@ -378,27 +376,14 @@ export default function Lotes() {
                 podeConferir={podeConferir}
                 onConferir={(bags, obs, endereco, enderecarDepois) =>
                   comErro(async () => {
-                    // ENDEREÇAR (07/10/2026): confere sem endereço — o AGROTIS
-                    // fica liberado e a ordem vai pro cartão "A endereçar"
-                    await g.registrarConferencia(
-                      o.id, bags, obs, usuario!.id, enderecarDepois && bags > 0,
+                    // conferência + endereço numa transação (14/10/2026): o
+                    // produzido está no TSI SAÍDA desde o apontamento; aqui a
+                    // Logística conta e diz onde pôs — ENDEREÇAR (07/10/2026)
+                    // confere sem endereço e manda pro cartão "A endereçar".
+                    // O AGROTIS não espera mais por isto.
+                    await g.conferirEEnderecar(
+                      o.id, bags, obs, bags > 0 ? endereco : null, enderecarDepois && bags > 0,
                     )
-                    // endereçamento embutido (08/09/2026): o lote TRATADO
-                    // entrou no mapa quando a produção apontou (Finalizada);
-                    // a Logística confere a quantidade e já diz onde pôs.
-                    if (endereco && bags > 0) {
-                      try {
-                        await somarEndereco(
-                          loteBase(o.lote_id), o.receita_nome, endereco, bags, usuario!.id,
-                        )
-                      } catch (e) {
-                        throw new Error(
-                          `Conferência gravada, mas o endereçamento falhou: ${
-                            e instanceof Error ? e.message : String(e)
-                          } — enderece pelo Mapa (a migração inventario-mapa-ajuste-reserva.sql já rodou?).`,
-                        )
-                      }
-                    }
                   })
                 }
               />

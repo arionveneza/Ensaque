@@ -32,7 +32,7 @@ export default function Agrotis() {
     setOrdens(o)
     setChecks(c)
     const prontasIds = o
-      .filter((x) => x.status_efetivo === 'Qualidade apontada' && x.conferida)
+      .filter((x) => x.status_efetivo === 'Qualidade apontada')
       .map((x) => x.id)
     setTanques(await g.listarTanquesDeOrdens(prontasIds))
   }, [])
@@ -56,15 +56,11 @@ export default function Agrotis() {
     }
   }
 
-  // pronta = qualidade final apontada E conferida pela logística
-  const prontas = ordens.filter(
-    (o) => o.status_efetivo === 'Qualidade apontada' && o.conferida,
-  )
-  const aguardando = ordens.filter(
-    (o) =>
-      o.status_efetivo === 'Finalizada' ||
-      (o.status_efetivo === 'Qualidade apontada' && !o.conferida),
-  )
+  // pronta = qualidade final apontada. A conferência da Logística deixou de
+  // ser pré-requisito (14/10/2026, armazéns TSI): o produzido já está no
+  // mapa em TSI Saída, e a Logística confere/endereça no tempo dela.
+  const prontas = ordens.filter((o) => o.status_efetivo === 'Qualidade apontada')
+  const aguardando = ordens.filter((o) => o.status_efetivo === 'Finalizada')
   const lancadas = ordens.filter((o) => o.status_efetivo === 'Apontada')
 
   const checkFinal = (id: string) =>
@@ -73,7 +69,6 @@ export default function Agrotis() {
   const faltaDe = (o: OrdemEtapasLinha): string => {
     const falta: string[] = []
     if (o.status_efetivo === 'Finalizada') falta.push('qualidade final')
-    if (!o.conferida) falta.push('conferência de estoque')
     return falta.join(' e ')
   }
 
@@ -82,16 +77,14 @@ export default function Agrotis() {
   return (
     <Pagina
       titulo="AGROTIS"
-      descricao="Última etapa da ordem. Só libera com a qualidade final apontada E a conferência de estoque feita; o nº do lançamento encerra em definitivo."
+      descricao="Última etapa da ordem. Libera com a qualidade final apontada (a conferência da Logística não trava mais — o produzido já está no mapa, em TSI Saída); o nº do lançamento encerra em definitivo."
     >
       {erro && <Erro>{erro}</Erro>}
 
       {/* ---------------- prontas para lançar ---------------- */}
       <Cartao titulo={`Prontas para lançar (${prontas.length})`} className="mb-5">
         {prontas.length === 0 ? (
-          <Vazio>
-            Nenhuma ordem com os dois pré-requisitos cumpridos (qualidade final + conferência).
-          </Vazio>
+          <Vazio>Nenhuma ordem com a qualidade final apontada.</Vazio>
         ) : (
           <div className="space-y-3">
             {prontas.map((o) => {
@@ -119,11 +112,15 @@ export default function Agrotis() {
                         <Tag cor={o.bags_produzidos != null ? 'neutro' : 'alerta'}>
                           produzido: {o.bags_produzidos ?? '—'} bg
                         </Tag>
-                        <Tag
-                          cor={o.bags_contados === (o.bags_produzidos ?? o.bags) ? 'ok' : 'alerta'}
-                        >
-                          conferido: {o.bags_contados} bg
-                        </Tag>
+                        {o.conferida ? (
+                          <Tag
+                            cor={o.bags_contados === (o.bags_produzidos ?? o.bags) ? 'ok' : 'alerta'}
+                          >
+                            conferido: {o.bags_contados} bg
+                          </Tag>
+                        ) : (
+                          <Tag cor="neutro">sem conferência da Logística · em TSI Saída</Tag>
+                        )}
                       </p>
                     </div>
                     {podeLancar && (

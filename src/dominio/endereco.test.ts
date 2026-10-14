@@ -1,7 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BLOCOS, QUADRAS, armazemValido, normalizaEndereco, numeroEndereco, problemaEndereco,
+  BLOCOS, QUADRAS, armazemValido, ehArmazemTsi, normalizaEndereco, numeroEndereco, problemaEndereco,
+  rotuloArmazem, rotuloEndereco,
 } from './endereco'
+
+describe('armazens do sistema TSI Entrada / TSI Saida (14/10/2026)', () => {
+  it('reconhece os dois e nenhum outro', () => {
+    expect(ehArmazemTsi('TSI ENTRADA')).toBe(true)
+    expect(ehArmazemTsi(' tsi saida ')).toBe(true)
+    expect(ehArmazemTsi('A')).toBe(false)
+    expect(ehArmazemTsi(null)).toBe(false)
+  })
+
+  it('nao vale como endereco digitado (A-E continua a regra)', () => {
+    expect(armazemValido('TSI SAIDA')).toBe(false)
+    expect(normalizaEndereco({ armazem: 'TSI SAIDA', bloco: '0', quadra: '0' })).toBeNull()
+  })
+
+  it('rotulos', () => {
+    expect(rotuloArmazem('TSI SAIDA')).toBe('TSI Saída')
+    expect(rotuloArmazem('TSI ENTRADA')).toBe('TSI Entrada')
+    expect(rotuloArmazem('B')).toBe('B')
+    expect(rotuloEndereco({ armazem: 'TSI SAIDA', bloco: '0', quadra: '0' })).toBe('TSI Saída')
+    expect(rotuloEndereco({ armazem: 'A', bloco: '3', quadra: '5' })).toBe('A 3 Q05')
+  })
+})
 
 describe('endereço do galpão (03/10/2026)', () => {
   it('faixas: armazém A–E, bloco 1–44, quadra 1–20', () => {
