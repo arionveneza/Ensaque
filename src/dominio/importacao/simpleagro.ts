@@ -81,18 +81,44 @@ export const EMBALAGEM_DEPARA: Record<string, { codigo: string; fator: number }>
  */
 const CULTIVAR_DEPARA: Record<string, string> = {
   'O700 I2X': 'NEO700 I2X',
+  // 14/10/2026 (pedido do Arion: "o 640 I2X, NEO 640, tudo que houver 640 é
+  // o mesmo cultivar"): o SAP passou a exportar "O640 I2X" (coluna CULTIVAR
+  // truncada, como o O700) e os pedidos usam "640 I2X" — o nome dos pedidos
+  // é o canônico
+  'O640 I2X': '640 I2X',
+  'NEO640 I2X': '640 I2X',
 }
 
 /**
- * Cultivar canônico: caixa alta e espaços colapsados, com o de-para de
- * apelidos conhecidos por cima. O balanço cruza os relatórios (Pedidos,
- * Saldos, SAP) por texto — qualquer diferença de grafia quebra o
+ * Cultivar canônico: caixa alta e espaços colapsados, prefixo colado ao
+ * número ("NEO 750 IPRO" → "NEO750 IPRO" — grafia à mão do mapa), com o
+ * de-para de apelidos conhecidos por cima. O balanço cruza os relatórios
+ * (Pedidos, Saldos, SAP) por texto — qualquer diferença de grafia quebra o
  * casamento, e cada relatório erra o nome de um jeito diferente.
  */
 export const normalizaCultivar = (s: string): string => {
-  const canon = s.replace(/\s+/g, ' ').trim().toUpperCase()
+  const canon = s
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+    .replace(/^([A-Z]+) (\d)/, '$1$2')
   return CULTIVAR_DEPARA[canon] ?? canon
 }
+
+/**
+ * Chave de IGUALDADE entre grafias do mesmo cultivar (14/10/2026): o número
+ * e o sufixo, sem o prefixo de marca e sem espaços — "640 I2X", "O640 I2X",
+ * "NEO640 I2X" e "NEO 640 I2X" são o mesmo cultivar; "NEO680 IPRO" e
+ * "680 IPRO" também. É pra CASAR (lote × ordem, por exemplo), não pra
+ * exibir ou gravar — o nome gravado continua o de `normalizaCultivar`.
+ */
+export const chaveCultivar = (s: string): string =>
+  normalizaCultivar(s)
+    .replace(/^[A-Z]+(?=\d)/, '')
+    .replace(/\s+/g, '')
+
+export const mesmoCultivar = (a: string, b: string): boolean =>
+  chaveCultivar(a) === chaveCultivar(b)
 
 // ================================================================
 // 1. Pedidos Analítico Resumido

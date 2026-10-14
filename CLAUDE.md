@@ -911,6 +911,28 @@ têm as duas. O resumo ganhou `pmsRecuperado` e a prévia da importação diz qu
 vieram por essa rede (vale pedir o acerto da coluna no SAP) — o aviso vermelho de
 `semPms` agora só sobra pra quem não tem **nem** PMS **nem** Peso Bruto. Correção dos 6
 lotes já gravados: `supabase/lotes-pms-do-peso-bruto.sql` (aplicada).
+**"640 I2X" = "O640 I2X" = "NEO640 I2X" — toda grafia do 640 é o mesmo cultivar** (14/10/2026,
+pedido do Arion: "padronize, o 640 I2X, NEO 640, tudo que houver 640 é o mesmo cultivar e devem
+aparecer para seleção na ordem de produção"). O SAP passou a exportar a coluna CULTIVAR como
+"O640 I2X" (truncada, como o "O700 I2X" = NEO700 de 20/08) e os pedidos, as ordens e o mapa
+usam "640 I2X": os 7 lotes com saldo entraram como "O640 I2X", o "Programar pela demanda" (que
+casa lote × cultivar por texto, `lotesDoCultivar`) não mostrava lote nenhum pro 640, e o balanço
+abria duas linhas (uma com o pedido, outra com o estoque). **Nome canônico = o dos pedidos**:
+`CULTIVAR_DEPARA` ganhou `O640 I2X`/`NEO640 I2X` → `640 I2X`, e `normalizaCultivar` passou a
+colar o prefixo ao número ("NEO 750 IPRO" → "NEO750 IPRO", grafia à mão do mapa). Pra CASAR
+(não pra gravar) existe `chaveCultivar`/`mesmoCultivar` (`simpleagro.ts`, testadas): número +
+sufixo sem o prefixo de marca e sem espaço — "640 I2X", "O640 I2X", "NEO640 I2X" e "NEO 640
+I2X" são iguais, "NEO680 IPRO" = "680 IPRO"; sufixo diferente ("O720 I2" × "O720 I2X",
+"NEO821" × "NEO821 I2X") continua diferente. Usada no `lotesDoCultivar` do Programar pela
+demanda e na análise de demanda do formulário da ordem (linha do balanço e ordens abertas do
+mesmo cultivar); o formulário Nova ordem lista todos os lotes com busca por texto e não
+precisou mudar. Migração `cultivar-640-padroniza.sql` (aplicada): 7 lotes com saldo e 20 linhas
+de estoque PA "O640 I2X" → "640 I2X", e as grafias à mão do mapa e do inventário ABERTO
+("NEO 750 IPRO", "NEO 821 I2X"/"NEO821" → "NEO821 I2X", "O720 i2x"/"O720 I2" → "O720 I2X",
+"O790" → "O790 IPRO", "76KA72 CE- STINE 76KA72" → "76KA72"); inventário fechado é registro (o
+gatilho barra) e ficou como estava — só exibe o nome. A `v_balanco_demanda` agrupa pelo texto
+gravado, então a padronização precisa valer NO BANCO: o de-para do importador cuida dos
+próximos uploads, a migração do que já estava.
 **Upload do SAP sem PMS não apaga mais o peso que o lote já tinha** (14/10/2026, achado do
 Arion: "o lote final CB024 está sem o peso"). O MS19K05B3CB024 (71KA72, 15 bg) entrou em 12/10
 com PMS 118 — a ordem FAZENDA VENEZA01 foi pro mapa com 590 kg/bag — e o upload de 13/10 trouxe

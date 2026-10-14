@@ -6,7 +6,7 @@ import {
   ehRelatorioSaldos,
   FILIAL_CASA,
   nomeCurtoFilial,
-  normalizaCultivar,
+  chaveCultivar, mesmoCultivar, normalizaCultivar,
   normalizaFilial,
   num,
   numPms,
@@ -495,6 +495,23 @@ describe('numPms: PMS nunca tem milhar, todo ponto é decimal', () => {
 
   it('data inválida não vira número', () => {
     expect(numPms(new Date('coisa nenhuma'))).toBe(0)
+  })
+})
+
+describe('chaveCultivar / mesmoCultivar (14/10/2026)', () => {
+  it('toda grafia do 640 e o mesmo cultivar', () => {
+    expect(normalizaCultivar('O640 I2X')).toBe('640 I2X')
+    expect(normalizaCultivar('NEO640 I2X')).toBe('640 I2X')
+    expect(normalizaCultivar('neo 640 i2x')).toBe('640 I2X')
+    expect(normalizaCultivar('NEO 750 IPRO')).toBe('NEO750 IPRO')
+    for (const g of ['640 I2X', 'O640 I2X', 'NEO640 I2X', 'NEO 640 I2X', ' neo640  i2x '])
+      expect(mesmoCultivar(g, '640 I2X')).toBe(true)
+    expect(mesmoCultivar('NEO680 IPRO', '680 IPRO')).toBe(true)
+    expect(mesmoCultivar('O720 I2X', 'O720 I2')).toBe(false)
+    expect(mesmoCultivar('NEO821 I2X', 'NEO821')).toBe(false)
+    expect(mesmoCultivar('71KA72', '73KA72')).toBe(false)
+    expect(chaveCultivar('NEO700 I2X')).toBe('700I2X')
+    expect(chaveCultivar('O700 I2X')).toBe('700I2X')
   })
 })
 

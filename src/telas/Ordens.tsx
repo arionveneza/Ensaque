@@ -11,7 +11,7 @@ import type {
 } from '@/dados/api-gestao'
 import ModalOrdem from './ModalOrdem'
 import {
-  EMBALAGEM_DEPARA,
+  EMBALAGEM_DEPARA, mesmoCultivar,
   converterPedidos, converterSaldos, ehRelatorioPedidos, ehRelatorioSaldos,
   type Linha, type ResultadoPedidos, type ResultadoSaldos,
 } from '@/dominio/importacao/simpleagro'
@@ -2710,7 +2710,8 @@ function ModalProgramarDemanda({
   // trava; aqui tinha ficado inconsistente (achado do Arion, 26/08/2026: dois
   // lotes com saldo no SAP não apareciam pra selecionar).
   const lotesDoCultivar = useMemo(
-    () => lotes.filter((l) => l.cultivar === cultivar),
+    // "mesmo cultivar" (14/10/2026): "640 I2X", "O640 I2X" e "NEO640 I2X" casam
+    () => lotes.filter((l) => mesmoCultivar(l.cultivar, cultivar)),
     [lotes, cultivar],
   )
   /** Uma linha = uma ordem: lote, bags e, se quiser, destinação só dela. */
@@ -4028,7 +4029,7 @@ function NovaOrdemForm({
     if (!lote || !receita || !embalagem || bags <= 0) return null
     const chave = { cultivar: lote.cultivar, tratamento: receita.nome, embalagem }
     const linhaBalanco = balanco.find(
-      (b) => b.cultivar === chave.cultivar && b.tratamento === chave.tratamento &&
+      (b) => mesmoCultivar(b.cultivar, chave.cultivar) && b.tratamento === chave.tratamento &&
         b.embalagem === chave.embalagem,
     )
     return analisaDemanda(
@@ -4045,7 +4046,7 @@ function NovaOrdemForm({
         // ordem fora do estoque (sacaria) não conta como "já planejado"
         // cobrindo pedido real — a produção dela não vira saldo
         .filter((o) => o.status_efetivo !== 'Apontada' && !o.fora_balanco &&
-          o.cultivar === chave.cultivar &&
+          mesmoCultivar(o.cultivar, chave.cultivar) &&
           o.receita_nome === chave.tratamento && o.embalagem === chave.embalagem)
         .map((o) => ({ ...chave, bags: o.bags })),
       true,
