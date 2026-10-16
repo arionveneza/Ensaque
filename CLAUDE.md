@@ -2104,6 +2104,18 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    passou sem conferência; conferir pôs 17 em A 1 1 e zerou o TSI Saída; CHECK recusa TSI com bloco
    1. O "Voltar para produção" não foi exercitado no teste (o gatilho `fn_ordens_por_acao` barra o
    status fora do fluxo) — a lógica é o espelho exato da entrada.
+   **Sobra que arredonda pra 0,00 travava a Finalizada** (16/10/2026, achado do Arion: "a
+   produção não está conseguindo finalizar as produções, dá erro" — "violates check constraint
+   lote_enderecos_bags_check" ao confirmar a 176532, MEIOBAG de 1 bag do SV1131036260726-4).
+   `lote_enderecos.bags` é `numeric(10,2)` com CHECK `bags > 0`: a baixa pôs 412,5 ÷ 413 = 0,9988
+   bag no TSI Entrada (gravado 1,00) e o consumo na Finalizada tirou os mesmos 0,9988 — sobrou
+   0,0012, acima do 0,0001 que o `mapa_tsi_somar` usava como "zerou", mas 0,00 na coluna, e o
+   UPDATE caía no CHECK. Migração `tsi-bags-arredonda.sql` (aplicada; bases vivas):
+   `mapa_tsi_somar` e o desconto do endereço A–E em `baixar_lote` **arredondam na escala da coluna
+   (2 casas) ANTES de comparar com zero** — sobra que vira 0,00 apaga a linha, delta que vira 0,00
+   não cria. Teste no banco (desfeito): a chamada que falhava passou a apagar a linha; +0,004 não
+   cria, +0,006 vira 0,01; endereço E com 1,00 menos 0,9988 apaga. A 176532 voltou a Programada
+   (Cancelar início) com a liberação intacta — é só iniciar e finalizar de novo.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS
