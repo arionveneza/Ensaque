@@ -2116,6 +2116,25 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    não cria. Teste no banco (desfeito): a chamada que falhava passou a apagar a linha; +0,004 não
    cria, +0,006 vira 0,01; endereço E com 1,00 menos 0,9988 apaga. A 176532 voltou a Programada
    (Cancelar início) com a liberação intacta — é só iniciar e finalizar de novo.
+   **Relatório de estoque VIVO do mapa** (19/10/2026, pedido do Arion: "preciso que seja possível
+   extrair um relatório de estoque vivo do mapa"). Botão **"Estoque vivo (.xlsx · N)"** no cabeçalho
+   da tela Mapa (quem vê o mapa exporta; nada é gravado): uma linha por combinação lote +
+   tratamento com saldo em `lotes_mapa` — Cultivar · Lote · Tratamento · Embalagem · PMS · Peso do
+   bag · Saldo (bags) · Peso (kg) · Armazém A–E · TSI Entrada · TSI Saída · Sem endereço ·
+   Endereços ("A 3 Q05: 10 · TSI Entrada: 15", "~" quando é rateio) · Destinação · Classificação ·
+   Peneira · Categoria · Situação ("aguardando contagem (fora da grade)" pra combinação marcada no
+   inventário — entra na planilha sinalizada, embora fique fora da grade — e "endereço sem contagem
+   (rateado)"). **A repartição por armazém usa as MESMAS alocações da grade** (`alocar` do Mapa:
+   contagem explícita vale, o resto rateia entre os endereços sem contagem), então a planilha bate
+   com a tela posição a posição; "Sem endereço" = saldo − o que os endereços explicam. Com filtro
+   ativo no mapa (cultivar/tratamento/embalagem/destinação/classe/lote) exporta só o que casa, com
+   `-filtrado` no nome e a contagem no botão. Domínio puro `estoqueVivo(lotes, alocacoes)` em
+   `src/dominio/estoqueVivo.ts` (testado: repartição, rateio com "~", arredondamento em 2 casas,
+   endereço que soma mais que o saldo não fica negativo, ordem cultivar → branca antes do tratado →
+   lote, marcada entra sinalizada). O cartão "Saldo do SAP" ganhou a linha **"Estoque vivo: N bags
+   (X t) em M combinações — branca · tratada · A … E · TSI Entrada · TSI Saída · sem endereço"**, os
+   mesmos totais da planilha. É a foto do mapa AGORA — não é o inventário (contagem congelada) nem
+   o SAP; pra cruzar com o SAP continua o relatório dos armazéns da tela Inventário.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

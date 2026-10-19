@@ -20,7 +20,10 @@ import { alocacoesDaContagem } from '@/dominio/inventario'
 import { situacaoDe } from '@/dominio/inventario'
 import { useRealtime } from '@/dados/useRealtime'
 import { useRascunho, type Rascunho } from '@/lib/useRascunho'
-import { abrirJanelaImpressao, imprimirCroquiCarga, imprimirOrdemCarregamento } from '@/lib/exportar'
+import {
+  abrirJanelaImpressao, exportarXlsx, imprimirCroquiCarga, imprimirOrdemCarregamento, type ColunaExport,
+} from '@/lib/exportar'
+import { estoqueVivo } from '@/dominio/estoqueVivo'
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
@@ -29,7 +32,8 @@ import {
   enderecoLote, exportarCsv, inteiro, n, somaDias,
 } from '@/componentes/ui'
 import {
-  TSI_ENTRADA, TSI_SAIDA, ehArmazemTsi, normalizaEndereco, problemaEndereco, rotuloEndereco,
+  ARMAZENS_GALPAO, TSI_ENTRADA, TSI_SAIDA, ehArmazemTsi, normalizaEndereco, problemaEndereco,
+  rotuloEndereco,
 } from '@/dominio/endereco'
 
 /**
@@ -205,6 +209,33 @@ interface Posicao {
   bloco: string
   quadra: string
 }
+
+/**
+ * Colunas do "Estoque vivo (.xlsx)" (19/10/2026): uma linha por combinação
+ * lote + tratamento, o saldo repartido por armazém pelos mesmos rateios da
+ * grade — ver src/dominio/estoqueVivo.ts.
+ */
+const COLUNAS_ESTOQUE_VIVO: ColunaExport[] = [
+  { titulo: 'Cultivar', largura: 16 },
+  { titulo: 'Lote', largura: 20 },
+  { titulo: 'Tratamento', largura: 24 },
+  { titulo: 'Embalagem', largura: 10 },
+  { titulo: 'PMS (g)', tipo: 'numero', casas: 1, largura: 9 },
+  { titulo: 'Peso do bag (kg)', tipo: 'numero', casas: 1, largura: 14 },
+  { titulo: 'Saldo (bags)', tipo: 'numero', casas: 2, largura: 12 },
+  { titulo: 'Peso (kg)', tipo: 'numero', casas: 0, largura: 11 },
+  ...ARMAZENS_GALPAO.map((a) => ({ titulo: `Armazém ${a}`, tipo: 'numero' as const, casas: 2, largura: 11 })),
+  { titulo: 'TSI Entrada', tipo: 'numero', casas: 2, largura: 11 },
+  { titulo: 'TSI Saída', tipo: 'numero', casas: 2, largura: 11 },
+  { titulo: 'Sem endereço', tipo: 'numero', casas: 2, largura: 12 },
+  { titulo: 'Endereços', largura: 44 },
+  { titulo: 'Destinação', largura: 14 },
+  { titulo: 'Classificação', largura: 13 },
+  { titulo: 'Peneira', largura: 9 },
+  { titulo: 'Categoria', largura: 10 },
+  { titulo: 'Situação', largura: 34 },
+]
+const ouVazio = (v: number) => (v > 0 ? v : null)
 
 /** Letra da classificação de qualidade ("Classe C" → "C"). */
 const letraClasse = (classificacao: string | null): string | null => {
@@ -529,6 +560,47 @@ export default function Mapa() {
   // grade, em cartões próprios — ninguém endereça neles, só o banco grava
   const alocGalpao = useMemo(() => aloc.filter((a) => !ehArmazemTsi(a.endereco.armazem)), [aloc])
   const alocTsi = useMemo(() => aloc.filter((a) => ehArmazemTsi(a.endereco.armazem)), [aloc])
+  // estoque VIVO do mapa (19/10/2026, pedido do Arion: "preciso que seja
+  // possível extrair um relatório de estoque vivo do mapa"): a foto de TODAS
+  // as combinações com saldo (as aguardando contagem entram sinalizadas),
+  // repartida pelos mesmos rateios da grade — é o que o botão do cabeçalho
+  // exporta; com filtro ativo, só as combinações que casam
+  const vivo = useMemo(() => estoqueVivo(todos, alocar(todos)), [todos])
+  const nEstoqueVivo = filtroAtivo ? todos.filter(casaFiltro).length : todos.length
+  const exportarEstoqueVivo = () => {
+    let linhas = vivo.linhas
+    if (filtroAtivo) {
+      const ok = new Set(todos.filter(casaFiltro).map((l) => `${l.lote}\u0000${l.tratamento}`))
+      linhas = linhas.filter((r) => ok.has(`${r.lote}\u0000${r.tratamento}`))
+    }
+    return exportarXlsx(
+      `estoque-vivo-mapa-${new Date().toISOString().slice(0, 10)}${filtroAtivo ? '-filtrado' : ''}`,
+      COLUNAS_ESTOQUE_VIVO,
+      linhas.map((r) => [
+        r.cultivar,
+        r.lote,
+        r.tratamento,
+        r.embalagem,
+        r.pms,
+        r.pesoBagKg || null,
+        r.saldo,
+        r.kg,
+        ...ARMAZENS_GALPAO.map((a) => ouVazio(r.porArmazem[a] ?? 0)),
+        ouVazio(r.tsiEntrada),
+        ouVazio(r.tsiSaida),
+        ouVazio(r.semEndereco),
+        r.enderecos,
+        r.destinacao,
+        r.classificacao,
+        r.peneira,
+        r.categoria,
+        [
+          r.aguardandoContagem ? 'aguardando contagem (fora da grade)' : '',
+          r.estimado ? 'endereço sem contagem (rateado)' : '',
+        ].filter(Boolean).join(' · '),
+      ]),
+    ).catch((e) => setErro((e as Error).message))
+  }
 
   /**
    * Reserva da combinação (08/09/2026): cargas ativas + (na branca) ordens
@@ -1183,6 +1255,21 @@ export default function Mapa() {
     <Pagina
       titulo="Mapa e Montagem de Carga"
       descricao={`Todo lote do SAP no depósito ${DEPOSITO_MAPA} — semente branca e tratada, por lote + tratamento. A Logística endereça e movimenta (inteiro ou parcial); a Balança monta a carga, e o sistema avisa lote com Destinação e soma o peso.`}
+      acoes={
+        todos.length > 0 ? (
+          <Botao
+            variante="primario"
+            onClick={() => void exportarEstoqueVivo()}
+            titulo={
+              filtroAtivo
+                ? 'Planilha só das combinações que casam com o filtro do mapa (cultivar, tratamento, embalagem, destinação, classe, lote)'
+                : 'Planilha com tudo que o mapa tem agora: uma linha por lote + tratamento, saldo repartido por armazém (A–E, TSI Entrada, TSI Saída) e o que está sem endereço'
+            }
+          >
+            Estoque vivo (.xlsx · {inteiro(nEstoqueVivo)})
+          </Botao>
+        ) : undefined
+      }
     >
       {erro && <Erro>{erro}</Erro>}
       {msg && (
@@ -1251,6 +1338,7 @@ export default function Mapa() {
             </div>
           </>
         ) : (
+          <>
           <p className="text-sm text-stone-500 dark:text-stone-400">
             {todos.length === 0
               ? `Nenhum lote no mapa ainda. Suba o export de saldo do SAP (com as colunas Destinação e Depósito) — só o ${DEPOSITO_MAPA} entra.`
@@ -1260,6 +1348,23 @@ export default function Mapa() {
                     : ''
                 }. Suba a planilha de novo pra atualizar o saldo.`}
           </p>
+          {todos.length > 0 && (
+            <p
+              className="mt-2 text-sm text-stone-600 dark:text-stone-300"
+              title="A foto do mapa agora — é o que o botão 'Estoque vivo (.xlsx)' do cabeçalho exporta, linha a linha"
+            >
+              <b>Estoque vivo:</b> {n(vivo.resumo.bags, 0)} bags ({n(vivo.resumo.kg / 1000, 1)} t) em{' '}
+              {inteiro(vivo.resumo.combinacoes)} combinações — branca {n(vivo.resumo.branca, 0)} · tratada{' '}
+              {n(vivo.resumo.tratada, 0)} ·{' '}
+              {ARMAZENS_GALPAO.map((a) => `${a} ${n(vivo.resumo.porArmazem[a], 0)}`).join(' · ')} · TSI
+              Entrada {n(vivo.resumo.tsiEntrada, 0)} · TSI Saída {n(vivo.resumo.tsiSaida, 0)} · sem
+              endereço {n(vivo.resumo.semEndereco, 0)}
+              {vivo.resumo.aguardandoContagem > 0
+                ? ` · ${inteiro(vivo.resumo.aguardandoContagem)} aguardando contagem`
+                : ''}
+            </p>
+          )}
+          </>
         )}
       </Cartao>
 
