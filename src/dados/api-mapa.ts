@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '@/lib/supabase'
+import { ARMAZENS_GALPAO } from '@/dominio/endereco'
 import type { EnriquecimentoTratado, LoteMapaConvertido } from '@/dominio/importacao/mapa'
 
 const erro = (contexto: string, e: { message: string } | null) => {
@@ -304,6 +305,18 @@ export interface AjusteMapa {
   quadra: string | null
   saldo_depois: number
   criado_em: string
+  criado_por: string | null
+  /** Estorno de baixas (20/10/2026): carimbo da linha ORIGINAL quando foi estornada. */
+  estornado_em: string | null
+  /** Na linha de ESTORNO: o ajuste original que ela desfaz. */
+  estorno_de: string | null
+}
+
+export interface OpcoesAjustes {
+  limite?: number
+  /** Intervalo [de, ate) ISO de `criado_em` — o filtro por dia do histórico. */
+  de?: string
+  ate?: string
 }
 
 /** Rastro dos armazéns TSI Entrada/Saída (14/10/2026): o que cada ordem moveu. */
@@ -337,18 +350,79 @@ export async function listarMovimentosTsi(limite = 300): Promise<MovimentoTsi[]>
   return (data ?? []) as unknown as MovimentoTsi[]
 }
 
-export async function listarAjustesMapa(limite = 50): Promise<AjusteMapa[]> {
-  const { data, error } = await supabase
+export async function listarAjustesMapa(opcoes: OpcoesAjustes = {}): Promise<AjusteMapa[]> {
+  // com dia escolhido o limite sobe: 537 ajustes num dia só (18/10/2026) —
+  // e o PostgREST corta em 1.000 de qualquer jeito
+  const limite = opcoes.limite ?? (opcoes.de ? 1000 : 50)
+  let q = supabase
     .from('mapa_ajustes')
-    .select('id, lote, tratamento, delta, motivo, armazem, bloco, quadra, saldo_depois, criado_em')
-    .order('criado_em', { ascending: false })
-    .limit(limite)
+    .select('id, lote, tratamento, delta, motivo, armazem, bloco, quadra, saldo_depois, criado_em, criado_por, estornado_em, estorno_de')
+  if (opcoes.de) q = q.gte('criado_em', opcoes.de)
+  if (opcoes.ate) q = q.lt('criado_em', opcoes.ate)
+  const { data, error } = await q.order('criado_em', { ascending: false }).limit(limite)
   if (error) {
     // janela pré-migração: tabela ainda não existe — a tela esconde o cartão
     if (['42P01', 'PGRST200', 'PGRST205'].includes(error.code ?? '')) return []
     throw new Error(`listar ajustes de estoque: ${error.message}`)
   }
   return (data ?? []) as unknown as AjusteMapa[]
+}
+
+/**
+ * Estorna uma baixa do mapa (20/10/2026): soma o delta de volta na combinação,
+ * devolve ao endereço informado (opcional — sem ele só o saldo volta) e grava
+ * a linha de estorno apontando pra original. RPC estornar_ajuste_mapa
+ * (migração mapa-estorno-ajuste.sql). Devolve o novo saldo.
+ */
+export async function estornarAjusteMapa(
+  id: string,
+  motivo: string,
+  endereco: { armazem: string; bloco: string; quadra: string } | null,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('estornar_ajuste_mapa', {
+    p_ajuste: id,
+    p_motivo: motivo,
+    p_armazem: endereco?.armazem ?? null,
+    p_bloco: endereco?.bloco ?? null,
+    p_quadra: endereco?.quadra ?? null,
+  })
+  erro('estornar a baixa — a migração mapa-estorno-ajuste.sql já rodou?', error)
+  return (data as number) ?? 0
+}
+
+export interface EnderecoContadoLinha {
+  armazem: string
+  bloco: string
+  quadra: string
+  bags: number | null
+  /** Quando foi contado (ISO). */
+  em: string
+}
+
+/**
+ * Último lançamento de inventário da combinação ANTES de um instante — a
+ * sugestão de endereço de volta pro estorno de uma exclusão (que apagou os
+ * endereços sem guardar onde estavam). Só armazém A–E; null se nunca contada.
+ */
+export async function ultimoEnderecoContado(
+  lote: string,
+  tratamento: string,
+  antesDe: string,
+): Promise<EnderecoContadoLinha | null> {
+  const { data, error } = await supabase
+    .from('inventario_itens')
+    .select('armazem, bloco, quadra, bags, criado_em')
+    .eq('lote', lote)
+    .eq('tratamento', tratamento)
+    .lt('criado_em', antesDe)
+    .in('armazem', [...ARMAZENS_GALPAO])
+    .order('criado_em', { ascending: false })
+    .limit(1)
+  erro('buscar o último endereço contado', error)
+  const r = (data ?? [])[0] as
+    | { armazem: string; bloco: string; quadra: string; bags: number | null; criado_em: string }
+    | undefined
+  return r ? { armazem: r.armazem, bloco: r.bloco, quadra: r.quadra, bags: r.bags, em: r.criado_em } : null
 }
 
 export interface DestinoEndereco {

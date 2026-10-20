@@ -2135,6 +2135,39 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    (X t) em M combinações — branca · tratada · A … E · TSI Entrada · TSI Saída · sem endereço"**, os
    mesmos totais da planilha. É a foto do mapa AGORA — não é o inventário (contagem congelada) nem
    o SAP; pra cruzar com o SAP continua o relatório dos armazéns da tela Inventário.
+   **Estorno de baixas do mapa — ajustes e exclusões** (20/10/2026, pedido do Arion: "foram
+   realizadas diversas baixas de estoque direto no mapa do dia 19/10, precisamos de uma forma de
+   realizar o estorno destas baixas, pois foram executadas de maneira incorreta. O saldo excluído do
+   lote com tratamento e quantidade de BIGBAGS deve ser retornado"). Achado no banco: 19/10 teve
+   **52 linhas em `mapa_ajustes`, −333 bags** — 31 exclusões "Excluído do mapa: Carregado — saiu do
+   galpão" (Eduardo/Francisco, a baixa do carregado no tablet) e 21 ajustes com OC/CARGA; a exclusão
+   zera a linha de `lotes_mapa` (não apaga) e APAGA os endereços sem guardar onde estavam, e 3
+   combinações já estavam NEGATIVAS por consumo de ordem depois da exclusão. **O rastro é a única
+   fonte do desfazer.** Decisões dele: o saldo volta **pro endereço de origem quando se sabe** (o do
+   próprio ajuste; na exclusão, o último contado no inventário antes dela — 29 das 31 têm, nas
+   contagens de 18/10 —, mostrado pra confirmar/trocar; sem nenhum, "Sem localização"); **quem
+   estorna é quem ajusta** (`mapa/ajustar`); **ele escolhe na tela** o que estornar. Migração
+   `mapa-estorno-ajuste.sql` (aplicada): `mapa_ajustes.estorno_de` (na linha de estorno, aponta pra
+   original), `estornado_em/por` (na original); RPC **`estornar_ajuste_mapa(ajuste, motivo, armazém,
+   bloco, quadra)`** (DEFINER): trava a linha, recusa já estornada / estorno de estorno / motivo vazio
+   / combinação que sumiu do mapa / saldo que ficaria negativo (estorno de ajuste POSITIVO); soma
+   `−delta` em `lotes_mapa`; endereço só A–E completo (mesma régua do `ajustar_saldo_mapa`, arredondando
+   em 2 casas — rastro de "esvaziado" só tem a letra e aí só o saldo muda; nunca TSI); grava a linha de
+   estorno ("Estorno de dd/mm HH:MM (motivo original): motivo") e carimba a original. Teste no banco
+   (desfeito, dados reais de 19/10): 4260083 · FTZ ELITE −5 → saldo 5 em B 22 Q3; estornar de novo e
+   estornar o estorno recusam; SV0311035760277 −21 com saldo −12 → 9; +3 com saldo 0 recusa.
+   **Tela**: o cartão "Ajustes de estoque" do Mapa ganhou **Dia** (`<input type="date">`, vazio = 50
+   últimos; com dia, todos do dia — `listarAjustesMapa({de, ate})`, `intervaloDoDiaLocal`), chips
+   Todos · Exclusões · Ajustes · Estornos (`filtrarAjustes`), coluna **Quem** (`listarNomesUsuarios`),
+   coluna **Estorno** (etiqueta "estornado dd/mm" / "estorno", ou checkbox + botão **Estornar** nas
+   estornáveis — `podeEstornar`), "Selecionar as visíveis" e **"Estornar selecionados (N)"**.
+   `ModalEstornarAjustes`: lista as linhas com o **endereço de volta sugerido** (`enderecoSugerido`:
+   o do ajuste, senão `ultimoEnderecoContado` em `inventario_itens`, senão "Sem localização"), motivo
+   (prefill "Baixa lançada por engano"); com UMA linha, armazém/bloco/quadra editáveis (pré-preenchidos
+   com a sugestão; vazio = só o saldo); com várias, a sugestão vale como está. Uma RPC por linha, em
+   sequência — falha no meio para, diz quantas entraram e recarrega. Domínio puro
+   `src/dominio/estornoAjuste.ts` (testado). O dia do filtro fica num ref porque `recarregar` roda do
+   realtime com o closure velho. Inventário, cargas e `mapa_movimentos_tsi` não mudam no estorno.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

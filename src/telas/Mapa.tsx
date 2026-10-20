@@ -24,6 +24,11 @@ import {
   abrirJanelaImpressao, exportarXlsx, imprimirCroquiCarga, imprimirOrdemCarregamento, type ColunaExport,
 } from '@/lib/exportar'
 import { estoqueVivo } from '@/dominio/estoqueVivo'
+import {
+  MOTIVO_ESTORNO_PADRAO, bagsDeVolta, ehEstorno, enderecoSugerido, filtrarAjustes, intervaloDoDiaLocal,
+  podeEstornar, rotuloSugestao, type SugestaoEndereco, type TipoAjuste,
+} from '@/dominio/estornoAjuste'
+import { listarNomesUsuarios } from '@/dados/api-gestao'
 import { VEICULOS_CARGA, veiculoDe } from '@/dominio/croqui'
 import { SeletorFotos } from '@/componentes/SeletorFotos'
 import {
@@ -237,6 +242,22 @@ const COLUNAS_ESTOQUE_VIVO: ColunaExport[] = [
 ]
 const ouVazio = (v: number) => (v > 0 ? v : null)
 
+/** Chips do histórico de ajustes (estorno de baixas, 20/10/2026). */
+const ROTULO_TIPO_AJUSTE: Record<TipoAjuste, string> = {
+  todos: 'Todos',
+  exclusoes: 'Exclusões',
+  ajustes: 'Ajustes',
+  estornos: 'Estornos',
+}
+const chipCls = (ativo: boolean) =>
+  `rounded-full border px-3 py-1 text-xs font-medium ${
+    ativo
+      ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+      : 'border-stone-300 hover:bg-stone-50 dark:border-stone-700 dark:hover:bg-stone-800'
+  }`
+/** Bags inteiros sem casa; meio bag com as casas que tiver. */
+const fmtBags = (v: number) => n(v, Number.isInteger(v) ? 0 : 2)
+
 /** Letra da classificação de qualidade ("Classe C" → "C"). */
 const letraClasse = (classificacao: string | null): string | null => {
   const m = (classificacao ?? '').trim().match(/([A-Z])$/i)
@@ -326,6 +347,18 @@ export default function Mapa() {
   const [substituindo, setSubstituindo] = useState<{ inv: InventarioLinha; bags: number } | null>(null)
   // prefill do modal de ajuste quando vem do cartão de divergências
   const [ajustes, setAjustes] = useState<m.AjusteMapa[]>([])
+  // estorno de baixas (20/10/2026, pedido do Arion: "precisamos de uma forma
+  // de realizar o estorno destas baixas"): o histórico ganha filtro por dia e
+  // tipo, quem fez, seleção múltipla e o modal. O dia fica num ref porque
+  // `recarregar` roda de dentro do realtime com o closure velho.
+  const [diaAjustes, setDiaAjustes] = useState('')
+  const diaAjustesRef = useRef('')
+  const [tipoAjustes, setTipoAjustes] = useState<TipoAjuste>('todos')
+  const [nomes, setNomes] = useState<Record<string, string>>({})
+  const [selAjustes, setSelAjustes] = useState<Set<string>>(() => new Set())
+  const [estornando, setEstornando] = useState<m.AjusteMapa[] | null>(null)
+  const ajustesVisiveis = useMemo(() => filtrarAjustes(ajustes, tipoAjustes), [ajustes, tipoAjustes])
+  const estornaveis = useMemo(() => ajustesVisiveis.filter(podeEstornar), [ajustesVisiveis])
   // último inventário APLICADO — referência do cartão de pendências
   const [divInv, setDivInv] = useState<{
     titulo: string
@@ -453,7 +486,7 @@ export default function Mapa() {
       m.listarCargasMontadas(),
       m.listarLotesComprometidos(),
       m.listarConsumoOrdens(),
-      m.listarAjustesMapa(),
+      m.listarAjustesMapa(intervaloDoDiaLocal(diaAjustesRef.current) ?? {}),
     ])
       .then(([l, c, cp, co, aj]) => {
         setLotes(l)
@@ -466,7 +499,17 @@ export default function Mapa() {
 
   useEffect(() => {
     recarregar().finally(() => setCarregando(false))
+    // quem fez cada ajuste (coluna Quem do histórico) — falha vira "—"
+    listarNomesUsuarios().then(setNomes).catch(() => {})
   }, [])
+  // trocar o dia do histórico recarrega só os ajustes e zera a seleção
+  useEffect(() => {
+    diaAjustesRef.current = diaAjustes
+    setSelAjustes(new Set())
+    m.listarAjustesMapa(intervaloDoDiaLocal(diaAjustes) ?? {})
+      .then(setAjustes)
+      .catch((x) => setErro(x instanceof Error ? x.message : String(x)))
+  }, [diaAjustes])
   // as tabelas filhas também: o cabeçalho da carga quase não carrega dado
   // exibido — sem os eventos de produtos/itens, outro tablet recarregava no
   // meio da gravação e ficava com a carga vazia até um F5 (revisão 28/08/2026)
@@ -1979,34 +2022,153 @@ export default function Mapa() {
         )}
       </CartaoRecolhivel>
 
-      {/* -------- rastro dos ajustes manuais de saldo (08/09/2026) -------- */}
-      {ajustes.length > 0 && (
+      {/* -------- rastro dos ajustes manuais de saldo (08/09/2026) + estorno (20/10/2026) -------- */}
+      {(ajustes.length > 0 || diaAjustes) && (
         <CartaoRecolhivel
           titulo="Ajustes de estoque"
-          ocorrencias={ajustes.length}
-          resumo="Rastro dos ajustes manuais de saldo — quem fez deixa quanto, quando e por quê."
+          ocorrencias={ajustesVisiveis.length}
+          resumo="Rastro dos ajustes manuais de saldo — quem fez, quanto, quando e por quê. Baixa errada se desfaz aqui: filtre o dia, marque e estorne."
           destaque={false}
         >
-          <Tabela cabecalho={['Quando', 'Lote', 'Tratamento', '#Ajuste', '#Saldo depois', 'Endereço', 'Motivo']}>
-            {ajustes.map((a) => (
-              <tr key={a.id} className="border-t border-stone-100 dark:border-stone-800/60">
-                <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(a.criado_em)}</td>
-                <td className="px-2 py-1.5 font-medium">{a.lote}</td>
-                <td className="px-2 py-1.5">{rotuloTratamento(a.tratamento)}</td>
-                <td
-                  className={`num-tabular px-2 py-1.5 text-right font-medium ${
-                    a.delta > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                  }`}
-                >
-                  {a.delta > 0 ? '+' : ''}{n(a.delta, 0)}
-                </td>
-                <td className="num-tabular px-2 py-1.5 text-right">{inteiro(a.saldo_depois)}</td>
-                <td className="px-2 py-1.5 text-xs">{enderecoLote(a)}</td>
-                <td className="px-2 py-1.5 text-xs text-stone-500">{a.motivo}</td>
-              </tr>
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+            <label className="flex items-center gap-1.5">
+              <span className="text-xs text-stone-500">Dia</span>
+              <input
+                type="date"
+                value={diaAjustes}
+                onChange={(e) => setDiaAjustes(e.target.value)}
+                className={INPUT}
+                title="Vazio = os 50 últimos ajustes; com dia, todos os ajustes daquele dia"
+              />
+            </label>
+            {diaAjustes && <Botao onClick={() => setDiaAjustes('')}>últimos 50</Botao>}
+            {(Object.keys(ROTULO_TIPO_AJUSTE) as TipoAjuste[]).map((t) => (
+              <button key={t} type="button" onClick={() => setTipoAjustes(t)} className={chipCls(tipoAjustes === t)}>
+                {ROTULO_TIPO_AJUSTE[t]} ({inteiro(filtrarAjustes(ajustes, t).length)})
+              </button>
             ))}
-          </Tabela>
+            {podeAjustar && estornaveis.length > 0 && (
+              <>
+                <Botao
+                  onClick={() =>
+                    setSelAjustes(
+                      selAjustes.size === estornaveis.length ? new Set() : new Set(estornaveis.map((a) => a.id)),
+                    )
+                  }
+                >
+                  {selAjustes.size === estornaveis.length
+                    ? 'Limpar seleção'
+                    : `Selecionar as visíveis (${inteiro(estornaveis.length)})`}
+                </Botao>
+                <Botao
+                  variante="primario"
+                  disabled={selAjustes.size === 0}
+                  onClick={() => setEstornando(estornaveis.filter((a) => selAjustes.has(a.id)))}
+                  titulo="Devolve o saldo das baixas marcadas ao mapa, uma a uma, com rastro"
+                >
+                  Estornar selecionados ({inteiro(selAjustes.size)})
+                </Botao>
+              </>
+            )}
+          </div>
+          {ajustesVisiveis.length === 0 ? (
+            <Vazio>{diaAjustes ? 'Nenhum ajuste nesse dia.' : 'Nenhum ajuste nesse filtro.'}</Vazio>
+          ) : (
+            <Tabela
+              cabecalho={[
+                ...(podeAjustar ? [''] : []),
+                'Quando', 'Quem', 'Lote', 'Tratamento', '#Ajuste', '#Saldo depois', 'Endereço', 'Motivo', 'Estorno',
+              ]}
+            >
+              {ajustesVisiveis.map((a) => {
+                const ok = podeEstornar(a)
+                return (
+                  <tr
+                    key={a.id}
+                    className={`border-t border-stone-100 dark:border-stone-800/60 ${a.estornado_em ? 'opacity-60' : ''}`}
+                  >
+                    {podeAjustar && (
+                      <td className="px-2 py-1.5">
+                        {ok && (
+                          <input
+                            type="checkbox"
+                            checked={selAjustes.has(a.id)}
+                            onChange={(e) =>
+                              setSelAjustes((atual) => {
+                                const novo = new Set(atual)
+                                if (e.target.checked) novo.add(a.id)
+                                else novo.delete(a.id)
+                                return novo
+                              })
+                            }
+                            aria-label={`selecionar ${a.lote} · ${a.tratamento}`}
+                          />
+                        )}
+                      </td>
+                    )}
+                    <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(a.criado_em)}</td>
+                    <td className="px-2 py-1.5 text-xs">{nomes[a.criado_por ?? ''] ?? '—'}</td>
+                    <td className="px-2 py-1.5 font-medium">{a.lote}</td>
+                    <td className="px-2 py-1.5">{rotuloTratamento(a.tratamento)}</td>
+                    <td
+                      className={`num-tabular px-2 py-1.5 text-right font-medium ${
+                        a.delta > 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                      }`}
+                    >
+                      {a.delta > 0 ? '+' : ''}{fmtBags(a.delta)}
+                    </td>
+                    <td className="num-tabular px-2 py-1.5 text-right">{fmtBags(a.saldo_depois)}</td>
+                    <td className="px-2 py-1.5 text-xs">{enderecoLote(a)}</td>
+                    <td className="px-2 py-1.5 text-xs text-stone-500">{a.motivo}</td>
+                    <td className="px-2 py-1.5 text-xs">
+                      {ehEstorno(a) ? (
+                        <Tag cor="info">estorno</Tag>
+                      ) : a.estornado_em ? (
+                        <Tag cor="neutro">estornado {dataHoraCurta(a.estornado_em)}</Tag>
+                      ) : podeAjustar ? (
+                        <Botao onClick={() => setEstornando([a])} titulo="Devolve este saldo ao mapa">
+                          Estornar
+                        </Botao>
+                      ) : null}
+                    </td>
+                  </tr>
+                )
+              })}
+            </Tabela>
+          )}
         </CartaoRecolhivel>
+      )}
+
+      {estornando && (
+        <ModalEstornarAjustes
+          ajustes={estornando}
+          onFechar={() => setEstornando(null)}
+          onEstornar={async (itens, motivo) => {
+            // uma RPC por linha, em sequência (transação por linha): falha no
+            // meio para ali — o que já entrou fica, e o histórico mostra
+            let feitos = 0
+            try {
+              for (const it of itens) {
+                await m.estornarAjusteMapa(it.ajuste.id, motivo, it.endereco)
+                feitos++
+              }
+            } catch (e) {
+              await recarregar()
+              const texto = e instanceof Error ? e.message : String(e)
+              throw new Error(
+                feitos > 0
+                  ? `${feitos} de ${itens.length} estornado(s) antes do erro em ${itens[feitos].ajuste.lote}: ${texto}`
+                  : texto,
+              )
+            }
+            setEstornando(null)
+            setSelAjustes(new Set())
+            setMsg(
+              `${feitos} estorno(s) gravado(s): ${fmtBags(bagsDeVolta(itens.map((i) => i.ajuste)))} bags de volta ao mapa.`,
+            )
+            await recarregar()
+          }}
+        />
       )}
 
       {ajustando && (
@@ -3208,6 +3370,189 @@ const MOTIVOS_EXCLUSAO = ['Carregado — saiu do galpão', 'Enviado para tratame
  * exemplo excluir um lote"): zera o saldo, tira TODOS os endereços e deixa o
  * rastro no histórico de ajustes (RPC excluir_lote_mapa).
  */
+/**
+ * Estorno de baixas do mapa (20/10/2026): devolve o saldo das linhas escolhidas
+ * do histórico, uma RPC por linha. O endereço de volta é SUGERIDO — o do
+ * próprio ajuste quando ele tem um completo, senão o último contado no
+ * inventário antes da baixa (a exclusão apagou os endereços sem guardar onde
+ * estavam) — e, com UMA linha, dá pra confirmar, trocar ou limpar; com várias
+ * a sugestão vale como está (pra mudar a de uma, estorne ela sozinha).
+ */
+function ModalEstornarAjustes({
+  ajustes, onFechar, onEstornar,
+}: {
+  ajustes: m.AjusteMapa[]
+  onFechar: () => void
+  onEstornar: (
+    itens: { ajuste: m.AjusteMapa; endereco: { armazem: string; bloco: string; quadra: string } | null }[],
+    motivo: string,
+  ) => Promise<void>
+}) {
+  const unico = ajustes.length === 1 ? ajustes[0] : null
+  const [motivo, setMotivo] = useState(MOTIVO_ESTORNO_PADRAO)
+  // null = ainda buscando no inventário
+  const [sugestoes, setSugestoes] = useState<Record<string, SugestaoEndereco | null> | null>(null)
+  const [armazem, setArmazem] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [quadra, setQuadra] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const gravandoRef = useRef(false)
+
+  useEffect(() => {
+    let vivo = true
+    Promise.all(
+      ajustes.map(async (a) => {
+        const propria = enderecoSugerido(a, null)
+        if (propria) return [a.id, propria] as const
+        const contado = await m.ultimoEnderecoContado(a.lote, a.tratamento, a.criado_em).catch(() => null)
+        return [a.id, enderecoSugerido(a, contado)] as const
+      }),
+    ).then((pares) => {
+      if (!vivo) return
+      const mapa: Record<string, SugestaoEndereco | null> = Object.fromEntries(pares)
+      setSugestoes(mapa)
+      if (unico) {
+        const sug = mapa[unico.id]
+        if (sug) {
+          setArmazem(sug.armazem)
+          setBloco(sug.bloco)
+          setQuadra(sug.quadra)
+        }
+      }
+    })
+    return () => {
+      vivo = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ajustes])
+
+  const total = bagsDeVolta(ajustes)
+  const enderecoDigitado = armazem.trim() || bloco.trim() || quadra.trim()
+  const problema = unico && enderecoDigitado ? problemaEndereco({ armazem, bloco, quadra }) : null
+
+  const gravar = () => {
+    if (!motivo.trim() || gravandoRef.current || sugestoes === null || problema) return
+    gravandoRef.current = true
+    setSalvando(true)
+    setErro(null)
+    const itens = ajustes.map((a) => {
+      if (unico) {
+        const end = enderecoDigitado ? normalizaEndereco({ armazem, bloco, quadra }) : null
+        return { ajuste: a, endereco: end ? { armazem: end.armazem, bloco: end.bloco, quadra: end.quadra } : null }
+      }
+      const sug = sugestoes[a.id]
+      return { ajuste: a, endereco: sug ? { armazem: sug.armazem, bloco: sug.bloco, quadra: sug.quadra } : null }
+    })
+    onEstornar(itens, motivo.trim()).catch((e) => {
+      setErro(e instanceof Error ? e.message : String(e))
+      gravandoRef.current = false
+      setSalvando(false)
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">
+          {unico
+            ? `Estornar baixa — ${unico.lote} · ${rotuloTratamento(unico.tratamento)}`
+            : `Estornar ${inteiro(ajustes.length)} baixas`}
+        </h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          O saldo volta pra combinação (<b>{fmtBags(total)} bg</b> no total) e cada linha vira um
+          estorno no histórico, apontando pra baixa original — que não pode ser estornada de novo.
+          Inventário, cargas e TSI não mudam.
+        </p>
+
+        <div className="mt-3">
+          <Tabela cabecalho={['Quando', 'Lote', 'Tratamento', { texto: '#Volta', className: 'text-right' }, 'Endereço de volta', 'Motivo original']}>
+            {ajustes.map((a) => {
+              const sug = sugestoes ? sugestoes[a.id] : undefined
+              return (
+                <tr key={a.id} className="border-t border-stone-100 dark:border-stone-800/60">
+                  <td className="px-2 py-1.5 text-xs text-stone-500">{dataHoraCurta(a.criado_em)}</td>
+                  <td className="px-2 py-1.5 font-medium">{a.lote}</td>
+                  <td className="px-2 py-1.5">{rotuloTratamento(a.tratamento)}</td>
+                  <td className="num-tabular px-2 py-1.5 text-right font-medium text-green-700 dark:text-green-400">
+                    {-a.delta > 0 ? '+' : ''}{fmtBags(-a.delta)}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs">
+                    {sugestoes === null ? (
+                      'carregando…'
+                    ) : (
+                      <>
+                        {rotuloSugestao(sug ?? null)}
+                        {sug?.origem === 'inventario' && sug.em ? (
+                          <span className="text-stone-500"> (inventário {dataHoraCurta(sug.em)})</span>
+                        ) : sug?.origem === 'ajuste' ? (
+                          <span className="text-stone-500"> (do ajuste)</span>
+                        ) : null}
+                      </>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs text-stone-500">{a.motivo}</td>
+                </tr>
+              )
+            })}
+          </Tabela>
+        </div>
+
+        {unico ? (
+          <div className="mt-3">
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Endereço de volta — confirme, troque ou deixe em branco (vai pra "Sem localização"):
+            </p>
+            <div className="mt-1 flex flex-wrap items-end gap-2">
+              <div className="w-28"><SeletorArmazem valor={armazem} aoMudar={setArmazem} /></div>
+              <div className="w-24" title="Bloco (1 a 44)"><SeletorBloco valor={bloco} aoMudar={setBloco} /></div>
+              <div className="w-28"><SeletorQuadra valor={quadra} aoMudar={setQuadra} /></div>
+              {enderecoDigitado && (
+                <Botao
+                  onClick={() => {
+                    setArmazem('')
+                    setBloco('')
+                    setQuadra('')
+                  }}
+                >
+                  limpar
+                </Botao>
+              )}
+            </div>
+            {problema && <p className="mt-1 text-xs text-red-600">{problema}</p>}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+            Com várias linhas o endereço sugerido vale como está — pra trocar o de uma, estorne ela sozinha.
+          </p>
+        )}
+
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="motivo do estorno * (obrigatório)"
+          className={`${INPUT} mt-3 w-full`}
+        />
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante="primario"
+            disabled={!motivo.trim() || salvando || sugestoes === null || !!problema}
+            onClick={gravar}
+          >
+            {salvando
+              ? 'Estornando…'
+              : ajustes.length > 1 ? `Estornar ${inteiro(ajustes.length)} baixas` : 'Estornar baixa'}
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ModalExcluirLote({
   lote, onFechar, onExcluir,
 }: {
