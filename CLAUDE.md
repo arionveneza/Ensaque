@@ -2168,6 +2168,25 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    sequência — falha no meio para, diz quantas entraram e recarrega. Domínio puro
    `src/dominio/estornoAjuste.ts` (testado). O dia do filtro fica num ref porque `recarregar` roda do
    realtime com o closure velho. Inventário, cargas e `mapa_movimentos_tsi` não mudam no estorno.
+   **"Armazém TSI" dentro do mapa, sem bloco nem quadra** (21/10/2026, pedido do Arion: "criar um
+   mapa para o TSI, como se fossem os outros armazéns, sem quadra, bloco etc. — só precisamos saber o
+   que temos lá dentro"). Os dois cartões soltos de 14/10 ("TSI Entrada — branca liberada pra
+   tratar" e "TSI Saída — produzido, aguardando endereçamento", acima de "Sem localização") saíram
+   e viraram o **ARMAZÉM TSI** no cartão "Mapa (visão superior)", logo depois do E, com a mesma
+   moldura dos armazéns A–E (cabeçalho com bags, lotes e "N encontrado(s)" com filtro) — no lugar da
+   grade bloco × quadra, a lista do que está dentro em duas partes, **Entrada · branca a tratar** e
+   **Saída · produzido a endereçar**, cada uma com total (Lote · Cultivar · Tratamento · Emb. · Bags,
+   destinação em vermelho, larguras fixas pra as duas tabelas alinharem). Por linha: **Devolver ao
+   armazém** / **Endereçar** (o `ModalMover` de sempre, como nos cartões antigos) e **detalhes**, que
+   abre o `ModalPosicao` só daquele lote (`Posicao.lote` = `chaveDe`; título "Armazém TSI · Entrada/
+   Saída") com Mover, Endereços, Ajustar, Excluir e mandar pra carga. Respeita o filtro do mapa como a
+   grade (casa = verde, o resto apaga). Componente `ArmazemTsi` em `Mapa.tsx`; nada no banco mudou.
+   No dia: Entrada 5 lotes / 65,5 bg, Saída 71 lotes / 336 bg. **Achado junto, corrigido**: o editor
+   de endereços (`ModalEnderecos`) punha a linha TSI do lote como linha editável, o
+   `normalizaEndereco` (só A–E) a recusava e o **Salvar travava** em todo lote que estava no TSI e no
+   galpão ao mesmo tempo (2 combinações hoje); agora a linha TSI aparece como informação ("No TSI:
+   TSI Saída 7 bg — fica como está") e volta junto no Salvar (o `salvarEnderecos` substitui tudo).
+   Ninguém endereça NO TSI pela tela — continua sendo só o banco (baixa, apontamento, conferência).
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

@@ -38,7 +38,7 @@ import {
 } from '@/componentes/ui'
 import {
   ARMAZENS_GALPAO, TSI_ENTRADA, TSI_SAIDA, ehArmazemTsi, normalizaEndereco, problemaEndereco,
-  rotuloEndereco,
+  rotuloArmazem, rotuloEndereco,
 } from '@/dominio/endereco'
 
 /**
@@ -213,6 +213,8 @@ interface Posicao {
   armazem: string
   bloco: string
   quadra: string
+  /** Só este lote (chaveDe) — o "detalhes" de uma linha do Armazém TSI. */
+  lote?: string
 }
 
 /**
@@ -1290,7 +1292,8 @@ export default function Mapa() {
         (a) =>
           a.endereco.armazem === posicao.armazem &&
           a.endereco.bloco === posicao.bloco &&
-          a.endereco.quadra === posicao.quadra,
+          a.endereco.quadra === posicao.quadra &&
+          (!posicao.lote || chaveDe(a.lote) === posicao.lote),
       )
     : []
 
@@ -1410,24 +1413,6 @@ export default function Mapa() {
           </>
         )}
       </Cartao>
-
-      {/* -------- armazéns do sistema: TSI Entrada / TSI Saída (14/10/2026) -------- */}
-      <CartaoTsi
-        titulo="TSI Entrada — branca liberada pra tratar"
-        descricao="O que a Logística baixou pra uma ordem e a produção ainda não consumiu. Sobrou depois do apontamento? Devolva ao armazém."
-        acao="Devolver ao armazém"
-        itens={alocTsi.filter((a) => a.endereco.armazem === TSI_ENTRADA)}
-        pode={podeEnderecar}
-        onMover={(a) => setMovendo(a)}
-      />
-      <CartaoTsi
-        titulo="TSI Saída — produzido, aguardando endereçamento"
-        descricao="Entrou aqui quando a produção apontou a quantidade. A conferência da Logística (tela Logística) tira daqui e põe no armazém — o AGROTIS não espera por isso. Dá pra endereçar daqui também."
-        acao="Endereçar"
-        itens={alocTsi.filter((a) => a.endereco.armazem === TSI_SAIDA)}
-        pode={podeEnderecar}
-        onMover={(a) => setMovendo(a)}
-      />
 
       {/* -------- fila de endereçamento (recolhida por padrão) -------- */}
       {semEndereco.length > 0 && (
@@ -1743,6 +1728,24 @@ export default function Mapa() {
             podeAjustar
               ? (armazem, bags, combinacoes) => setEsvaziando({ armazem, bags, combinacoes })
               : undefined
+          }
+        />
+
+        {/* Armazém TSI (21/10/2026): o que está dentro do TSI, como os outros
+            armazéns, mas sem bloco/quadra — só a lista */}
+        <ArmazemTsi
+          itens={alocTsi}
+          casaFiltro={casaFiltro}
+          filtroAtivo={filtroAtivo}
+          podeMover={podeEnderecar}
+          onMover={(a) => setMovendo(a)}
+          onDetalhes={(a) =>
+            setPosicao({
+              armazem: a.endereco.armazem,
+              bloco: a.endereco.bloco,
+              quadra: a.endereco.quadra,
+              lote: chaveDe(a.lote),
+            })
           }
         />
 
@@ -3259,7 +3262,9 @@ function ModalPosicao({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
         <h3 className="text-base font-semibold">
-          Armazém {posicao.armazem} · Bloco {posicao.bloco} · {rotuloQuadra(posicao.quadra)}
+          {ehArmazemTsi(posicao.armazem)
+            ? `Armazém TSI · ${posicao.armazem === TSI_ENTRADA ? 'Entrada (branca a tratar)' : 'Saída (produzido a endereçar)'}`
+            : `Armazém ${posicao.armazem} · Bloco ${posicao.bloco} · ${rotuloQuadra(posicao.quadra)}`}
         </h3>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
           {alocacoes.length} lote(s) nesta posição ·{' '}
@@ -3822,43 +3827,146 @@ function ModalEsvaziarArmazem({
 
 /** Movimentação: o lote inteiro daquele endereço, ou uma parte. */
 /**
- * Cartão de um armazém do SISTEMA (14/10/2026): lista o que está em TSI
- * Entrada ou TSI Saída e deixa mover pra A–E pelo mesmo ModalMover da grade
- * (origem TSI, destino obrigatoriamente uma letra). Some quando vazio.
+ * Armazém TSI (21/10/2026, pedido do Arion: "criar um mapa para o TSI, como se
+ * fossem os outros armazéns, sem quadra, bloco etc. — só precisamos saber o
+ * que temos lá dentro"). Mesma moldura dos armazéns A–E, mas no lugar da grade
+ * bloco × quadra uma lista do que está dentro, em duas partes: a ENTRADA (a
+ * branca que a Logística baixou pra uma ordem e a produção ainda não consumiu)
+ * e a SAÍDA (o produzido que ainda não foi endereçado). Ninguém endereça no
+ * TSI — o banco põe e tira (baixa, apontamento, conferência); daqui só se
+ * tira (Mover pra A–E) ou abre o detalhe do lote (ajustar, excluir, carga).
+ * Respeita o filtro do mapa como a grade: o que casa acende, o resto apaga.
  */
-function CartaoTsi({
-  titulo, descricao, acao, itens, pode, onMover,
+function ArmazemTsi({
+  itens, casaFiltro, filtroAtivo, podeMover, onMover, onDetalhes,
 }: {
-  titulo: string
-  descricao: string
-  acao: string
   itens: Alocacao[]
-  pode: boolean
+  casaFiltro: (l: LoteMapaLinha) => boolean
+  filtroAtivo: boolean
+  podeMover: boolean
   onMover: (a: Alocacao) => void
+  onDetalhes: (a: Alocacao) => void
 }) {
-  if (itens.length === 0) return null
-  const total = itens.reduce((s, a) => s + a.bags, 0)
+  const ordenar = (lista: Alocacao[]) =>
+    lista.slice().sort((a, b) =>
+      a.lote.cultivar.localeCompare(b.lote.cultivar, 'pt-BR', { numeric: true }) ||
+      a.lote.tratamento.localeCompare(b.lote.tratamento, 'pt-BR', { numeric: true }) ||
+      a.lote.lote.localeCompare(b.lote.lote, 'pt-BR', { numeric: true }),
+    )
+  const entrada = ordenar(itens.filter((a) => a.endereco.armazem === TSI_ENTRADA))
+  const saida = ordenar(itens.filter((a) => a.endereco.armazem === TSI_SAIDA))
+  const soma = (lista: Alocacao[]) => lista.reduce((t, a) => t + a.bags, 0)
+  const total = soma(itens)
+  const encontrados = filtroAtivo ? itens.filter((a) => casaFiltro(a.lote)).length : 0
+
+  const parte = (titulo: string, explica: string, acao: string, lista: Alocacao[]) => (
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-stone-200 bg-stone-50 px-3 py-1.5 dark:border-stone-800 dark:bg-stone-900/60">
+        <p className="text-xs font-semibold uppercase tracking-wide text-stone-600 dark:text-stone-300">
+          {titulo}{' '}
+          <span className="num-tabular font-bold normal-case text-stone-800 dark:text-stone-100">
+            · {fmtBags(soma(lista))} bags em {inteiro(lista.length)} lote(s)
+          </span>
+        </p>
+        <p className="text-xs text-stone-500 dark:text-stone-400">{explica}</p>
+      </div>
+      {lista.length === 0 ? (
+        <p className="px-3 py-2 text-sm text-stone-400 dark:text-stone-500">Vazio.</p>
+      ) : (
+        <Tabela
+          larguraFixa
+          cabecalho={[
+            // larguras fixas: Entrada e Saída são duas tabelas empilhadas e as
+            // colunas precisam cair uma embaixo da outra (Tratamento leva o resto)
+            { texto: 'Lote', className: 'w-56' },
+            { texto: 'Cultivar', className: 'w-36' },
+            'Tratamento',
+            { texto: 'Emb.', className: 'w-24' },
+            { texto: '#Bags', className: 'w-20 text-right' },
+            { texto: '', className: 'w-72' },
+          ]}
+        >
+          {lista.map((a) => {
+            const casa = casaFiltro(a.lote)
+            const apagada = filtroAtivo && !casa
+            return (
+              <tr
+                key={a.endereco.id}
+                className={`border-t border-stone-100 dark:border-stone-800/60 ${
+                  apagada
+                    ? 'opacity-40'
+                    : filtroAtivo && casa
+                      ? 'bg-green-100 dark:bg-green-950/50'
+                      : ''
+                }`}
+              >
+                <td className="px-2 py-1.5">
+                  <span className="font-medium">{a.lote.lote}</span>
+                  {a.lote.destinacao && (
+                    <span className="ml-1.5"><Tag cor="perigo">{a.lote.destinacao}</Tag></span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">{a.lote.cultivar}</td>
+                <td className="truncate px-2 py-1.5" title={a.lote.tratamento}>{rotuloTratamento(a.lote.tratamento)}</td>
+                <td className="px-2 py-1.5">{a.lote.embalagem}</td>
+                <td className="num-tabular px-2 py-1.5 text-right font-semibold">{fmtBags(a.bags)}</td>
+                <td className="px-2 py-1.5 text-right">
+                  <span className="inline-flex flex-wrap justify-end gap-1.5">
+                    {podeMover && <Botao onClick={() => onMover(a)}>{acao}</Botao>}
+                    <Botao onClick={() => onDetalhes(a)} titulo="Ajustar, excluir, mandar pra carga…">
+                      detalhes
+                    </Botao>
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </Tabela>
+      )}
+    </div>
+  )
+
   return (
-    <Cartao
-      titulo={`${titulo} (${inteiro(itens.length)} lote(s) · ${inteiro(Math.round(total))} bags)`}
-      className="mb-5 border-amber-300 dark:border-amber-800"
-    >
-      <p className="mb-3 text-sm text-stone-500 dark:text-stone-400">{descricao}</p>
-      <Tabela cabecalho={['Lote', 'Cultivar', 'Tratamento', 'Emb.', { texto: '#Bags', className: 'text-right' }, '']}>
-        {itens.map((a) => (
-          <tr key={a.endereco.id} className="border-t border-stone-100 dark:border-stone-800/60">
-            <td className="px-2 py-1.5 font-medium">{a.lote.lote}</td>
-            <td className="px-2 py-1.5">{a.lote.cultivar}</td>
-            <td className="px-2 py-1.5">{rotuloTratamento(a.lote.tratamento)}</td>
-            <td className="px-2 py-1.5">{a.lote.embalagem}</td>
-            <td className="num-tabular px-2 py-1.5 text-right">{inteiro(Math.round(a.bags))}</td>
-            <td className="px-2 py-1.5 text-right">
-              {pode && <Botao onClick={() => onMover(a)}>{acao}</Botao>}
-            </td>
-          </tr>
-        ))}
-      </Tabela>
-    </Cartao>
+    <div className="mt-6 overflow-hidden rounded-lg border border-stone-300 dark:border-stone-700">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-300 bg-stone-100 px-3 py-2 dark:border-stone-700 dark:bg-stone-800">
+        <p className="text-sm font-bold tracking-wide">
+          ARMAZÉM TSI
+          <span className="ml-2 text-xs font-normal text-stone-500 dark:text-stone-400">
+            sem bloco nem quadra — o sistema põe e tira sozinho
+          </span>
+        </p>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 dark:text-stone-300">
+          <span className="num-tabular font-semibold">{fmtBags(total)} bags</span>
+          <span>{inteiro(new Set(itens.map((a) => chaveDe(a.lote))).size)} lote(s)</span>
+          {filtroAtivo && (
+            <span className="font-medium text-green-700 dark:text-green-400">
+              {inteiro(encontrados)} encontrado(s)
+            </span>
+          )}
+        </p>
+      </div>
+      {itens.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-stone-500 dark:text-stone-400">
+          Nada no TSI agora. A branca entra quando a Logística baixa o lote pra uma ordem; o
+          produzido entra quando a produção aponta a quantidade.
+        </p>
+      ) : (
+        <div className="divide-y divide-stone-200 dark:divide-stone-800">
+          {parte(
+            'Entrada · branca a tratar',
+            'Baixada pra uma ordem e ainda não consumida — sobrou depois do apontamento? Devolva ao armazém.',
+            'Devolver ao armazém',
+            entrada,
+          )}
+          {parte(
+            'Saída · produzido a endereçar',
+            'Apontado pela produção — sai daqui na conferência da Logística ou pelo Endereçar.',
+            'Endereçar',
+            saida,
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -3951,9 +4059,13 @@ function ModalEnderecos({
   onFechar: () => void
   onSalvar: (enderecos: { armazem: string; bloco: string; quadra: string; bags: number | null }[]) => Promise<void>
 }) {
+  // endereço do TSI (21/10/2026) não se edita aqui — fica como está e volta
+  // junto no Salvar; sai pelo Mover ou pela conferência
+  const doTsi = lote.lote_enderecos.filter((e) => ehArmazemTsi(e.armazem))
+  const doGalpao = lote.lote_enderecos.filter((e) => !ehArmazemTsi(e.armazem))
   const [linhas, setLinhas] = useState<{ armazem: string; bloco: string; quadra: string; bags: string }[]>(
-    lote.lote_enderecos.length > 0
-      ? lote.lote_enderecos.map((e) => ({
+    doGalpao.length > 0
+      ? doGalpao.map((e) => ({
           armazem: e.armazem, bloco: e.bloco, quadra: e.quadra, bags: e.bags != null ? String(e.bags) : '',
         }))
       : [{ armazem: '', bloco: '', quadra: '', bags: '' }],
@@ -3981,6 +4093,14 @@ function ModalEnderecos({
           quadra 1 é a da parede; quanto maior a quadra, mais fácil o acesso. Bags por
           endereço é opcional. Pode dividir em mais de um endereço.
         </p>
+
+        {doTsi.length > 0 && (
+          <p className="mt-3 rounded-md bg-stone-100 px-3 py-2 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+            No TSI:{' '}
+            {doTsi.map((e) => `${rotuloArmazem(e.armazem)} ${e.bags != null ? fmtBags(e.bags) : '?'} bg`).join(' · ')}
+            {' '}— fica como está (sai pelo Mover ou pela conferência da Logística).
+          </p>
+        )}
 
         <div className="mt-4 space-y-2">
           {linhas.map((l, i) => (
@@ -4030,12 +4150,13 @@ function ModalEnderecos({
             onClick={async () => {
               setSalvando(true)
               try {
-                await onSalvar(
-                  validas.map((l) => ({
+                await onSalvar([
+                  ...validas.map((l) => ({
                     ...normalizaEndereco(l)!,
                     bags: Number(l.bags) > 0 ? Number(l.bags) : null,
                   })),
-                )
+                  ...doTsi.map((e) => ({ armazem: e.armazem, bloco: e.bloco, quadra: e.quadra, bags: e.bags })),
+                ])
               } finally {
                 setSalvando(false)
               }
