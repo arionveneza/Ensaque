@@ -2213,8 +2213,9 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    COMIGO → DESCARTE com "antes" guardado; upload de brancas com destinação nova manteve DESCARTE e
    guardou a nova; desmarcar voltou à nova; tratado + `enriquecer_tratados` idem; descarte do
    inventário desmarcado ficou sem destinação; recusas conferidas; 5 linhas de rastro.
-   **A aplicação no banco ficou pendente** em 03/11: a CLI do Supabase passou a pedir confirmação
-   (`--yes`) e o modo automático barrou a escrita em produção — falta aplicar a migração e publicar.
+   Aplicada em 03/11 com autorização explícita do Arion: a CLI do Supabase (3.0) passou a pedir
+   `--yes` pra qualquer escrita em produção e o modo automático barra sem a liberação dele. No dia:
+   11 lotes com destinação descarte (10 do inventário + 1 "Descarte" do SAP), nenhum marcado à mão.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS
