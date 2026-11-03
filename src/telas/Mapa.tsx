@@ -25,6 +25,9 @@ import {
 } from '@/lib/exportar'
 import { estoqueVivo } from '@/dominio/estoqueVivo'
 import {
+  MOTIVOS_DESCARTE, MOTIVO_TIRAR_DESCARTE, candidatosDescarte, ehDescarte, resumoDescarte,
+} from '@/dominio/descarte'
+import {
   MOTIVO_ESTORNO_PADRAO, bagsDeVolta, ehEstorno, enderecoSugerido, filtrarAjustes, intervaloDoDiaLocal,
   podeEstornar, rotuloSugestao, type SugestaoEndereco, type TipoAjuste,
 } from '@/dominio/estornoAjuste'
@@ -341,6 +344,9 @@ export default function Mapa() {
   // o endereço daquela posição (04/10/2026)
   const [ajusteInicial, setAjusteInicial] = useState<AjusteInicial | undefined>(undefined)
   const [excluindo, setExcluindo] = useState<LoteMapaLinha | null>(null)
+  // descarte no mapa (03/11/2026): marcar vários de uma vez (cabeçalho) ou um
+  // pelo detalhe do lote; desmarcar é sempre um
+  const [descartando, setDescartando] = useState<{ lotes: LoteMapaLinha[]; acao: 'marcar' | 'desmarcar' } | null>(null)
   // esvaziar um armazém inteiro (13/10/2026): o que a grade mostra naquele armazém
   const [esvaziando, setEsvaziando] = useState<{ armazem: string; bags: number; combinacoes: number } | null>(null)
   // "armazém X inventário" (13/10/2026): inventários de um armazém ainda não
@@ -611,6 +617,7 @@ export default function Mapa() {
   // repartida pelos mesmos rateios da grade — é o que o botão do cabeçalho
   // exporta; com filtro ativo, só as combinações que casam
   const vivo = useMemo(() => estoqueVivo(todos, alocar(todos)), [todos])
+  const descarteResumo = useMemo(() => resumoDescarte(todos), [todos])
   const nEstoqueVivo = filtroAtivo ? todos.filter(casaFiltro).length : todos.length
   const exportarEstoqueVivo = () => {
     let linhas = vivo.linhas
@@ -1352,6 +1359,14 @@ export default function Mapa() {
                   Ajuste de estoque
                 </Botao>
               )}
+              {podeAjustar && (
+                <Botao
+                  onClick={() => setDescartando({ lotes: [], acao: 'marcar' })}
+                  titulo="Marcar um ou vários lotes como DESCARTE (fica vermelho e avisa no loteamento), com motivo"
+                >
+                  Descarte
+                </Botao>
+              )}
               {podeImportar && <Botao onClick={() => setNovoLote(true)}>Novo lote</Botao>}
               {podeImportar && (
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-100 sm:py-1.5 dark:border-stone-700 dark:hover:bg-stone-800">
@@ -1408,6 +1423,11 @@ export default function Mapa() {
               {vivo.resumo.aguardandoContagem > 0
                 ? ` · ${inteiro(vivo.resumo.aguardandoContagem)} aguardando contagem`
                 : ''}
+              {descarteResumo.lotes > 0 && (
+                <span className="text-red-700 dark:text-red-400">
+                  {' '}· descarte {n(descarteResumo.bags, 0)} bags em {inteiro(descarteResumo.lotes)} lote(s)
+                </span>
+              )}
             </p>
           )}
           </>
@@ -1877,6 +1897,10 @@ export default function Mapa() {
             enviarLoteParaCarga(l, c, bags)
             setPosicao(null)
           }}
+          onDescarte={(l, acao) => {
+            setDescartando({ lotes: [l], acao })
+            setPosicao(null)
+          }}
         />
       )}
 
@@ -2191,6 +2215,42 @@ export default function Mapa() {
             setMsg(
               `Ajuste gravado: ${a.lote} · ${rotuloTratamento(a.tratamento)} ` +
                 `${a.delta > 0 ? '+' : ''}${n(a.delta, 0)} bg → saldo ${inteiro(novo)} bg.`,
+            )
+            await recarregar()
+          }}
+        />
+      )}
+
+      {descartando && (
+        <ModalDescarte
+          todos={visiveis}
+          inicial={descartando.lotes}
+          acao={descartando.acao}
+          onFechar={() => setDescartando(null)}
+          onGravar={async (escolhidos, motivo) => {
+            // uma RPC por lote, em sequência (transação por lote): falha no meio
+            // para ali — o que já entrou fica marcado
+            let feitos = 0
+            try {
+              for (const l of escolhidos) {
+                if (descartando.acao === 'marcar') await m.marcarDescarteMapa(l.lote, l.tratamento, motivo)
+                else await m.desmarcarDescarteMapa(l.lote, l.tratamento, motivo)
+                feitos++
+              }
+            } catch (e) {
+              await recarregar()
+              const texto = e instanceof Error ? e.message : String(e)
+              throw new Error(
+                feitos > 0
+                  ? `${feitos} de ${escolhidos.length} gravado(s) antes do erro em ${escolhidos[feitos].lote}: ${texto}`
+                  : texto,
+              )
+            }
+            setDescartando(null)
+            setMsg(
+              descartando.acao === 'marcar'
+                ? `${feitos} lote(s) marcado(s) como DESCARTE (${n(escolhidos.reduce((t, l) => t + l.bags, 0), 0)} bags).`
+                : `${escolhidos.map((l) => l.lote).join(', ')} saiu do descarte.`,
             )
             await recarregar()
           }}
@@ -3240,7 +3300,7 @@ function ModalAjusteEstoque({
 /** Detalhe de uma posição: os lotes que estão ali, destinação/livre, mover, + carga. */
 function ModalPosicao({
   posicao, alocacoes, podeEnderecar, podeAjustar, podeMontar, cargasParaLote, faltaNaCarga,
-  onFechar, onMover, onEnderecar, onAjustar, onExcluir, onEnviarParaCarga,
+  onFechar, onMover, onEnderecar, onAjustar, onExcluir, onEnviarParaCarga, onDescarte,
 }: {
   posicao: Posicao
   alocacoes: Alocacao[]
@@ -3255,6 +3315,8 @@ function ModalPosicao({
   onAjustar: (a: Alocacao) => void
   onExcluir: (l: LoteMapaLinha) => void
   onEnviarParaCarga: (l: LoteMapaLinha, c: CargaMontadaLinha, bags: number | null) => void
+  /** Marcar/tirar do descarte (03/11/2026) — com a ação mapa/ajustar. */
+  onDescarte?: (l: LoteMapaLinha, acao: 'marcar' | 'desmarcar') => void
 }) {
   // bags a enviar por linha — nasce com o que há NESTA posição (rateado)
   const [bagsEnvio, setBagsEnvio] = useState<Record<string, string>>({})
@@ -3296,6 +3358,12 @@ function ModalPosicao({
                   ({inteiro(a.lote.bags)} no lote{a.lote.lote_enderecos.length > 1 ? `, em ${a.lote.lote_enderecos.length} locais` : ''})
                   {a.estimado && ' · estimado — sem contagem por endereço'}
                 </p>
+                {a.lote.descarte_em && (
+                  <p className="mt-0.5 text-xs text-red-700 dark:text-red-400">
+                    descarte desde {dataHoraCurta(a.lote.descarte_em)}
+                    {a.lote.descarte_motivo ? ` · ${a.lote.descarte_motivo}` : ''}
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 {/* manda o lote pro lotear de uma carga pendente da combinação;
@@ -3353,6 +3421,24 @@ function ModalPosicao({
                       Excluir
                     </Botao>
                   </>
+                )}
+                {podeAjustar && onDescarte && (
+                  ehDescarte(a.lote.destinacao) ? (
+                    <Botao
+                      onClick={() => onDescarte(a.lote, 'desmarcar')}
+                      titulo="Volta à destinação que o lote tinha antes do descarte"
+                    >
+                      Tirar do descarte
+                    </Botao>
+                  ) : (
+                    <Botao
+                      variante="perigo"
+                      onClick={() => onDescarte(a.lote, 'marcar')}
+                      titulo="Destinação vira DESCARTE: vermelho no mapa e aviso forte no loteamento de carga"
+                    >
+                      Descarte
+                    </Botao>
+                  )
                 )}
               </div>
             </div>
@@ -3551,6 +3637,177 @@ function ModalEstornarAjustes({
             {salvando
               ? 'Estornando…'
               : ajustes.length > 1 ? `Estornar ${inteiro(ajustes.length)} baixas` : 'Estornar baixa'}
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Descarte no mapa (03/11/2026, pedido do Arion: "preciso marcar alguns lotes
+ * como descarte"). Marcar: escolhe um ou vários lotes (busca por lote,
+ * cultivar ou tratamento) e o motivo; a destinação vira DESCARTE — vermelho no
+ * detalhe, aviso forte no loteamento de carga, filtro "Destinação" — e o
+ * saldo não muda. Tirar: volta à destinação de antes (ou fica sem, quando o
+ * descarte veio do inventário/SAP). Uma RPC por lote, com rastro.
+ */
+function ModalDescarte({
+  todos, inicial, acao, onFechar, onGravar,
+}: {
+  todos: LoteMapaLinha[]
+  inicial: LoteMapaLinha[]
+  acao: 'marcar' | 'desmarcar'
+  onFechar: () => void
+  onGravar: (escolhidos: LoteMapaLinha[], motivo: string) => Promise<void>
+}) {
+  const marcar = acao === 'marcar'
+  const [escolhidos, setEscolhidos] = useState<LoteMapaLinha[]>(inicial)
+  const [busca, setBusca] = useState('')
+  const [motivo, setMotivo] = useState(marcar ? '' : MOTIVO_TIRAR_DESCARTE)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const gravandoRef = useRef(false)
+  const candidatos = useMemo(
+    () => (marcar ? candidatosDescarte(todos, busca, escolhidos, 15) : []),
+    [marcar, todos, busca, escolhidos],
+  )
+  const totalBags = escolhidos.reduce((t, l) => t + l.bags, 0)
+
+  const gravar = () => {
+    if (!motivo.trim() || escolhidos.length === 0 || gravandoRef.current) return
+    gravandoRef.current = true
+    setSalvando(true)
+    setErro(null)
+    onGravar(escolhidos, motivo.trim()).catch((e) => {
+      setErro(e instanceof Error ? e.message : String(e))
+      gravandoRef.current = false
+      setSalvando(false)
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 dark:bg-stone-900">
+        <h3 className="text-base font-semibold">
+          {marcar ? 'Marcar como DESCARTE' : `Tirar do descarte — ${escolhidos[0]?.lote ?? ''}`}
+        </h3>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          {marcar
+            ? 'A destinação do lote vira DESCARTE: fica em vermelho no mapa, o loteamento de carga avisa forte e o filtro "Destinação" acha todos. O saldo não muda — o lote continua no mapa até sair. O upload do SAP e o inventário não tiram a marca.'
+            : escolhidos[0]?.descarte_em
+              ? 'O lote volta à destinação que tinha antes do descarte (ou à última que o SAP mandou).'
+              : 'Este descarte veio do inventário ou do SAP: o lote fica sem destinação (o próximo upload do SAP devolve a dele, se houver).'}
+        </p>
+
+        {marcar && (
+          <div className="mt-4">
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="buscar lote, cultivar ou tratamento…"
+              className={`${INPUT} w-full`}
+              autoFocus={inicial.length === 0}
+            />
+            {candidatos.length > 0 && (
+              <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                {candidatos.map((l) => (
+                  <button
+                    key={chaveDe(l)}
+                    type="button"
+                    onClick={() => setEscolhidos((atual) => [...atual, l])}
+                    className="flex w-full items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-1.5 text-left text-sm hover:bg-stone-50 dark:border-stone-700 dark:hover:bg-stone-800"
+                  >
+                    <span>
+                      <b>{l.lote}</b> · {l.cultivar} · {rotuloTratamento(l.tratamento)} · {l.embalagem}
+                      {l.destinacao && <span className="ml-1.5 text-xs text-stone-500">({l.destinacao})</span>}
+                    </span>
+                    <span className="num-tabular shrink-0 text-xs text-stone-500">{fmtBags(l.bags)} bg · + escolher</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {busca.trim() && candidatos.length === 0 && (
+              <p className="mt-2 text-xs text-stone-500">Nenhum lote com saldo (fora do descarte) casa com a busca.</p>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+            {marcar ? `Escolhidos (${inteiro(escolhidos.length)} lote(s) · ${fmtBags(totalBags)} bags)` : 'Lote'}
+          </p>
+          {escolhidos.length === 0 ? (
+            <p className="mt-1 text-sm text-stone-400">Nenhum ainda — busque acima e clique no lote.</p>
+          ) : (
+            <div className="mt-1 space-y-1">
+              {escolhidos.map((l) => (
+                <div
+                  key={chaveDe(l)}
+                  className="flex items-center justify-between gap-2 rounded-md bg-red-50 px-3 py-1.5 text-sm dark:bg-red-950/40"
+                >
+                  <span>
+                    <b>{l.lote}</b> · {l.cultivar} · {rotuloTratamento(l.tratamento)} · {l.embalagem} ·{' '}
+                    <span className="num-tabular">{fmtBags(l.bags)} bg</span>
+                    {!marcar && l.descarte_motivo && (
+                      <span className="ml-1.5 text-xs text-stone-500">(motivo do descarte: {l.descarte_motivo})</span>
+                    )}
+                  </span>
+                  {marcar && (
+                    <button
+                      type="button"
+                      onClick={() => setEscolhidos((atual) => atual.filter((x) => chaveDe(x) !== chaveDe(l)))}
+                      title="Tirar da lista"
+                      className="px-1 text-lg leading-none text-stone-400 hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {marcar && (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {MOTIVOS_DESCARTE.map((mt) => (
+              <button
+                key={mt}
+                type="button"
+                onClick={() => setMotivo(mt)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                  motivo === mt
+                    ? 'border-red-500 bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300'
+                    : 'border-stone-300 hover:bg-stone-50 dark:border-stone-700 dark:hover:bg-stone-800'
+                }`}
+              >
+                {mt}
+              </button>
+            ))}
+          </div>
+        )}
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="motivo * (obrigatório)"
+          className={`${INPUT} mt-2 w-full`}
+        />
+
+        {erro && <div className="mt-3"><Erro>{erro}</Erro></div>}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Botao onClick={onFechar}>Cancelar</Botao>
+          <Botao
+            variante={marcar ? 'perigo' : 'primario'}
+            disabled={!motivo.trim() || escolhidos.length === 0 || salvando}
+            onClick={gravar}
+          >
+            {salvando
+              ? 'Gravando…'
+              : marcar
+                ? `Marcar ${inteiro(escolhidos.length)} lote(s) como descarte`
+                : 'Tirar do descarte'}
           </Botao>
         </div>
       </div>

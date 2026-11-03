@@ -2187,6 +2187,34 @@ define quais telas/ações cada perfil acessa. RLS no banco espelhando a matriz.
    galpão ao mesmo tempo (2 combinações hoje); agora a linha TSI aparece como informação ("No TSI:
    TSI Saída 7 bg — fica como está") e volta junto no Salvar (o `salvarEnderecos` substitui tudo).
    Ninguém endereça NO TSI pela tela — continua sendo só o banco (baixa, apontamento, conferência).
+   **Marcar lote como DESCARTE direto no mapa** (03/11/2026, pedido do Arion: "preciso marcar
+   alguns lotes como descarte, no mapa, como podemos fazer?"). Antes, o único caminho era o
+   lançamento "fora da lista" do inventário com "É DESCARTE" (havia 10 lotes assim). Agora quem
+   ajusta o mapa (`mapa/ajustar`: PCP, Logística, Gestor) tem o botão **Descarte** no cabeçalho do
+   cartão "Saldo do SAP" (busca por lote/cultivar/tratamento, escolhe **vários** lotes, motivo com
+   atalhos) e, no detalhe de cada lote (`ModalPosicao`, inclusive o do Armazém TSI), **Descarte** /
+   **Tirar do descarte**. A marca é a destinação `DESCARTE` — a mesma do inventário —, então o que
+   já reagia a destinação vale sem mudar nada (vermelho no detalhe, aviso forte no loteamento de
+   carga, filtro "Destinação", estoque vivo, snapshot da carga); o saldo não muda. Linha "descarte
+   desde dd/mm · motivo" no detalhe e "· descarte N bags em M lotes" no resumo do estoque vivo.
+   Migração `mapa-descarte.sql` (bases VIVAS): `lotes_mapa.descarte_em/por/motivo` e
+   `destinacao_antes_descarte`; rastro `mapa_descartes` (marcar/desmarcar, motivo, destinação
+   anterior, bags; leitura `mapa/ver`, escrita só pelas RPCs); RPCs DEFINER
+   `marcar_descarte_mapa`/`desmarcar_descarte_mapa` (recusam motivo vazio, combinação inexistente,
+   marcar o já marcado e desmarcar o que não é descarte). **Três funções apagariam a marca e foram
+   protegidas**: `enriquecer_tratados` e `substituir_brancas_mapa` (upload do SAP regravava a
+   destinação — agora a do SAP vai pra `destinacao_antes_descarte`) e `inventario_mapa_tira` (tirar
+   o último descarte da contagem devolvia a destinação do SAP — agora não mexe em `descarte_em`
+   preenchido). Desmarcar volta à destinação de antes (ou à última do SAP); descarte vindo do
+   inventário/SAP desmarcado fica sem destinação. Front robusto à janela pré-migração:
+   `listarLotesMapa` cai de nível (descarte → marca do inventário → nenhuma) em erro 42703.
+   Domínio puro `src/dominio/descarte.ts` (`ehDescarte` — qualquer grafia, inclusive o "Descarte"
+   do SAP —, `candidatosDescarte`, `resumoDescarte`; testado). Teste no banco (desfeito): marcar
+   COMIGO → DESCARTE com "antes" guardado; upload de brancas com destinação nova manteve DESCARTE e
+   guardou a nova; desmarcar voltou à nova; tratado + `enriquecer_tratados` idem; descarte do
+   inventário desmarcado ficou sem destinação; recusas conferidas; 5 linhas de rastro.
+   **A aplicação no banco ficou pendente** em 03/11: a CLI do Supabase passou a pedir confirmação
+   (`--yes`) e o modo automático barrou a escrita em produção — falta aplicar a migração e publicar.
 
 6e. **Pesagem — checklist de carregamento com conferência de peso** (14/09/2026, especificação
    funcional do Arion; substitui a planilha `Checklist_Carregamento_Pesagem.xlsx` com as MESMAS

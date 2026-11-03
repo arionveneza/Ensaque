@@ -45,6 +45,9 @@ export interface LoteMapaLinha {
   categoria: string | null
   /** Estava na lista do SAP do último inventário aplicado e ninguém contou. */
   nao_encontrado_inventario_em: string | null
+  /** Marcado como DESCARTE à mão no mapa (03/11/2026) — quando e por quê. */
+  descarte_em?: string | null
+  descarte_motivo?: string | null
   lote_enderecos: EnderecoLote[]
 }
 
@@ -60,25 +63,28 @@ export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
   // maior não passa do teto do servidor — o mapa tinha 980 combinações com
   // saldo em 27/09/2026. Ordem estável (cultivar, lote, tratamento) pra
   // nenhuma linha pular ou repetir entre as páginas.
-  const colunas = (comMarca: boolean) =>
-    `lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, ${comMarca ? 'nao_encontrado_inventario_em, ' : ''}lote_enderecos ( id, armazem, bloco, quadra, bags )`
-  const pagina = (de: number, comMarca: boolean) =>
+  // nível 2 = com a marca do inventário E o descarte (mapa-descarte.sql);
+  // 1 = só a marca; 0 = nenhuma das duas (janelas pré-migração)
+  const colunas = (nivel: number) =>
+    `lote, tratamento, cultivar, embalagem, pms, peso_bag_kg, bags, destinacao, classificacao, peneira, categoria, ${nivel >= 1 ? 'nao_encontrado_inventario_em, ' : ''}${nivel >= 2 ? 'descarte_em, descarte_motivo, ' : ''}lote_enderecos ( id, armazem, bloco, quadra, bags )`
+  const pagina = (de: number, nivel: number) =>
     supabase
       .from('lotes_mapa')
-      .select(colunas(comMarca))
+      .select(colunas(nivel))
       .gt('bags', 0)
       .order('cultivar')
       .order('lote')
       .order('tratamento')
       .range(de, de + 999)
-  let comMarca = true
+  let nivel = 2
   const linhas: object[] = []
   for (let de = 0; ; de += 1000) {
-    let r = await pagina(de, comMarca)
-    if (r.error?.code === '42703' && comMarca) {
-      // janela pré-migração inventario-mapa-ajuste-reserva.sql (coluna nova)
-      comMarca = false
-      r = await pagina(de, comMarca)
+    let r = await pagina(de, nivel)
+    while (r.error?.code === '42703' && nivel > 0) {
+      // coluna nova que o banco ainda não tem: mapa-descarte.sql (nível 2) ou
+      // inventario-mapa-ajuste-reserva.sql (nível 1) pendente
+      nivel--
+      r = await pagina(de, nivel)
     }
     if (r.error) {
       // null SÓ na janela pré-migração (tabela ausente); erro transitório
@@ -93,8 +99,34 @@ export async function listarLotesMapa(): Promise<LoteMapaLinha[] | null> {
   }
   return linhas.map((l) => ({
     nao_encontrado_inventario_em: null,
+    descarte_em: null,
+    descarte_motivo: null,
     ...l,
   })) as unknown as LoteMapaLinha[]
+}
+
+/**
+ * Marca a combinação como DESCARTE (03/11/2026): destinação vira DESCARTE,
+ * com motivo, e o upload do SAP/inventário não tira. RPC marcar_descarte_mapa
+ * (migração mapa-descarte.sql; ação mapa/ajustar).
+ */
+export async function marcarDescarteMapa(lote: string, tratamento: string, motivo: string): Promise<void> {
+  const { error } = await supabase.rpc('marcar_descarte_mapa', {
+    p_lote: lote,
+    p_tratamento: tratamento,
+    p_motivo: motivo,
+  })
+  erro('marcar como descarte — a migração mapa-descarte.sql já rodou?', error)
+}
+
+/** Tira do descarte: volta à destinação de antes (ou fica sem). */
+export async function desmarcarDescarteMapa(lote: string, tratamento: string, motivo: string): Promise<void> {
+  const { error } = await supabase.rpc('desmarcar_descarte_mapa', {
+    p_lote: lote,
+    p_tratamento: tratamento,
+    p_motivo: motivo,
+  })
+  erro('tirar do descarte — a migração mapa-descarte.sql já rodou?', error)
 }
 
 /**
